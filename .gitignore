@@ -29,6 +29,9 @@ __pycache__/
 /TODOS.md
 /BugFindings*.md
 /.mcp.json
+# Local release tooling
+/release.ps1
+/scripts/release/
 
 # Editors and tools
 .vs/

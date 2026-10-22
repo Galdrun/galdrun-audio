@@ -89,11 +89,18 @@ def export_licenses(work, licenses):
                         licenses / name / "toolchain-external-bootlin")
     shutil.copy2(project / "board/connector2/firmware/TI-LICENSE.txt",
                  licenses / "firmware/am335x-pm-firmware-TI-LICENSE.txt")
+    spec = util.spec_from_file_location("source_bundle", project / "scripts/source-bundle.py")
+    bundle = util.module_from_spec(spec)
+    spec.loader.exec_module(bundle)
+    tag = bundle.tag(work)
     (licenses / "SOURCE.txt").write_text(
-        "connect2.img contains GPL and other open-source software. Its complete source is the\n"
-        "Galdrun repository at the tag of this release (hardware/buildroot/README.md builds it),\n"
-        "plus the package sources Buildroot downloads and checks by hash. manifest.csv in each\n"
-        "folder lists every package with its version, license and source archive.\n", newline="\n")
+        "connect2.img contains GPL and other open-source software. The source of its GPL and\n"
+        "LGPL packages, in exactly the versions and with the patches built into it, is\n"
+        f"  {bundle.REPOSITORY}/releases/download/{tag}/{tag}.tar\n"
+        "Galdrun's own parts (board files, device tree, kernel driver) are the Galdrun\n"
+        "repository at the tag of this release; hardware/buildroot/README.md builds the image.\n"
+        "manifest.csv in each folder lists every package with its version, license and\n"
+        "source archive.\n", newline="\n")
 
 
 def payload_tar(payloads):
