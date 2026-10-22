@@ -25,6 +25,11 @@
 __pycache__/
 *.log
 
+# Private notes and local tool config
+/TODOS.md
+/BugFindings*.md
+/.mcp.json
+
 # Editors and tools
 .vs/
 .vscode/
