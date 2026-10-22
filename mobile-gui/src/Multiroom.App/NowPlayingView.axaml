@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Multiroom.App" x:Class="Multiroom.App.NowPlayingView" x:DataType="vm:ShellViewModel">
+ <Grid RowDefinitions="*,Auto,Auto,Auto" Margin="0,4,0,8">
+  <Viewbox x:Name="CoverSpace" Stretch="Uniform" Margin="0,0,0,16">
+   <Button x:Name="CoverButton" Width="640" Height="640" Padding="0" Background="Transparent"
+    AutomationProperties.Name="Album cover: swipe to change zone" ToolTip.Tip="Swipe left or right to change zone">
+    <Button.KeyBindings>
+     <KeyBinding Gesture="Left" Command="{Binding Playback.ChangeZoneCommand}" CommandParameter="previous" />
+     <KeyBinding Gesture="Right" Command="{Binding Playback.ChangeZoneCommand}" CommandParameter="next" />
+    </Button.KeyBindings>
+    <Grid Width="640" Height="640">
+     <vm:ArtworkView x:Name="CoverArtwork" Reference="{Binding Playback.CurrentArtwork}" Cache="{Binding Playback.Artwork}" Width="640" Height="640" />
+     <Border x:Name="ArtworkProgress" IsVisible="{Binding ShowArtworkProgress}" Background="#40101315" CornerRadius="8" IsHitTestVisible="False" AutomationProperties.Name="Loading playback">
+      <Grid Width="96" Height="96" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.65">
+       <Ellipse Stroke="#70EEF1ED" StrokeThickness="8" Margin="8" />
+       <Path x:Name="LoadingSpinner" Data="M 48,8 A 40,40 0 0 1 88,48" Stroke="#EEF1ED" StrokeThickness="8" StrokeLineCap="Round" RenderTransformOrigin="50%,50%" IsVisible="{Binding ShowArtworkProgress}">
+        <Path.RenderTransform><RotateTransform /></Path.RenderTransform>
+        <Path.Styles>
+         <Style Selector="Path[IsVisible=True]">
+          <Style.Animations>
+           <Animation Duration="0:0:1" IterationCount="INFINITE">
+            <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
+            <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="360" /></KeyFrame>
+           </Animation>
+          </Style.Animations>
+         </Style>
+        </Path.Styles>
+       </Path>
+      </Grid>
+     </Border>
+    </Grid>
+   </Button>
+  </Viewbox>
+   <StackPanel Grid.Row="1" Spacing="6" MaxWidth="650" Margin="0,0,0,12">
+    <Grid ColumnDefinitions="48,*,48">
+     <Button x:Name="FavoriteButton" IsVisible="{Binding Playback.CanFavoriteCurrent}" Command="{Binding Playback.FavoriteCurrentCommand}" Background="Transparent" CornerRadius="24" Padding="12" Width="48" Height="48" AutomationProperties.Name="{Binding Playback.FavoriteLabel}" ToolTip.Tip="{Binding Playback.FavoriteLabel}">
+      <Grid Width="24" Height="24">
+       <Path Data="M 12,2 L 15,8.5 L 22,9.5 L 17,14.5 L 18,22 L 12,18.5 L 6,22 L 7,14.5 L 2,9.5 L 9,8.5 Z" Stroke="#EEF1ED" StrokeThickness="1.7" IsVisible="{Binding !Playback.FavoriteSaved}" />
+       <Path x:Name="FavoriteFill" Data="M 12,2 L 15,8.5 L 22,9.5 L 17,14.5 L 18,22 L 12,18.5 L 6,22 L 7,14.5 L 2,9.5 L 9,8.5 Z" Fill="#CBEC97" IsVisible="{Binding Playback.FavoriteSaved}" />
+      </Grid>
+     </Button>
+     <TextBlock x:Name="TrackTitle" Grid.Column="1" Text="{Binding Playback.Title}" Classes="section" TextAlignment="Center" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+     <Button x:Name="LikeButton" IsVisible="{Binding Playback.CanLikeCurrent}" Grid.Column="2" Command="{Binding Playback.LikeCurrentCommand}" Background="Transparent" CornerRadius="24" Padding="12" Width="48" Height="48" AutomationProperties.Name="{Binding Playback.LikeLabel}" ToolTip.Tip="{Binding Playback.LikeLabel}">
+      <Grid Width="24" Height="24">
+       <Path Data="M 12,21 L 3,12 C -3,4 7,-1 12,6 C 17,-1 27,4 21,12 Z" Stroke="#EEF1ED" StrokeThickness="1.7" IsVisible="{Binding !Playback.Liked}" />
+       <Path x:Name="LikeFill" Data="M 12,21 L 3,12 C -3,4 7,-1 12,6 C 17,-1 27,4 21,12 Z" Fill="#CBEC97" IsVisible="{Binding Playback.Liked}" />
+      </Grid>
+     </Button>
+    </Grid>
+    <TextBlock Text="{Binding Playback.Subtitle}" Classes="muted" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+    <TextBlock Text="{Binding Playback.QueuePosition}" Classes="muted" TextAlignment="Center" FontSize="12" />
+   </StackPanel>
+   <StackPanel Grid.Row="2" Spacing="4" MaxWidth="650" Margin="0,0,0,12">
+    <Slider x:Name="PositionSlider" Minimum="0" Maximum="{Binding Playback.ProgressMaximum}"
+     Value="{Binding Playback.ProgressSeconds, Mode=TwoWay}" IsEnabled="{Binding Playback.CanScrub}"
+     AutomationProperties.Name="Track position" />
+    <Grid ColumnDefinitions="*,*">
+     <TextBlock x:Name="PositionLabel" Text="{Binding Playback.PositionText}" Classes="muted" />
+     <TextBlock Grid.Column="1" Text="{Binding Playback.LengthText}" HorizontalAlignment="Right" Classes="muted" />
+    </Grid>
+   </StackPanel>
+   <vm:TransportView Grid.Row="3" DataContext="{Binding Playback}" />
+ </Grid>
+</UserControl>

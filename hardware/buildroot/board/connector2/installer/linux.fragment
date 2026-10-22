@@ -1,0 +1,4 @@
+# The installer needs only built-in drivers (NAND, USB storage, FAT, LEDs). The
+# kernel compression is BR2_LINUX_KERNEL_XZ, the initramfs compression an
+# external.mk fixup: Buildroot sets both after this fragment.
+# CONFIG_MODULES is not set

@@ -1,0 +1,36 @@
+{
+  "server": "",
+  "clientId": "",
+  "name": "Raumfeld Connector 2",
+  "audioDeviceId": "hw:CARD=Connector2,DEV=0",
+  "audioAccessMode": "exclusive-only",
+  "preferredSampleRate": 48000,
+  "bufferMs": 2500,
+  "standbyAfterSeconds": 600,
+  "deepSleepAfterSeconds": 1800,
+  "controlPort": 4720,
+  "controlBindAddress": "0.0.0.0",
+  "inputs": [
+    {
+      "id": "POWER",
+      "kind": "button",
+      "device": "gpio-keys",
+      "key": "KEY_POWER",
+      "bindings": { "click": { "action": "toggleStandby" }, "longPress": { "action": "deepSleep" } }
+    },
+    {
+      "id": "SETUP",
+      "kind": "button",
+      "device": "gpio-keys",
+      "key": "141",
+      "bindings": { "click": { "action": "none" } }
+    },
+    {
+      "id": "RESET",
+      "kind": "button",
+      "device": "gpio-keys",
+      "key": "KEY_F3",
+      "bindings": { "click": { "action": "none" } }
+    }
+  ]
+}

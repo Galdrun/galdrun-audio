@@ -1,0 +1,26 @@
+#!/bin/sh
+# Read-only inventory; never erase, program NAND, or send audio automatically.
+set -u
+printf '\nKernel / CPU\n'
+uname -a
+cat /proc/cpuinfo
+printf '\nNAND\n'
+cat /proc/mtd
+for field in writesize oobsize erasesize ecc_strength ecc_step_size bad_blocks ecc_failures; do
+    printf '%s: ' "$field"; cat "/sys/class/mtd/mtd0/$field" 2>/dev/null || :
+done
+printf '\nAudio\n'
+cat /proc/asound/cards /proc/asound/pcm
+amixer -c Connector2 controls
+printf '\nNetwork\n'
+ip -br addr
+ethtool eth0
+iw dev
+iw list
+printf '\nBuses / devices\n'
+ls /sys/bus/i2c/devices /sys/bus/spi/devices /sys/bus/sdio/devices
+ls /sys/class/leds /sys/class/input /sys/class/rtc /sys/class/watchdog
+printf '\nUSB\n'
+ls /sys/bus/usb/devices
+printf '\nProbe failures / deferrals\n'
+dmesg | grep -Ei 'error|failed|defer|firmware|cs4271|ak4104|mcasp|mwifiex|nand|cpsw' || :

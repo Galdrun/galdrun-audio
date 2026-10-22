@@ -1,0 +1,404 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/dts-v1/;
+#include "am33xx.dtsi"
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/input/gpio-keys.h>
+#include <dt-bindings/pinctrl/omap.h>
+
+/* Board wiring recovered from this unit's original NAND DTB. */
+/ {
+    model = "Custom Raumfeld Connector 2";
+    compatible = "raumfeld,raumfeld-connector2", "ti,am335x-raumfeld-connector", "ti,am33xx";
+    chosen { stdout-path = "serial0:115200n8"; };
+    memory@80000000 { device_type = "memory"; reg = <0x80000000 0x10000000>; };
+    cpus { cpu@0 { cpu0-supply = <&dcdc2_reg>; }; };
+
+    si5351_xtal: clock-25000000 {
+        compatible = "fixed-clock";
+        #clock-cells = <0>;
+        clock-frequency = <25000000>;
+    };
+    wlan_power: regulator-wlan {
+        compatible = "regulator-fixed";
+        regulator-name = "wlan-3v3";
+        regulator-min-microvolt = <3300000>;
+        regulator-max-microvolt = <3300000>;
+        regulator-always-on;
+    };
+    wlan_pwrseq: wlan-pwrseq {
+        compatible = "mmc-pwrseq-simple";
+        reset-gpios = <&gpio2 0 GPIO_ACTIVE_LOW>;
+        clocks = <&clk_32768_ck>;
+        clock-names = "ext_clock";
+    };
+    vdd_audio: regulator-audio {
+        compatible = "regulator-fixed";
+        regulator-name = "vdd-audio";
+        /* AK4104 reads its ID before ASoC enables codec supplies. */
+        regulator-boot-on;
+        regulator-always-on;
+        regulator-min-microvolt = <3300000>;
+        regulator-max-microvolt = <3300000>;
+        gpio = <&gpio1 18 GPIO_ACTIVE_HIGH>;
+        enable-active-high;
+        startup-delay-us = <100>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&audio_power_pins>;
+    };
+    sound {
+        compatible = "raumfeld,connector2-audio";
+        model = "Connector2";
+        audio-cpu = <&mcasp0>;
+        audio-codecs = <&cs4271>, <&ak4104>;
+        /* CLK2 mirrors MS0; both audio outputs must remain enabled. */
+        clocks = <&si5351 0>, <&si5351 2>;
+        clock-names = "mclk", "bus-mclk";
+        vd-supply = <&vdd_audio>;
+    };
+    leds {
+        compatible = "gpio-leds";
+        pinctrl-names = "default";
+        pinctrl-0 = <&led_pins>;
+        led-1 { label = "raumfeld:1"; gpios = <&gpio3 4 GPIO_ACTIVE_HIGH>; };
+        led-2 { label = "raumfeld:2"; gpios = <&gpio3 10 GPIO_ACTIVE_HIGH>; default-state = "on"; };
+    };
+    gpio-keys {
+        compatible = "gpio-keys";
+        pinctrl-names = "default";
+        pinctrl-0 = <&button_pins>;
+        setup { label = "Setup"; gpios = <&gpio2 18 GPIO_ACTIVE_LOW>; linux,code = <KEY_SETUP>; debounce-interval = <20>; };
+        reset { label = "Reset"; gpios = <&gpio1 9 GPIO_ACTIVE_LOW>; linux,code = <KEY_F3>; debounce-interval = <20>; };
+        power {
+            label = "Power";
+            gpios = <&gpio0 6 GPIO_ACTIVE_LOW>;
+            linux,code = <KEY_POWER>;
+            debounce-interval = <20>;
+            wakeup-source;
+            /* Releasing the sleep-entry hold must not wake the board. */
+            wakeup-event-action = <EV_ACT_ASSERTED>;
+        };
+        /*
+         * The AR8030 interrupt (factory pinmux "eth_wake_s0"): low after a
+         * magic packet while Wake-on-LAN is armed, until the PHY's status is
+         * read. raumfeld-suspend arms it only for deep sleep.
+         */
+        ethernet-wake {
+            label = "Ethernet wake";
+            gpios = <&gpio0 19 GPIO_ACTIVE_LOW>;
+            linux,code = <KEY_WAKEUP>;
+            wakeup-source;
+            wakeup-event-action = <EV_ACT_ASSERTED>;
+        };
+    };
+};
+
+&am33xx_pinmux {
+    pinctrl-names = "default";
+    pinctrl-0 = <&board_misc_pins>;
+    board_misc_pins: board-misc-pins {
+        pinctrl-single,pins = <
+            AM33XX_PADCONF(0x9b4, 0x00, 3)
+            AM33XX_PADCONF(0x9e4, 0x10, 7)
+        >;
+    };
+    uart0_pins: uart0-pins { pinctrl-single,pins = <
+            AM33XX_PADCONF(0x970, 0x38, 0)
+            AM33XX_PADCONF(0x974, 0x00, 0)
+        >; };
+    i2c0_pins: i2c0-pins { pinctrl-single,pins = <
+            AM33XX_PADCONF(0x988, 0x60, 0)
+            AM33XX_PADCONF(0x98c, 0x60, 0)
+        >; };
+    i2c2_pins: i2c2-pins { pinctrl-single,pins = <
+            AM33XX_PADCONF(0x978, 0x20, 3)
+            AM33XX_PADCONF(0x97c, 0x20, 3)
+        >; };
+    cpsw_pins: cpsw-pins {
+        pinctrl-single,pins = <
+            AM33XX_PADCONF(0x90c, 0x20, 1)
+            AM33XX_PADCONF(0x910, 0x20, 1)
+            AM33XX_PADCONF(0x914, 0x00, 1)
+            AM33XX_PADCONF(0x924, 0x00, 1)
+            AM33XX_PADCONF(0x928, 0x00, 1)
+            AM33XX_PADCONF(0x93c, 0x20, 1)
+            AM33XX_PADCONF(0x940, 0x20, 1)
+            AM33XX_PADCONF(0x944, 0x20, 0)
+            AM33XX_PADCONF(0x9b0, 0x20, 7)
+        >;
+    };
+    /*
+     * The factory's cpsw_sleep/davinci_mdio_sleep: with Wake-on-LAN armed the
+     * PHY keeps running, and its RMII clock and data must not reach the MAC,
+     * or the PER power domain does not turn off in deep sleep. GPIO0_19 stays
+     * the wake input.
+     */
+    cpsw_sleep_pins: cpsw-sleep-pins {
+        pinctrl-single,pins = <
+            AM33XX_PADCONF(0x90c, 0x20, 7)
+            AM33XX_PADCONF(0x910, 0x20, 7)
+            AM33XX_PADCONF(0x914, 0x20, 7)
+            AM33XX_PADCONF(0x924, 0x20, 7)
+            AM33XX_PADCONF(0x928, 0x20, 7)
+            AM33XX_PADCONF(0x93c, 0x20, 7)
+            AM33XX_PADCONF(0x940, 0x20, 7)
+            AM33XX_PADCONF(0x944, 0x20, 7)
+            AM33XX_PADCONF(0x9b0, 0x20, 7)
+        >;
+    };
+    mdio_sleep_pins: mdio-sleep-pins { pinctrl-single,pins = <
+            AM33XX_PADCONF(0x948, 0x20, 7)
+            AM33XX_PADCONF(0x94c, 0x20, 7)
+        >; };
+    mdio_pins: mdio-pins { pinctrl-single,pins = <
+            AM33XX_PADCONF(0x948, 0x70, 0)
+            AM33XX_PADCONF(0x94c, 0x10, 0)
+        >; };
+    wlan_pins: wlan-pins {
+        pinctrl-single,pins = <
+            AM33XX_PADCONF(0x8fc, 0x38, 0)
+            AM33XX_PADCONF(0x8f8, 0x38, 0)
+            AM33XX_PADCONF(0x8f4, 0x38, 0)
+            AM33XX_PADCONF(0x8f0, 0x38, 0)
+            AM33XX_PADCONF(0x900, 0x38, 0)
+            AM33XX_PADCONF(0x904, 0x38, 0)
+            AM33XX_PADCONF(0x888, 0x00, 7)
+        >;
+    };
+    spi0_pins: spi0-pins {
+        pinctrl-single,pins = <
+            AM33XX_PADCONF(0x950, 0x28, 0)
+            AM33XX_PADCONF(0x954, 0x08, 0)
+            AM33XX_PADCONF(0x958, 0x30, 0)
+            AM33XX_PADCONF(0x95c, 0x10, 0)
+            AM33XX_PADCONF(0x858, 0x00, 7)
+        >;
+    };
+    cs4271_reset_pins: cs4271-reset-pins { pinctrl-single,pins = <
+            AM33XX_PADCONF(0x84c, 0x10, 7)
+        >; };
+    audio_power_pins: audio-power-pins { pinctrl-single,pins = <
+            AM33XX_PADCONF(0x848, 0x10, 7)
+        >; };
+    mcasp0_pins: mcasp0-pins {
+        pinctrl-single,pins = <
+            AM33XX_PADCONF(0x9ac, 0x28, 0)
+            AM33XX_PADCONF(0x990, 0x08, 0)
+            AM33XX_PADCONF(0x994, 0x08, 0)
+            AM33XX_PADCONF(0x998, 0x08, 0)
+            AM33XX_PADCONF(0x9a8, 0x28, 0)
+            AM33XX_PADCONF(0x878, 0x20, 7)
+            AM33XX_PADCONF(0x9a4, 0x20, 7)
+            AM33XX_PADCONF(0x99c, 0x28, 0)
+            AM33XX_PADCONF(0x9a0, 0x20, 7)
+        >;
+    };
+    button_pins: button-pins { pinctrl-single,pins = <
+            AM33XX_PADCONF(0x934, 0x30, 7)
+            AM33XX_PADCONF(0x96c, 0x30, 7)
+            AM33XX_PADCONF(0x960, 0x30, 7)
+        >; };
+    /* Original LED GPIOs are bank 3; mux their actual pads, not inherited bank-1 placeholders. */
+    led_pins: led-pins { pinctrl-single,pins = <
+            AM33XX_PADCONF(0x918, 0x00, 7)
+            AM33XX_PADCONF(0x930, 0x00, 7)
+        >; };
+    nand_pins: nand-pins {
+        pinctrl-single,pins = <
+            AM33XX_PADCONF(0x800, 0x30, 0)
+            AM33XX_PADCONF(0x804, 0x30, 0)
+            AM33XX_PADCONF(0x808, 0x30, 0)
+            AM33XX_PADCONF(0x80c, 0x30, 0)
+            AM33XX_PADCONF(0x810, 0x30, 0)
+            AM33XX_PADCONF(0x814, 0x30, 0)
+            AM33XX_PADCONF(0x818, 0x30, 0)
+            AM33XX_PADCONF(0x81c, 0x30, 0)
+            AM33XX_PADCONF(0x870, 0x30, 0)
+            AM33XX_PADCONF(0x874, 0x10, 7)
+            AM33XX_PADCONF(0x87c, 0x08, 0)
+            AM33XX_PADCONF(0x890, 0x08, 0)
+            AM33XX_PADCONF(0x894, 0x08, 0)
+            AM33XX_PADCONF(0x898, 0x08, 0)
+            AM33XX_PADCONF(0x89c, 0x08, 0)
+        >;
+    };
+};
+
+&uart0 { status = "okay"; pinctrl-names = "default"; pinctrl-0 = <&uart0_pins>; };
+&i2c0 {
+    status = "okay";
+    clock-frequency = <100000>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&i2c0_pins>;
+    tps: pmic@24 { reg = <0x24>; };
+    eeprom@50 { compatible = "atmel,24c08"; reg = <0x50>; pagesize = <16>; };
+    si5351: clock-generator@60 {
+        compatible = "silabs,si5351a";
+        reg = <0x60>;
+        #address-cells = <1>;
+        #size-cells = <0>;
+        #clock-cells = <1>;
+        clocks = <&si5351_xtal>;
+        clock-names = "xtal";
+        silabs,pll-source = <0 0>, <1 0>;
+        /* PLLA is the audio clock and is retuned live by the "Drift
+         * compensator" trim: no soft reset on a rate change, which would
+         * glitch MCLK under a playing stream. PLLA is still reset when
+         * clkout0 is prepared, for a defined start. PLLB (32.768 kHz) keeps
+         * the default. */
+        silabs,pll-reset-mode = <0 1>;
+        clkout0 { reg = <0>; silabs,drive-strength = <2>; silabs,multisynth-source = <0>; silabs,clock-source = <0>; silabs,pll-master; silabs,pll-reset; };
+        clkout1 { reg = <1>; silabs,drive-strength = <2>; silabs,multisynth-source = <1>; silabs,clock-source = <0>; silabs,pll-master; clock-frequency = <32768>; };
+        clkout2 { reg = <2>; silabs,drive-strength = <2>; silabs,clock-source = <1>; silabs,disable-state = <2>; };
+    };
+};
+#include "../../tps65217.dtsi"
+&dcdc1_reg { regulator-min-microvolt = <925000>; regulator-max-microvolt = <1800000>; regulator-boot-on; regulator-always-on; };
+&dcdc2_reg { regulator-name = "vdd_mpu"; regulator-min-microvolt = <925000>; regulator-max-microvolt = <1325000>; regulator-boot-on; regulator-always-on; };
+&dcdc3_reg { regulator-name = "vdd_core"; regulator-min-microvolt = <925000>; regulator-max-microvolt = <1325000>; regulator-boot-on; regulator-always-on; };
+&ldo1_reg { regulator-min-microvolt = <1000000>; regulator-max-microvolt = <3300000>; regulator-boot-on; regulator-always-on; };
+&ldo2_reg { regulator-min-microvolt = <1800000>; regulator-max-microvolt = <3300000>; regulator-boot-on; regulator-always-on; };
+&ldo3_reg { regulator-min-microvolt = <1800000>; regulator-max-microvolt = <3300000>; regulator-boot-on; regulator-always-on; };
+&ldo4_reg { regulator-min-microvolt = <1800000>; regulator-max-microvolt = <3300000>; regulator-boot-on; regulator-always-on; };
+
+/* Keep within the factory board's 720 MHz maximum. */
+&cpu0_opp_table {
+    /delete-node/ opp-800000000;
+    /delete-node/ opp-1000000000;
+};
+
+&i2c1 { status = "okay"; };
+&i2c2 {
+    status = "okay";
+    clock-frequency = <100000>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&i2c2_pins>;
+    cs4271: codec@10 {
+        compatible = "cirrus,cs4271";
+        reg = <0x10>;
+        #sound-dai-cells = <0>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&cs4271_reset_pins>;
+        reset-gpios = <&gpio1 19 GPIO_ACTIVE_LOW>;
+        cirrus,enable-soft-reset;
+        cirrus,amuteb-eq-bmutec;
+        vd-supply = <&vdd_audio>;
+        vl-supply = <&vdd_audio>;
+        /* Analog VA was not mapped by the factory tree either; do not invent a switch. */
+    };
+};
+&spi0 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&spi0_pins>;
+    ti,pindir-d0-out-d1-in;
+    ak4104: codec@0 {
+        compatible = "asahi-kasei,ak4104";
+        reg = <0>;
+        #sound-dai-cells = <0>;
+        spi-max-frequency = <500000>;
+        /* Linux 6.12 AK4104 requests logical HIGH as the deasserted state. */
+        reset-gpios = <&gpio1 22 GPIO_ACTIVE_HIGH>;
+        vdd-supply = <&vdd_audio>;
+    };
+};
+&mcasp0 {
+    status = "okay";
+    #sound-dai-cells = <0>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&mcasp0_pins>;
+    op-mode = <0>;
+    tdm-slots = <2>;
+    serial-dir = <1 2 0 0 0 0 0 0 0 0 0 0 0 0 0 0>;
+    tx-num-evt = <1>;
+    rx-num-evt = <1>;
+};
+&mmc1 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&wlan_pins>;
+    bus-width = <4>;
+    non-removable;
+    cap-sdio-irq;
+    keep-power-in-suspend;
+    wakeup-source;
+    vmmc-supply = <&ldo2_reg>;
+    vqmmc-supply = <&wlan_power>;
+    mmc-pwrseq = <&wlan_pwrseq>;
+};
+&mac_sw {
+    status = "okay";
+    pinctrl-names = "default", "sleep";
+    pinctrl-0 = <&cpsw_pins>;
+    pinctrl-1 = <&cpsw_sleep_pins>;
+};
+&cpsw_port1 { status = "okay"; phy-mode = "rmii"; phy-handle = <&ethernet_phy>; };
+&cpsw_port2 { status = "disabled"; };
+&davinci_mdio_sw {
+    pinctrl-names = "default", "sleep";
+    pinctrl-0 = <&mdio_pins>;
+    pinctrl-1 = <&mdio_sleep_pins>;
+    /*
+     * The PHY reset belongs to the bus, not the PHY: Linux asserts a PHY's
+     * own reset whenever it is detached, which cpsw does on every suspend,
+     * and a PHY held in reset cannot see a Wake-on-LAN magic packet.
+     */
+    reset-gpios = <&gpio3 7 GPIO_ACTIVE_LOW>;
+    reset-delay-us = <1000>;
+    reset-post-delay-us = <1000>;
+    ethernet_phy: ethernet-phy@4 {
+        reg = <4>;
+        max-speed = <100>;
+    };
+};
+&usb { status = "okay"; };
+&usb0 { status = "okay"; dr_mode = "host"; };
+&usb0_phy { status = "okay"; };
+&usb1 { status = "disabled"; };
+&usb1_phy { status = "disabled"; };
+&elm { status = "okay"; };
+&gpmc {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&nand_pins>;
+    ranges = <0 0 0x08000000 0x01000000>;
+    nand@0,0 {
+        compatible = "ti,omap2-nand";
+        reg = <0 0 4>;
+        interrupt-parent = <&gpmc>;
+        interrupts = <0 IRQ_TYPE_NONE>, <1 IRQ_TYPE_NONE>;
+        rb-gpios = <&gpmc 0 GPIO_ACTIVE_HIGH>;
+        ti,nand-xfer-type = "prefetch-dma";
+        ti,nand-ecc-opt = "bch8";
+        ti,elm-id = <&elm>;
+        nand-bus-width = <8>;
+        gpmc,device-width = <1>;
+        gpmc,cs-on-ns = <0>;
+        gpmc,cs-rd-off-ns = <44>;
+        gpmc,cs-wr-off-ns = <44>;
+        gpmc,adv-on-ns = <6>;
+        gpmc,adv-rd-off-ns = <34>;
+        gpmc,adv-wr-off-ns = <44>;
+        gpmc,we-on-ns = <6>;
+        gpmc,we-off-ns = <40>;
+        gpmc,oe-on-ns = <6>;
+        gpmc,oe-off-ns = <54>;
+        gpmc,access-ns = <64>;
+        gpmc,rd-cycle-ns = <82>;
+        gpmc,wr-cycle-ns = <82>;
+        partitions {
+            compatible = "fixed-partitions";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            partition@0 { label = "SPL"; reg = <0x0 0x20000>; read-only; };
+            partition@20000 { label = "SPL.backup1"; reg = <0x20000 0x20000>; read-only; };
+            partition@40000 { label = "SPL.backup2"; reg = <0x40000 0x20000>; read-only; };
+            partition@60000 { label = "Firmware Data"; reg = <0x60000 0x20000>; read-only; };
+            partition@80000 { label = "U-Boot"; reg = <0x80000 0x100000>; read-only; };
+            partition@180000 { label = "U-Boot Env"; reg = <0x180000 0x20000>; read-only; };
+            partition@1a0000 { label = "Kernel"; reg = <0x1a0000 0x600000>; };
+            partition@7a0000 { label = "DTB"; reg = <0x7a0000 0x40000>; };
+            partition@7e0000 { label = "File System"; reg = <0x7e0000 0xf820000>; };
+        };
+    };
+};

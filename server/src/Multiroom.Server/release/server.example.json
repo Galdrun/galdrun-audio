@@ -1,0 +1,8 @@
+{
+  "dataDirectory": "data",
+  "logging": { "file": "" },
+  "core": { "host": "127.0.0.1", "port": 4713 },
+  "media": { "port": 4714 },
+  "api": { "port": 4725 },
+  "gui": { "port": 4720 }
+}

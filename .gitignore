@@ -1,0 +1,32 @@
+# Client builds (client/.gitignore covers client/build/)
+/client/esp32/build-*/
+/client/esp32/managed_components/
+# Generated per board from sdkconfig.defaults + boards/<board>.defaults
+/client/esp32/sdkconfig.*
+!/client/esp32/sdkconfig.defaults
+
+# Server core builds (server-core/ffmpeg/.gitignore covers FFmpeg's src/build/dist/tools)
+/server-core/build/
+
+# .NET builds (mobile-gui/.gitignore covers the app's too)
+/server/**/bin/
+/server/**/obj/
+/server/**/TestResults/
+
+# Build exports; binaries go to GitHub Releases. Only hand-written READMEs are tracked.
+/releases/**
+!/releases/**/
+!/releases/client/raumfeld/connector2/README.md
+
+# Local run state, logs, keys
+/provider/
+/scripts/.run/
+/.tmp/
+__pycache__/
+*.log
+
+# Editors and tools
+.vs/
+.vscode/
+*.user
+node_modules/

@@ -1,0 +1,11 @@
+{
+  "board": "raumfeld-connector2",
+  "networkSettings": true,
+  "sshSettings": true,
+  "statusLeds": true,
+  "cpuFrequency": true,
+  "dacControls": true,
+  "resetHardwareVolume": true,
+  "maxVolumeDb": -10,
+  "hardwareClockControl": "Drift compensator"
+}

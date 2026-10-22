@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Settings navigation check</title>
+<link rel="stylesheet" href="../theme.css">
+<style>.settings-card { min-height: 700px; }</style>
+<header class="topbar"><div class="topbar-inner"><strong>Galdrun</strong></div><nav class="section-menu" aria-label="Settings sections"><div class="section-menu-links">
+  <a href="#first">Status</a><a href="#wifi">Wi-Fi</a><a href="#address">Address</a><a href="#second">Client</a><a href="#audio">Audio</a><a href="#third">Buttons</a>
+</div></nav></header>
+<main><h1>Settings navigation check</h1><p id="result" role="status">Running...</p>
+
+<section class="settings-card"><h2 id="first" tabindex="-1">Status</h2></section>
+<section class="settings-card"><h2 id="wifi" tabindex="-1">Wi-Fi</h2></section>
+<section class="settings-card"><h2 id="address" tabindex="-1">Address</h2></section>
+<section class="settings-card"><h2 id="second" tabindex="-1">Client</h2></section>
+<section class="settings-card"><h2 id="audio" tabindex="-1">Audio</h2></section>
+<section class="settings-card hidden"><h2 id="third" tabindex="-1">Buttons</h2></section>
+</main>
+<script src="../navigation.js"></script>
+<script>
+// Open in a browser. Exercises native anchors, sticky positioning and visibility.
+(async () => {
+  const check = (condition, message) => { if (!condition) throw Error(message); };
+  const waitFor = async condition => {
+    for (let i = 0; i < 80; i++) {
+      if (condition()) return;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    throw Error('Navigation did not settle');
+  };
+  const links = [...document.querySelectorAll('.section-menu a')];
+  const menu = document.querySelector('.section-menu');
+  try {
+    check(links[0].getAttribute('aria-current') === 'location', 'First group selected');
+    check(links[5].hidden, 'Hidden group omitted');
+    await waitFor(() => parseFloat(document.documentElement.style.getPropertyValue('--header-height')) > 0);
+    links[3].click();
+    await waitFor(() => links[3].hasAttribute('aria-current'));
+    check(location.hash === '#second', 'Native anchor updates URL');
+    check(document.querySelector('.topbar').getBoundingClientRect().top === 0, 'Header sticks while scrolling');
+    check(menu.getBoundingClientRect().top === document.querySelector('.topbar-inner').getBoundingClientRect().bottom, 'Menu attached below header');
+    check(document.getElementById('second').getBoundingClientRect().top >= menu.getBoundingClientRect().bottom,
+      'Target heading stays below sticky menu');
+    document.getElementById('third').closest('section').classList.remove('hidden');
+    await waitFor(() => !links[5].hidden);
+    links[5].click();
+    await waitFor(() => links[5].hasAttribute('aria-current'));
+    check(document.querySelectorAll('[aria-current]').length === 1, 'Exactly one active group');
+    window.scrollTo({top: 0});
+    await waitFor(() => window.scrollY === 0 && links[0].hasAttribute('aria-current'));
+    check(document.documentElement.scrollWidth <= innerWidth, 'No horizontal page overflow');
+    for (const link of links) {
+      const rect = link.getBoundingClientRect();
+      check(rect.left >= 0 && rect.right <= innerWidth, 'Every menu item is visible without swiping');
+      check(rect.height >= 44, 'Touch targets are at least 44px high');
+    }
+    check(links[5].hash === '#third', 'Buttons are last');
+    document.body.dataset.verification = 'PASS';
+    document.getElementById('result').textContent = 'PASS';
+  } catch (error) {
+    document.body.dataset.verification = 'FAIL: ' + error.message;
+    document.getElementById('result').textContent = document.body.dataset.verification;
+  }
+})();
+</script>
+</html>

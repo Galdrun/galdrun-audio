@@ -1,0 +1,33 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Usage charts check</title><link rel="stylesheet" href="../theme.css">
+<main><section class="settings-card"><div class="card-intro"><h2>Status</h2></div><div class="card-content"><div id="usageCharts" class="usage-charts"></div><div id="wifiChart" class="wifi-chart"></div></div></section><p id="result"></p></main>
+<script src="../usage-charts.js"></script><script>
+try {
+  const check = (value, message) => {if (!value) throw Error(message)};
+  const container = document.getElementById('usageCharts'), wifi = document.getElementById('wifiChart'); createUsageCharts(container, wifi);
+  const cards = [...container.children];
+  check(cards.length === 2 && cards.every(c => c.querySelector('output').textContent === '—'), 'Unknown initial values');
+  updateUsageCharts({cpuPercent:0,ramPercent:100});
+  check(cards[0].querySelector('output').textContent === '0.0%' && cards[1].querySelector('output').textContent === '100.0%', 'Endpoints');
+  check(cards[0].querySelector('.usage-line').getAttribute('d').endsWith(',92.00'), 'CPU fixed zero scale');
+  check(cards[1].querySelector('.usage-line').getAttribute('d').endsWith(',8.00'), 'RAM fixed full scale');
+  updateUsageCharts({cpuPercent:50,cpuModel:'ESP32 rev v3.1',cpuMhz:240,ramPercent:25,ramUsedBytes:1048576,ramTotalBytes:4194304,wifiRssiDbm:-65});
+  check(cards[0].querySelector('.usage-cpu-model').textContent === 'ESP32 rev v3.1' && cards[0].querySelector('.usage-cpu-clock').textContent === '240 MHz', 'CPU model and frequency');
+  check(cards[1].querySelector('.usage-size').textContent === '1 MiB used / 4 MiB total', 'Real RAM sizes');
+  check(wifi.querySelector('output').textContent === '-65 dBm', 'Real RSSI');
+  check(wifi.querySelector('.usage-line').getAttribute('d').endsWith(',50.00'), 'Fixed RSSI scale');
+  updateUsageCharts({cpuModel:'ESP32 rev v3.1',cpuMhz:240,wifiRssiDbm:-110});
+  check(wifi.querySelector('output').textContent === '-110 dBm' && wifi.querySelector('.usage-line').getAttribute('d').endsWith(',92.00'), 'RSSI overflow stays visible and plot clamps');
+  updateUsageCharts(null); check(cards.every(c => c.querySelector('output').textContent === '—'), 'Disconnect unavailable');
+  check(cards[0].querySelector('.usage-cpu-model').textContent === 'ESP32 rev v3.1', 'CPU identity survives disconnect');
+  updateUsageCharts({cpuPercent:50,ramPercent:25});
+  check(cards[0].querySelector('.usage-line').getAttribute('d').split('M').length === 3, 'Missing sample breaks line');
+  check(wifi.querySelector('output').textContent === '—', 'Unknown RSSI is not zero');
+  for (let i=0;i<90;i++)updateUsageCharts({cpuPercent:i,ramPercent:30});
+  check(cards[0].querySelector('.usage-line').getAttribute('d').split('L').length === 60, 'Bounded 60 samples');
+  const a=cards[0].getBoundingClientRect(),b=cards[1].getBoundingClientRect();
+  check(a.top === b.top && a.right <= b.left && b.right <= innerWidth, 'Two columns fit');
+  check(document.documentElement.scrollWidth <= innerWidth, 'No horizontal overflow');
+  document.body.dataset.verification='PASS'; document.getElementById('result').textContent='PASS';
+} catch(e) {document.body.dataset.verification='FAIL: '+e.message; document.getElementById('result').textContent=e.message}
+</script></html>

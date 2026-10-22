@@ -1,0 +1,10 @@
+Port 22
+PermitRootLogin yes
+PubkeyAuthentication yes
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+# sshd runs only after the settings page set a root password and turned SSH on.
+PermitEmptyPasswords no
+MaxAuthTries 3
+AuthorizedKeysFile .ssh/authorized_keys
+Subsystem sftp /usr/libexec/sftp-server

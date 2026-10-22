@@ -1,0 +1,12 @@
+[
+  {"id": "key1", "kind": "button", "pin": 36, "pull": "none",
+   "bindings": {"click": {"action": "toggleMute"}}},
+  {"id": "key3", "kind": "button", "pin": 19,
+   "bindings": {"click": {"action": "previous"}}},
+  {"id": "key4", "kind": "button", "pin": 23,
+   "bindings": {"click": {"action": "togglePause"}, "longPress": {"action": "stop"}}},
+  {"id": "key5", "kind": "button", "pin": 18,
+   "bindings": {"click": {"action": "volumeUp"}}},
+  {"id": "key6", "kind": "button", "pin": 5,
+   "bindings": {"click": {"action": "volumeDown"}}}
+]

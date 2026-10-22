@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+binary=/usr/sbin/raumfeld-status-leds
+pidfile=/run/raumfeld-status-leds.pid
+case "${1:-}" in
+    start)
+        if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then exit 0; fi
+        start-stop-daemon -S -b -m -p "$pidfile" -x "$binary"
+        ;;
+    stop)
+        if [ -f "$pidfile" ]; then
+            pid=$(cat "$pidfile")
+            if kill -0 "$pid" 2>/dev/null; then
+                start-stop-daemon -K -p "$pidfile" -x "$binary"
+                for attempt in $(seq 1 30); do
+                    kill -0 "$pid" 2>/dev/null || break
+                    sleep 0.1
+                done
+                if kill -0 "$pid" 2>/dev/null; then exit 1; fi
+            fi
+            rm -f "$pidfile"
+        fi
+        ;;
+    restart) "$0" stop; "$0" start ;;
+    status) [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null ;;
+    *) echo "Usage: $0 {start|stop|restart|status}" >&2; exit 1 ;;
+esac

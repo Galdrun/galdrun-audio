@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360"><title>Bedroom</title>
+<rect width="480" height="360" fill="#e6e3ee"/><rect y="290" width="480" height="70" fill="#b8987a"/>
+<rect x="300" y="50" width="120" height="140" rx="60" fill="#cfdcef"/><circle cx="380" cy="100" r="16" fill="#fff6d6"/><rect x="300" y="50" width="120" height="140" rx="60" fill="none" stroke="#fff" stroke-width="8"/>
+<rect x="60" y="150" width="210" height="70" rx="12" fill="#5a6f9a"/><rect x="50" y="200" width="250" height="70" rx="10" fill="#f3efe6"/><rect x="50" y="225" width="250" height="45" rx="10" fill="#2f6f6a"/><rect x="70" y="182" width="70" height="30" rx="12" fill="#fff"/><rect x="150" y="182" width="70" height="30" rx="12" fill="#fff"/>
+<rect x="56" y="268" width="10" height="24" fill="#5b4632"/><rect x="284" y="268" width="10" height="24" fill="#5b4632"/>
+<rect x="320" y="220" width="70" height="72" rx="6" fill="#a8835e"/><rect x="326" y="238" width="58" height="4" rx="2" fill="#7d5f43"/><rect x="326" y="262" width="58" height="4" rx="2" fill="#7d5f43"/>
+<path d="M345 220v-30" stroke="#4b3b2c" stroke-width="3"/><path d="M330 192h30l-6-24h-18z" fill="#f2cf8d"/><rect x="364" y="198" width="22" height="22" rx="4" fill="#2b2b2b"/><circle cx="375" cy="210" r="6" fill="#555"/>
+<rect x="420" y="240" width="34" height="52" rx="5" fill="#c46a4a"/><path d="M437 242c-26-18-20-52 0-60 20 8 26 42 0 60z" fill="#6fa283"/>
+</svg>

@@ -1,0 +1,28 @@
+# The @MULTIROOM_BRAND_NAME@ core audio server under systemd (phase 29).
+#
+# No code stands behind this file: systemd runs a foreground process, sends it
+# SIGTERM to stop -- the same stop path Ctrl+C takes -- and reads its stderr
+# into the journal. So the server does not fork, detach or write a PID file.
+#
+# Written, not run: ServerCore has not yet been built on Linux.
+#
+# The config is required and has no default here: under a service account the
+# user config directory is not the installer's. A relative `logFile` in it is
+# resolved against /etc/@MULTIROOM_BRAND_SLUG@, which is why the journal (stderr) is the log
+# this unit expects; a file log belongs under LogsDirectory, /var/log/@MULTIROOM_BRAND_SLUG@.
+
+[Unit]
+Description=@MULTIROOM_BRAND_NAME@ core audio server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/@MULTIROOM_BRAND_SLUG@-core --config @CMAKE_INSTALL_FULL_SYSCONFDIR@/@MULTIROOM_BRAND_SLUG@/server.json
+Restart=on-failure
+DynamicUser=yes
+LogsDirectory=@MULTIROOM_BRAND_SLUG@
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

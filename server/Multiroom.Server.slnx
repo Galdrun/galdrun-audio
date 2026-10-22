@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Multiroom.Server.Abstractions/Multiroom.Server.Abstractions.csproj" />
+    <Project Path="src/Multiroom.Server.Ai/Multiroom.Server.Ai.csproj" />
+    <Project Path="src/Multiroom.Server/Multiroom.Server.csproj" />
+    <Project Path="src/Multiroom.Server.Library/Multiroom.Server.Library.csproj" />
+    <Project Path="src/Multiroom.Server.Mcp/Multiroom.Server.Mcp.csproj" />
+    <Project Path="src/Multiroom.Server.Playback/Multiroom.Server.Playback.csproj" />
+    <Project Path="src/Multiroom.Server.Providers/Multiroom.Server.Providers.csproj" />
+    <Project Path="src/Multiroom.Server.Web/Multiroom.Server.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Multiroom.Server.Tests/Multiroom.Server.Tests.csproj" />
+  </Folder>
+</Solution>

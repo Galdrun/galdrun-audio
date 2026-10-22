@@ -1,0 +1,146 @@
+From: Custom Raumfeld firmware project
+Subject: [PATCH] ASoC: cs4271: retain channel mute across stream transitions
+
+Separate the user's playback switch from ASoC stream mute, which otherwise
+overwrites a restored channel mute when playback opens. Keep stream power
+sequencing and default unmuted playback intact.
+
+Signed-off-by: Custom Raumfeld firmware project
+---
+--- a/sound/soc/codecs/cs4271.c
++++ b/sound/soc/codecs/cs4271.c
+@@ -11,6 +11,7 @@
+  */
+ 
+ #include <linux/module.h>
++#include <linux/mutex.h>
+ #include <linux/slab.h>
+ #include <linux/delay.h>
+ #include <linux/gpio/consumer.h>
+@@ -152,6 +153,9 @@
+ };
+ 
+ struct cs4271_private {
++	struct mutex mute_lock;
++	bool user_mute[2];
++	bool stream_muted;
+ 	unsigned int			mclk;
+ 	bool				master;
+ 	bool				deemph;
+@@ -400,33 +404,74 @@
+ 	return cs4271_set_deemph(component);
+ }
+ 
++/* Keep the user's channel mute separate from ASoC's temporary stream mute. */
++static int cs4271_write_mute(struct cs4271_private *cs4271, bool left, bool right)
++{
++	int ret = regmap_update_bits(cs4271->regmap, CS4271_VOLA,
++			CS4271_VOLA_MUTE, left ? CS4271_VOLA_MUTE : 0);
++	if (ret < 0)
++		return ret;
++	return regmap_update_bits(cs4271->regmap, CS4271_VOLB,
++			CS4271_VOLB_MUTE, right ? CS4271_VOLB_MUTE : 0);
++}
++
+ static int cs4271_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
+ {
+-	struct snd_soc_component *component = dai->component;
+-	struct cs4271_private *cs4271 = snd_soc_component_get_drvdata(component);
++	struct cs4271_private *cs4271 = snd_soc_component_get_drvdata(dai->component);
+ 	int ret;
+-	int val_a = 0;
+-	int val_b = 0;
+-
+ 	if (stream != SNDRV_PCM_STREAM_PLAYBACK)
+ 		return 0;
+-
+-	if (mute) {
+-		val_a = CS4271_VOLA_MUTE;
+-		val_b = CS4271_VOLB_MUTE;
+-	}
+-
+-	ret = regmap_update_bits(cs4271->regmap, CS4271_VOLA,
+-				 CS4271_VOLA_MUTE, val_a);
+-	if (ret < 0)
+-		return ret;
+-
+-	ret = regmap_update_bits(cs4271->regmap, CS4271_VOLB,
+-				 CS4271_VOLB_MUTE, val_b);
+-	if (ret < 0)
+-		return ret;
+-
+-	return 0;
++	mutex_lock(&cs4271->mute_lock);
++	ret = cs4271_write_mute(cs4271, mute || cs4271->user_mute[0],
++				mute || cs4271->user_mute[1]);
++	if (!ret)
++		cs4271->stream_muted = !!mute;
++	mutex_unlock(&cs4271->mute_lock);
++	return ret;
++}
++
++static int cs4271_playback_switch_get(struct snd_kcontrol *kcontrol,
++				    struct snd_ctl_elem_value *value)
++{
++	struct cs4271_private *cs4271 = snd_soc_component_get_drvdata(
++					 snd_soc_kcontrol_component(kcontrol));
++	mutex_lock(&cs4271->mute_lock);
++	value->value.integer.value[0] = !cs4271->user_mute[0];
++	value->value.integer.value[1] = !cs4271->user_mute[1];
++	mutex_unlock(&cs4271->mute_lock);
++	return 0;
++}
++
++static int cs4271_playback_switch_put(struct snd_kcontrol *kcontrol,
++				    struct snd_ctl_elem_value *value)
++{
++	struct cs4271_private *cs4271 = snd_soc_component_get_drvdata(
++					 snd_soc_kcontrol_component(kcontrol));
++	bool left, right;
++	int ret;
++	if (value->value.integer.value[0] < 0 || value->value.integer.value[0] > 1 ||
++	    value->value.integer.value[1] < 0 || value->value.integer.value[1] > 1)
++		return -EINVAL;
++	left = !value->value.integer.value[0];
++	right = !value->value.integer.value[1];
++	mutex_lock(&cs4271->mute_lock);
++	if (left == cs4271->user_mute[0] && right == cs4271->user_mute[1]) {
++		ret = 0;
++		goto out;
++	}
++	ret = cs4271_write_mute(cs4271, cs4271->stream_muted || left,
++				cs4271->stream_muted || right);
++	if (!ret) {
++		cs4271->user_mute[0] = left;
++		cs4271->user_mute[1] = right;
++		ret = 1;
++	} else {
++		cs4271_write_mute(cs4271, cs4271->stream_muted || cs4271->user_mute[0],
++				 cs4271->stream_muted || cs4271->user_mute[1]);
++	}
++out:
++	mutex_unlock(&cs4271->mute_lock);
++	return ret;
+ }
+ 
+ /* CS4271 controls */
+@@ -449,8 +494,8 @@
+ 	SOC_DOUBLE("Master Capture Switch", CS4271_ADCCTL, 3, 2, 1, 1),
+ 	SOC_SINGLE("Dither 16-Bit Data Switch", CS4271_ADCCTL, 5, 1, 0),
+ 	SOC_DOUBLE("High Pass Filter Switch", CS4271_ADCCTL, 1, 0, 1, 1),
+-	SOC_DOUBLE_R("Master Playback Switch", CS4271_VOLA, CS4271_VOLB,
+-		7, 1, 1),
++	SOC_DOUBLE_EXT("Master Playback Switch", SND_SOC_NOPM, 0, 1, 1, 0,
++		cs4271_playback_switch_get, cs4271_playback_switch_put),
+ };
+ 
+ static const struct snd_soc_dai_ops cs4271_dai_ops = {
+@@ -559,6 +604,8 @@
+ 	int ret;
+ 	bool amutec_eq_bmutec;
+ 
++	mutex_init(&cs4271->mute_lock);
++
+ 	amutec_eq_bmutec = of_property_read_bool(component->dev->of_node,
+ 						 "cirrus,amuteb-eq-bmutec") ||
+ 			  of_property_read_bool(component->dev->of_node,

@@ -1,0 +1,4 @@
+R"js(@MULTIROOM_WEB_INPUTS@)js"
+R"events(@MULTIROOM_WEB_INPUT_EVENTS@)events"
+R"usage(@MULTIROOM_WEB_USAGE_CHARTS@)usage"
+R"loading(@MULTIROOM_WEB_LOADING@)loading"

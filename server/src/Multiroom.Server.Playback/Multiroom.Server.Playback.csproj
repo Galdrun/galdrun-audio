@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Hosting and logging abstractions come from the shared framework, as for
+       the host: no NuGet package. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Multiroom.Server.Abstractions\Multiroom.Server.Abstractions.csproj" />
+    <!-- The queue engine resolves through the provider registry at stage time. -->
+    <ProjectReference Include="..\Multiroom.Server.Providers\Multiroom.Server.Providers.csproj" />
+  </ItemGroup>
+
+</Project>

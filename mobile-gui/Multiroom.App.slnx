@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/Multiroom.App.Api/Multiroom.App.Api.csproj" />
+  <Project Path="src/Multiroom.App/Multiroom.App.csproj" />
+  <Project Path="src/Multiroom.App.Desktop/Multiroom.App.Desktop.csproj" />
+  <Project Path="tests/Multiroom.App.Tests/Multiroom.App.Tests.csproj" />
+</Solution>

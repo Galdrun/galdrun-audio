@@ -1,0 +1,12 @@
+#!/bin/sh
+# The preserved bootloader runs before this Linux boot indication.
+case "${1:-}" in
+    start)
+        [ -d /sys/class/leds/raumfeld:1 ] && [ -d /sys/class/leds/raumfeld:2 ] || exit 0
+        echo none > /sys/class/leds/raumfeld:2/trigger
+        echo 0 > /sys/class/leds/raumfeld:2/brightness
+        echo heartbeat > /sys/class/leds/raumfeld:1/trigger
+        ;;
+    stop) : ;;
+    *) echo "Usage: $0 {start|stop}" >&2; exit 1 ;;
+esac

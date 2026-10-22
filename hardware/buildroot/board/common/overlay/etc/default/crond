@@ -1,0 +1,2 @@
+# Route the cron daemon to the same bounded syslog sink.
+CROND_ARGS="-S -l 8"

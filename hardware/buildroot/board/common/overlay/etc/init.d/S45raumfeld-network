@@ -1,0 +1,19 @@
+#!/bin/sh
+case "$1" in
+    start)
+        if [ -f /run/raumfeld-network.pid ] && kill -0 "$(cat /run/raumfeld-network.pid)" 2>/dev/null; then exit 0; fi
+        start-stop-daemon -S -b -m -p /run/raumfeld-network.pid -x /usr/sbin/raumfeld-network
+        ;;
+    stop)
+        [ -f /run/raumfeld-network.pid ] || exit 0
+        start-stop-daemon -K -p /run/raumfeld-network.pid
+        for attempt in $(seq 1 50); do
+            if [ ! -f /run/raumfeld-network.pid ] || ! kill -0 "$(cat /run/raumfeld-network.pid)" 2>/dev/null; then exit 0; fi
+            sleep 0.1
+        done
+        echo 'Network supervisor did not stop' >&2
+        exit 1
+        ;;
+    restart) "$0" stop && "$0" start ;;
+    *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

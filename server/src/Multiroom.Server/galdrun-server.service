@@ -1,0 +1,33 @@
+# The Galdrun high-end server under systemd (phase 11), beside the published
+# executable. Copy it to /etc/systemd/system/ and adjust ExecStart to where
+# the publish output was put.
+#
+# No code stands behind this file: systemd runs a foreground process, sends it
+# SIGTERM to stop -- the same stop path Ctrl+C takes -- and reads its stderr
+# into the journal. So the server does not fork, detach or write a PID file.
+#
+# Linux packages are published; the systemd unit has not been exercised yet.
+#
+# The config is required: a service has no user profile to lean on. The data
+# directory (library.db, playback.json, the provider caches) is the unit's
+# StateDirectory, set through the environment so the config file need not
+# name it. The journal is the log; set "logging": {"file": ""} in the config,
+# or a path under LogsDirectory, /var/log/galdrun.
+
+[Unit]
+Description=Galdrun high-end server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/galdrun/server/galdrun-server --config /etc/galdrun/galdrun-server.json
+Environment=GALDRUN_dataDirectory=/var/lib/galdrun/server
+Restart=on-failure
+DynamicUser=yes
+StateDirectory=galdrun/server
+LogsDirectory=galdrun
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,62 @@
+menu "Galdrun audio client"
+
+    comment "Wi-Fi is set on the board's own settings page (setup mode), not here."
+    comment "Each board in boards/ sets these; the defaults are the ESP32-A1S's."
+
+    config MULTIROOM_SETUP_BUTTON_GPIO
+        int "Setup button GPIO, held at reset for setup mode (-1: none)"
+        default 36
+        help
+            Active low. 36 is KEY1 on the ESP32 Audio Kit.
+
+    menu "On-board codec (ES8388)"
+        comment "Defaults are the AI-Thinker ESP32 Audio Kit v2.2 wiring."
+
+        config MULTIROOM_CODEC_I2C_SDA
+            int "I2C SDA GPIO"
+            default 33
+        config MULTIROOM_CODEC_I2C_SCL
+            int "I2C SCL GPIO"
+            default 32
+        config MULTIROOM_CODEC_PA_GPIO
+            int "Amplifier enable GPIO (-1: none)"
+            default 21
+        config MULTIROOM_CODEC_I2S_MCLK
+            int "I2S MCLK GPIO (ESP32: 0, 1 or 3 only; ESP32-S3: any)"
+            default 0
+        config MULTIROOM_CODEC_I2S_BCLK
+            int "I2S BCLK GPIO"
+            default 27
+        config MULTIROOM_CODEC_I2S_WS
+            int "I2S WS (LRCK) GPIO"
+            default 25
+        config MULTIROOM_CODEC_I2S_DOUT
+            int "I2S data out GPIO"
+            default 26
+        config MULTIROOM_CODEC_DOUBLE_SPEED
+            bool "Offer 88.2 and 96 kHz (double speed, MCLK 128 fs)"
+            default y
+            help
+                As I2S master only. The codec runs double speed above 48 kHz
+                with MCLK at 128 fs, the same 11.29 / 12.29 MHz as 44.1 and
+                48 kHz. Off: 8 to 48 kHz single speed, as before.
+    endmenu
+
+    menu "External I2S DAC"
+        comment "Device id \"i2s\". Set these to your wiring; in slave mode BCLK and WS are inputs."
+
+        config MULTIROOM_EXT_I2S_MCLK
+            int "I2S MCLK GPIO (-1: none; ESP32: 0, 1 or 3 only; ESP32-S3: any)"
+            default -1
+        config MULTIROOM_EXT_I2S_BCLK
+            int "I2S BCLK GPIO"
+            default 5
+        config MULTIROOM_EXT_I2S_WS
+            int "I2S WS (LRCK) GPIO"
+            default 18
+        config MULTIROOM_EXT_I2S_DOUT
+            int "I2S data out GPIO"
+            default 23
+    endmenu
+
+endmenu

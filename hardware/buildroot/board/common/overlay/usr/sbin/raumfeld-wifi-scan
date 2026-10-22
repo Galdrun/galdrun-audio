@@ -1,0 +1,47 @@
+#!/bin/sh
+set -eu
+# Bound each scan result/error even if a driver emits excessive output.
+# BusyBox ash uses 512-byte blocks: 128 blocks = 64 KiB.
+ulimit -f 128
+state=/run/raumfeld-network
+created=0
+command_pid=
+watchdog_pid=
+cleanup() {
+    if [ -n "$watchdog_pid" ]; then kill "$watchdog_pid" 2>/dev/null || :; wait "$watchdog_pid" 2>/dev/null || :; fi
+    if [ -n "$command_pid" ]; then kill "$command_pid" 2>/dev/null || :; wait "$command_pid" 2>/dev/null || :; fi
+    if [ "$created" = 1 ]; then iw dev galdrunscan0 del 2>/dev/null || :; fi
+    rm -f "$state/scan.pending" "$state/scan.request"
+}
+trap cleanup EXIT
+trap 'echo "Wi-Fi scan cancelled" > "$state/scan.error"; exit 1' INT TERM
+: > "$state/scan.pending"
+rm -f "$state/scan.request" "$state/scan.error"
+wifi=$(iw dev | awk '$1 == "Interface" && $2 != "galdrunscan0" {print $2; exit}')
+if [ -z "$wifi" ]; then echo 'Wi-Fi interface is not ready' > "$state/scan.error"; exit 1; fi
+# A temporary managed interface leaves the station/setup AP interface intact.
+if ! iw dev "$wifi" interface add galdrunscan0 type managed > "$state/scan.error" 2>&1; then exit 1; fi
+created=1
+if ! ip link set galdrunscan0 up >> "$state/scan.error" 2>&1; then exit 1; fi
+iw dev galdrunscan0 scan > "$state/scan.txt.next" 2>&1 &
+command_pid=$!
+(
+    sleep 15 &
+    sleeper=$!
+    trap 'kill "$sleeper" 2>/dev/null || :; wait "$sleeper" 2>/dev/null || :; exit 0' INT TERM
+    wait "$sleeper"
+    kill "$command_pid" 2>/dev/null || :
+) &
+watchdog_pid=$!
+if wait "$command_pid"; then
+    kill "$watchdog_pid" 2>/dev/null || :; wait "$watchdog_pid" 2>/dev/null || :; watchdog_pid=
+    command_pid=
+    mv "$state/scan.txt.next" "$state/scan.txt"
+    rm -f "$state/scan.error"
+else
+    kill "$watchdog_pid" 2>/dev/null || :; wait "$watchdog_pid" 2>/dev/null || :; watchdog_pid=
+    command_pid=
+    mv "$state/scan.txt.next" "$state/scan.error"
+    [ -s "$state/scan.error" ] || echo 'Wi-Fi scan timed out' > "$state/scan.error"
+    exit 1
+fi

@@ -1,0 +1,72 @@
+#!/bin/sh
+#
+# sshd        Starts sshd, but only while the settings page has turned SSH on
+#             (/etc/galdrun-ssh.conf, written by raumfeld-ssh). Replaces
+#             Buildroot's script of the same name.
+#
+
+DAEMON="sshd"
+PIDFILE="/var/run/$DAEMON.pid"
+CONF="/etc/galdrun-ssh.conf"
+
+# Make sure the ssh-keygen program exists
+[ -f /usr/bin/ssh-keygen ] || exit 0
+
+umask 077
+
+start() {
+	if ! grep -qx 'SSH_ENABLED=1' "$CONF" 2>/dev/null; then
+		echo "SSH is off; turn it on in the settings page"
+		return 0
+	fi
+	# Create any missing keys
+	/usr/bin/ssh-keygen -A
+
+	printf "Starting %s: " "$DAEMON"
+	start-stop-daemon --start --pidfile "$PIDFILE" \
+		--exec "/usr/sbin/$DAEMON"
+	status=$?
+	if [ "$status" -eq 0 ]; then
+		echo "OK"
+	else
+		echo "FAIL"
+	fi
+	return "$status"
+}
+
+stop() {
+	[ -f "$PIDFILE" ] || return 0
+	printf "Stopping %s: " "$DAEMON"
+	start-stop-daemon --stop --pidfile "$PIDFILE" \
+		--exec "/usr/sbin/$DAEMON"
+	status=$?
+	if [ "$status" -eq 0 ]; then
+		echo "OK"
+	else
+		echo "FAIL"
+		return "$status"
+	fi
+	# sshd deletes its PID file on exit, wait for it to be gone
+	while [ -f "$PIDFILE" ]; do
+		sleep 0.1
+	done
+	return "$status"
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	restart)
+		stop
+		start
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}"
+		exit 1
+esac
+
+exit $?

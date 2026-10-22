@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Lower case beside the core's galdrun-core.exe. -->
+    <AssemblyName>$(BrandSlug)-server</AssemblyName>
+    <RootNamespace>Multiroom.Server</RootNamespace>
+  </PropertyGroup>
+
+  <!-- The generic host, configuration and logging come from the ASP.NET Core
+       shared framework, which phase 3's Kestrel needs anyway: no NuGet package. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- The Service Control Manager's handshake.
+       It follows the SDK's release, as the framework does. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="11.0.0-rc.1.26425.128" />
+  </ItemGroup>
+
+  <!-- The systemd unit, beside the published executable. -->
+  <ItemGroup>
+    <None Update="galdrun-server.service" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- The ServerGui's page (server-gui/www), served from gui/ (GuiEndpoint).
+       /assets/ is the shared Galdrun theme. -->
+  <ItemGroup>
+    <None Include="..\..\..\server-gui\www\**"
+          Link="gui\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\..\shared\web\theme.css;..\..\..\shared\web\usage-charts.js"
+          Link="gui\assets\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Releases come from publishing (build-server.sh / .ps1 in the repository
+       root), with the README and example config beside the executable. -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <None Include="release/README.md" Link="README.md" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="release/server.example.json" Link="server.example.json" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="WritePublishInfo" AfterTargets="Publish"
+          Condition="'$(RuntimeIdentifier)' != ''">
+    <ItemGroup>
+      <RuntimeNotice Include="%(ResolvedRuntimePack.PackageDirectory)/LICENSE.*;%(ResolvedRuntimePack.PackageDirectory)/THIRD-PARTY-NOTICES.*">
+        <RuntimePack>%(ResolvedRuntimePack.Identity)</RuntimePack>
+      </RuntimeNotice>
+    </ItemGroup>
+    <Copy SourceFiles="@(RuntimeNotice)" DestinationFolder="$(PublishDir)licenses/%(RuntimeNotice.RuntimePack)/" SkipUnchangedFiles="true" />
+    <WriteLinesToFile File="$(PublishDir)build-info.txt"
+        Lines="Version: $(Version);Configuration: $(Configuration);Runtime: $(RuntimeIdentifier);Self-contained: $(SelfContained);SDK: $(NETCoreSdkVersion)"
+        Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Multiroom.Server.Abstractions\Multiroom.Server.Abstractions.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Ai\Multiroom.Server.Ai.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Library\Multiroom.Server.Library.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Playback\Multiroom.Server.Playback.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Providers\Multiroom.Server.Providers.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Web\Multiroom.Server.Web.csproj" />
+  </ItemGroup>
+
+</Project>

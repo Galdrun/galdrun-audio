@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Multiroom.App" xmlns:api="using:Multiroom.App.Api"
+             x:Class="Multiroom.App.BrowserView" x:DataType="vm:BrowserViewModel">
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto">
+    <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,12">
+      <Button Content="Back" Command="{Binding BackCommand}" IsEnabled="{Binding CanBack}" Margin="0,0,12,0" />
+      <StackPanel Grid.Column="1"><TextBlock Text="{Binding Title}" Classes="section" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding Breadcrumb}" Classes="muted" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" /></StackPanel>
+    </Grid>
+    <Grid Grid.Row="1">
+    <Button IsVisible="{Binding ShowHeader}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+            Tag="{Binding Header}" Click="SelectCard" Margin="0,0,0,12">
+      <Grid ColumnDefinitions="Auto,*"><vm:ArtworkView Reference="{Binding Header.Artwork}" Cache="{Binding Artwork}" Width="88" Height="88" />
+        <StackPanel Grid.Column="1" Margin="16,0" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Header.Title}" FontSize="23" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Header.Subtitle}" Classes="muted" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Summary}" Classes="muted" />
+        </StackPanel></Grid>
+    </Button>
+    <Button IsVisible="{Binding ShowCompactHeader}" Content="{Binding Header.Title}" Tag="{Binding Header}" Click="SelectCard" HorizontalAlignment="Stretch" Margin="0,0,0,8" />
+    </Grid>
+    <Expander Grid.Row="2" Header="Sort, filter and letters" IsVisible="{Binding HasOptions}" IsExpanded="{Binding OptionsExpanded}" HorizontalAlignment="Stretch" Margin="0,0,0,8">
+    <WrapPanel>
+      <ComboBox ItemsSource="{Binding Sorts}" SelectedItem="{Binding Sort}" IsVisible="{Binding HasSorts}" MinWidth="110" Margin="0,0,8,8" AutomationProperties.Name="Sort order" />
+      <TextBox Text="{Binding Filter}" PlaceholderText="Filter this page" IsVisible="{Binding Filterable}" Width="190" Margin="0,0,8,8" AutomationProperties.Name="Filter music" />
+      <ComboBox ItemsSource="{Binding Letters}" SelectedItem="{Binding SelectedLetter}" IsVisible="{Binding HasLetters}" Width="80" Margin="0,0,8,8" PlaceholderText="A–Z" AutomationProperties.Name="Jump to letter">
+        <ComboBox.ItemTemplate><DataTemplate x:DataType="api:BrowseLetter"><TextBlock Text="{Binding Letter}" /></DataTemplate></ComboBox.ItemTemplate>
+      </ComboBox>
+      <Button Content="Apply" Command="{Binding ApplyCommand}" IsVisible="{Binding HasOptions}" Margin="0,0,8,8" />
+    </WrapPanel>
+    </Expander>
+    <Grid Grid.Row="3">
+      <ListBox ItemsSource="{Binding Bands}" Background="Transparent" x:Name="MediaList" SelectionMode="Single">
+        <ListBox.Styles><Style Selector="ListBoxItem"><Setter Property="Padding" Value="0" /><Setter Property="Focusable" Value="False" /></Style></ListBox.Styles>
+        <ListBox.ItemTemplate><DataTemplate x:DataType="vm:MediaBand">
+          <ItemsControl ItemsSource="{Binding Cards}" HorizontalAlignment="Stretch">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="{Binding Columns}" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:MediaRow">
+              <Grid Margin="0,0,8,8">
+                <TextBlock Text="{Binding Title}" IsVisible="{Binding IsHeading}" Classes="section" Margin="4,20,0,8" />
+                <Button Tag="{Binding}" Click="SelectCard" IsVisible="{Binding IsContent}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="12" Background="#1B2123" AutomationProperties.Name="{Binding Title}">
+                  <Grid>
+                    <StackPanel IsVisible="{Binding Grid}" Spacing="8">
+                      <vm:ArtworkView Reference="{Binding Artwork}" Cache="{Binding Cache}" Width="136" Height="136" HorizontalAlignment="Center" />
+                      <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding Subtitle}" Classes="muted" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <Grid IsVisible="{Binding IsList}" ColumnDefinitions="Auto,*">
+                      <vm:ArtworkView Reference="{Binding Artwork}" Cache="{Binding Cache}" />
+                      <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center" Spacing="5">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Subtitle}" Classes="muted" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </Grid>
+                  </Grid>
+                </Button>
+              </Grid>
+            </DataTemplate></ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </DataTemplate></ListBox.ItemTemplate>
+      </ListBox>
+      <TextBlock Text="No music to show here yet." IsVisible="{Binding IsEmpty}" Classes="muted" HorizontalAlignment="Center" VerticalAlignment="Center" />
+    </Grid>
+    <StackPanel Grid.Row="4" Margin="0,8,0,0" Spacing="6" IsVisible="{Binding HasSelectionOrNotice}">
+      <TextBlock Text="{Binding Notice}" IsVisible="{Binding HasNotice}" Classes="muted" TextWrapping="Wrap" MaxHeight="65" />
+      <TextBlock Text="{Binding SelectedItem.Title}" Foreground="#CBEC97" TextTrimming="CharacterEllipsis" />
+      <TextBlock Text="{Binding SelectedItem.Subtitle}" Classes="muted" TextWrapping="Wrap" MaxHeight="60" />
+    </StackPanel>
+    <Grid Grid.Row="5" Margin="0,8,0,0">
+    <WrapPanel IsVisible="{Binding !IsCompact}">
+      <Button Content="Open" Command="{Binding OpenCommand}" IsEnabled="{Binding CanOpen}" Margin="0,0,8,6" />
+      <Button Content="Play now" Command="{Binding QueueCommand}" CommandParameter="now" IsEnabled="{Binding CanQueue}" Classes="accent" Margin="0,0,8,6" />
+      <Button Content="Play next" Command="{Binding QueueCommand}" CommandParameter="next" IsEnabled="{Binding CanQueue}" Margin="0,0,8,6" />
+      <Button Content="Add to queue" Command="{Binding QueueCommand}" CommandParameter="end" IsEnabled="{Binding CanQueue}" Margin="0,0,8,6" />
+      <Button Content="Load more" Command="{Binding MoreCommand}" IsVisible="{Binding HasMore}" Margin="0,0,8,6" />
+      <Button Content="Save / discover" Margin="0,0,8,6"><Button.Flyout><MenuFlyout>
+        <MenuItem Header="Add track to playlist" Command="{Binding CollectionCommand}" CommandParameter="Playlists" />
+        <MenuItem Header="Save track / station as favourite" Command="{Binding CollectionCommand}" CommandParameter="Favourites" />
+        <MenuItem Header="More like this track" Command="{Binding CollectionCommand}" CommandParameter="Recommendations" />
+      </MenuFlyout></Button.Flyout></Button>
+    </WrapPanel>
+    <Grid ColumnDefinitions="*,*,Auto" IsVisible="{Binding IsCompact}">
+      <Button Content="Open" Command="{Binding OpenCommand}" IsEnabled="{Binding CanOpen}" HorizontalAlignment="Stretch" Margin="0,0,8,0" />
+      <Button Grid.Column="1" Content="Play now" Command="{Binding QueueCommand}" CommandParameter="now" IsEnabled="{Binding CanQueue}" Classes="accent" HorizontalAlignment="Stretch" Margin="0,0,8,0" />
+      <Button Grid.Column="2" Content="More" AutomationProperties.Name="More music actions">
+        <Button.Flyout><MenuFlyout>
+          <MenuItem Header="Play next" Command="{Binding QueueCommand}" CommandParameter="next" IsEnabled="{Binding CanQueue}" />
+          <MenuItem Header="Add to queue" Command="{Binding QueueCommand}" CommandParameter="end" IsEnabled="{Binding CanQueue}" />
+          <MenuItem Header="Load more" Command="{Binding MoreCommand}" IsEnabled="{Binding HasMore}" />
+          <MenuItem Header="Add track to playlist" Command="{Binding CollectionCommand}" CommandParameter="Playlists" />
+          <MenuItem Header="Save track / station as favourite" Command="{Binding CollectionCommand}" CommandParameter="Favourites" />
+          <MenuItem Header="More like this track" Command="{Binding CollectionCommand}" CommandParameter="Recommendations" />
+        </MenuFlyout></Button.Flyout>
+      </Button>
+    </Grid>
+    </Grid>
+  </Grid>
+</UserControl>

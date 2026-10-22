@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Galdrun AI login</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main class="panel" style="margin: 16px">
+  <h2>Galdrun AI login</h2>
+  <pre id="out" class="json">finishing the login…</pre>
+  <p class="hint">The ServerGui reads the providers again by itself. This window can be closed.</p>
+</main>
+<script>
+'use strict';
+// Where the vendor returns (the ServerGui's phase 12): one call with the
+// code, the server's answer shown as it is, and the ServerGui told. The code
+// and state leave this page's URL first, so they stay out of the history.
+(async () => {
+  const query = new URLSearchParams(location.search);
+  // ChatGPT names the client it registered for this installation (client_id).
+  const state = query.get('state') ?? '', code = query.get('code'), error = query.get('error'), clientId = query.get('client_id');
+  history.replaceState(null, '', location.pathname);
+  const out = document.getElementById('out');
+  // Opened by hand or reloaded: nothing came back from a vendor.
+  if (!state || (!code && !error)) {
+    out.className = 'json bad';
+    out.textContent = 'No login came back to this page. It is where a vendor returns after a login: start one with "log in" on a provider in the ServerGui\'s AI tab.';
+    return;
+  }
+  // A vendor's refusal goes to the callback, which drops the state and says so.
+  const request = error
+    ? fetch(`/api/v1/ai/login/callback?${new URLSearchParams({ state, error })}`)
+    : fetch('/api/v1/ai/login/complete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state, code: code ?? '', ...(clientId ? { clientId } : {}) }) });
+  let status = 0, answer;
+  try {
+    const res = await request;
+    status = res.status;
+    const text = await res.text();
+    try { answer = JSON.parse(text); } catch { answer = text; }
+  } catch (e) {
+    answer = { error: 'fetchFailed', message: String(e) };
+  }
+  const ok = status >= 200 && status < 300;
+  out.className = 'json ' + (ok ? 'good' : 'bad');
+  out.textContent = `${status || 'unreachable'}\n${JSON.stringify(answer, null, 2)}`;
+  if ('BroadcastChannel' in window) {
+    new BroadcastChannel('vx.ai').postMessage(ok
+      ? { provider: answer.id }
+      : { error: answer?.error ?? String(status), message: answer?.message ?? '' });
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Multiroom.App" x:Class="Multiroom.App.TransportView" x:DataType="vm:PlaybackViewModel">
+ <Grid ColumnDefinitions="*,*,1.3*,*,*" MaxWidth="400" Height="64" IsEnabled="{Binding HasZone}">
+   <Button x:Name="PreviousButton" Grid.Column="1" TabIndex="1" Command="{Binding TransportCommand}" CommandParameter="previous" Width="44" Height="44" HorizontalAlignment="Center" VerticalAlignment="Center"
+    CornerRadius="22" Padding="10" AutomationProperties.Name="Previous" ToolTip.Tip="Previous">
+    <Path Data="M 3,3 L 6,3 L 6,21 L 3,21 Z M 21,3 L 7,12 L 21,21 Z" Fill="#EEF1ED" Width="24" Height="24" />
+   </Button>
+   <Button x:Name="TogglePlaybackButton" Grid.Column="2" TabIndex="2" Command="{Binding PlayPauseCommand}" Width="56" Height="56" CornerRadius="28" Padding="16" Classes="accent" HorizontalAlignment="Center" VerticalAlignment="Center"
+    AutomationProperties.Name="{Binding PlayPauseLabel}" ToolTip.Tip="{Binding PlayPauseLabel}">
+    <Grid Width="24" Height="24">
+     <Path Data="M 6,3 L 21,12 L 6,21 Z" Fill="#182316" IsVisible="{Binding !IsPlaying}" />
+     <Path Data="M 5,3 L 10,3 L 10,21 L 5,21 Z M 14,3 L 19,3 L 19,21 L 14,21 Z" Fill="#182316" IsVisible="{Binding IsPlaying}" />
+    </Grid>
+   </Button>
+   <Button x:Name="NextButton" Grid.Column="3" TabIndex="3" Command="{Binding TransportCommand}" CommandParameter="next" Width="44" Height="44" HorizontalAlignment="Center" VerticalAlignment="Center"
+    CornerRadius="22" Padding="10" AutomationProperties.Name="Next" ToolTip.Tip="Next">
+    <Path Data="M 18,3 L 21,3 L 21,21 L 18,21 Z M 3,3 L 17,12 L 3,21 Z" Fill="#EEF1ED" Width="24" Height="24" />
+   </Button>
+   <Button x:Name="RepeatButton" Grid.Column="4" TabIndex="4" Command="{Binding RepeatCommand}" Width="44" Height="44" CornerRadius="22" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="{Binding Repeat, StringFormat='Repeat: {0}'}" ToolTip.Tip="{Binding Repeat, StringFormat='Repeat: {0}'}">
+    <Grid Width="24" Height="24">
+     <Path Data="M 3,10 L 3,7 Q 3,4 6,4 L 20,4 M 16,1 L 20,4 L 16,7 M 21,14 L 21,17 Q 21,20 18,20 L 4,20 M 8,17 L 4,20 L 8,23" Stroke="#EEF1ED" StrokeThickness="1.7" Opacity="0.5" IsVisible="{Binding !IsRepeatEnabled}" />
+     <Path Data="M 3,10 L 3,7 Q 3,4 6,4 L 20,4 M 16,1 L 20,4 L 16,7 M 21,14 L 21,17 Q 21,20 18,20 L 4,20 M 8,17 L 4,20 L 8,23" Stroke="#CBEC97" StrokeThickness="1.7" IsVisible="{Binding IsRepeatEnabled}" />
+     <TextBlock Text="1" FontSize="10" Foreground="#CBEC97" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding IsRepeatOne}" />
+    </Grid>
+   </Button>
+   <ToggleButton x:Name="ShuffleButton" Grid.Column="0" TabIndex="0" IsChecked="{Binding Shuffle, Mode=OneWay}" Command="{Binding ShuffleCommand}" Width="44" Height="44" CornerRadius="22" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="Shuffle" ToolTip.Tip="Shuffle">
+    <Grid Width="24" Height="24">
+     <Path Data="M 3,5 L 6,5 C 11,5 13,19 18,19 L 22,19 M 18,15 L 22,19 L 18,23 M 3,19 L 6,19 C 11,19 13,5 18,5 L 22,5 M 18,1 L 22,5 L 18,9" Stroke="#EEF1ED" StrokeThickness="1.7" Opacity="0.5" IsVisible="{Binding !Shuffle}" />
+     <Path Data="M 3,5 L 6,5 C 11,5 13,19 18,19 L 22,19 M 18,15 L 22,19 L 18,23 M 3,19 L 6,19 C 11,19 13,5 18,5 L 22,5 M 18,1 L 22,5 L 18,9" Stroke="#CBEC97" StrokeThickness="1.7" IsVisible="{Binding Shuffle}" />
+    </Grid>
+   </ToggleButton>
+ </Grid>
+</UserControl>

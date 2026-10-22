@@ -1,0 +1,30 @@
+From: Custom Raumfeld firmware project
+Subject: [PATCH] clk: si5351: enable fanout when selecting shared multisynth
+
+The Connector 2 selects MS0 for CLK2. Setting CLK2_SRC alone leaves that
+output without a clock unless MS_FANOUT_EN is also set. The vendor kernel
+enabled this unconditionally; enable it when a shared source is selected.
+RAM testing reproduced stalled McASP playback with register 187 bit 4 clear
+and successful audible playback with it set, preserving all other bits.
+
+Signed-off-by: Custom Raumfeld firmware project
+---
+ drivers/clk/clk-si5351.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/drivers/clk/clk-si5351.c
++++ b/drivers/clk/clk-si5351.c
+@@ -820,8 +820,12 @@
+ 		/* clk0/clk4 can only connect to its own multisync */
+ 		if (num == 0 || num == 4)
+ 			val = SI5351_CLK_INPUT_MULTISYNTH_N;
+-		else
++		else {
+ 			val = SI5351_CLK_INPUT_MULTISYNTH_0_4;
++			/* Shared MS0/MS4 routing needs the fanout gate. */
++			si5351_set_bits(drvdata, SI5351_FANOUT_ENABLE,
++					SI5351_MULTISYNTH_ENABLE, SI5351_MULTISYNTH_ENABLE);
++		}
+ 		break;
+ 	case SI5351_CLKOUT_SRC_XTAL:
+ 		val = SI5351_CLK_INPUT_XTAL;

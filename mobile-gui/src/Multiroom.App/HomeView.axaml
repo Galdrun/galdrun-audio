@@ -1,0 +1,84 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Multiroom.App" x:Class="Multiroom.App.HomeView" x:DataType="vm:ShellViewModel">
+ <ScrollViewer x:Name="HomeScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+  <StackPanel Spacing="28" Margin="0,4,0,16">
+   <StackPanel Spacing="12">
+    <Grid ColumnDefinitions="*,Auto">
+     <TextBlock Text="Favourites" Classes="section" VerticalAlignment="Center" />
+     <Button Grid.Column="1" Content="See all" Command="{Binding NavigateCommand}" CommandParameter="Favourites"
+      Background="Transparent" AutomationProperties.Name="See all favourites" />
+    </Grid>
+    <TextBlock Text="Loading your favourites…" IsVisible="{Binding Home.IsLoading}" Classes="muted" />
+    <Border IsVisible="{Binding Home.NoFavourites}" Classes="panel">
+     <StackPanel Spacing="8">
+      <TextBlock Text="Your favourites belong here" FontSize="18" FontWeight="SemiBold" />
+      <TextBlock Text="Save a track or station from Browse or Search to keep it close." Classes="muted" TextWrapping="Wrap" />
+      <Button Content="Explore your music" Command="{Binding NavigateCommand}" CommandParameter="Sources" HorizontalAlignment="Left" />
+     </StackPanel>
+    </Border>
+    <ListBox x:Name="FavouriteShelf" ItemsSource="{Binding Home.Favourites}" Background="Transparent" Height="198"
+     IsVisible="{Binding !Home.NoFavourites}" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+     ScrollViewer.VerticalScrollBarVisibility="Disabled" AutomationProperties.Name="Favourite music">
+     <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
+     <ListBox.Styles><Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,0,14,0" />
+      <Setter Property="Focusable" Value="False" /><Setter Property="VerticalContentAlignment" Value="Top" />
+     </Style></ListBox.Styles>
+     <ListBox.ItemTemplate><DataTemplate x:DataType="vm:HomeItem">
+      <Button Tag="{Binding}" Click="PlayFavourite" Width="120" Padding="0" Background="Transparent"
+       HorizontalContentAlignment="Stretch" AutomationProperties.Name="{Binding Title}" ToolTip.Tip="Play favourite now">
+       <Button.ContextMenu><ContextMenu>
+        <MenuItem Header="Add to queue" Tag="{Binding}" Click="QueueFavourite" />
+       </ContextMenu></Button.ContextMenu>
+       <StackPanel Spacing="7">
+        <Grid Width="120" Height="120">
+         <vm:ArtworkView Reference="{Binding Artwork}" Width="120" Height="120"
+          Cache="{Binding $parent[vm:HomeView].((vm:ShellViewModel)DataContext).Browser.Artwork}" />
+         <Border Background="#D9101315" CornerRadius="18" Width="36" Height="36" Margin="8"
+          HorizontalAlignment="Right" VerticalAlignment="Bottom" IsHitTestVisible="False">
+          <Path Data="M 0,0 L 0,14 L 11,7 Z" Fill="#EEF1ED" Width="11" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center" />
+         </Border>
+        </Grid>
+        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding Subtitle}" Classes="muted" TextTrimming="CharacterEllipsis" FontSize="12" />
+       </StackPanel>
+      </Button>
+     </DataTemplate></ListBox.ItemTemplate>
+    </ListBox>
+    <TextBlock Text="{Binding Home.Notice}" Classes="muted" TextWrapping="Wrap" />
+   </StackPanel>
+   <StackPanel Spacing="12">
+    <Grid ColumnDefinitions="*,Auto">
+     <TextBlock Text="Last played" Classes="section" />
+     <TextBlock Grid.Column="1" Text="Coming soon" Classes="muted" VerticalAlignment="Center" />
+    </Grid>
+    <Border Background="#1B2123" CornerRadius="10" Padding="20" MinHeight="112">
+     <Grid ColumnDefinitions="48,*">
+      <Path Data="M 20,2 A 18,18 0 1,1 2,20 M 2,6 L 2,20 L 16,20 M 20,9 L 20,20 L 28,24"
+       Stroke="#667870" StrokeThickness="2" Width="38" Height="38" VerticalAlignment="Center" />
+      <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center" Margin="12,0,0,0">
+       <TextBlock Text="Return to the music you love" FontWeight="SemiBold" TextWrapping="Wrap" />
+       <TextBlock Text="Your listening history will appear here." Classes="muted" TextWrapping="Wrap" />
+      </StackPanel>
+     </Grid>
+    </Border>
+   </StackPanel>
+   <StackPanel Spacing="12">
+    <Grid ColumnDefinitions="*,Auto">
+     <TextBlock Text="Proposals" Classes="section" />
+     <TextBlock Grid.Column="1" Text="Coming soon" Classes="muted" VerticalAlignment="Center" />
+    </Grid>
+    <Border Background="#1B2123" CornerRadius="10" Padding="20" MinHeight="112">
+     <Grid ColumnDefinitions="48,*">
+      <Path Data="M 20,2 L 25,15 L 38,20 L 25,25 L 20,38 L 15,25 L 2,20 L 15,15 Z"
+       Stroke="#667870" StrokeThickness="2" Width="38" Height="38" VerticalAlignment="Center" />
+      <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center" Margin="12,0,0,0">
+       <TextBlock Text="Find your next favourite" FontWeight="SemiBold" TextWrapping="Wrap" />
+       <TextBlock Text="Personal music proposals will appear here." Classes="muted" TextWrapping="Wrap" />
+      </StackPanel>
+     </Grid>
+    </Border>
+   </StackPanel>
+  </StackPanel>
+ </ScrollViewer>
+</UserControl>

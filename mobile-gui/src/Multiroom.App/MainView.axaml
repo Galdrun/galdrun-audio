@@ -1,0 +1,188 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Multiroom.App" xmlns:api="using:Multiroom.App.Api"
+ x:Class="Multiroom.App.MainView" x:DataType="vm:ShellViewModel" Background="#101315">
+ <Grid RowDefinitions="Auto,*,Auto">
+   <Border Grid.Row="0" Background="#1B2123">
+    <Grid MinHeight="48">
+     <Grid ColumnDefinitions="48,*,1,Auto" IsVisible="{Binding !IsSetup}">
+    <Button x:Name="HamburgerButton" Width="48" Height="48" Background="Transparent" CornerRadius="0" Padding="0" HorizontalAlignment="Left" VerticalAlignment="Top" AutomationProperties.Name="Open navigation menu" ToolTip.Tip="Open navigation menu">
+     <Path Data="M 4,7 L 20,7 M 4,12 L 20,12 M 4,17 L 20,17" Stroke="#EEF1ED" StrokeThickness="1.7" Width="24" Height="24" />
+     <Button.Flyout><Flyout Placement="Bottom">
+      <ListBox x:Name="PagePicker" ItemsSource="{Binding Pages}" SelectedItem="{Binding SelectedPage}" MinWidth="220" MaxHeight="420" SelectionChanged="PagePicked" AutomationProperties.Name="Choose page" />
+     </Flyout></Button.Flyout>
+    </Button>
+    <TextBlock Grid.Column="1" Text="{Binding Heading}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" Margin="6,0,12,0" TextTrimming="CharacterEllipsis" />
+    <Border x:Name="ToolbarDivider" Grid.Column="2" Background="#4A5450" IsHitTestVisible="False" />
+    <StackPanel Grid.Column="3" Orientation="Horizontal">
+     <Button x:Name="SearchButton" Command="{Binding NavigateCommand}" CommandParameter="Search" Background="Transparent" CornerRadius="0" Padding="0" Width="48" Height="48" AutomationProperties.Name="Search" ToolTip.Tip="Search">
+      <Path Data="M 10.5,10.5 m -5.5,0 a 5.5,5.5 0 1,0 11,0 a 5.5,5.5 0 1,0 -11,0 M 14.6,14.6 L 20.5,20.5" Stroke="#EEF1ED" StrokeThickness="1.7" Width="24" Height="24" />
+     </Button>
+     <Button Command="{Binding NavigateCommand}" CommandParameter="Queue" Background="Transparent" CornerRadius="0" Padding="0" Width="48" Height="48" AutomationProperties.Name="Queue" ToolTip.Tip="Queue">
+      <Path Data="M 4,7 L 20,7 M 4,12 L 20,12 M 4,17 L 14,17" Stroke="#EEF1ED" StrokeThickness="1.7" Width="24" Height="24" />
+     </Button>
+     <Button Command="{Binding NavigateCommand}" CommandParameter="Now Playing" Background="Transparent" CornerRadius="0" Padding="0" Width="48" Height="48" AutomationProperties.Name="Now Playing" ToolTip.Tip="Now Playing">
+      <Grid Width="24" Height="24">
+       <Path Data="M 9,17.5 L 9,6 L 19,4 L 19,16" Stroke="#EEF1ED" StrokeThickness="1.7" />
+       <Ellipse Margin="6.2,15.5,0,0" Width="5.6" Height="4.4" Fill="#EEF1ED" HorizontalAlignment="Left" VerticalAlignment="Top" />
+       <Ellipse Margin="16.2,14,0,0" Width="5.6" Height="4.4" Fill="#EEF1ED" HorizontalAlignment="Left" VerticalAlignment="Top" />
+      </Grid>
+     </Button>
+    </StackPanel>
+    </Grid>
+    <TextBlock Text="GALDRUN" IsVisible="{Binding IsSetup}" HorizontalAlignment="Center" VerticalAlignment="Center"
+     FontSize="18" FontWeight="Bold" LetterSpacing="5" TextAlignment="Center" />
+    </Grid>
+   </Border>
+   <Grid Grid.Row="1" Margin="16,16,16,12" RowDefinitions="Auto,*" IsVisible="{Binding !IsSetup}">
+  <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,20" IsVisible="{Binding ShowContentHeader}">
+   <StackPanel><TextBlock Text="GALDRUN" FontSize="24" FontWeight="Bold" LetterSpacing="5" />
+    <TextBlock Text="Your music. Every room." Classes="muted" /></StackPanel>
+   <TextBlock Grid.Column="1" Text="{Binding Connection}" MaxWidth="180" TextWrapping="Wrap" VerticalAlignment="Center" Classes="muted" />
+  </Grid>
+  <Grid Grid.Row="1" ColumnDefinitions="190,*,Auto" x:Name="Body">
+   <ListBox x:Name="Navigation" ItemsSource="{Binding Pages}" SelectedItem="{Binding SelectedPage}" Background="Transparent" Margin="0,0,20,0" />
+   <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*" x:Name="ContentArea">
+    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding ShowContentHeader}"><TextBlock Text="{Binding Heading}" Classes="title" />
+     <Button Grid.Column="1" Content="Refresh" Command="{Binding RefreshCommand}" /></Grid>
+    <StackPanel Grid.Row="1" Margin="0,10" Spacing="8">
+     <TextBlock Text="{Binding Error}" Foreground="#F4BA9D" TextWrapping="Wrap" IsVisible="{Binding HasError}" />
+     <ProgressBar x:Name="TopProgress" IsIndeterminate="True" IsVisible="{Binding ShowTopProgress}" Height="3" />
+    </StackPanel>
+    <Grid Grid.Row="2">
+     <Grid IsVisible="{Binding IsHome}"><vm:HomeView /></Grid>
+     <Grid IsVisible="{Binding IsCollections}"><vm:CollectionsView DataContext="{Binding Collections}" /></Grid>
+     <Grid IsVisible="{Binding IsRooms}"><vm:RoomsView DataContext="{Binding Rooms}" /></Grid>
+     <ScrollViewer IsVisible="{Binding IsVolume}">
+      <StackPanel Spacing="14" MaxWidth="650" HorizontalAlignment="Stretch">
+       <Button Content="Back" Command="{Binding CloseVolumeCommand}" HorizontalAlignment="Left" />
+       <TextBlock Text="{Binding Playback.SelectedZone}" Classes="section" />
+       <ComboBox ItemsSource="{Binding Playback.Zones}" SelectedItem="{Binding Playback.SelectedZone}" HorizontalAlignment="Stretch" AutomationProperties.Name="Volume zone" />
+       <TextBlock Text="{Binding Playback.ZoneVolumeStatus}" Classes="muted" />
+       <TextBlock Text="Zone volume (%)" />
+       <NumericUpDown Value="{Binding Playback.RequestedZoneVolume}" Minimum="0" Maximum="100" AutomationProperties.Name="Zone volume percent" IsEnabled="{Binding Playback.HasZone}" />
+       <WrapPanel>
+        <Button Content="Apply zone volume" Command="{Binding Playback.SetZoneVolumeCommand}" IsEnabled="{Binding Playback.CanSetZoneVolume}" Margin="0,0,8,8" />
+        <Button Content="{Binding Playback.ZoneMuteLabel}" Command="{Binding Playback.MuteZoneCommand}" IsEnabled="{Binding Playback.CanMuteZone}" Margin="0,0,8,8" />
+       </WrapPanel>
+       <TextBlock Text="Individual rooms" Classes="section" />
+       <ComboBox ItemsSource="{Binding Playback.Rooms}" SelectedItem="{Binding Playback.SelectedRoom}" HorizontalAlignment="Stretch" AutomationProperties.Name="Room volume target">
+        <ComboBox.ItemTemplate><DataTemplate x:DataType="api:RoomView"><TextBlock Text="{Binding Client}" /></DataTemplate></ComboBox.ItemTemplate>
+       </ComboBox>
+       <TextBlock Text="{Binding Playback.ActualVolume}" Classes="muted" />
+       <NumericUpDown Value="{Binding Playback.RequestedVolume}" Minimum="0" Maximum="100" AutomationProperties.Name="Room volume percent" />
+       <Button Content="Apply room volume" Command="{Binding Playback.SetVolumeCommand}" HorizontalAlignment="Left" />
+      </StackPanel>
+     </ScrollViewer>
+     <ScrollViewer IsVisible="{Binding IsDiagnostics}"><TextBlock Text="{Binding Rooms.Diagnostics}" TextWrapping="Wrap" /></ScrollViewer>
+     <Grid IsVisible="{Binding IsQueue}"><vm:QueueView DataContext="{Binding Playback}" /></Grid>
+     <Grid IsVisible="{Binding IsBrowser}" RowDefinitions="Auto,*">
+      <Grid IsVisible="{Binding IsSearch}" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+       <TextBox Text="{Binding Browser.Query}" PlaceholderText="Artists, albums, tracks, stations" AutomationProperties.Name="Search all sources">
+        <TextBox.KeyBindings><KeyBinding Gesture="Enter" Command="{Binding Browser.SearchCommand}" /></TextBox.KeyBindings>
+       </TextBox>
+       <Button Grid.Column="1" Content="Search" Command="{Binding Browser.SearchCommand}" Margin="8,0,0,0" />
+      </Grid>
+      <vm:BrowserView Grid.Row="1" DataContext="{Binding Browser}" />
+     </Grid>
+     <ScrollViewer IsVisible="{Binding IsZones}">
+      <StackPanel Spacing="12">
+       <TextBlock Text="Each zone has its own queue." Classes="muted" />
+       <ComboBox ItemsSource="{Binding Playback.Zones}" SelectedItem="{Binding Playback.SelectedZone}" HorizontalAlignment="Stretch" AutomationProperties.Name="Zone" />
+       <TextBox Text="{Binding Playback.NewZone}" PlaceholderText="New zone name" />
+       <Button Content="Create / use zone" Command="{Binding Playback.CreateZoneCommand}" />
+       <Button Content="Delete selected zone and queue" Command="{Binding Playback.DeleteZoneCommand}" />
+       <TextBlock Text="Rooms in this zone" Classes="section" Margin="0,16,0,0" />
+       <ItemsControl ItemsSource="{Binding Playback.Membership}">
+        <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:RoomChoice"><CheckBox Content="{Binding Client}" IsChecked="{Binding Assigned}" MinHeight="44" /></DataTemplate></ItemsControl.ItemTemplate>
+       </ItemsControl>
+       <Button Content="Apply full room membership" Command="{Binding Playback.SaveMembershipCommand}" IsEnabled="{Binding Playback.HasZone}" />
+      </StackPanel>
+     </ScrollViewer>
+     <Grid IsVisible="{Binding IsNowPlaying}"><vm:NowPlayingView /></Grid>
+      <Grid IsVisible="{Binding IsSources}" RowDefinitions="Auto,*,Auto">
+      <TextBlock Text="Choose where the music begins." Classes="muted" Margin="0,0,0,20" />
+      <ListBox Grid.Row="1" ItemsSource="{Binding Providers}" Background="Transparent" SelectedItem="{Binding SelectedProvider}">
+       <ListBox.ItemTemplate><DataTemplate x:DataType="api:ProviderView">
+        <Border Classes="panel" HorizontalAlignment="Stretch"><StackPanel Spacing="6">
+         <TextBlock Text="{Binding DisplayName}" Classes="section" />
+         <TextBlock Text="{Binding Id}" Classes="muted" />
+         <TextBlock Text="{Binding State}" Foreground="#CBEC97" />
+         <TextBlock Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" />
+         <ItemsControl ItemsSource="{Binding Capabilities}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
+         <ItemsControl ItemsSource="{Binding Root}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="api:BrowseNode"><TextBlock Text="{Binding Title}" Classes="muted" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+        </StackPanel></Border>
+       </DataTemplate></ListBox.ItemTemplate>
+      </ListBox>
+      <TextBlock Grid.Row="1" Text="Connect to a server to discover your music sources." IsVisible="{Binding NoSources}" Classes="muted" TextWrapping="Wrap" />
+      <Button Grid.Row="2" Content="Browse source" Command="{Binding BrowseProviderCommand}" IsEnabled="{Binding CanBrowseProvider}" Classes="accent" Margin="0,12,0,0" HorizontalAlignment="Left" />
+     </Grid>
+    </Grid>
+   </Grid>
+   <Border Grid.Column="2" Width="290" Margin="20,0,0,0" IsVisible="{Binding ShowSideQueue}" Background="#151B1D" CornerRadius="12" Padding="12">
+    <Grid RowDefinitions="Auto,*"><TextBlock Text="Up next" Classes="section" Margin="8,4,0,16" />
+     <vm:QueueView Grid.Row="1" DataContext="{Binding Playback}" /></Grid>
+   </Border>
+   </Grid>
+   </Grid>
+    <Grid Grid.Row="1" IsVisible="{Binding IsServers}" RowDefinitions="Auto,Auto,*,Auto" Margin="24,8,24,16" MaxWidth="760" HorizontalAlignment="Stretch">
+     <StackPanel Grid.Row="1" Margin="0,0,0,12">
+      <TextBlock Text="{Binding Servers.Warning}" Foreground="#F4BA9D" FontWeight="SemiBold" TextWrapping="Wrap"
+       IsVisible="{Binding Servers.HasWarning}" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="600" Margin="0,0,0,8" />
+      <TextBlock Text="{Binding Error}" Foreground="#F4BA9D" TextWrapping="Wrap"
+       IsVisible="{Binding HasError}" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="600" Margin="0,0,0,8" />
+      <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="3" Margin="0,0,0,8" />
+      <TextBlock Text="{Binding Servers.ScanState}" Classes="muted" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="600" />
+     </StackPanel>
+     <ListBox Grid.Row="2" ItemsSource="{Binding Servers.Servers}" Background="Transparent" AutomationProperties.Name="Discovered servers">
+      <ListBox.ItemTemplate><DataTemplate x:DataType="api:DiscoveredServer">
+       <Border Classes="panel" HorizontalAlignment="Stretch">
+        <Grid ColumnDefinitions="*,Auto">
+         <StackPanel Spacing="6">
+          <TextBlock Text="{Binding Name}" Classes="section" />
+          <TextBlock Text="{Binding Endpoint}" Classes="muted" />
+          <TextBlock Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" />
+         </StackPanel>
+         <Button Grid.Column="1" Content="Connect" Classes="accent" VerticalAlignment="Center" MinWidth="120"
+          FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+          Command="{Binding $parent[vm:MainView].DataContext.Servers.ConnectServerCommand}" CommandParameter="{Binding}"
+          AutomationProperties.Name="Connect server" />
+        </Grid>
+       </Border>
+      </DataTemplate></ListBox.ItemTemplate>
+     </ListBox>
+     <StackPanel Grid.Row="3" Spacing="12" Margin="0,16,0,0">
+      <ProgressBar IsIndeterminate="True" IsVisible="{Binding Servers.IsScanning}" Height="3" />
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+       <Button Content="Scan" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+        Command="{Binding Servers.ScanCommand}" AutomationProperties.Name="Scan for servers" />
+       <Button Content="Manual" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+        Command="{Binding NavigateCommand}" CommandParameter="Server" AutomationProperties.Name="Enter a server address manually" />
+      </StackPanel>
+     </StackPanel>
+     </Grid>
+     <Grid Grid.Row="1" IsVisible="{Binding IsSettings}" RowDefinitions="Auto,*" Margin="24,8,24,16" MaxWidth="650" HorizontalAlignment="Stretch">
+      <StackPanel Spacing="8" Margin="0,0,0,12">
+       <TextBlock Text="{Binding Error}" Foreground="#F4BA9D" TextWrapping="Wrap"
+        IsVisible="{Binding HasError}" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="600" />
+       <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="3" />
+      </StackPanel>
+      <Border Grid.Row="1" Classes="panel" HorizontalAlignment="Stretch">
+       <StackPanel Spacing="12">
+        <TextBlock Text="Connect to your music" Classes="section" />
+        <TextBlock Text="Galdrun server address" Classes="muted" />
+        <TextBox Text="{Binding Address}" PlaceholderText="http://127.0.0.1:4725" AutomationProperties.Name="Server address" />
+        <TextBlock Text="API bearer token (optional, kept for this session only)" Classes="muted" TextWrapping="Wrap" />
+        <TextBox Text="{Binding Token}" PasswordChar="●" AutomationProperties.Name="API bearer token" />
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+         <Button Content="Connect" FontWeight="Bold" Classes="accent" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+          Command="{Binding ConnectCommand}" AutomationProperties.Name="Connect to the entered server" />
+         <Button Content="Choose server" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+          Command="{Binding NavigateCommand}" CommandParameter="Servers" AutomationProperties.Name="Choose a discovered server" />
+        </StackPanel>
+        <TextBlock Text="Use the server's LAN address when controlling music from another device, or choose one found on the network." Classes="muted" TextWrapping="Wrap" />
+       </StackPanel>
+      </Border>
+     </Grid>
+    <vm:ZoneBar Grid.Row="2" x:Name="BottomZoneBar" IsVisible="{Binding ShowZoneBar}" />
+ </Grid>
+</UserControl>

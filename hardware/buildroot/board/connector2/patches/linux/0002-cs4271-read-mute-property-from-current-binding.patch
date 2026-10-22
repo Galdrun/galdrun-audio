@@ -1,0 +1,26 @@
+From: Custom Raumfeld firmware project
+Subject: [PATCH] ASoC: cs4271: recognize the current mute pin binding
+
+The YAML binding uses amuteb-eq-bmutec, while the driver still reads the
+legacy amutec-eq-bmutec spelling. Accept the binding and keep compatibility
+with older device trees. Connector 2 relies on the vendor mute pin setting.
+
+Signed-off-by: Custom Raumfeld firmware project
+---
+ sound/soc/codecs/cs4271.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/codecs/cs4271.c b/sound/soc/codecs/cs4271.c
+--- a/sound/soc/codecs/cs4271.c
++++ b/sound/soc/codecs/cs4271.c
+@@ -596,7 +596,9 @@ static int cs4271_component_probe(struct snd_soc_component *component)
+ 	bool amutec_eq_bmutec;
+ 
+ 	amutec_eq_bmutec = of_property_read_bool(component->dev->of_node,
+-						 "cirrus,amutec-eq-bmutec");
++						 "cirrus,amuteb-eq-bmutec") ||
++			  of_property_read_bool(component->dev->of_node,
++						 "cirrus,amutec-eq-bmutec");
+ 	cs4271->enable_soft_reset = of_property_read_bool(component->dev->of_node,
+ 							  "cirrus,enable-soft-reset");
+ 

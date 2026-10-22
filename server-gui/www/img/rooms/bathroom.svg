@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360"><title>Bathroom</title>
+<rect width="480" height="360" fill="#e3eeee"/>
+<g stroke="#cddfe0" stroke-width="2"><path d="M0 60h480M0 120h480M0 180h480M0 240h480"/><path d="M60 0v300M120 0v300M180 0v300M240 0v300M300 0v300M360 0v300M420 0v300"/></g>
+<rect y="300" width="480" height="60" fill="#9fb8bb"/>
+<path d="M40 220h260v30a50 50 0 0 1-50 50H90a50 50 0 0 1-50-50z" fill="#fff"/><rect x="30" y="210" width="280" height="16" rx="8" fill="#f4f4f4"/><path d="M80 210v-60h30" stroke="#9aa" stroke-width="6" fill="none"/>
+<rect x="340" y="60" width="100" height="120" rx="50" fill="#cfe6ea" stroke="#fff" stroke-width="6"/><path d="M370 90l30 30" stroke="#fff" stroke-width="5" opacity=".7"/>
+<rect x="330" y="200" width="120" height="100" rx="6" fill="#2f6f6a"/><rect x="320" y="192" width="140" height="12" rx="4" fill="#f4f4f4"/><ellipse cx="390" cy="198" rx="30" ry="5" fill="#dfe9ea"/><rect x="386" y="178" width="8" height="16" fill="#9aa"/>
+<rect x="250" y="160" width="30" height="40" rx="5" fill="#2b2b2b"/><circle cx="265" cy="172" r="5" fill="#555"/><circle cx="265" cy="188" r="7" fill="#555"/>
+<rect x="20" y="268" width="40" height="34" rx="4" fill="#c46a4a"/><path d="M40 270c-24-16-20-46 0-54 20 8 24 38 0 54z" fill="#6fa283"/>
+</svg>

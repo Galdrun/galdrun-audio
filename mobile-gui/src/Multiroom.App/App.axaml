@@ -1,0 +1,17 @@
+<Application xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Multiroom.App.App" RequestedThemeVariant="Dark">
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Window"><Setter Property="Background" Value="#101315" /></Style>
+    <Style Selector="TextBlock"><Setter Property="Foreground" Value="#EEF1ED" /></Style>
+    <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="#9BA6A3" /></Style>
+    <Style Selector="TextBlock.title"><Setter Property="FontSize" Value="32" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
+    <Style Selector="TextBlock.section"><Setter Property="FontSize" Value="20" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
+    <Style Selector="Button"><Setter Property="MinHeight" Value="44" /><Setter Property="Padding" Value="16,8" /><Setter Property="CornerRadius" Value="8" /></Style>
+    <Style Selector="Button.accent"><Setter Property="Background" Value="#CBEC97" /><Setter Property="Foreground" Value="#182316" /></Style>
+    <Style Selector="TextBox"><Setter Property="MinHeight" Value="44" /></Style>
+    <Style Selector="ComboBox"><Setter Property="MinHeight" Value="44" /></Style>
+    <Style Selector="Border.panel"><Setter Property="Background" Value="#1B2123" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Padding" Value="20" /></Style>
+    <Style Selector="ListBoxItem"><Setter Property="MinHeight" Value="64" /><Setter Property="Padding" Value="8" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style>
+  </Application.Styles>
+</Application>

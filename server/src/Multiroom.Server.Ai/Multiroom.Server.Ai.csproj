@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Hosting, DI and logging abstractions come from the shared framework, as
+       for the providers: no NuGet package. The vendors are plain HttpClient:
+       no vendor SDK. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- The agent's MCP client (phase 25): it sees the tools only through MCP,
+       never the Multiroom.Server.Mcp project. The providers do not use it. -->
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.Core" Version="2.2.0" />
+  </ItemGroup>
+
+  <!-- What the AI is told (AiInstructions): edited without a build. -->
+  <ItemGroup>
+    <None Include="ai-instructions.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Multiroom.Server.Abstractions\Multiroom.Server.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

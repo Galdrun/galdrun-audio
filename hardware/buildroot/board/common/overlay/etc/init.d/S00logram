@@ -1,0 +1,24 @@
+#!/bin/sh
+# Keep diagnostic retention off NAND and cap its total RAM consumption.
+case "${1:-}" in
+    start)
+        status=0
+        mkdir -p /run/log
+        if ! grep -q ' /run/log tmpfs ' /proc/mounts; then
+            if ! mount -t tmpfs -o size=4m,nr_inodes=128,nosuid,nodev,noexec,mode=0750 logram /run/log; then
+                echo 'Log RAM mount failed; service file logging will be disabled' >&2
+                status=1
+            fi
+        fi
+        # Login history is unnecessary on an appliance; active utmp stays in /run.
+        for name in wtmp btmp lastlog; do ln -sf /dev/null "/run/log/$name"; done
+        ln -sf log/galdrun-client.log /run/galdrun-client.log
+        ln -sf log/galdrun-client.log.1 /run/galdrun-client.log.1
+        mkdir -p /run/chrony
+        chown chrony:chrony /run/chrony
+        chmod 0750 /run/chrony
+        exit "$status"
+        ;;
+    stop) : ;; # Other services may still have the filesystem open during shutdown.
+    *) echo "Usage: $0 {start|stop}" >&2; exit 1 ;;
+esac

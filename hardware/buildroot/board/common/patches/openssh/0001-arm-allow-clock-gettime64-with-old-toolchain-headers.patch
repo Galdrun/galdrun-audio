@@ -1,0 +1,24 @@
+From: Connector2 firmware project
+Subject: [PATCH] sandbox: recognize ARM EABI clock_gettime64 with old headers
+
+The Bootlin toolchain has pre-time64 Linux headers but its glibc can invoke
+clock_gettime64 on our Linux 6.12 kernel. The existing OpenSSH allow rule is
+then omitted, killing the preauth child with SIGSYS (syscall 403). Supply
+the ARM EABI number when missing; keep the existing seccomp policy intact.
+
+Upstream-Status: Inappropriate [external toolchain header compatibility]
+
+--- a/sandbox-seccomp-filter.c
++++ b/sandbox-seccomp-filter.c
+@@ -58,6 +58,11 @@
+ #include <elf.h>
+ 
+ #include <asm/unistd.h>
++/* ARM EABI syscall table: clock_gettime64 = 403, added in Linux 5.1. */
++#if defined(__arm__) && defined(__ARM_EABI__) && !defined(__NR_clock_gettime64)
++# define __NR_clock_gettime64 403
++#endif
++
+ #ifdef __s390__
+ #include <asm/zcrypt.h>
+ #endif

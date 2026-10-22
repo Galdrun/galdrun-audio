@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <!-- Avalonia.Headless.XUnit 12.1.3 targets xUnit 3.2.2's discovery API. -->
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="Avalonia.Headless.XUnit" Version="12.1.3" />
+    <ProjectReference Include="../../src/Multiroom.App/Multiroom.App.csproj" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

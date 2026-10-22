@@ -1,0 +1,139 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-x64",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/windows-x64",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "MULTIROOM_WITH_SOXR": "ON",
+        "MULTIROOM_WITH_R8BRAIN": "ON",
+        "MULTIROOM_WITH_FFMPEG": "ON"
+      }
+    },
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MULTIROOM_WITH_SOXR": "ON",
+        "MULTIROOM_WITH_R8BRAIN": "ON",
+        "MULTIROOM_WITH_FFMPEG": "ON"
+      }
+    },
+    {
+      "name": "linux-x64",
+      "displayName": "ServerCore Linux x64",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "MULTIROOM_FFMPEG_ROOT": "${sourceDir}/ffmpeg/dist/linux-x64-shared"
+      }
+    },
+    {
+      "name": "linux-x86",
+      "displayName": "ServerCore Linux x86",
+      "inherits": "linux-base",
+      "toolchainFile": "${sourceDir}/cmake/LinuxCross.cmake",
+      "cacheVariables": {
+        "MULTIROOM_FFMPEG_ROOT": "${sourceDir}/ffmpeg/dist/linux-x86-shared",
+        "MULTIROOM_TARGET": "x86",
+        "MULTIROOM_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "linux-armv7",
+      "displayName": "ServerCore Linux armv7",
+      "inherits": "linux-base",
+      "toolchainFile": "${sourceDir}/cmake/LinuxCross.cmake",
+      "cacheVariables": {
+        "MULTIROOM_FFMPEG_ROOT": "${sourceDir}/ffmpeg/dist/linux-armv7-shared",
+        "MULTIROOM_TARGET": "armv7",
+        "MULTIROOM_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "linux-armv8",
+      "displayName": "ServerCore Linux armv8",
+      "inherits": "linux-base",
+      "toolchainFile": "${sourceDir}/cmake/LinuxCross.cmake",
+      "cacheVariables": {
+        "MULTIROOM_FFMPEG_ROOT": "${sourceDir}/ffmpeg/dist/linux-armv8-shared",
+        "MULTIROOM_TARGET": "armv8",
+        "MULTIROOM_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "linux-armv9",
+      "displayName": "ServerCore Linux armv9",
+      "inherits": "linux-base",
+      "toolchainFile": "${sourceDir}/cmake/LinuxCross.cmake",
+      "cacheVariables": {
+        "MULTIROOM_FFMPEG_ROOT": "${sourceDir}/ffmpeg/dist/linux-armv9-shared",
+        "MULTIROOM_TARGET": "armv9",
+        "MULTIROOM_BUILD_TESTS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-x64",
+      "configurePreset": "windows-x64",
+      "configuration": "Release"
+    },
+    {
+      "name": "linux-x64",
+      "configurePreset": "linux-x64"
+    },
+    {
+      "name": "linux-x86",
+      "configurePreset": "linux-x86"
+    },
+    {
+      "name": "linux-armv7",
+      "configurePreset": "linux-armv7"
+    },
+    {
+      "name": "linux-armv8",
+      "configurePreset": "linux-armv8"
+    },
+    {
+      "name": "linux-armv9",
+      "configurePreset": "linux-armv9"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-x64",
+      "configurePreset": "linux-x64",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-x64",
+      "configurePreset": "windows-x64",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Multiroom.App" xmlns:api="using:Multiroom.App.Api" x:Class="Multiroom.App.RoomsView" x:DataType="vm:RoomsViewModel">
+ <Grid RowDefinitions="Auto,*">
+  <ComboBox ItemsSource="{Binding Rooms}" SelectedItem="{Binding SelectedRoom}" HorizontalAlignment="Stretch" PlaceholderText="Choose a room" AutomationProperties.Name="Room" Margin="0,0,0,12">
+   <ComboBox.ItemTemplate><DataTemplate x:DataType="api:RoomView"><TextBlock Text="{Binding DisplayName}" /></DataTemplate></ComboBox.ItemTemplate>
+  </ComboBox>
+  <ScrollViewer Grid.Row="1">
+   <StackPanel Spacing="12">
+    <TextBlock Text="{Binding RoomId}" Classes="muted" IsVisible="{Binding RoomId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    <TextBlock Text="Desired / effective settings" Classes="section" />
+    <TextBlock Text="{Binding Desired}" TextWrapping="Wrap" />
+    <TextBlock Text="Actual � reported by the audio core" Classes="section" />
+    <TextBlock Text="{Binding Actual}" TextWrapping="Wrap" />
+    <StackPanel Spacing="10" IsEnabled="{Binding HasRoom}">
+     <TextBlock Text="Room controls" Classes="section" />
+     <TextBlock Text="Name" /><TextBox Text="{Binding RoomName}" MaxLength="64" IsEnabled="{Binding CanRename}" AutomationProperties.Name="Room name" />
+     <WrapPanel><Button Content="Rename" Command="{Binding SaveSettingCommand}" CommandParameter="name" IsEnabled="{Binding CanRename}" Margin="0,0,6,6" />
+      <Button Content="{Binding ForgetLabel}" Command="{Binding ForgetCommand}" IsVisible="{Binding CanForget}" Margin="0,0,6,6" /></WrapPanel>
+     <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding TargetZone}" HorizontalAlignment="Stretch" PlaceholderText="Choose a zone" AutomationProperties.Name="Assign room to zone" />
+     <WrapPanel><Button Content="Assign to zone" Command="{Binding AssignCommand}" CommandParameter="assign" Margin="0,0,6,6" />
+      <Button Content="Unassign" Command="{Binding AssignCommand}" CommandParameter="remove" Margin="0,0,6,6" />
+      <Button Content="Rejoin" Command="{Binding RejoinCommand}" Margin="0,0,6,6" /></WrapPanel>
+     <TextBlock Text="Audio control (Auto: bitperfect where possible, drift corrected in a zone with other rooms)" TextWrapping="Wrap" />
+     <ComboBox ItemsSource="{Binding AudioControls}" SelectedItem="{Binding AudioControl}" HorizontalAlignment="Stretch" AutomationProperties.Name="Audio control" />
+     <Button Content="Apply audio control" Command="{Binding SaveSettingCommand}" CommandParameter="audioControl" />
+     <TextBlock Text="Drift correction (HardwareClock trims the device's own clock; the samples stay bitperfect)" TextWrapping="Wrap" IsVisible="{Binding HasDriftCorrection}" />
+     <ComboBox ItemsSource="{Binding DriftCorrections}" SelectedItem="{Binding DriftCorrection}" HorizontalAlignment="Stretch" IsVisible="{Binding HasDriftCorrection}" AutomationProperties.Name="Drift correction" />
+     <Button Content="Apply drift correction" Command="{Binding SaveSettingCommand}" CommandParameter="driftCorrection" IsVisible="{Binding HasDriftCorrection}" />
+     <TextBlock Text="Volume (%)" /><NumericUpDown Value="{Binding Volume}" Minimum="0" Maximum="100" AutomationProperties.Name="Room volume percent" />
+     <Button Content="Apply volume" Command="{Binding SaveSettingCommand}" CommandParameter="volume" />
+     <CheckBox Content="Mute" IsThreeState="True" IsChecked="{Binding Muted}" />
+     <Button Content="Apply mute" Command="{Binding SaveSettingCommand}" CommandParameter="mute" />
+     <TextBlock Text="Output latency (ms)" /><NumericUpDown Value="{Binding Latency}" Minimum="0" Maximum="18446744073709551615" Increment="1" FormatString="0" AutomationProperties.Name="Output latency milliseconds" />
+     <Button Content="Apply output latency" Command="{Binding SaveSettingCommand}" CommandParameter="latency" />
+    </StackPanel>
+   </StackPanel>
+  </ScrollViewer>
+ </Grid>
+</UserControl>

@@ -1,0 +1,46 @@
+From: Galdrun Audio <firmware@galdrun.local>
+Subject: [PATCH] bus: ti-sysc: balance reserved AM335x timer clocks on suspend
+
+The AM33xx reservation change makes ti-sysc enable the system timers in
+addition to timer-ti-dm-systimer. The permanent no-idle reference keeps
+Timer2's functional clock on after the clockevent suspend callback drops
+its own reference, preventing the PER domain from entering DeepSleep0.
+
+Drop only ti-sysc's references during system suspend and restore them on
+resume. Leave probe, runtime PM and the timer register configuration alone:
+timer-ti-dm-systimer owns the active clocksource and clockevent registers.
+Other SoCs and non-reserved peripherals retain their existing behavior.
+
+--- a/drivers/bus/ti-sysc.c
++++ b/drivers/bus/ti-sysc.c
+@@ -1424,6 +1424,15 @@ static int __maybe_unused sysc_noirq_suspend(struct device *dev)
+ 
+ 	ddata = dev_get_drvdata(dev);
+ 
++	/* The systimer driver suspends its own clocks later in syscore. */
++	if (ddata->reserved && sysc_soc->soc == SOC_AM33) {
++		if (ddata->enabled) {
++			sysc_disable_main_clocks(ddata);
++			ddata->needs_resume = 1;
++		}
++		return 0;
++	}
++
+ 	if (ddata->cfg.quirks & SYSC_QUIRK_NO_IDLE)
+ 		return 0;
+ 
+@@ -1442,6 +1451,14 @@ static int __maybe_unused sysc_noirq_resume(struct device *dev)
+ 
+ 	ddata = dev_get_drvdata(dev);
+ 
++	if (ddata->reserved && sysc_soc->soc == SOC_AM33) {
++		if (ddata->needs_resume) {
++			error = sysc_enable_main_clocks(ddata);
++			ddata->needs_resume = 0;
++		}
++		return error;
++	}
++
+ 	if (ddata->cfg.quirks & SYSC_QUIRK_NO_IDLE)
+ 		return 0;
+ 

@@ -1,0 +1,9 @@
+{
+  "server": "",
+  "clientId": "",
+  "audioDeviceId": "",
+  "audioAccessMode": "exclusive",
+  "preferredSampleRate": 48000,
+  "bufferMs": 2500,
+  "controlPort": 4720
+}

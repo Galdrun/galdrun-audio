@@ -1,0 +1,5 @@
+# Firmware blob provenance
+
+`am335x-pm-firmware.elf`: official TI source repository `https://git.ti.com/git/processor-firmware/ti-amx3-cm3-pm-firmware.git`, branch `ti-v4.1.y`, commit **`fb484c5e54f2e31cf0a338d2927a06a2870bcc2c`**, path `bin/am335x-pm-firmware.elf`. Size 217148 bytes, SHA256 **`40b5c8192eb6976219858b90bee077ca63874b0a94a2a0bcb7a0868579c4b2b7`**. License from the same commit: [TI-LICENSE.txt](TI-LICENSE.txt). Its ELF goes into the kernel and `/lib/firmware` for the wakeup Cortex-M3; this is not an audio DSP.
+
+Marvell `mrvl/sd8787_uapsta.bin` comes from Buildroot's `linux-firmware` package (`BR2_PACKAGE_LINUX_FIRMWARE_MWIFIEX_SD8787`; linux-firmware 20250211 in Buildroot 2025.02.18), under `LICENCE.Marvell`. SHA256 **`bcb105057e8171e621908fbd036b9f3a6cdea75f6761b1dcb584626bd4a10b88`**, firmware version `14.68.35.p66`, for the observed 88W8787 SDIO chip. The original Raumfeld 2.21.0 image ships `14.66.35.p52` (SHA256 `72a76274cd545b439a195770fa95be6a8414ec7a46a248f148b74f4e684ff549`), which is not redistributed here.

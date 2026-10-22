@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- xUnit v3 test projects are executables. -->
+    <OutputType>Exe</OutputType>
+    <!-- CA1707: test names are sentences with underscores.
+         CA1848, CA1873: the logger tests call ILogger directly; performance of a
+         test's log call is not what is under test. -->
+    <NoWarn>$(NoWarn);CA1707;CA1848;CA1873</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\..\src\Multiroom.Server\Multiroom.Server.csproj" />
+    <ProjectReference Include="..\..\src\Multiroom.Server.Abstractions\Multiroom.Server.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Multiroom.Server.Ai\Multiroom.Server.Ai.csproj" />
+    <ProjectReference Include="..\..\src\Multiroom.Server.Library\Multiroom.Server.Library.csproj" />
+    <ProjectReference Include="..\..\src\Multiroom.Server.Playback\Multiroom.Server.Playback.csproj" />
+    <ProjectReference Include="..\..\src\Multiroom.Server.Providers\Multiroom.Server.Providers.csproj" />
+    <ProjectReference Include="..\..\src\Multiroom.Server.Web\Multiroom.Server.Web.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

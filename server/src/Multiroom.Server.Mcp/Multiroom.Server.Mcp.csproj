@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Galdrun MCP server's tool catalog:
+       thin adapters over the services. The official SDK is the one package
+       here; Web maps its HTTP transport. -->
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Multiroom.Server.Abstractions\Multiroom.Server.Abstractions.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Library\Multiroom.Server.Library.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Playback\Multiroom.Server.Playback.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Providers\Multiroom.Server.Providers.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,5 @@
+# Rotation is explicit; the dedicated 4 MiB mount also bounds failure cases.
+SYSLOGD_ARGS="-O /run/log/messages -s 256 -b 1 -l 7"
+if ! grep -q ' /run/log tmpfs ' /proc/mounts; then
+    SYSLOGD_ARGS="-O /dev/null -s 0"
+fi

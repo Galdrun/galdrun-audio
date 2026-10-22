@@ -1,0 +1,50 @@
+file(MAKE_DIRECTORY "${DESTINATION}/lib" "${DESTINATION}/licenses")
+execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+    "${BINARY}" "${DESTINATION}/${BINARY_NAME}" RESULT_VARIABLE copied)
+if(NOT copied EQUAL 0)
+    message(FATAL_ERROR "Could not export ${BINARY}")
+endif()
+file(COPY "${SOURCE}/run.sh" DESTINATION "${DESTINATION}"
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+configure_file("${SOURCE}/README.md" "${DESTINATION}/README.md" COPYONLY)
+configure_file("${SOURCE}/client.example.json" "${DESTINATION}/client.example.json" COPYONLY)
+file(WRITE "${DESTINATION}/build-info.txt" "Version: ${VERSION}\nConfiguration: ${CONFIG}\n")
+
+# Leave glibc and ALSA to the target OS, including its audio plugins/configuration.
+execute_process(COMMAND "${OBJDUMP}" -p "${BINARY}"
+    OUTPUT_VARIABLE elf_info RESULT_VARIABLE inspected)
+if(NOT inspected EQUAL 0)
+    message(FATAL_ERROR "Could not inspect the client's runtime dependencies")
+endif()
+foreach(library libstdc++.so.6 libgcc_s.so.1 libatomic.so.1)
+    string(FIND "${elf_info}" "${library}" needed)
+    if(NOT needed EQUAL -1)
+        execute_process(COMMAND "${COMPILER}" "-print-file-name=${library}"
+            OUTPUT_VARIABLE runtime OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(NOT IS_ABSOLUTE "${runtime}" OR NOT EXISTS "${runtime}")
+            message(FATAL_ERROR "Cannot locate target runtime ${library}: ${runtime}")
+        endif()
+        get_filename_component(runtime "${runtime}" REALPATH)
+        # Store actual files under their SONAMEs, without Linux-only symlinks.
+        configure_file("${runtime}" "${DESTINATION}/lib/${library}" COPYONLY)
+    else()
+        file(REMOVE "${DESTINATION}/lib/${library}")
+    endif()
+endforeach()
+
+get_filename_component(compiler_dir "${COMPILER}" DIRECTORY)
+set(gcc_licenses "${compiler_dir}/../share/licenses/gcc")
+if(EXISTS "${gcc_licenses}/COPYING.RUNTIME")
+    configure_file("${gcc_licenses}/COPYING.RUNTIME" "${DESTINATION}/licenses/GCC-RUNTIME-EXCEPTION.txt" COPYONLY)
+    configure_file("${gcc_licenses}/COPYING3" "${DESTINATION}/licenses/GPL-3.0.txt" COPYONLY)
+else()
+    execute_process(COMMAND "${COMPILER}" -dumpversion
+        OUTPUT_VARIABLE gcc_version OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REGEX MATCH "^[0-9]+" gcc_major "${gcc_version}")
+    set(copyright "/usr/share/doc/gcc-${gcc_major}-base/copyright")
+    if(NOT EXISTS "${copyright}")
+        message(FATAL_ERROR "Cannot locate GCC runtime license notices: ${copyright}")
+    endif()
+    configure_file("${copyright}" "${DESTINATION}/licenses/GCC-copyright.txt" COPYONLY)
+    configure_file("/usr/share/common-licenses/GPL-3" "${DESTINATION}/licenses/GPL-3.0.txt" COPYONLY)
+endif()

@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Multiroom.App" xmlns:api="using:Multiroom.App.Api" x:Class="Multiroom.App.CollectionsView" x:DataType="vm:CollectionsViewModel">
+ <Grid RowDefinitions="Auto,*,Auto,Auto">
+  <TextBlock Text="{Binding Notice}" TextWrapping="Wrap" Classes="muted" Margin="0,0,0,8" />
+  <Grid Grid.Row="1" IsVisible="{Binding IsPlaylists}" RowDefinitions="Auto,Auto,*,Auto">
+   <ComboBox ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}" PlaceholderText="Choose a playlist" HorizontalAlignment="Stretch" AutomationProperties.Name="Playlist">
+    <ComboBox.ItemTemplate><DataTemplate x:DataType="api:Playlist"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+   </ComboBox>
+   <Expander Grid.Row="1" Header="Manage playlists" HorizontalAlignment="Stretch" Margin="0,8">
+    <StackPanel Spacing="6">
+     <TextBox Text="{Binding Name}" PlaceholderText="Playlist name" AutomationProperties.Name="Playlist name" />
+     <WrapPanel>
+      <Button Content="Create" Command="{Binding CreateCommand}" Margin="0,0,6,6" />
+      <Button Content="Rename" Command="{Binding RenameCommand}" IsEnabled="{Binding HasPlaylist}" Margin="0,0,6,6" />
+      <Button Content="Move up" Command="{Binding MovePlaylistCommand}" CommandParameter="up" IsEnabled="{Binding HasPlaylist}" Margin="0,0,6,6" />
+      <Button Content="Move down" Command="{Binding MovePlaylistCommand}" CommandParameter="down" IsEnabled="{Binding HasPlaylist}" Margin="0,0,6,6" />
+      <Button Content="Delete playlist" Command="{Binding DeleteCommand}" IsEnabled="{Binding HasPlaylist}" Margin="0,0,6,6" />
+     </WrapPanel>
+     <TextBlock Text="{Binding PendingMedia.Title}" TextTrimming="CharacterEllipsis" />
+     <Button Content="Add selected browser track" Command="{Binding AddTrackCommand}" IsEnabled="{Binding CanAddTrack}" />
+    </StackPanel>
+   </Expander>
+   <ListBox Grid.Row="2" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry}" Background="Transparent" AutomationProperties.Name="Playlist entries">
+    <ListBox.ItemTemplate><DataTemplate x:DataType="api:PlaylistEntry"><StackPanel Spacing="4">
+     <TextBlock Text="{Binding Track.Title}" /><TextBlock Text="{Binding Track.Artist}" Classes="muted" /><TextBlock Text="{Binding Track.ProviderId}" Classes="muted" />
+    </StackPanel></DataTemplate></ListBox.ItemTemplate>
+   </ListBox>
+   <TextBlock Grid.Row="2" Text="Choose a playlist. Add tracks from Browse or Search using Save / discover." IsVisible="{Binding NoEntries}" TextWrapping="Wrap" Classes="muted" VerticalAlignment="Center" Margin="8" />
+   <Button Grid.Row="3" Content="Playlist / entry actions" Margin="0,6">
+    <Button.Flyout><MenuFlyout>
+     <MenuItem Header="Remove selected entry" Command="{Binding RemoveEntryCommand}" />
+     <MenuItem Header="Move entry up" Command="{Binding MoveEntryCommand}" CommandParameter="up" />
+     <MenuItem Header="Move entry down" Command="{Binding MoveEntryCommand}" CommandParameter="down" />
+     <MenuItem Header="More like this track" Command="{Binding MoreLikeCommand}" CommandParameter="entry" />
+     <MenuItem Header="More like this playlist" Command="{Binding MoreLikeCommand}" CommandParameter="playlist" />
+    </MenuFlyout></Button.Flyout>
+   </Button>
+  </Grid>
+  <Grid Grid.Row="1" IsVisible="{Binding IsFavorites}" RowDefinitions="Auto,*,Auto">
+   <StackPanel Spacing="6" Margin="0,0,0,8"><TextBlock Text="{Binding PendingMedia.Title}" TextTrimming="CharacterEllipsis" />
+    <Button Content="Favourite selected browser track / station" Command="{Binding AddFavoriteCommand}" IsEnabled="{Binding CanFavorite}" />
+   </StackPanel>
+   <ListBox Grid.Row="1" ItemsSource="{Binding Favorites}" SelectedItem="{Binding SelectedFavorite}" Background="Transparent" AutomationProperties.Name="Favourites">
+    <ListBox.ItemTemplate><DataTemplate x:DataType="api:Favorite"><StackPanel>
+     <TextBlock Text="{Binding Title}" /><TextBlock Text="{Binding Track.ProviderId}" Classes="muted" /><TextBlock Text="{Binding Station.ProviderId}" Classes="muted" />
+    </StackPanel></DataTemplate></ListBox.ItemTemplate>
+   </ListBox>
+   <TextBlock Grid.Row="1" Text="No favourites. Save a track or station from Browse or Search." IsVisible="{Binding NoFavorites}" TextWrapping="Wrap" Classes="muted" VerticalAlignment="Center" Margin="8" />
+   <WrapPanel Grid.Row="2"><Button Content="Remove favourite" Command="{Binding RemoveFavoriteCommand}" Margin="0,6,6,6" />
+    <Button Content="More like this" Command="{Binding MoreLikeCommand}" CommandParameter="favorite" Margin="0,6,6,6" /></WrapPanel>
+  </Grid>
+  <Grid Grid.Row="1" IsVisible="{Binding IsRecommendations}" RowDefinitions="Auto,*,Auto">
+   <TextBlock Text="{Binding RecommendationStatus}" TextWrapping="Wrap" Classes="muted" Margin="0,0,0,8" MaxHeight="100" />
+   <ListBox Grid.Row="1" ItemsSource="{Binding Recommendations}" SelectedItem="{Binding SelectedRecommendation}" Background="Transparent" AutomationProperties.Name="Recommendations">
+    <ListBox.ItemTemplate><DataTemplate x:DataType="api:RecommendedTrack"><StackPanel Spacing="6">
+     <TextBlock Text="{Binding Track.Title}" /><TextBlock Text="{Binding Track.ProviderId}" Classes="muted" />
+     <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap" Classes="muted" />
+    </StackPanel></DataTemplate></ListBox.ItemTemplate>
+   </ListBox>
+   <Button Grid.Row="2" Content="More like this" Command="{Binding MoreLikeCommand}" CommandParameter="recommendation" Margin="0,6" />
+  </Grid>
+  <WrapPanel Grid.Row="2">
+   <Button Content="Play now" Command="{Binding QueueCommand}" CommandParameter="now" Classes="accent" Margin="0,6,6,0" />
+   <Button Content="Play next" Command="{Binding QueueCommand}" CommandParameter="next" Margin="0,6,6,0" />
+   <Button Content="Add to queue" Command="{Binding QueueCommand}" CommandParameter="end" Margin="0,6,6,0" />
+  </WrapPanel>
+  <TextBlock Grid.Row="3" Text="Refresh to see changes from another controller." TextWrapping="Wrap" Classes="muted" Margin="0,8,0,0" />
+ </Grid>
+</UserControl>

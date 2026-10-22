@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Kestrel and routing come from the ASP.NET Core shared framework, as the
+       roadmap's dependency table says: no NuGet package. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- The MCP server's Streamable HTTP transport at /api/v1/mcp (phase 23). -->
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Multiroom.Server.Abstractions\Multiroom.Server.Abstractions.csproj" />
+    <!-- The outward API (Api/) reads and drives the rest: the queue engine
+         and CoreLink, the providers, and the library's stores. The media
+         endpoint (Media/) uses none of them. -->
+    <ProjectReference Include="..\Multiroom.Server.Ai\Multiroom.Server.Ai.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Library\Multiroom.Server.Library.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Mcp\Multiroom.Server.Mcp.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Playback\Multiroom.Server.Playback.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Providers\Multiroom.Server.Providers.csproj" />
+  </ItemGroup>
+
+</Project>

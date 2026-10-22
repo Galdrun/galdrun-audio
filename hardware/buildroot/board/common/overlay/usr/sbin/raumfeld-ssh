@@ -1,0 +1,42 @@
+#!/bin/sh
+# raumfeld-ssh - The settings page's SSH switch; galdrun-client runs it as root.
+# Reads three lines on stdin: 1 or 0 for SSH on or off, the current root
+# password and a new one (either may be empty). Once root has a password, every
+# change needs it, and SSH can only be on while one is set. Errors go to stderr.
+conf=/etc/galdrun-ssh.conf
+shadow=/etc/shadow
+
+fail() {
+    echo "$*" >&2
+    exit 1
+}
+
+IFS= read -r enabled
+IFS= read -r current
+IFS= read -r new
+case $enabled in 0|1) ;; *) fail 'expected 1 (on) or 0 (off)' ;; esac
+
+hash=$(sed -n 's/^root:\([^:]*\):.*/\1/p' "$shadow")
+case $hash in ''|'!'*|'*'*) hash= ;; esac
+if [ -n "$hash" ]; then
+    [ -n "$current" ] || fail 'enter the current password'
+    # $id$salt$digest: the attempt, hashed with the same method and salt, must match.
+    id=$(echo "$hash" | cut -d '$' -f 2)
+    salt=$(echo "$hash" | cut -d '$' -f 3)
+    case $id in 1) method=md5 ;; 5) method=sha256 ;; 6) method=sha512 ;; *) fail 'unsupported password hash' ;; esac
+    attempt=$(printf '%s' "$current" | cryptpw -P 0 -m "$method" -S "$salt")
+    [ "$attempt" = "$hash" ] || fail 'the current password is wrong'
+fi
+
+if [ -n "$new" ]; then
+    [ "${#new}" -ge 8 ] || fail 'the new password needs at least 8 characters'
+    printf 'root:%s\n' "$new" | chpasswd -c sha512 >/dev/null || fail 'cannot set the password'
+    hash=set
+fi
+[ "$enabled" = 0 ] || [ -n "$hash" ] || fail 'choose a password to turn SSH on'
+
+umask 077
+printf 'SSH_ENABLED=%s\n' "$enabled" > "$conf.tmp" && mv "$conf.tmp" "$conf" || fail 'cannot save the SSH setting'
+# The first start generates the host keys, which takes a while: not in the request.
+if [ "$enabled" = 1 ]; then action=start; else action=stop; fi
+/etc/init.d/S50sshd "$action" </dev/null >/dev/null 2>&1 &

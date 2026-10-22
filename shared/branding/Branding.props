@@ -1,0 +1,9 @@
+<!-- The product's brand for the .NET builds (server, app). Imported by
+     Server/ and Gui/Directory.Build.props; Branding.cs carries the same two
+     values for code. -->
+<Project>
+  <PropertyGroup>
+    <BrandName>Galdrun</BrandName>
+    <BrandSlug>galdrun</BrandSlug>
+  </PropertyGroup>
+</Project>

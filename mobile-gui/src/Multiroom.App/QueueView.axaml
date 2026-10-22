@@ -1,0 +1,48 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Multiroom.App" x:Class="Multiroom.App.QueueView" x:DataType="vm:PlaybackViewModel">
+ <UserControl.Styles>
+  <Style Selector="Button.rowdelete"><Setter Property="IsVisible" Value="False" /></Style>
+  <Style Selector="ListBoxItem.revealed Button.rowdelete"><Setter Property="IsVisible" Value="True" /></Style>
+  <Style Selector="StackPanel.rowcontent">
+   <Setter Property="Transitions"><Transitions><ThicknessTransition Property="Margin" Duration="0:0:0.18" /></Transitions></Setter>
+  </Style>
+  <Style Selector="ListBoxItem.revealed StackPanel.rowcontent"><Setter Property="Margin" Value="52,0,0,0" /></Style>
+  <Style Selector="ListBoxItem.dragging"><Setter Property="Opacity" Value="0.45" /></Style>
+ </UserControl.Styles>
+ <Grid RowDefinitions="*,Auto,Auto">
+  <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}" Background="Transparent" x:Name="QueueList">
+   <ListBox.ItemTemplate><DataTemplate x:DataType="vm:QueueRow">
+    <Grid ColumnDefinitions="*,Auto,Auto">
+     <Button Classes="rowdelete" Command="{Binding $parent[vm:QueueView].((vm:PlaybackViewModel)DataContext).RemoveItemCommand}" CommandParameter="{Binding}" Background="Transparent" CornerRadius="0" Padding="0" Width="44" Height="44" HorizontalAlignment="Left" VerticalAlignment="Center" AutomationProperties.Name="Remove from queue" ToolTip.Tip="Remove from queue">
+      <Path Data="M 5,7 L 19,7 M 9,7 L 9,5 L 15,5 L 15,7 M 7,7 L 8,19 L 16,19 L 17,7 M 10,11 L 10,16 M 14,11 L 14,16" Stroke="#F4BA9D" StrokeThickness="1.7" Width="24" Height="24" />
+     </Button>
+     <StackPanel Grid.Column="0" Classes="rowcontent" Spacing="5">
+      <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+      <TextBlock Text="{Binding Subtitle}" Classes="muted" TextWrapping="Wrap" />
+     </StackPanel>
+     <Button Grid.Column="1" IsVisible="{Binding HasFailure}" Background="Transparent" Padding="0" Width="36" Height="36" VerticalAlignment="Center" AutomationProperties.Name="Playback failed, show error" ToolTip.Tip="Playback failed">
+      <Path Data="M 12,3 L 22,21 L 2,21 Z M 12,10 L 12,15 M 12,18 L 12,18.01" Stroke="#F4BA9D" StrokeThickness="1.7" Width="24" Height="24" />
+      <Button.Flyout><Flyout Placement="Bottom">
+       <TextBlock Text="{Binding Item.Failure}" Foreground="#F4BA9D" TextWrapping="Wrap" MaxWidth="320" />
+      </Flyout></Button.Flyout>
+     </Button>
+     <Border Grid.Column="2" Classes="grip" Background="Transparent" Width="36" Height="36" VerticalAlignment="Center" Margin="4,0,2,0">
+      <Path Data="M 9,6 L 15,6 M 9,12 L 15,12 M 9,18 L 15,18" Stroke="#9BA6A3" StrokeThickness="1.7" Width="24" Height="24" />
+     </Border>
+    </Grid>
+   </DataTemplate></ListBox.ItemTemplate>
+  </ListBox>
+  <Border x:Name="DropLine" Grid.Row="0" Height="2" Background="#CBEC97" VerticalAlignment="Top" IsVisible="False" />
+  <TextBlock Text="Your queue is empty. Choose music from a source." IsVisible="{Binding IsEmpty}" Classes="muted" TextWrapping="Wrap" Margin="8" />
+  <WrapPanel Grid.Row="1">
+   <Button Content="Play item" Command="{Binding StartItemCommand}" Margin="0,6,8,0" />
+   <Button Content="Move up" Command="{Binding MoveCommand}" CommandParameter="up" Margin="0,6,8,0" />
+   <Button Content="Move down" Command="{Binding MoveCommand}" CommandParameter="down" Margin="0,6,8,0" />
+   <Button Content="Remove" Command="{Binding RemoveCommand}" Margin="0,6,8,0" />
+  </WrapPanel>
+  <WrapPanel Grid.Row="2" IsVisible="{Binding CanSeek}" Margin="0,8,0,0">
+   <NumericUpDown Value="{Binding SeekSeconds}" Minimum="0" Maximum="86400" Increment="10" Width="130" AutomationProperties.Name="Seek position in seconds" />
+   <Button Content="Seek (seconds)" Command="{Binding SeekCommand}" Margin="8,0,0,0" />
+  </WrapPanel>
+ </Grid>
+</UserControl>

@@ -1,0 +1,5 @@
+dependencies:
+  # The only ESP-IDF filesystem that renames over an existing file atomically
+  # and survives a power cut mid-write; fileutil::writeTextFileAtomic relies on
+  # both. SPIFFS and FAT refuse a rename onto an existing name.
+  joltwallet/littlefs: "^1.14"

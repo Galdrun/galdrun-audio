@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360"><title>Terrace</title>
+<defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bfe0ea"/><stop offset="1" stop-color="#f6e7c9"/></linearGradient></defs>
+<rect width="480" height="360" fill="url(#s)"/><circle cx="380" cy="80" r="34" fill="#ffe2a0"/>
+<path d="M0 220c80-40 160-20 240-30s160-40 240-10v60H0z" fill="#9cc29e"/><path d="M0 240c100-20 200 0 300-10s140-20 180-10v40H0z" fill="#7fae8f"/>
+<rect y="280" width="480" height="80" fill="#c7a27a"/><path d="M0 300h480M0 330h480" stroke="#b48f66" stroke-width="2"/>
+<g stroke="#5b4632" stroke-width="4"><path d="M0 230h480"/><path d="M20 230v50M80 230v50M140 230v50M200 230v50M260 230v50M320 230v50M380 230v50M440 230v50"/></g>
+<rect x="110" y="240" width="90" height="12" rx="4" fill="#2f6f6a"/><rect x="110" y="200" width="14" height="52" rx="4" fill="#2f6f6a"/><path d="M116 252l-8 36M194 252l8 36" stroke="#285f5b" stroke-width="5"/>
+<rect x="230" y="250" width="60" height="8" rx="3" fill="#a8835e"/><path d="M240 258v28M280 258v28" stroke="#7d5f43" stroke-width="4"/><rect x="250" y="236" width="12" height="14" rx="2" fill="#fff"/>
+<rect x="400" y="236" width="34" height="50" rx="6" fill="#2b2b2b"/><circle cx="417" cy="250" r="5" fill="#555"/><circle cx="417" cy="268" r="9" fill="#555"/>
+<rect x="30" y="250" width="44" height="38" rx="5" fill="#b7704f"/><path d="M52 252c-34-22-28-64 0-74 28 10 34 52 0 74z" fill="#5f9a74"/>
+</svg>

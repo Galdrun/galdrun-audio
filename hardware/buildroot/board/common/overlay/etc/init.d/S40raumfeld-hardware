@@ -1,0 +1,12 @@
+#!/bin/sh
+case "$1" in
+    start)
+        status=0
+        for module in omap_rng mwifiex_sdio snd_soc_cs4271_i2c snd_soc_ak4104 snd_soc_davinci_mcasp raumfeld_connector2; do
+            modprobe "$module" || status=1
+        done
+        exit "$status"
+        ;;
+    stop) : ;;
+    *) echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac

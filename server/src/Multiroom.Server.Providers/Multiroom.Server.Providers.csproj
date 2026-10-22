@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Hosting, DI and logging abstractions come from the shared framework, as
+       for the host: no NuGet package. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Multiroom.Server.Abstractions\Multiroom.Server.Abstractions.csproj" />
+    <ProjectReference Include="..\Multiroom.Server.Library\Multiroom.Server.Library.csproj" />
+  </ItemGroup>
+
+</Project>

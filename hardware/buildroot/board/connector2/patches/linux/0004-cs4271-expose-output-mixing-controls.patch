@@ -1,0 +1,29 @@
+From: Custom Raumfeld firmware project
+Subject: [PATCH] ASoC: cs4271: expose left and right DAC output sources
+
+Expose the ATAPI output fields through ALSA and regmap so userspace never
+writes behind the codec driver's register cache. Defaults are unchanged.
+
+Signed-off-by: Custom Raumfeld firmware project
+---
+--- a/sound/soc/codecs/cs4271.c
++++ b/sound/soc/codecs/cs4271.c
+@@ -432,7 +432,18 @@
+ /* CS4271 controls */
+ static DECLARE_TLV_DB_SCALE(cs4271_dac_tlv, -12700, 100, 0);
+ 
++static const char * const cs4271_output_sources[] = {
++    "Silence", "Right", "Left", "Mono (L+R)/2"
++};
++static SOC_ENUM_SINGLE_DECL(cs4271_left_source,
++    CS4271_DACVOL, 2, cs4271_output_sources);
++static SOC_ENUM_SINGLE_DECL(cs4271_right_source,
++    CS4271_DACVOL, 0, cs4271_output_sources);
++
+ static const struct snd_kcontrol_new cs4271_snd_controls[] = {
++    SOC_ENUM("Left Output Source", cs4271_left_source),
++    SOC_ENUM("Right Output Source", cs4271_right_source),
++    SOC_SINGLE("Link Playback Volume Switch", CS4271_DACVOL, 6, 1, 0),
+ 	SOC_DOUBLE_R_TLV("Master Playback Volume", CS4271_VOLA, CS4271_VOLB,
+ 		0, 0x7F, 1, cs4271_dac_tlv),
+ 	SOC_SINGLE("Digital Loopback Switch", CS4271_MODE2, 4, 1, 0),

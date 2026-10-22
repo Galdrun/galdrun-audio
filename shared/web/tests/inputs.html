@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hardware input rendering check</title>
+<link rel="stylesheet" href="../theme.css">
+<main><h1>Hardware input rendering check</h1><p id="result" role="status">Running...</p>
+<div id="inputs"></div></main>
+<script src="../inputs.js"></script>
+<script src="../input-events.js"></script>
+<script>
+// Open this file in a browser. No server, packages or connected hardware needed.
+(async () => {
+try {
+  const container = document.getElementById('inputs');
+  const check = (condition, message) => { if (!condition) throw Error(message); };
+  renderHardwareInputs({backend: 'esp32-gpio', setupButtonPin: 36, inputs: [
+    {id: 'KEY1', kind: 'button', pin: 0, bindings: {
+      click: {action: 'togglePause'}, doubleClick: {action: 'none'}, longPress: {action: 'stop'}}},
+    {id: 'Volume knob', kind: 'encoder', pinA: 5, pinB: 6, bindings: {
+      clockwise: {action: 'volumeUp', step: .02, scope: 'room'},
+      counterClockwise: {action: 'setVolume', value: .5, scope: 'zone'}}},
+    {id: 'Knob push', kind: 'button', device: '/dev/input/event1', key: 'KEY_ENTER',
+      bindings: {click: {action: 'toggleMute'}}},
+    {id: 'USB encoder', kind: 'encoder', device: 'rotary-encoder', axis: 'REL_X',
+      bindings: {clockwise: {action: 'volumeDown', step: .05, scope: 'zone'}}},
+    {id: '<img src=x onerror=alert(1)>', kind: 'button', pin: 19, bindings: {}}
+  ]}, container);
+  check(container.querySelectorAll('article').length === 5, 'Every input is listed');
+  for (const value of ['GPIO 0', 'GPIO A: 5', 'GPIO B: 6', 'KEY_ENTER', 'REL_X',
+    'Toggle Pause', 'Unassigned', '2% (room)', '50% (zone)', 'GPIO 36', 'Hold during reset']) {
+    check(container.textContent.toLowerCase().includes(value.toLowerCase()), 'Missing ' + value);
+  }
+  check(!container.querySelector('img'), 'Input names must be rendered as text');
+  renderHardwareInputs({backend: 'none', backendError: 'Cannot open GPIO chip', inputs: []}, container);
+  check(container.querySelector('.bad').textContent === 'Cannot open GPIO chip', 'Backend error visible');
+  check(container.textContent.includes('No audio buttons'), 'Empty state visible');
+  check(!container.querySelector('article'), 'Old inputs cleared');
+  renderHardwareInputs({backend: 'not running (setup mode)', setupButtonPin: 0, inputs: []}, container);
+  check(container.textContent.includes('GPIO 0'), 'Setup button on GPIO 0 visible');
+  const data = {inputs: [{id: 'KEY1', kind: 'button', pin: 0, bindings: {
+    click: {action: 'togglePause'}, doubleClick: {action: 'none'}, longPress: {action: 'stop'}}}]};
+  let calls = [], fail = false;
+  const save = async (id, bindings) => {
+    calls.push({id, bindings});
+    if (fail) throw Error('Disk full');
+    return {bindings: {...data.inputs[0].bindings, ...bindings}};
+  };
+  renderHardwareInputs(data, container, save);
+  check(container.querySelector('.input-heading .input-wiring').textContent === 'GPIO 0', 'GPIO beside heading');
+  const details = container.querySelector('details');
+  check(!details.open, 'Inputs start collapsed');
+  check(details.querySelector('.input-binding-summary').textContent.includes('Click: Toggle Pause'), 'Collapsed card describes assignments');
+  details.open = true;
+  const action = container.querySelector('select');
+  check(!container.inputEdits.dirty, 'Initial bindings are clean');
+  check(container.querySelector('.gesture-heading small').textContent === 'Single press', 'Gesture description visible');
+  check(container.querySelectorAll('.gesture-icon svg').length === 3, 'Gesture icons visible');
+  check(container.querySelector('.binding-hint').textContent.includes('paused'), 'Action explanation visible');
+  check(!container.querySelector('button'), 'Only the page Save button is used');
+  const height = action.getBoundingClientRect().height;
+  const amount = container.querySelector('input');
+  const scope = container.querySelector('.binding-scope select');
+  action.value = 'setVolume'; action.dispatchEvent(new Event('change'));
+  check(action.getBoundingClientRect().height === height, 'Action height stays fixed with volume options');
+  check(container.inputEdits.dirty, 'Changed action is dirty');
+  action.value = 'togglePause'; action.dispatchEvent(new Event('change'));
+  check(!container.inputEdits.dirty, 'Reverting an action clears dirty state');
+  action.value = 'setVolume'; action.dispatchEvent(new Event('change'));
+  action.dispatchEvent(new Event('input', {bubbles: true}));
+  amount.value = '37.5'; scope.value = 'zone';
+  amount.dispatchEvent(new Event('input', {bubbles: true}));
+  check(details.querySelector('.input-binding-summary').textContent.includes('37.5% (zone)'), 'Summary includes draft volume and scope');
+  renderHardwareInputs({inputs: []}, container, save);
+  check(container.querySelector('select') === action, 'Refresh preserves draft');
+  amount.value = '101'; details.open = false;
+  try { await container.inputEdits.save(); } catch (_) {}
+  check(details.open, 'Invalid amount opens its card for correction');
+  check(calls.length === 0, 'Invalid percentages are not saved');
+  amount.value = '37.5'; await container.inputEdits.save();
+  check(calls.length === 1 && calls[0].id === 'KEY1', 'Saves the selected input');
+  check(JSON.stringify(calls[0].bindings) === JSON.stringify({click: {action: 'setVolume', value: .375, scope: 'zone'}}), 'Only changed gestures saved');
+  check(!container.inputEdits.dirty, 'Successful save clears draft');
+  action.value = 'next'; action.dispatchEvent(new Event('change'));
+  action.dispatchEvent(new Event('input', {bubbles: true}));
+  fail = true; try { await container.inputEdits.save(); } catch (_) {}
+  check(calls[1].bindings.click.action === 'next' && !('scope' in calls[1].bindings.click), 'Basic actions omit volume parameters');
+  check(container.querySelector('.bad').textContent.includes('Disk full'), 'Save failure visible');
+  check(!action.disabled && container.inputEdits.dirty, 'Failed save retains draft');
+  renderHardwareInputs({inputs: []}, container, save);
+  check(container.querySelector('select') === action, 'Failed draft survives refresh');
+  fail = false; await container.inputEdits.save();
+  document.activeElement.blur();
+  renderHardwareInputs({...data, backend: 'refreshed'}, container, save);
+  check(container.querySelector('select') !== action, 'Clean bindings refresh from the client');
+  check(container.querySelector('details').open, 'Refresh preserves expanded card');
+  container.querySelector('details').open = false;
+  renderHardwareInputs({...data, backend: 'refreshed again'}, container, save);
+  check(!container.querySelector('details').open, 'Refresh preserves collapsed card');
+  class FakeEventSource extends EventTarget {
+    static CLOSED = 2;
+    static instances = [];
+    constructor(url) {super();this.url=url;this.readyState=1;FakeEventSource.instances.push(this)}
+    close() {this.readyState=2}
+    emit(type, data) {this.dispatchEvent(new MessageEvent(type, {data: JSON.stringify(data)}))}
+  }
+  window.EventSource = FakeEventSource;
+  connectHardwareInputEvents(container, '/api/input-events');
+  connectHardwareInputEvents(container, '/api/input-events');
+  check(FakeEventSource.instances.length === 1, 'Only one push connection');
+  const feed = FakeEventSource.instances[0];
+  feed.emit('input-snapshot', [{id: 'KEY1', pressed: true}]);
+  check(container.querySelector('.input-badge').classList.contains('pressed'), 'Snapshot restores held button');
+  check(!container.querySelector('details').open, 'Push leaves collapsed card closed');
+  feed.emit('input-state', {id: 'KEY1', pressed: false});
+  check(!container.querySelector('.input-badge').classList.contains('pressed'), 'Button release resets badge');
+  const draft = container.querySelector('select'); draft.value='pause'; draft.dispatchEvent(new Event('change'));
+  feed.emit('input-state', {id: 'KEY1', pressed: true});
+  check(container.inputEdits.dirty && draft.value === 'pause', 'Push preserves unsaved action');
+  feed.onerror();
+  check(!container.querySelector('.input-badge').classList.contains('pressed'), 'Disconnect clears green badge');
+  check(container.querySelector('.input-badge').getAttribute('aria-label').includes('unavailable'), 'Disconnected state is not reported as released');
+  container.inputEventFeed.close();
+  feed.emit('input-state', {id: 'KEY1', pressed: true});
+  check(!container.querySelector('.input-badge').classList.contains('pressed'), 'Closed feed ignores stale events');
+  document.body.dataset.verification = 'PASS';
+  document.getElementById('result').textContent = 'PASS';
+} catch (error) {
+  document.body.dataset.verification = 'FAIL: ' + error.message;
+  document.getElementById('result').textContent = document.body.dataset.verification;
+}
+})();
+</script>
+</html>

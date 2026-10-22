@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360"><title>Living room</title>
+<rect width="480" height="360" fill="#efe6d8"/><rect y="270" width="480" height="90" fill="#c9a77f"/><rect y="270" width="480" height="6" fill="#b48f66"/>
+<rect x="290" y="40" width="150" height="150" rx="6" fill="#dcebe9"/><rect x="290" y="40" width="150" height="150" rx="6" fill="none" stroke="#fff" stroke-width="8"/><path d="M365 40v150M290 115h150" stroke="#fff" stroke-width="5"/>
+<path d="M300 190c10-30 40-40 60-38-25 10-35 25-38 38z" fill="#7fae8f"/>
+<rect x="70" y="200" width="200" height="60" rx="18" fill="#2f6f6a"/><rect x="60" y="180" width="40" height="80" rx="14" fill="#285f5b"/><rect x="240" y="180" width="40" height="80" rx="14" fill="#285f5b"/><rect x="90" y="170" width="160" height="45" rx="14" fill="#38807a"/>
+<rect x="85" y="258" width="8" height="16" fill="#5b4632"/><rect x="247" y="258" width="8" height="16" fill="#5b4632"/>
+<circle cx="130" cy="192" r="15" fill="#e8b15d"/><circle cx="205" cy="192" r="15" fill="#f0d7a8"/>
+<path d="M30 270V120" stroke="#4b3b2c" stroke-width="4"/><path d="M10 120h40l-8-34H18z" fill="#f2cf8d"/><ellipse cx="30" cy="272" rx="18" ry="4" fill="#4b3b2c"/>
+<rect x="390" y="200" width="44" height="72" rx="6" fill="#2b2b2b"/><circle cx="412" cy="222" r="8" fill="#555"/><circle cx="412" cy="252" r="13" fill="#555"/><circle cx="412" cy="252" r="6" fill="#c9a26a"/>
+<ellipse cx="200" cy="300" rx="120" ry="16" fill="#d9c2a3"/>
+<path d="M340 270v-40" stroke="#5b4632" stroke-width="3"/><rect x="326" y="252" width="28" height="22" rx="4" fill="#b7704f"/><path d="M340 254c-18-14-14-34 0-40 14 6 18 26 0 40z" fill="#5f9a74"/>
+</svg>

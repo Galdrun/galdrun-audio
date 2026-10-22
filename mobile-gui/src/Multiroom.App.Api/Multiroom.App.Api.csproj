@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <Compile Include="../../../shared/branding/Branding.cs" Link="Branding.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Multiroom.App.Tests" />
+  </ItemGroup>
+</Project>

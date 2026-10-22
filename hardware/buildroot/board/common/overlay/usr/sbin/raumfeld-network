@@ -1,0 +1,316 @@
+#!/bin/sh
+set -u
+. /etc/raumfeld-network.conf
+mkdir -p /run/raumfeld-network
+state=/run/raumfeld-network
+ap_running=0
+portal_pid=
+dhcp_pid=
+wifi_dhcp_pid=
+station_running=0
+static_eth=0
+ap_seconds=0
+scan_pid=
+waited=0
+eth_wait=0
+wifi=
+log() { logger -t raumfeld-network "$*"; }
+load_settings() {
+    DEVICE_NAME=
+    ETH_SPEED=auto
+    ETH_IP_MODE=dhcp; ETH_IP=; ETH_NETMASK=255.255.255.0; ETH_GATEWAY=; ETH_DNS=
+    WIFI_SSID=; WIFI_PASSWORD=; WIFI_IP_MODE=dhcp; WIFI_IP=; WIFI_NETMASK=255.255.255.0
+    WIFI_GATEWAY=; WIFI_DNS=; WIFI_BSSID=
+    if [ -f /etc/galdrun-network.conf ]; then
+        # Values are data, including quotes, dollar signs and backticks. No eval.
+        while IFS= read -r line; do
+            key=${line%%=*}; value=${line#*=}
+            case "$key" in
+                DEVICE_NAME) DEVICE_NAME=$value ;;
+                ETH_SPEED) ETH_SPEED=$value ;;
+                ETH_IP_MODE) ETH_IP_MODE=$value ;; ETH_IP) ETH_IP=$value ;;
+                ETH_NETMASK) ETH_NETMASK=$value ;; ETH_GATEWAY) ETH_GATEWAY=$value ;;
+                ETH_DNS) ETH_DNS=$value ;; WIFI_SSID) WIFI_SSID=$value ;;
+                WIFI_PASSWORD) WIFI_PASSWORD=$value ;; WIFI_COUNTRY) WIFI_COUNTRY=$value ;;
+                WIFI_BSSID) WIFI_BSSID=$value ;;
+                WIFI_IP_MODE) WIFI_IP_MODE=$value ;; WIFI_IP) WIFI_IP=$value ;;
+                WIFI_NETMASK) WIFI_NETMASK=$value ;; WIFI_GATEWAY) WIFI_GATEWAY=$value ;;
+                WIFI_DNS) WIFI_DNS=$value ;;
+            esac
+        done < /etc/galdrun-network.conf
+    fi
+}
+apply_device_name() {
+    name=$DEVICE_NAME
+    [ -n "$name" ] || name=$(cat /etc/hostname)
+    hostname "$name" || log 'Failed to apply device name'
+}
+apply_eth_speed() {
+    # Keep autonegotiation to agree duplex with the switch at the chosen rate.
+    case "$ETH_SPEED" in
+        auto) advertise=0x00f ;;
+        10) advertise=0x003 ;;
+        100) advertise=0x00c ;;
+        *) log 'Invalid Ethernet speed; using automatic'; advertise=0x00f ;;
+    esac
+    ethtool -s "$ETH_INTERFACE" autoneg on advertise "$advertise" || log 'Failed to apply Ethernet speed'
+}
+settings_checksum() { cksum < /etc/galdrun-network.conf 2>/dev/null || echo missing; }
+address() { ip -4 -o addr show dev "$1" scope global 2>/dev/null; }
+choose_wifi() {
+    wifi=$WIFI_INTERFACE
+    if [ ! -d "/sys/class/net/$wifi/phy80211" ]; then
+        wifi=$(iw dev 2>/dev/null | awk '$1 == "Interface" && $2 != "galdrunscan0" {print $2; exit}')
+    fi
+    [ -n "$wifi" ]
+}
+set_static() {
+    interface=$1; static_ip=$2; mask=$3; gateway=$4; dns=$5
+    # Convert the already-validated dotted mask to a prefix without shell arithmetic on user text.
+    prefix=$(printf '%s\n' "$mask" | awk -F. '{n=0; for(i=1;i<=4;i++){v=$i; while(v>0){n+=v%2;v=int(v/2)}} print n}')
+    ip addr replace "$static_ip/$prefix" dev "$interface" || return 1
+    if [ -n "$gateway" ]; then ip route replace default via "$gateway" dev "$interface" || return 1; fi
+    [ -n "$dns" ] || dns=$gateway
+    if [ -n "$dns" ]; then printf 'nameserver %s # %s\n' "$dns" "$interface" > /etc/resolv.conf; else : > /etc/resolv.conf; fi
+}
+stop_station() {
+    if [ -n "$wifi_dhcp_pid" ]; then
+        kill "$wifi_dhcp_pid" 2>/dev/null || :
+        wait "$wifi_dhcp_pid" 2>/dev/null || :
+        wifi_dhcp_pid=
+    fi
+    if [ -f "$state/wpa.pid" ]; then
+        kill "$(cat "$state/wpa.pid")" 2>/dev/null || :
+        rm -f "$state/wpa.pid"
+    fi
+    if [ "$station_running" = 1 ] && [ -n "$wifi" ]; then
+        ip -4 addr flush dev "$wifi" 2>/dev/null || :
+        ip -4 route flush dev "$wifi" 2>/dev/null || :
+        ip link set "$wifi" down 2>/dev/null || :
+    fi
+    station_running=0
+}
+stop_ap() {
+    if [ -n "$portal_pid" ]; then
+        kill "$portal_pid" 2>/dev/null || :
+        wait "$portal_pid" 2>/dev/null || :
+        portal_pid=
+    fi
+    for service in hostapd dnsmasq; do
+        if [ -f "$state/$service.pid" ]; then
+            kill "$(cat "$state/$service.pid")" 2>/dev/null || :
+            rm -f "$state/$service.pid"
+        fi
+    done
+    if [ "$ap_running" = 1 ] && [ -n "$wifi" ]; then
+        ip -4 addr flush dev "$wifi" 2>/dev/null || :
+        ip link set "$wifi" down 2>/dev/null || :
+    fi
+    ap_running=0
+}
+cleanup() {
+    trap - EXIT INT TERM
+    if [ -n "$scan_pid" ]; then kill "$scan_pid" 2>/dev/null || :; wait "$scan_pid" 2>/dev/null || :; fi
+    stop_ap
+    stop_station
+    if [ -n "$dhcp_pid" ]; then
+        kill "$dhcp_pid" 2>/dev/null || :
+        wait "$dhcp_pid" 2>/dev/null || :
+    fi
+    rm -f /run/raumfeld-network.pid
+    exit 0
+}
+trap cleanup EXIT INT TERM
+start_station() {
+    choose_wifi || return 1
+    iw reg set "$WIFI_COUNTRY" || return 1
+    ip link set "$wifi" down || return 1
+    iw dev "$wifi" set type managed || return 1
+    ip link set "$wifi" up || return 1
+    umask 077
+    # Hex SSID and derived PSK prevent wpa_supplicant config injection.
+    ssid_hex=$(printf '%s' "$WIFI_SSID" | od -An -v -tx1 | tr -d ' \n')
+    {
+        printf 'country=%s\nnetwork={\n ssid=%s\n scan_ssid=1\n' "$WIFI_COUNTRY" "$ssid_hex"
+        if [ -n "$WIFI_BSSID" ]; then printf ' bssid=%s\n' "$WIFI_BSSID"; fi
+        if [ -n "$WIFI_PASSWORD" ]; then
+            psk=$(printf '%s\n' "$WIFI_PASSWORD" | wpa_passphrase "$WIFI_SSID" | sed -n 's/^[[:space:]]*psk=//p')
+            [ "${#psk}" = 64 ] || return 1
+            case "$psk" in *[!0123456789abcdefABCDEF]*) return 1 ;; esac
+            printf ' psk=%s\n' "$psk"
+        else
+            printf ' key_mgmt=NONE\n'
+        fi
+        printf '}\n'
+    } > "$state/wpa.conf"
+    wpa_supplicant -B -s -D nl80211 -i "$wifi" -c "$state/wpa.conf" -P "$state/wpa.pid" || return 1
+    station_running=1
+    if [ "$WIFI_IP_MODE" = dhcp ]; then
+        udhcpc -f -R -S -i "$wifi" -s /usr/share/udhcpc/default.script \
+            -p "$state/wifi-udhcpc.pid" -x "hostname:$(hostname)" -t 3 -T 3 -A 10 &
+        wifi_dhcp_pid=$!
+    fi
+    log "Wi-Fi station connecting on $wifi"
+}
+start_ap() {
+    choose_wifi || { log 'Wi-Fi interface not ready; retrying'; return 1; }
+    iw reg set "$WIFI_COUNTRY" || return 1
+    ip link set "$wifi" down || return 1
+    iw dev "$wifi" set type __ap || { log 'Driver cannot enter AP mode'; return 1; }
+    ip addr replace "$AP_ADDRESS/$AP_PREFIX" dev "$wifi" || return 1
+    ip link set "$wifi" up || return 1
+    umask 077
+    cat > "$state/hostapd.conf" <<EOF
+interface=$wifi
+driver=nl80211
+ssid=$AP_SSID
+country_code=$WIFI_COUNTRY
+ieee80211d=1
+hw_mode=g
+channel=1
+wpa=2
+wpa_key_mgmt=WPA-PSK
+rsn_pairwise=CCMP
+wpa_passphrase=$AP_PASSWORD
+ctrl_interface=/run/hostapd
+EOF
+    cat > "$state/dnsmasq.conf" <<EOF
+port=53
+interface=$wifi
+bind-interfaces
+listen-address=$AP_ADDRESS
+except-interface=lo
+no-resolv
+no-hosts
+address=/#/$AP_ADDRESS
+local=/#/
+dhcp-range=$AP_POOL_START,$AP_POOL_END,255.255.255.0,12h
+dhcp-option=option:router,$AP_ADDRESS
+dhcp-option=option:dns-server,$AP_ADDRESS
+dhcp-authoritative
+dhcp-leasefile=$state/leases
+pid-file=$state/dnsmasq.pid
+EOF
+    if ! hostapd -B -s -P "$state/hostapd.pid" "$state/hostapd.conf"; then
+        stop_ap; return 1
+    fi
+    if ! dnsmasq --conf-file="$state/dnsmasq.conf"; then
+        stop_ap; return 1
+    fi
+    /usr/sbin/raumfeld-captive-portal "$AP_ADDRESS" 80 &
+    portal_pid=$!
+    ap_running=1
+    ap_seconds=0
+    log "AP $AP_SSID enabled on $wifi ($AP_ADDRESS)"
+}
+load_settings
+apply_device_name
+checksum=$(settings_checksum)
+ip link set "$ETH_INTERFACE" up
+apply_eth_speed
+while :; do
+    if [ -n "$scan_pid" ] && ! kill -0 "$scan_pid" 2>/dev/null; then wait "$scan_pid" 2>/dev/null || :; scan_pid=; fi
+    if [ -f "$state/scan.request" ] && [ -z "$scan_pid" ]; then
+        /usr/sbin/raumfeld-wifi-scan &
+        scan_pid=$!
+    fi
+    latest=$(settings_checksum)
+    if [ "$latest" != "$checksum" ]; then
+        # Give the web response time to reach its browser before disconnecting.
+        sleep 2
+        if [ -n "$scan_pid" ]; then kill "$scan_pid" 2>/dev/null || :; wait "$scan_pid" 2>/dev/null || :; scan_pid=; fi
+        stop_ap; stop_station
+        if [ -n "$dhcp_pid" ]; then
+            kill "$dhcp_pid" 2>/dev/null || :; wait "$dhcp_pid" 2>/dev/null || :; dhcp_pid=
+        fi
+        ip -4 addr flush dev "$ETH_INTERFACE"
+        ip -4 route flush dev "$ETH_INTERFACE"
+        : > /etc/resolv.conf
+        load_settings
+        apply_device_name
+        apply_eth_speed
+        checksum=$latest
+        static_eth=0; waited=0; eth_wait=0
+        log 'Applying saved network settings'
+    fi
+    carrier=$(cat "/sys/class/net/$ETH_INTERFACE/carrier" 2>/dev/null || echo 0)
+    if [ "$carrier" = 1 ]; then
+        if [ "$ETH_IP_MODE" = static ]; then
+            if [ "$static_eth" = 0 ]; then
+                if set_static "$ETH_INTERFACE" "$ETH_IP" "$ETH_NETMASK" "$ETH_GATEWAY" "$ETH_DNS"; then static_eth=1; fi
+            fi
+        elif [ -z "$dhcp_pid" ] || ! kill -0 "$dhcp_pid" 2>/dev/null; then
+            udhcpc -f -R -S -i "$ETH_INTERFACE" -s /usr/share/udhcpc/default.script \
+                -p "$state/udhcpc.pid" -x "hostname:$(hostname)" -t 3 -T 3 -A 10 &
+            dhcp_pid=$!
+        fi
+        if [ -n "$(address "$ETH_INTERFACE")" ]; then
+            if [ "$ap_running" = 1 ]; then stop_ap; log 'Ethernet DHCP ready; AP disabled'; fi
+            stop_station
+            waited=0; eth_wait=0
+        else
+            waited=$((waited + 5))
+            if [ "$ETH_IP_MODE" != static ]; then
+                # A re-plugged cable can come up at a speed the switch did not agree
+                # to and receive nothing, so DHCP never answers. Renegotiate after
+                # 30 s, then at most every two minutes.
+                eth_wait=$((eth_wait + 5))
+                if [ "$eth_wait" -ge 30 ]; then
+                    log 'No Ethernet DHCP lease despite link; renegotiating'
+                    ethtool -r "$ETH_INTERFACE" || log 'Failed to renegotiate Ethernet link'
+                    eth_wait=-90
+                fi
+            fi
+        fi
+    else
+        eth_wait=0
+        if [ -n "$dhcp_pid" ]; then
+            kill "$dhcp_pid" 2>/dev/null || :
+            wait "$dhcp_pid" 2>/dev/null || :
+            dhcp_pid=
+            ip -4 addr flush dev "$ETH_INTERFACE"
+        fi
+        if [ "$static_eth" = 1 ]; then
+            ip -4 addr flush dev "$ETH_INTERFACE"
+            ip -4 route flush dev "$ETH_INTERFACE"
+            static_eth=0
+            : > /etc/resolv.conf
+        fi
+        if [ -z "$WIFI_SSID" ]; then waited=$DHCP_GRACE_SECONDS; else waited=$((waited + 5)); fi
+    fi
+    ethernet_ready=0
+    if [ "$carrier" = 1 ] && [ -n "$(address "$ETH_INTERFACE")" ]; then ethernet_ready=1; fi
+    if [ "$ethernet_ready" = 0 ] && [ -n "$WIFI_SSID" ]; then
+        if [ "$ap_running" = 1 ]; then
+            ap_seconds=$((ap_seconds + 5))
+            if [ "$ap_seconds" -ge 120 ]; then stop_ap; waited=0; fi
+        fi
+        if [ "$ap_running" = 0 ]; then
+            if [ "$station_running" = 1 ] && {
+                [ ! -s "$state/wpa.pid" ] || ! kill -0 "$(cat "$state/wpa.pid" 2>/dev/null)" 2>/dev/null
+            }; then stop_station; fi
+            if [ "$station_running" = 0 ]; then start_station || :; fi
+            if [ "$station_running" = 1 ] && iw dev "$wifi" link 2>/dev/null | grep -q '^Connected to '; then
+                if [ "$WIFI_IP_MODE" = static ] && [ -z "$(address "$wifi")" ]; then
+                    set_static "$wifi" "$WIFI_IP" "$WIFI_NETMASK" "$WIFI_GATEWAY" "$WIFI_DNS" || :
+                fi
+                if [ -n "$(address "$wifi")" ]; then waited=0; fi
+            fi
+        fi
+    fi
+    if [ "$ap_running" = 1 ]; then
+        if [ -z "$portal_pid" ] || ! kill -0 "$portal_pid" 2>/dev/null; then
+            stop_ap; log 'Captive portal stopped; retrying'
+        fi
+        for service in hostapd dnsmasq; do
+            if [ ! -f "$state/$service.pid" ] || ! kill -0 "$(cat "$state/$service.pid")" 2>/dev/null; then
+                stop_ap; log 'AP service stopped; retrying'; break
+            fi
+        done
+    fi
+    if [ "$waited" -ge "$DHCP_GRACE_SECONDS" ] && [ "$ap_running" = 0 ]; then
+        stop_station
+        start_ap || :
+    fi
+    sleep 5
+done

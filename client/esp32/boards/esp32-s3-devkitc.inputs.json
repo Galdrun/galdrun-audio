@@ -1,0 +1,4 @@
+[
+  {"id": "boot", "kind": "button", "pin": 0,
+   "bindings": {"click": {"action": "togglePause"}, "doubleClick": {"action": "next"}}}
+]

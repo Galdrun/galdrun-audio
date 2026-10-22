@@ -1,0 +1,136 @@
+#!/bin/sh
+# Explicit deep sleep; automatic audio standby continues to keep Linux awake.
+# Wakes on POWER, and on a Wake-on-LAN magic packet while Ethernet has a link.
+set -eu
+if [ "$#" -ne 0 ] || [ "$(id -u)" -ne 0 ]; then
+    echo 'Usage: run raumfeld-suspend as root, with no arguments' >&2
+    exit 1
+fi
+grep -q '\[deep\]' /sys/power/mem_sleep || {
+    echo 'Deep sleep is not selected' >&2
+    exit 1
+}
+chronyc tracking >/dev/null
+client=/etc/init.d/S95galdrun-client
+client_stopped=0
+time_offline=0
+leds=/etc/init.d/S96raumfeld-status-leds
+leds_stopped=0
+left=/sys/class/leds/raumfeld:1
+right=/sys/class/leds/raumfeld:2
+power=on
+wifi_unloaded=0
+wifi_used=0
+wol=
+api() {
+    curl --fail --silent --show-error --max-time 3 \
+        -H 'Content-Type: application/json' \
+        --data "{\"command\":\"$1\",\"params\":{}}" http://127.0.0.1:4720/api
+}
+power_state() {
+    sed -n 's/.*"state"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+}
+if "$client" status; then
+    power=$(api getPower | power_state)
+    case "$power" in on|standby|standbyManual) ;; *) echo 'Cannot read client power state' >&2; exit 1 ;; esac
+    client_stopped=1
+fi
+restore() {
+    result=$?
+    trap - EXIT
+    if [ -n "$wol" ]; then
+        ethtool -s "$wol" wol d || result=1
+    fi
+    if [ "$wifi_unloaded" -eq 1 ]; then
+        modprobe mwifiex_sdio || result=1
+        # A station or access point it served has to be brought up again.
+        if [ "$wifi_used" -eq 1 ]; then /etc/init.d/S45raumfeld-network restart || result=1; fi
+    fi
+    if [ "$time_offline" -eq 1 ]; then
+        chronyc online >/dev/null || result=1
+    fi
+    if [ "$client_stopped" -eq 1 ]; then
+        if "$client" start; then
+            if [ "$power" = standbyManual ]; then
+                restored=0
+                for attempt in $(seq 1 20); do
+                    if response=$(api standbyOn 2>/dev/null) &&
+                       [ "$(printf '%s' "$response" | power_state)" = standbyManual ]; then
+                        restored=1
+                        break
+                    fi
+                    sleep 0.1
+                done
+                if [ "$restored" -eq 0 ]; then
+                    echo 'Could not restore manual standby' >&2
+                    result=1
+                fi
+            fi
+        else
+            echo 'Could not restart audio client' >&2
+            result=1
+        fi
+    fi
+    if [ "$leds_stopped" -eq 1 ]; then
+        "$leds" start || result=1
+    fi
+    rmdir /run/raumfeld-suspend.lock || result=1
+    exit "$result"
+}
+mkdir /run/raumfeld-suspend.lock 2>/dev/null || {
+    echo 'Deep sleep is already being requested' >&2
+    exit 1
+}
+trap restore EXIT
+trap 'exit 1' HUP INT TERM
+# The status monitor must not overwrite this short entry indication.
+if "$leds" status; then
+    leds_stopped=1
+    "$leds" stop
+fi
+printf 'none\n' > "$left/trigger"
+printf 'none\n' > "$right/trigger"
+for led in "$left" "$right" "$left" "$right"; do
+    printf '0\n' > "$left/brightness"
+    printf '0\n' > "$right/brightness"
+    printf '1\n' > "$led/brightness"
+    sleep 0.15
+done
+printf '0\n' > "$left/brightness"
+printf '0\n' > "$right/brightness"
+if [ "$client_stopped" -eq 1 ]; then "$client" stop; fi
+# mwifiex cannot enter host sleep on this board: hs_activate times out and the
+# kernel aborts suspend with -EFAULT. Unload it for the sleep instead.
+if [ -d /sys/module/mwifiex_sdio ]; then
+    for net in /sys/class/net/*; do
+        if [ -d "$net/phy80211" ] && [ "$(cat "$net/operstate")" = up ]; then wifi_used=1; fi
+    done
+    rmmod mwifiex_sdio mwifiex
+    wifi_unloaded=1
+fi
+# Wake-on-LAN on the wired interface with a link: the AR8030 interrupt on
+# GPIO0_19 wakes the board. Disarming first clears a latched wake, so the
+# line is high when sleep arms its falling edge.
+for net in /sys/class/net/*; do
+    if [ -d "$net/phy80211" ] || [ -d "$net/wireless" ] || [ "$(cat "$net/type")" != 1 ] ||
+       [ "$(cat "$net/carrier" 2>/dev/null)" != 1 ]; then continue; fi
+    if ethtool "${net##*/}" | grep -q 'Supports Wake-on:.*g'; then wol=${net##*/}; break; fi
+done
+if [ -n "$wol" ]; then
+    ethtool -s "$wol" wol d
+    ethtool -s "$wol" wol g
+fi
+time_offline=1
+chronyc offline
+sync
+result=0
+echo mem > /sys/power/state || result=$?
+# RTC-based resume can jump wall time by a fraction of a second. Drop old
+# measurements and re-arm startup stepping before preparing any fresh audio.
+chronyc reset sources
+chronyc makestep 0.001 3
+chronyc online
+time_offline=0
+chronyc waitsync 30 0.01 0 1
+if [ "$result" -ne 0 ]; then logger -t raumfeld-suspend 'Kernel deep sleep failed'; fi
+exit "$result"
