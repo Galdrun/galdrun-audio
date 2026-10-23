@@ -76,6 +76,17 @@ bool setNoDelay(Socket socket)
 #endif
 }
 
+int waitReady(Socket highest, fd_set* readable, fd_set* writable, fd_set* failed,
+              timeval& timeout)
+{
+#if defined(_WIN32)
+    static_cast<void>(highest);
+    return ::select(0, readable, writable, failed, &timeout);
+#else
+    return ::select(highest + 1, readable, writable, failed, &timeout);
+#endif
+}
+
 int lastError()
 {
 #if defined(_WIN32)
@@ -150,10 +161,13 @@ Socket listenOnPort(uint16_t port, int backlog, std::string& error)
     }
 
     // Without this a restart inside the TIME_WAIT window cannot rebind, which
-    // turns every quick restart into a listener that is not there.
+    // turns every quick restart into a listener that is not there. Windows
+    // rebinds past TIME_WAIT anyway, and its SO_REUSEADDR would also let a
+    // second copy of this server bind a port that is still listening, so it
+    // gets the opposite: no other socket may share the port.
     const int on = 1;
 #if defined(_WIN32)
-    ::setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&on),
+    ::setsockopt(listener, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&on),
                  sizeof(on));
 #else
     ::setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));

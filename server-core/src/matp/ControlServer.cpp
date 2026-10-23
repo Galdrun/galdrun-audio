@@ -109,6 +109,7 @@ public:
         thread_ = std::jthread([this](std::stop_token stop) { loop(stop); });
     }
 
+    [[nodiscard]] bool listening() const noexcept { return listening_.load(); }
     [[nodiscard]] uint64_t accepted() const noexcept { return accepted_.load(); }
     [[nodiscard]] uint64_t refused() const noexcept { return refused_.load(); }
     [[nodiscard]] uint64_t closed() const noexcept { return closed_.load(); }
@@ -340,20 +341,12 @@ private:
             timeout.tv_sec = 0;
             timeout.tv_usec = kSelectTimeoutMs * 1000;
 
-            // Windows ignores the first argument and takes the count from the
-            // sets themselves; POSIX wants the highest descriptor plus one.
-#if defined(_WIN32)
-            static_cast<void>(highest);
-            const int ready = ::select(0, &readable, &writable, nullptr, &timeout);
-#else
-            const int ready =
-                ::select(static_cast<int>(highest) + 1, &readable, &writable, nullptr,
-                         &timeout);
-#endif
+            const int ready = net::waitReady(highest, &readable, &writable, nullptr, timeout);
             if (ready < 0 && !net::wouldBlock(net::lastError()))
             {
                 MULTIROOM_ERROR("control listener: select failed: {}",
                           net::errorMessage(net::lastError()));
+                listening_.store(false);
                 break;
             }
 
@@ -598,6 +591,7 @@ private:
     std::list<Connection> connections_;
     ClientRegistry registry_;
 
+    std::atomic<bool> listening_{true};
     std::atomic<uint64_t> accepted_{0};
     std::atomic<uint64_t> refused_{0};
     std::atomic<uint64_t> closed_{0};
@@ -646,6 +640,11 @@ ControlServer::start(const IClock& clock, ControlServerSettings settings)
 
     MULTIROOM_INFO("control listener on port {}", port);
     return std::unique_ptr<ControlServer>(new ControlServer(std::move(impl), port));
+}
+
+bool ControlServer::listening() const noexcept
+{
+    return impl_->listening();
 }
 
 uint64_t ControlServer::acceptedCount() const noexcept

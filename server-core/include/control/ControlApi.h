@@ -161,6 +161,12 @@ private:
     // Both: the client's own `setServer`, through its beacon's address.
     Reply pointClient(const std::string& name, const std::string& server);
     Reply clientFirmwareSettings(const json::Value& params, const std::string& command);
+    // `command` sent to a discovered client with a recent beacon: its answer
+    // as the body, an object with a boolean `ok`, or a failure when there is
+    // no such client or no response. A refusal is an answer, mapped by the
+    // caller; nothing in the body is forwarded unless the caller copies it.
+    Reply callClient(const std::string& name, const std::string& command,
+                     const json::Value& params);
     Reply zoneCreate(const json::Value& params);
     Reply zoneDelete(const json::Value& params);
     Reply zoneSetClients(const json::Value& params);

@@ -96,6 +96,10 @@ public:
     // zero.
     [[nodiscard]] uint16_t port() const noexcept { return port_; }
 
+    // False once the thread has given up on a failed select(), which nothing
+    // here retries: the process is expected to stop and be restarted.
+    [[nodiscard]] bool listening() const noexcept;
+
     // One message for one room, from a thread that is not this one: section
     // 20's start, sections 37 and 38's pause and stop, section 39's volume and
     // the two metadata messages of sections 23 and 44.

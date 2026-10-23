@@ -83,6 +83,10 @@ public:
     [[nodiscard]] uint16_t port() const noexcept { return port_; }
     [[nodiscard]] uint64_t acceptedCount() const noexcept;
 
+    // False once the thread has given up on a failed select(), which nothing
+    // here retries: the process is expected to stop and be restarted.
+    [[nodiscard]] bool listening() const noexcept;
+
     // One whole event line, newline included, for every subscribed
     // connection. From any thread; it takes one short lock, never waits on a
     // socket, and drops the line when nobody is subscribed.

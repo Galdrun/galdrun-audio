@@ -56,14 +56,14 @@ One script per host builds everything and installs what is missing first.
 Running it again skips what is already there. Run it from the repository root.
 
 ```sh
-./build-client.sh                       # Linux: all targets except Windows
-./build-client.sh connector2            # one target
-./build-client.sh linux esp32-a1s       # groups and targets mixed
+scripts/build-client.sh                       # Linux: all targets except Windows
+scripts/build-client.sh connector2            # one target
+scripts/build-client.sh linux esp32-a1s       # groups and targets mixed
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File build-client.ps1                          # Windows: all targets
-powershell -ExecutionPolicy Bypass -File build-client.ps1 -Target windows,linux-armv8
+powershell -ExecutionPolicy Bypass -File scripts\build-client.ps1                          # Windows: all targets
+powershell -ExecutionPolicy Bypass -File scripts\build-client.ps1 -Target windows,linux-armv8
 ```
 
 Targets: `all` (default), the groups `windows`, `linux`, `esp32`, and every name
@@ -125,10 +125,10 @@ be left out when only one serial port is present.
 
 | Script | Purpose |
 |---|---|
-| `build-client.sh` | Builds the Linux, ESP32 and Connector 2 targets and installs their tools. |
-| `build-client.ps1` | Windows: builds `windows-x64`, runs `build-client.sh` in WSL for the rest. |
+| `scripts/build-client.sh` | Builds the Linux, ESP32 and Connector 2 targets and installs their tools. |
+| `scripts\build-client.ps1` | Windows: builds `windows-x64`, runs `scripts/build-client.sh` in WSL for the rest. |
 | `scripts/upload/*` | Upload to devices, see [Upload](#upload). `linux-remote.sh` and `connector2-remote.sh` are their device-side halves. |
-| `client/scripts/install-linux-tools.sh` | Downloads the cross toolchains and builds ALSA for each Linux target; called by `build-client.sh`. |
+| `client/scripts/install-linux-tools.sh` | Downloads the cross toolchains and builds ALSA for each Linux target; called by `scripts/build-client.sh`. |
 | `client/scripts/verify-linux-binaries.sh` | Starts every Linux build under QEMU to check it runs on its CPU. |
 | `hardware/buildroot/build.sh`, `Build.ps1` | Builds only the Connector 2 firmware. |
 
@@ -164,7 +164,7 @@ galdrun-client --help                         all options
 C++17 and CMake, no third-party libraries: WASAPI on Windows, alsa-lib on Linux,
 the ESP-IDF I2S driver on the ESP32. Code shared with the server is in
 [`../shared`](../shared), the wire protocol in
-[`../docs/MATP-AudioTransferProtocol.md`](../docs/MATP-AudioTransferProtocol.md).
+[`../docs/protocol/MATP-AudioTransferProtocol.md`](../docs/protocol/MATP-AudioTransferProtocol.md).
 
 ```sh
 cd Client

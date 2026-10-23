@@ -501,14 +501,14 @@ td.drag-handle svg { width: 16px; height: 16px; display: block; fill: currentCol
   .page.page-app:not([hidden]) { grid-template-columns: minmax(0, 1fr); height: auto; }
   .library-toggle { display: none !important; }
   .page-app.library-closed .library-pane { visibility: visible; margin: 12px; border-width: 1px; }
-  /* The Playlists page: one part at a time, picked in its bar. */
-  .page.page-app[data-page="playlists"][data-part]:not([hidden]) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+  /* A tree page (Playlists, Radio stations): one part at a time, picked in its bar. */
+  .page.page-app[data-page][data-part]:not([hidden]) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
     height: calc(100vh - var(--header-height) - var(--player-space)); }
   .page-app .pl-small-bar { display: flex; }
-  .page-app[data-page="playlists"]:not([data-part="tree"]) .pl-tree-pane,
-  .page-app[data-page="playlists"]:not([data-part="list"]) .playlist-pane,
-  .page-app[data-page="playlists"]:not([data-part="library"]) .library-pane { display: none; }
-  .page.page-app[data-page="playlists"] .pane { height: auto; min-height: 0; margin: 0 12px 12px; visibility: visible; border: 1px solid var(--line); border-radius: var(--radius); }
+  .page-app[data-part]:not([data-part="tree"]) .pl-tree-pane,
+  .page-app[data-part]:not([data-part="list"]) .list-pane,
+  .page-app[data-part]:not([data-part="library"]) .library-pane { display: none; }
+  .page.page-app[data-part] .pane { height: auto; min-height: 0; margin: 0 12px 12px; visibility: visible; border: 1px solid var(--line); border-radius: var(--radius); }
   .zones-pane { height: calc(100vh - var(--header-height)); border-right: 0; border-bottom: 1px solid var(--line); }
   .page-app .zones-pane { height: calc(100vh - var(--header-height) - 24px); margin: 12px 12px 0; }
   .page-app .library-pane { height: calc(100vh - 24px); margin: 12px; border-left: 1px solid var(--line); border-radius: var(--radius); }
@@ -804,7 +804,7 @@ body.scrolled .to-top { opacity: 1; pointer-events: auto; transform: none; }
 .page.page-app[data-page="playlists"]:not([hidden]) {
   --pl-tree: 240px; --pl-tree-strip: 44px; --pl-lib: 3fr; --pl-lib-strip: 56px;
   grid-template-columns: var(--pl-tree) var(--pl-tree-strip) minmax(340px, 2fr) var(--pl-lib-strip) minmax(0, var(--pl-lib)); }
-.page.page-app[data-page="playlists"].tree-closed:not([hidden]) { --pl-tree: 0px; --pl-tree-strip: 56px; }
+.page.page-app[data-page="playlists"].tree-closed:not([hidden]), .page.page-app[data-page="stations"].tree-closed:not([hidden]) { --pl-tree: 0px; --pl-tree-strip: 56px; }
 .page.page-app[data-page="playlists"].library-closed:not([hidden]) { --pl-lib: 0fr; --pl-lib-strip: 68px; }
 /* Only on a small screen (below): the ☰ that picks the part shown. */
 .pl-small-bar { display: none; align-items: center; gap: 10px; margin: 12px 12px 8px; }
@@ -898,11 +898,23 @@ li[aria-expanded="true"] > .save-row .tree-chevron svg { transform: rotate(90deg
 .save-pick > svg { flex: none; width: 16px; height: 16px; color: var(--accent); }
 .save-pick > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .confirm-dialog p.save-error { margin: 0 0 14px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
+.fields > .save-error { grid-column: 1 / -1; }
 .save-error button.link { min-height: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 650; text-decoration: underline; }
-/* The open playlist: a head as a queue's, without the transport, and its
-   entries as a queue's rows. */
-.page-app .playlist-pane { padding: 12px 18px; }
-.page-app .playlist-pane > .queue-head { flex: none; display: flex; }
+/* The Radio stations page as the Playlists page, without the library: the
+   tree of folders and its strip, the stations of the folder picked. */
+.page.page-app[data-page="stations"]:not([hidden]) {
+  --pl-tree: 280px; --pl-tree-strip: 44px;
+  grid-template-columns: var(--pl-tree) var(--pl-tree-strip) minmax(0, 1fr); }
+.page-app[data-page="stations"] .list-pane { margin-right: 12px; }
+/* A row's tools wait past its right edge (.lib-tracks .row-tools). */
+.station-list.table-wrap { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; }
+.station-dialog { width: min(520px, calc(100vw - 32px)); }
+.station-dialog .confirm-buttons { margin-top: 4px; }
+
+/* The open playlist or folder: a head as a queue's, without the transport,
+   and its entries as a queue's rows. */
+.page-app .list-pane { padding: 12px 18px; }
+.page-app .list-pane > .queue-head { flex: none; display: flex; }
 .pl-title { min-width: 0; color: var(--fg); font-size: 16px; font-weight: 650; }
 .pl-title .pl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-title .muted { font-size: 14px; font-weight: 500; }
@@ -1208,10 +1220,9 @@ main:has(> .page[data-page="client"]:not([hidden])) { padding: 0; }
 .room-more > button { width: 48px; padding: 0; justify-content: center; }
 .room-more .pick-popover button:disabled { opacity: .45; }
 .room-rows { position: relative; z-index: 1; border: 1px solid color-mix(in srgb, var(--line) 60%, transparent); border-radius: var(--radius); background: color-mix(in srgb, var(--card) 70%, transparent); }
-.room-row, .room-advanced > summary { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); gap: 28px; padding: 16px 20px; }
-.room-row + .room-row, .room-advanced { border-top: 1px solid var(--line); }
-.room-row-intro, .room-advanced > summary { align-items: start; }
-.room-row-intro { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 14px; }
+.room-row { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); gap: 28px; padding: 16px 20px; }
+.room-row + .room-row { border-top: 1px solid var(--line); }
+.room-row-intro { display: grid; align-items: start; grid-template-columns: 42px minmax(0, 1fr); gap: 14px; }
 .room-rows .card-icon { width: 42px; height: 42px; }
 .room-rows .card-icon svg { width: 20px; height: 20px; }
 .room-rows h2 { margin: 0 0 3px; font-size: 15px; }
@@ -1219,8 +1230,9 @@ main:has(> .page[data-page="client"]:not([hidden])) { padding: 0; }
 .room-rows :is(input:not([type=checkbox]):not([type=range]):not([type=radio]), select, button) { min-height: 36px; font-size: 14px; }
 .room-rows :is(input:not([type=checkbox]):not([type=range]):not([type=radio]), select) { padding-top: 4px; padding-bottom: 4px; }
 .room-rows button:not(.icon-only) { padding: 4px 14px; }
-.room-rows .room-row-intro p, .room-advanced > summary p { margin: 0; color: var(--muted); font-size: 13px; }
+.room-rows .room-row-intro p { margin: 0; color: var(--muted); font-size: 13px; }
 .room-row-content { display: grid; gap: 10px; min-width: 0; }
+.room-row-content > table, .room-row-content .table-wrap { display: block; overflow-x: auto; }
 .room-field { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; align-items: center; }
 .room-field-label { color: var(--muted); font-size: 13px; }
 .room-offline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; opacity: .6; }
@@ -1231,21 +1243,15 @@ main:has(> .page[data-page="client"]:not([hidden])) { padding: 0; }
 .room-controls select.grow { width: 100%; min-width: 0; }
 .room-controls .w-num, .room-inline-form .w-num { width: 96px; }
 .room-controls select, .room-field-control > select { width: auto; max-width: 100%; }
-.room-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.room-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
 .room-stat { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--soft) 35%, var(--card)); }
 .room-stat strong { font-size: 16px; font-variant-numeric: tabular-nums; }
-.mini-spark { width: 80px; height: 24px; }
-.mini-spark path { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; }
+/* A tile's graph fills its width; the tile's label and value stand for its caption. */
+.room-stat .spark { display: block; margin: 4px 0 0; }
+.room-stat .spark > span { display: none; }
+.room-stat .spark canvas { width: 100%; height: 44px; }
 .room-inline-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
 .room-inline-form label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
-.room-advanced > summary { list-style: none; cursor: pointer; position: relative; }
-.room-advanced > summary::-webkit-details-marker { display: none; }
-.room-advanced > summary { grid-template-columns: 42px minmax(0, 1fr); gap: 14px; }
-.room-advanced > summary::after { content: ""; position: absolute; right: 24px; top: 28px; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .15s; }
-.room-advanced[open] > summary::after { transform: rotate(225deg); }
-.room-advanced-body { display: grid; gap: 12px; padding: 0 20px 18px; min-width: 0; }
-.room-advanced-body .table-wrap { overflow-x: auto; }
-.room-sparks { display: flex; flex-wrap: wrap; gap: 12px; }
 @media (max-width: 1300px) {
   .room-hero { grid-template-columns: 130px minmax(0, 1fr); gap: 22px; }
   .room-hero-image { width: 130px; height: 130px; }
@@ -1264,8 +1270,7 @@ main:has(> .page[data-page="client"]:not([hidden])) { padding: 0; }
   .room-hero { grid-template-columns: minmax(0, 1fr); }
   .room-hero-name { font-size: 24px; }
   .room-field { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .room-row, .room-advanced > summary { padding: 16px; }
-  .room-advanced-body { padding: 0 16px 16px; }
+  .room-row { padding: 16px; }
 }
 
 /* --- assistant: a chat window ------------------------------------------------------- */

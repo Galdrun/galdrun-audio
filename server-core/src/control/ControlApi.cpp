@@ -256,6 +256,16 @@ bool sendMagicPacket(const std::string& mac, std::string& error)
     return sent;
 }
 
+// Six lower-case hex pairs separated by colons, as a client reports it.
+bool isMacAddress(const std::string& mac)
+{
+    bool valid = mac.size() == 17;
+    for (size_t i = 0; valid && i < mac.size(); ++i)
+        valid = i % 3 == 2 ? mac[i] == ':'
+                           : (mac[i] >= '0' && mac[i] <= '9') || (mac[i] >= 'a' && mac[i] <= 'f');
+    return valid;
+}
+
 // A required, non-empty string. An empty id could address nothing.
 bool requireString(const json::Value& params, const char* key, std::string& out, Reply& error)
 {
@@ -480,7 +490,7 @@ std::string ControlApi::handleLine(const std::string& line, bool& subscribed)
         reply = onlyKeys(params, {"client", "name"}, command, reply) ? clientSetName(params)
                                                                     : reply;
     else if (command == "client.wake")
-        reply = onlyKeys(params, {"client"}, command, reply) ? clientWake(params) : reply;
+        reply = onlyKeys(params, {"client", "wakeOnLan"}, command, reply) ? clientWake(params) : reply;
     else if (command == "client.forget")
         reply = onlyKeys(params, {"client"}, command, reply) ? clientForget(params) : reply;
     else if (command == "client.setInputBindings")
@@ -664,7 +674,8 @@ ControlApi::Reply ControlApi::clientDetach(const json::Value& params)
     return pointClient(name, std::string());
 }
 
-ControlApi::Reply ControlApi::pointClient(const std::string& name, const std::string& server)
+ControlApi::Reply ControlApi::callClient(const std::string& name, const std::string& command,
+                                         const json::Value& params)
 {
     const std::optional<DiscoveredClient> found = discovered_.find(ClientId(name));
     if (!found)
@@ -674,17 +685,30 @@ ControlApi::Reply ControlApi::pointClient(const std::string& name, const std::st
 
     std::string line;
     std::string error;
-    if (!sendClientSetServer(found->address, found->controlPort, server, kClientCallTimeoutMs,
-                             line, error))
+    if (!sendClientControl(found->address, found->controlPort, command, params,
+                           kClientCallTimeoutMs, line, error))
         return Reply::failure(kFailed, error);
 
-    // The client's own answer: its refusal is passed on with its message.
-    json::Value answer;
+    Reply answer;
     bool ok = false;
-    std::string parseError;
-    if (!json::parse(line, answer, parseError) || !answer.isObject() ||
-        !json::getBool(answer, "ok", ok))
+    if (!json::parse(line, answer.body, error) || !answer.body.isObject() ||
+        !json::getBool(answer.body, "ok", ok))
         return Reply::failure(kFailed, name + " answered with something that is not a response");
+    return answer;
+}
+
+ControlApi::Reply ControlApi::pointClient(const std::string& name, const std::string& server)
+{
+    auto params = json::Value::makeObject();
+    params["server"] = json::Value(server);
+    const Reply called = callClient(name, "setServer", params);
+    if (called.error != nullptr)
+        return called;
+    const json::Value& answer = called.body;
+
+    // The client's own answer: its refusal is passed on with its message.
+    bool ok = false;
+    json::getBool(answer, "ok", ok);
     if (!ok)
     {
         std::string message;
@@ -741,17 +765,12 @@ ControlApi::Reply ControlApi::clientFirmwareSettings(const json::Value& params, 
             return Reply::failure(kInvalidArgument,
                                   "standbyAfterSeconds or deepSleepAfterSeconds is required");
     }
-    const auto found = discovered_.find(ClientId(name));
-    if (!found) return Reply::failure(kNotFound, "no beacon from " + name + " has been heard");
-    if (!isPresent(*found, clock_.monotonicNowNs()))
-        return Reply::failure(kUnavailable, name + " has not sent a beacon recently");
-    std::string line, error;
-    if (!sendClientControl(found->address, found->controlPort, command, changes,
-                           kClientCallTimeoutMs, line, error)) return Reply::failure(kFailed, error);
-    json::Value answer;
+    const Reply called = callClient(name, command, changes);
+    if (called.error != nullptr)
+        return called;
+    const json::Value& answer = called.body;
     bool ok = false;
-    if (!json::parse(line, answer, error) || !answer.isObject() || !json::getBool(answer, "ok", ok))
-        return Reply::failure(kFailed, name + " answered with something that is not a response");
+    json::getBool(answer, "ok", ok);
     if (!ok)
     {
         std::string message, code;
@@ -872,12 +891,16 @@ ControlApi::Reply ControlApi::zoneSetClients(const json::Value& params)
             return Reply::failure(kInvalidArgument, "client " + entry.asString() + " is listed twice");
     }
 
-    // Checked before anything changes, so that a refusal leaves the old
-    // membership whole rather than half replaced.
-    size_t unknown = 0;
+    // Applied before anything else changes and in one step, so that a refusal
+    // leaves the old membership whole rather than half replaced -- including
+    // against a room that connects, and takes a record, while this runs.
+    std::vector<ClientId> added;
     for (const ClientId& client : wanted)
-        unknown += rooms_.find(client) ? 0 : 1;
-    if (rooms_.size() + unknown > rooms_.maxRooms())
+    {
+        if (rooms_.zoneFor(client) != id)
+            added.push_back(client);
+    }
+    if (!rooms_.updateAll(added, [&id](RoomRecord& r) { r.zone = id; }))
     {
         return Reply::failure(kUnavailable, "this server keeps " +
                                                  std::to_string(rooms_.maxRooms()) + " rooms");
@@ -897,15 +920,8 @@ ControlApi::Reply ControlApi::zoneSetClients(const json::Value& params)
         removed.push_back(room.client);
     }
 
-    std::vector<ClientId> added;
-    for (const ClientId& client : wanted)
+    for (const ClientId& client : added)
     {
-        if (rooms_.zoneFor(client) == id)
-            continue;
-        if (!rooms_.update(client, [&id](RoomRecord& r) { r.zone = id; }))
-            return Reply::failure(kUnavailable, "this server keeps " +
-                                                    std::to_string(rooms_.maxRooms()) + " rooms");
-        added.push_back(client);
         if (const std::optional<RoomRecord> room = rooms_.find(client); room && room->connected)
             renegotiate(*room, "moved");
     }
@@ -1791,29 +1807,40 @@ ControlApi::Reply ControlApi::clientSetName(const json::Value& params)
     return reply;
 }
 
-// A room that is gone for good -- a dead device, or one that came back under
-// another id. Only one that is away: a connected room would be back at once.
+// A room asleep on Ethernet: one magic packet to the MAC it reported before it
+// went away. `wakeOnLan` is the caller's copy of that MAC, used only for a
+// room this core does not hold as asleep -- it restarted since.
 ControlApi::Reply ControlApi::clientWake(const json::Value& params)
 {
     Reply reply;
     std::string name;
-    if (!requireString(params, "client", name, reply))
+    std::string mac;
+    if (!requireString(params, "client", name, reply) ||
+        !optionalString(params, "wakeOnLan", mac, reply))
+    {
         return reply;
+    }
+    if (!mac.empty() && !isMacAddress(mac))
+        return Reply::failure(kInvalidArgument, "\"wakeOnLan\" must be a lower-case MAC address");
     const std::optional<RoomRecord> room = rooms_.find(ClientId(name));
-    if (!room)
+    if (!room && mac.empty())
         return Reply::failure(kNotFound, "no room " + name);
-    if (room->connected || room->powerState != "sleep")
+    if (room && !room->connected && room->powerState == "sleep")
+        mac = room->wakeOnLan;
+    else if ((room && room->connected) || mac.empty())
         return Reply::failure(kUnavailable, name + " is not in a deep sleep the network can end");
 
     std::string error;
-    if (!sendMagicPacket(room->wakeOnLan, error))
+    if (!sendMagicPacket(mac, error))
         return Reply::failure(kFailed, "could not send the magic packet: " + error);
-    MULTIROOM_INFO("control API: woke {} ({})", name, room->wakeOnLan);
+    MULTIROOM_INFO("control API: woke {} ({})", name, mac);
     reply.body["client"] = json::Value(name);
-    reply.body["wakeOnLan"] = json::Value(room->wakeOnLan);
+    reply.body["wakeOnLan"] = json::Value(mac);
     return reply;
 }
 
+// A room that is gone for good -- a dead device, or one that came back under
+// another id. Only one that is away: a connected room would be back at once.
 ControlApi::Reply ControlApi::clientForget(const json::Value& params)
 {
     Reply reply;

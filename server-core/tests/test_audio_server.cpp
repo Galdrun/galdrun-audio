@@ -510,3 +510,22 @@ MULTIROOM_TEST(audio_server_drops_a_waiting_connection_the_client_closes)
     CHECK_EQ((*server)->failedCount(), 0ULL);
     CHECK_EQ((*server)->rejectedCount(), 0ULL);
 }
+
+MULTIROOM_TEST(audio_server_says_so_when_select_fails_and_still_stops)
+{
+    // A select() failure the loop cannot get past ends it, and nothing here
+    // retries: the listener has to say it has stopped, so that main() can
+    // have the whole server restarted, and still go away promptly.
+    const SystemClock clock;
+    Attachments attachments;
+    auto server = AudioServer::start(clock, settingsFor(attachments));
+    CHECK_OK(server);
+    CHECK((*server)->listening());
+
+    CHECK(multiroomtest::closeListenerOn((*server)->port()));
+    CHECK(waitFor([&] { return !(*server)->listening(); }));
+
+    const auto before = std::chrono::steady_clock::now();
+    server->reset();
+    CHECK(std::chrono::steady_clock::now() - before < std::chrono::seconds(1));
+}

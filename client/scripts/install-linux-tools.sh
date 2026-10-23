@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run as the regular user, after installing the apt packages build-client.sh lists
-# (build-client.sh does both).
+# Run as the regular user, after installing the apt packages scripts/build-client.sh lists
+# (scripts/build-client.sh does both).
 tools="$HOME/.local/share/multiroom-linux"
 mkdir -p "$tools/downloads" "$tools/x-tools" "$tools/include/linux"
 cd "$tools/downloads"

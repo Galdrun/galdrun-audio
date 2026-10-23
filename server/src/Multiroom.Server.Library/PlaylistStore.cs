@@ -117,64 +117,22 @@ public sealed class PlaylistStore(LibraryDatabase database)
 
     // --- folders ------------------------------------------------------------
 
+    private static readonly FolderTree FolderTable = new("playlist_folder", "playlist");
+
     // By name, each with the folder it lies in.
-    public Result<IReadOnlyList<PlaylistFolder>, LibraryError> Folders() =>
-        Read(c => List(Rows(c, null, FolderColumns + " ORDER BY name COLLATE NOCASE, id", ReadFolder)));
+    public Result<IReadOnlyList<CollectionFolder>, LibraryError> Folders() => Read(c => List(FolderTable.All(c)));
 
     // In the parent, or at the top when null. Two folders in one place never
     // share a name (in any case); playlists may.
-    public Result<PlaylistFolder, LibraryError> CreateFolder(string name, long? parent = null)
-    {
-        if (Trimmed(name) is not { } trimmed)
-            return NoFolderName();
-        return Write((c, t) =>
-        {
-            if (parent is { } p && !FolderExists(c, t, p))
-                return NoFolder(p);
-            if (NameTaken(c, t, trimmed, parent, null))
-                return FolderNameTaken(trimmed);
-            var id = Rows(c, t, "INSERT INTO playlist_folder (name, parent_id, created) VALUES ($name, $parent, $created) RETURNING id",
-                r => r.GetInt64(0), ("$name", trimmed), ("$parent", parent), ("$created", DateTime.UtcNow.Ticks))[0];
-            return FolderById(c, t, id);
-        });
-    }
+    public Result<CollectionFolder, LibraryError> CreateFolder(string name, long? parent = null) =>
+        Write((c, t) => FolderTable.Create(c, t, name, parent));
 
-    public Result<PlaylistFolder, LibraryError> RenameFolder(long folder, string name)
-    {
-        if (Trimmed(name) is not { } trimmed)
-            return NoFolderName();
-        return Write((c, t) =>
-        {
-            if (FolderById(c, t, folder) is not { IsSuccess: true } found)
-                return NoFolder(folder);
-            if (NameTaken(c, t, trimmed, found.Value.Parent, folder))
-                return FolderNameTaken(trimmed);
-            Execute(c, t, "UPDATE playlist_folder SET name = $name WHERE id = $id", ("$name", trimmed), ("$id", folder));
-            return FolderById(c, t, folder);
-        });
-    }
+    public Result<CollectionFolder, LibraryError> RenameFolder(long folder, string name) =>
+        Write((c, t) => FolderTable.Rename(c, t, folder, name));
 
     // Into the parent, or to the top when null; never into itself or a folder within it.
-    public Result<PlaylistFolder, LibraryError> MoveFolder(long folder, long? parent) =>
-        Write((c, t) =>
-        {
-            if (FolderById(c, t, folder) is not { IsSuccess: true } found)
-                return NoFolder(folder);
-            if (parent is { } p)
-            {
-                if (!FolderExists(c, t, p))
-                    return NoFolder(p);
-                for (long? at = p; at is { } a; at = FolderById(c, t, a).Value.Parent)
-                {
-                    if (a == folder)
-                        return Result.Fail(LibraryError.InvalidArgument, $"folder {folder} cannot go into itself or a folder within it");
-                }
-            }
-            if (NameTaken(c, t, found.Value.Name, parent, folder))
-                return FolderNameTaken(found.Value.Name);
-            Execute(c, t, "UPDATE playlist_folder SET parent_id = $parent WHERE id = $id", ("$parent", parent), ("$id", folder));
-            return FolderById(c, t, folder);
-        });
+    public Result<CollectionFolder, LibraryError> MoveFolder(long folder, long? parent) =>
+        Write((c, t) => FolderTable.Move(c, t, folder, parent));
 
     // With every folder within it and every playlist in any of them, their
     // entries too; the other playlists close up their positions.
@@ -183,43 +141,19 @@ public sealed class PlaylistStore(LibraryDatabase database)
         {
             if (!FolderExists(c, t, folder))
                 return NoFolder(folder);
-            const string Tree = """
-                WITH RECURSIVE tree(id) AS (
-                    SELECT $id UNION ALL SELECT f.id FROM playlist_folder f JOIN tree ON f.parent_id = tree.id)
-                """;
-            var doomed = Rows(c, t, Tree + " SELECT position FROM playlist WHERE folder_id IN (SELECT id FROM tree) ORDER BY position DESC",
+            var doomed = Rows(c, t, FolderTable.Within + " SELECT position FROM playlist WHERE folder_id IN (SELECT id FROM tree) ORDER BY position DESC",
                 r => r.GetInt32(0), ("$id", folder));
-            Execute(c, t, Tree + " DELETE FROM playlist WHERE folder_id IN (SELECT id FROM tree)", ("$id", folder));
+            Execute(c, t, FolderTable.Within + " DELETE FROM playlist WHERE folder_id IN (SELECT id FROM tree)", ("$id", folder));
             // From the last up, so each shift sees the positions as they were.
             foreach (var position in doomed)
                 Shift(c, t, "playlist", "1", position + 1, int.MaxValue, -1);
-            Execute(c, t, Tree + " DELETE FROM playlist_folder WHERE id IN (SELECT id FROM tree)", ("$id", folder));
+            FolderTable.Delete(c, t, folder);
             return true;
         });
 
-    private static bool NameTaken(SqliteConnection c, SqliteTransaction t, string name, long? parent, long? except) =>
-        Count(c, t, "SELECT COUNT(*) FROM playlist_folder WHERE name = $name COLLATE NOCASE AND parent_id IS $parent AND id IS NOT $except",
-            ("$name", name), ("$parent", parent), ("$except", except)) > 0;
+    private static bool FolderExists(SqliteConnection c, SqliteTransaction? t, long folder) => FolderTable.Exists(c, t, folder);
 
-    private static Failure<LibraryError> FolderNameTaken(string name) =>
-        Result.Fail(LibraryError.AlreadyExists, $"a folder named {name} is already there");
-
-    private const string FolderColumns = "SELECT id, name, parent_id FROM playlist_folder";
-
-    private static PlaylistFolder ReadFolder(SqliteDataReader r) =>
-        new(r.GetInt64(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetInt64(2));
-
-    private static Result<PlaylistFolder, LibraryError> FolderById(SqliteConnection c, SqliteTransaction? t, long folder) =>
-        Rows(c, t, FolderColumns + " WHERE id = $id", ReadFolder, ("$id", folder)) is [var found] ? found : NoFolder(folder);
-
-    private static bool FolderExists(SqliteConnection c, SqliteTransaction? t, long folder) =>
-        Count(c, t, "SELECT COUNT(*) FROM playlist_folder WHERE id = $id", ("$id", folder)) > 0;
-
-    private static Failure<LibraryError> NoFolder(long folder) =>
-        Result.Fail(LibraryError.NotFound, $"no playlist folder {folder}");
-
-    private static Failure<LibraryError> NoFolderName() =>
-        Result.Fail(LibraryError.InvalidArgument, "a folder needs a name");
+    private static Failure<LibraryError> NoFolder(long folder) => FolderTable.NotFound(folder);
 
     // --- entries ------------------------------------------------------------
 

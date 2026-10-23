@@ -1,4 +1,4 @@
-# Shared by the build-*.ps1 scripts in the repository root: dot-source it, do not run it.
+# Shared by the build-*.ps1 scripts in scripts: dot-source it, do not run it.
 
 $repositoryRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 

@@ -38,8 +38,8 @@ bool waitFor(net::Socket socket, bool forWrite,
     FD_ZERO(&failed);
     FD_SET(socket, &ready);
     FD_SET(socket, &failed);
-    const int count = ::select(static_cast<int>(socket + 1), forWrite ? nullptr : &ready,
-                               forWrite ? &ready : nullptr, &failed, &timeout);
+    const int count = net::waitReady(socket, forWrite ? nullptr : &ready,
+                                     forWrite ? &ready : nullptr, &failed, timeout);
     return count > 0 && FD_ISSET(socket, &ready) && !FD_ISSET(socket, &failed);
 }
 
@@ -187,15 +187,6 @@ bool sendClientControl(const std::string& address, uint16_t controlPort,
     if (!response.empty() && response.back() == '\r')
         response.pop_back();
     return true;
-}
-
-bool sendClientSetServer(const std::string& address, uint16_t controlPort,
-                         const std::string& server, uint32_t timeoutMs, std::string& response,
-                         std::string& error)
-{
-    auto params = json::Value::makeObject();
-    params["server"] = json::Value(server);
-    return sendClientControl(address, controlPort, "setServer", params, timeoutMs, response, error);
 }
 
 std::string localAddressToward(const std::string& address)

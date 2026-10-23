@@ -15,6 +15,7 @@ extern "C" {
 #include <libavformat/avio.h>
 #include <libavutil/dict.h>
 #include <libavutil/error.h>
+#include <libavutil/opt.h>
 }
 
 namespace multiroom {
@@ -37,6 +38,17 @@ void initialiseNetwork()
 {
     static std::once_flag once;
     std::call_once(once, [] { avformat_network_init(); });
+}
+
+// Whether the FFmpeg this was linked against knows `max_redirects`. It is the
+// only thing that stops FFmpeg following a redirect round the origin check
+// (connect()), and avio_open2 leaves an option it does not know unused rather
+// than refusing it -- so a system FFmpeg without it would follow one silently.
+bool refusesRedirects()
+{
+    const AVClass* http = avio_protocol_get_class("http");
+    return http != nullptr &&
+           av_opt_find(&http, "max_redirects", nullptr, 0, AV_OPT_SEARCH_FAKE_OBJ) != nullptr;
 }
 
 } // namespace
@@ -97,6 +109,12 @@ HttpMediaSource::open(const std::string& uri, const IClock& clock,
         return fail(MediaSourceError::InvalidArgument, "not an http or https URI: " + uri);
 
     initialiseNetwork();
+    if (!refusesRedirects())
+    {
+        return fail(MediaSourceError::OpenFailed,
+                    "this server's FFmpeg cannot be told not to follow redirects, so no "
+                    "media is fetched with it");
+    }
 
     auto source = std::unique_ptr<HttpMediaSource>(new HttpMediaSource(uri, clock, settings));
     if (auto connected = source->connect(); !connected)
@@ -269,20 +287,27 @@ Result<size_t, MediaSourceError> HttpMediaSource::read(std::span<std::byte> buff
                  stalled ? std::string("stalled") : failure.detail, position_, failures_,
                  retries_);
 
-        avio_closep(&context_);
-        if (auto connected = connect(); !connected)
-            return std::unexpected(connected.error());
-
-        const int64_t size = avio_size(context_);
-        if (!size_ || size != static_cast<int64_t>(*size_))
-        {
-            avio_closep(&context_);
-            return fail(MediaSourceError::ReadFailed,
-                        uri_ + ": resumed at byte " + std::to_string(position_) +
-                            " with a length of " + std::to_string(size) + " instead of " +
-                            std::to_string(size_.value_or(0)));
-        }
+        if (auto reconnected = reconnect(MediaSourceError::ReadFailed); !reconnected)
+            return std::unexpected(reconnected.error());
     }
+}
+
+Status<MediaSourceError> HttpMediaSource::reconnect(MediaSourceError failure)
+{
+    avio_closep(&context_);
+    if (auto connected = connect(); !connected)
+        return connected;
+
+    const int64_t size = avio_size(context_);
+    if (!size_ || size != static_cast<int64_t>(*size_))
+    {
+        avio_closep(&context_);
+        const char* how = failure == MediaSourceError::ReadFailed ? "resumed" : "reopened";
+        return fail(failure, uri_ + ": " + how + " at byte " + std::to_string(position_) +
+                                 " with a length of " + std::to_string(size) + " instead of " +
+                                 std::to_string(size_.value_or(0)));
+    }
+    return {};
 }
 
 Status<MediaSourceError> HttpMediaSource::seek(uint64_t offset)
@@ -324,21 +349,8 @@ Status<MediaSourceError> HttpMediaSource::seek(uint64_t offset)
     MULTIROOM_WARN("{}: seek to byte {} {}, trying again ({} of {})", uri_, offset, what, failures_,
              retries_);
 
-    avio_closep(&context_);
     position_ = offset;
-    if (auto connected = connect(); !connected)
-        return std::unexpected(connected.error());
-
-    const int64_t size = avio_size(context_);
-    if (!size_ || size != static_cast<int64_t>(*size_))
-    {
-        avio_closep(&context_);
-        return fail(MediaSourceError::SeekFailed,
-                    uri_ + ": reopened at byte " + std::to_string(offset) + " with a length of " +
-                        std::to_string(size) + " instead of " +
-                        std::to_string(size_.value_or(0)));
-    }
-    return {};
+    return reconnect(MediaSourceError::SeekFailed);
 }
 
 } // namespace multiroom

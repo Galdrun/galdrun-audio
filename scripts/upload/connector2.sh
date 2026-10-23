@@ -15,7 +15,7 @@
 #               it exists (its .pub built in via GALDRUN_SSH_PUBKEY). Without a key, ssh asks for the password
 #               twice (copy, then install); it is never stored.
 #
-# What it does: copies releases/client/linux-armv6 (build it first: ./build-client.sh
+# What it does: copies releases/client/linux-armv6 (build it first: scripts/build-client.sh
 # linux-armv6) and connector2-remote.sh to /tmp, checks that the new binary starts there, then
 # stops the client, replaces binary, libraries and licenses, keeps the old binary as
 # galdrun-client.previous and starts it again.
@@ -35,7 +35,7 @@ done
 [[ $ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || { echo 'Enter a valid IPv4 address.' >&2; exit 2; }
 [[ $user =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo 'Enter a valid Linux username.' >&2; exit 2; }
 release="$root/releases/client/linux-armv6"
-[[ -f $release/galdrun-client ]] || { echo 'Build linux-armv6 first: ./build-client.sh linux-armv6' >&2; exit 1; }
+[[ -f $release/galdrun-client ]] || { echo 'Build linux-armv6 first: scripts/build-client.sh linux-armv6' >&2; exit 1; }
 default_key="$root/hardware/buildroot/private/connector2/id_ed25519"
 [[ -n $identity || ! -f $default_key ]] || identity=$default_key
 ssh_options=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)

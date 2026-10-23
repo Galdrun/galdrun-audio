@@ -1,4 +1,4 @@
-# Shared by the build-*.sh scripts in the repository root: source it, do not run it.
+# Shared by the build-*.sh scripts in scripts: source it, do not run it.
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
 

@@ -62,6 +62,10 @@ public:
     [[nodiscard]] uint64_t received() const noexcept; // beacons that parsed
     [[nodiscard]] uint64_t rejected() const noexcept; // datagrams that did not
 
+    // False once the thread has given up on a failed select(), which nothing
+    // here retries: the process is expected to stop and be restarted.
+    [[nodiscard]] bool listening() const noexcept;
+
 private:
     class Impl;
 

@@ -29,6 +29,7 @@ __pycache__/
 /TODOS.md
 /BugFindings*.md
 /.mcp.json
+/.playwright-mcp/
 # Local release tooling
 /release.ps1
 /scripts/release/

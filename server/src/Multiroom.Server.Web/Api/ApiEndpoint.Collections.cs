@@ -8,7 +8,8 @@ namespace Multiroom.Server.Web.Api;
 
 // Playlists, favourites and radio stations: the library's stores. A station
 // is answered as the domain RadioStation, never with its stream URL (rule 7);
-// the stations are listed and searched through the webradio provider.
+// the stations are searched and browsed through the webradio provider, and
+// listed here with the folders they lie in.
 public sealed partial class ApiEndpoint
 {
     private void MapCollections(WebApplication app)
@@ -23,10 +24,11 @@ public sealed partial class ApiEndpoint
 
         app.MapGet("/api/v1/playlist-folders", () => Answer(playlists.Folders()));
         app.MapPost("/api/v1/playlist-folders", (Delegate)((HttpContext c) =>
-            Sync<PlaylistFolderCreate, PlaylistFolder>(c, r => playlists.CreateFolder(r.Name, Folder(r.Parent)),
+            Sync<FolderCreate, CollectionFolder>(c, r => playlists.CreateFolder(r.Name, Folder(r.Parent)),
                 StatusCodes.Status201Created)));
         app.MapMethods("/api/v1/playlist-folders/{folder}", [HttpMethods.Patch], (string folder, HttpContext c) =>
-            WithId(folder, "playlist folder", id => Sync<PlaylistFolderPatch, PlaylistFolder>(c, r => PatchFolder(id, r))));
+            WithId(folder, "playlist folder", id => Sync<FolderPatch, CollectionFolder>(c,
+                r => PatchFolder(id, r, playlists.RenameFolder, playlists.MoveFolder))));
         app.MapDelete("/api/v1/playlist-folders/{folder}", (string folder) =>
             WithId(folder, "playlist folder", id => Task.FromResult(Deleted(playlists.DeleteFolder(id)))));
 
@@ -52,15 +54,21 @@ public sealed partial class ApiEndpoint
         app.MapDelete("/api/v1/favorites/{favorite}", (string favorite) =>
             WithId(favorite, "favorite", id => Task.FromResult(Deleted(playlists.RemoveFavorite(id)))));
 
+        // Every station of the webradio provider by name, each with its folder.
+        app.MapGet("/api/v1/stations", () =>
+        {
+            var all = stations.Stations(0, int.MaxValue);
+            return all.IsSuccess ? Json(all.Value.Select(ToEntry).ToList()) : Error(all.Failure);
+        });
         app.MapPost("/api/v1/stations", (Delegate)((HttpContext c) => Sync<NewStation, RadioStation>(c,
-            r => Station(stations.Add(r)), StatusCodes.Status201Created)));
+            r => Station(stations.Add(r with { Folder = Folder(r.Folder) })), StatusCodes.Status201Created)));
         app.MapPost("/api/v1/stations/import", (Delegate)((HttpContext c) => Sync<StationImport, List<RadioStation>>(c,
             r =>
             {
                 var parsed = StationPlaylist.Parse(r.Playlist);
                 if (!parsed.IsSuccess)
                     return parsed.Failure;
-                var imported = stations.Import(parsed.Value);
+                var imported = stations.Import([.. parsed.Value.Select(s => s with { Folder = Folder(r.Folder) })]);
                 if (!imported.IsSuccess)
                     return imported.Failure;
                 var added = imported.Value.Select(WebRadioProvider.ToStation).ToList();
@@ -70,7 +78,27 @@ public sealed partial class ApiEndpoint
             WebRadioProvider.IdOf(station) is { } id
                 ? Deleted(stations.Remove(id))
                 : Error(Result.Fail(LibraryError.NotFound, $"no station {station}")));
+        app.MapMethods("/api/v1/stations/{station}", [HttpMethods.Patch], (string station, HttpContext c) =>
+            WebRadioProvider.IdOf(station) is { } id
+                ? Sync<StationPatch, StationEntry>(c, r =>
+                {
+                    var moved = stations.MoveTo(id, Folder(r.Folder));
+                    return moved.IsSuccess ? ToEntry(moved.Value) : moved.Failure;
+                })
+                : Task.FromResult(Error(Result.Fail(LibraryError.NotFound, $"no station {station}"))));
+
+        app.MapGet("/api/v1/station-folders", () => Answer(stations.Folders()));
+        app.MapPost("/api/v1/station-folders", (Delegate)((HttpContext c) =>
+            Sync<FolderCreate, CollectionFolder>(c, r => stations.CreateFolder(r.Name, Folder(r.Parent)),
+                StatusCodes.Status201Created)));
+        app.MapMethods("/api/v1/station-folders/{folder}", [HttpMethods.Patch], (string folder, HttpContext c) =>
+            WithId(folder, "station folder", id => Sync<FolderPatch, CollectionFolder>(c,
+                r => PatchFolder(id, r, stations.RenameFolder, stations.MoveFolder))));
+        app.MapDelete("/api/v1/station-folders/{folder}", (string folder) =>
+            WithId(folder, "station folder", id => Task.FromResult(Deleted(stations.DeleteFolder(id)))));
     }
+
+    private static StationEntry ToEntry(StoredStation s) => new(WebRadioProvider.ToStation(s), s.Folder);
 
     private Result<Playlist, LibraryError> PatchPlaylist(long id, PlaylistPatch patch)
     {
@@ -94,19 +122,22 @@ public sealed partial class ApiEndpoint
         return result;
     }
 
-    private Result<PlaylistFolder, LibraryError> PatchFolder(long id, PlaylistFolderPatch patch)
+    // A playlist or station folder renamed, moved or both, by its store.
+    private static Result<CollectionFolder, LibraryError> PatchFolder(long id, FolderPatch patch,
+        Func<long, string, Result<CollectionFolder, LibraryError>> rename,
+        Func<long, long?, Result<CollectionFolder, LibraryError>> move)
     {
         if (patch.Name is null && patch.Parent is null)
             return Result.Fail(LibraryError.InvalidArgument, "a folder patch needs name, parent or both");
-        Result<PlaylistFolder, LibraryError> result = default;
+        Result<CollectionFolder, LibraryError> result = default;
         if (patch.Name is { } name)
         {
-            result = playlists.RenameFolder(id, name);
+            result = rename(id, name);
             if (!result.IsSuccess)
                 return result;
         }
         if (patch.Parent is { } parent)
-            result = playlists.MoveFolder(id, Folder(parent));
+            result = move(id, Folder(parent));
         return result;
     }
 

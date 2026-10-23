@@ -36,8 +36,8 @@ ESP-IDF 5.5.1. From the repository root, which installs it when missing
 (on Windows inside WSL Ubuntu):
 
 ```
-./build-client.sh esp32                                    # Linux; or esp32-a1s, esp32-s3-devkitc
-powershell -ExecutionPolicy Bypass -File build-client.ps1 -Target esp32   # Windows
+scripts/build-client.sh esp32                                    # Linux; or esp32-a1s, esp32-s3-devkitc
+powershell -ExecutionPolicy Bypass -File scripts\build-client.ps1 -Target esp32   # Windows
 ```
 
 By hand, in an ESP-IDF shell (the board defaults to `esp32-a1s`):

@@ -188,9 +188,10 @@ void write(LogLevel level, const char* file, int line, std::string_view message)
             rotateLocked();
         if (g_file != nullptr)
         {
-            std::fwrite(text.data(), 1, text.size(), g_file);
+            // What reached the file, so that a full disk does not move where
+            // rotation happens. The line still went to stderr above.
+            g_fileBytes += std::fwrite(text.data(), 1, text.size(), g_file);
             std::fflush(g_file);
-            g_fileBytes += text.size();
         }
     }
 }

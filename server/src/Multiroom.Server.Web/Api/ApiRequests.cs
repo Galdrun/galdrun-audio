@@ -99,10 +99,10 @@ public sealed record ZonePatch(double? Volume = null, bool? Muted = null, AutoFi
 // Folder: the folder it goes in; null or 0 is the top.
 public sealed record PlaylistCreate(string Name, long? Folder = null);
 
-// Parent: the folder it goes in; null or 0 is the top. A patch's Parent 0
-// moves it to the top, null leaves it where it is.
-public sealed record PlaylistFolderCreate(string Name, long? Parent = null);
-public sealed record PlaylistFolderPatch(string? Name = null, long? Parent = null);
+// A playlist or station folder. Parent: the folder it goes in; null or 0 is
+// the top. A patch's Parent 0 moves it to the top, null leaves it where it is.
+public sealed record FolderCreate(string Name, long? Parent = null);
+public sealed record FolderPatch(string? Name = null, long? Parent = null);
 
 // A queue saved as a playlist; overwrite replaces one of that name.
 public sealed record QueueSaveRequest(string Name, bool Overwrite = false, long? Folder = null);
@@ -132,8 +132,14 @@ public sealed record FavoriteRequest(Track? Track = null, RadioStation? Station 
 // 1 to 100.
 public sealed record RecommendRequest(Track? Track = null, long? Playlist = null, int Limit = 20);
 
-// The text of an M3U or PLS file.
-public sealed record StationImport(string Playlist);
+// The text of an M3U or PLS file; Folder: where its stations go, null or 0 the top.
+public sealed record StationImport(string Playlist, long? Folder = null);
+
+// Folder 0 moves it to the top.
+public sealed record StationPatch(long Folder);
+
+// A station of the webradio provider and the folder it lies in, null at the top.
+public sealed record StationEntry(RadioStation Station, long? Folder);
 
 // A library folder: a local or network one by its full path; an smb one by
 // host, share, the directory inside it (path) and the login. No user is

@@ -68,13 +68,13 @@ it is missing. .NET builds all targets from either host. Run it from the
 repository root.
 
 ```sh
-./build-server.sh                        # Linux: all targets
-./build-server.sh linux-armv7 windows-x64
+scripts/build-server.sh                        # Linux: all targets
+scripts/build-server.sh linux-armv7 windows-x64
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File build-server.ps1                    # Windows: all targets
-powershell -ExecutionPolicy Bypass -File build-server.ps1 -Target linux-armv8
+powershell -ExecutionPolicy Bypass -File scripts\build-server.ps1                    # Windows: all targets
+powershell -ExecutionPolicy Bypass -File scripts\build-server.ps1 -Target linux-armv8
 ```
 
 Targets: `all` (default), the groups `windows` and `linux`, and every name from
@@ -91,7 +91,7 @@ each release's `gui/` folder.
 
 | Script | Purpose |
 |---|---|
-| `build-server.sh`, `.ps1` | Publish all targets, see [Build](#build). |
+| `scripts/build-server.sh`, `.ps1` | Publish all targets, see [Build](#build). |
 | `server/scripts/verify-linux-release.py` | Checks the Linux releases' architectures and bundled runtime, then starts the x64 server: API, database and a clean shutdown. Run it on Linux or WSL. |
 
 ## Development

@@ -70,7 +70,7 @@ const store = {
 };
 
 const S = {
-  zones: [], rooms: [], status: null, providers: [], playlists: [], playlistFolders: [], favorites: [], stations: [], folders: [],
+  zones: [], rooms: [], status: null, providers: [], playlists: [], playlistFolders: [], favorites: [], stations: [], stationFolders: [], stationFolder: null, folders: [],
   openPlaylist: null, entries: [],
   target: store.get('vx.target', ''),
   history: {},             // client -> [{t, driftPpm, offsetUs, appliedPpm, bufferedMs}]
@@ -398,7 +398,7 @@ function render(key, container, build) {
   for (const d of container.querySelectorAll('details[data-key]')) if (open.has(d.dataset.key)) d.open = true;
 }
 
-const renderers = { home: () => renderHome(), zones: () => renderZones(), playlistTree: () => renderPlaylistTree(), player: () => renderPlayer(), zoneStatus: () => renderZoneStatus(), rooms: () => renderRooms(), clients: () => renderClients(), folders: () => renderFolders(), system: () => renderSystem(), ai: () => renderAi() };
+const renderers = { home: () => renderHome(), zones: () => renderZones(), playlistTree: () => renderPlaylistTree(), stationTree: () => stationTree.render(), player: () => renderPlayer(), zoneStatus: () => renderZoneStatus(), rooms: () => renderRooms(), clients: () => renderClients(), folders: () => renderFolders(), system: () => renderSystem(), ai: () => renderAi() };
 function flushDirty() {
   setTimeout(() => { for (const key of [...S.dirty]) renderers[key]?.(); }, 0);
 }
@@ -2308,6 +2308,9 @@ function roomArt(client) {
 }
 const roomImageUrl = (client) => `/api/v1/rooms/${enc(client)}/image?v=${roomImageVersion.get(client) ?? 0}`;
 
+// A setting in a row of the client's settings page: its label, its controls.
+const roomField = (label, ...control) => h('div', { class: 'room-field' }, h('span', { class: 'room-field-label' }, label), h('div', { class: 'room-field-control' }, ...control));
+
 // One client's settings page (#/client/<id>): a header with the room's
 // picture, state, name, zone and volume and its actions; under it one card,
 // a row per part -- the audio device, the equalizer, sync and buffer -- and
@@ -2408,7 +2411,7 @@ function roomSettings(r) {
     h('div', { class: 'room-row-intro' }, h('span', { class: 'card-icon' }, icon(iconName)),
       h('div', {}, h('h2', {}, heading), h('p', {}, about))),
     h('div', { class: 'room-row-content' }, ...content));
-  const field = (label, ...control) => h('div', { class: 'room-field' }, h('span', { class: 'room-field-label' }, label), h('div', { class: 'room-field-control' }, ...control));
+  const field = roomField;
 
   const audio = row('volume', 'Audio device', 'The output device, its buffer and how the volume is played.',
     (a?.audioDevices || offline) && field('Output', live(a?.audioDevices ? audioDevicePicker(a.audioDevices, patch, path) : unknown())),
@@ -2426,21 +2429,24 @@ function roomSettings(r) {
 
   const eq = row('wave', 'Equalizer', 'Adjust the sound for this room.', eqEditor(r.client, d.equalizer ?? s?.equalizer, plan, path));
 
-  // Sync and buffer: the measures as tiles, then the room's own timing.
+  // Sync and buffer: the measures as tiles, each with its graph, then the room's own timing.
   const tile = (label, value, extra, attrs = {}) => h('div', { class: 'room-stat', ...attrs }, h('span', { class: 'muted small' }, label), h('strong', {}, value), extra);
+  const graph = (key, digits, off) => spark('', r.client, key, digits, off);
   const bufferPct = a?.bufferMs && a?.bufferedMs != null ? Math.min(100, (a.bufferedMs / a.bufferMs) * 100) : null;
   const clock = hardwareClockOf(a);
   const clockError = a?.driftCorrection?.hardwareClock?.error;
   const syncRow = row('clock', 'Sync & buffer', 'Synchronisation and buffering for multiroom playback.',
     a?.connected ? h('div', { class: 'room-stats' },
-      tile(plan && !plan.driftCorrected ? 'Drift (not corrected)' : 'Drift correction', `${fmtNum(sync?.driftPpm, 1)} ppm`, miniSpark(r.client, 'driftPpm')),
-      tile('Offset (target)', `${fmtNum(sync?.offsetUs, 0)} µs`, miniSpark(r.client, 'offsetUs')),
-      clock && tile('Hardware clock', `${clock.ppm > 0 ? '+' : ''}${clock.ppm} ppm`, miniSpark(r.client, 'clockPpm'), {
-        title: `${clock.hz != null ? `sample clock ${fmtNum(clock.hz, 3)} Hz (nominal ${a.plan.outputFormat.sampleRate} Hz); ` : ''}` +
-          `core asks ${fmtNum(clock.targetPpm, 1)} ppm; positive slows the clock` +
-          `${a.driftCorrection?.hardwareClock?.saturated ? '; at the device\'s limit' : ''}${clockError ? `; error: ${clockError}` : ''}`,
-      }),
-      tile('Buffer', a.bufferedMs != null ? `${fmtNum(a.bufferedMs / 1000, 1)} s` : '—', miniSpark(r.client, 'bufferedMs'),
+      tile(plan && !plan.driftCorrected ? 'Drift (not corrected)' : 'Drift', `${fmtNum(sync?.driftPpm, 1)} ppm`, graph('driftPpm', 3)),
+      tile('Offset (target)', `${fmtNum(sync?.offsetUs, 0)} µs`, graph('offsetUs', 1)),
+      // Through the hardware clock the applied correction is what the clock is set to.
+      clock ? tile('Hardware clock', `${clock.ppm > 0 ? '+' : ''}${clock.ppm} ppm`, graph('clockPpm', 0), {
+        title: `positive slows the clock${a.driftCorrection?.hardwareClock?.saturated ? "; at the device's limit" : ''}${clockError ? `; error: ${clockError}` : ''}`,
+      }) : tile(plan && !plan.driftCorrected ? 'Applied (not corrected)' : 'Applied correction', `${fmtNum(sync?.appliedPpm, 1)} ppm`,
+        graph('appliedPpm', 3, plan && !plan.driftCorrected)),
+      clock && tile('Clock target (core)', `${fmtNum(clock.targetPpm, 1)} ppm`, graph('clockTargetPpm', 1)),
+      clock?.hz != null && tile('Sample clock', `${fmtNum(clock.hz, 3)} Hz`, graph('clockHz', 3), { title: `nominal ${a.plan.outputFormat.sampleRate} Hz` }),
+      tile('Buffer', a.bufferedMs != null ? `${fmtNum(a.bufferedMs / 1000, 1)} s` : '—', graph('bufferedMs', 0),
         { title: bufferPct != null ? `${Math.round(bufferPct)} % of the ${fmtNum(a.bufferMs / 1000, 1)} s buffer` : '' }),
       tile('Underruns / rejoins', `${a.playback?.underruns ?? '—'} / ${a.rejoins ?? '—'}`)) : h('p', { class: 'muted small' }, 'Measured while the room is connected.'),
     h('form', {
@@ -2457,73 +2463,52 @@ function roomSettings(r) {
     h('label', {}, 'Output latency (ms)', h('input', { name: 'ms', type: 'number', min: 0, class: 'w-num', value: String(d.outputLatencyMs ?? s?.outputLatencyMs ?? '') })),
     h('button', { class: 'primary' }, 'Apply')));
 
-  // Everything else, folded: the desired/effective/core table, the plan,
-  // device settings, buttons, capabilities and the raw record.
+  // The device's own settings: its network link, LEDs and power.
+  const device = row('device', 'Device', 'Network link, LEDs and power of the device.',
+    offline ? h('p', { class: 'muted small' }, `${why}: its Ethernet speed, LEDs and power are read and changed while it is connected.`)
+      : deviceSettingsEditor(r.client, path));
+
+  const buttons = a?.inputs?.length > 0 && row('grip', 'Buttons & encoders', 'What the buttons and encoders on the device do.',
+    S.lastInput[r.client] && lastInputLine(S.lastInput[r.client]),
+    inputsEditor(r.client, a.inputs, path, a.deepSleep));
+
+  const caps = a?.capabilities;
+  const capabilities = caps && row('chip', 'Capabilities', 'The formats and controls the device reports.',
+    caps.accessMode && field('Access mode', caps.accessMode),
+    caps.hardwareVolume && field('Hardware volume', fmtHardwareVolume(caps.hardwareVolume)),
+    caps.hardwareClock && field('Hardware clock', caps.hardwareClock.available
+      ? `${caps.hardwareClock.control ?? 'yes'} (${caps.hardwareClock.minPpm} … ${caps.hardwareClock.maxPpm} ppm)` : 'none'),
+    h('details', { class: 'sub', 'data-key': `caps:${r.client}` },
+      h('summary', {}, `Formats (${caps.formats.length})`),
+      h('div', { class: 'small mono', style: 'white-space: pre-wrap' }, caps.formats.map(fmtFmt).join('\n'))));
+
+  // The rest: the desired/effective/core table, the plan and the raw record.
   const text = (v) => (v == null ? '—' : String(v));
   const cell = (label, want, eff, have) => h('tr', {}, h('td', {}, label), h('td', {}, text(want)),
     h('td', { class: eff != null && want != null && String(eff) !== String(want) ? 'warn' : '' }, text(eff)),
     h('td', { class: eff != null && have != null && String(eff) !== String(have) ? 'diff' : '' }, text(have)));
-  const advanced = h('details', { class: 'room-advanced', 'data-key': `advanced:${r.client}` },
-    h('summary', {}, h('span', { class: 'card-icon' }, icon('setup')),
-      h('div', {}, h('h2', {}, 'Advanced'), h('p', {}, 'Network, capabilities, raw information and more.'))),
-    h('div', { class: 'room-advanced-body' },
-      a?.notReadyReason && h('p', { class: 'warn small' }, `not ready: ${a.notReadyReason}`),
-      health && h('p', { class: (a.health.state === 'unstable' ? 'bad' : 'warn') + ' small' }, healthText(a.health)),
-      S.lastInput[r.client] && lastInputLine(S.lastInput[r.client]),
-      h('div', { class: 'room-pills' }, a?.volumeControl && volumeBadge(a.volumeControl, s),
-        plan && h('span', { class: 'pill badge ' + (plan.driftCorrected ? 'good' : 'muted'), title: a?.driftCorrection?.disabledBy ?? plan.description ?? plan.reason },
-          plan.driftCorrected ? (plan.driftActuator === 'hardwareClock' ? '● drift corrected (hardware clock)' : '● drift corrected') : '○ no drift correction')),
-      plan && h('div', { class: 'small' }, h('span', { class: 'muted' }, 'plan: '), plan.reason,
-        h('div', {}, `out ${fmtFmt(plan.outputFormat)} · src ${fmtFmt(plan.sourceFormat)}`),
-        plan.description && h('div', { class: 'muted' }, plan.description)),
-      a?.startDetail && h('div', { class: 'small muted' }, `start: ${a.startDetail}`),
-      d.grouped && h('div', { class: 'small warn' }, 'In a zone with other rooms this room is drift corrected; Force Bit-Perfect keeps it bitperfect and lets it drift.'),
-      h('div', { class: 'table-wrap plain' }, h('table', { class: 'small' },
-        h('tr', {}, h('th', {}, 'setting'), h('th', {}, 'desired'), h('th', {}, 'effective'), h('th', {}, 'core')),
-        cell('audio control', audioControlLabel(d.audioControl), audioControlLabel(d.audioControl), s && audioControlLabel(s.audioControl)),
-        cell('volume', d.volume, d.effectiveVolume, s?.volume),
-        cell('muted', d.muted, d.effectiveMuted, s?.muted),
-        cell('max volume dB', d.maxVolumeDb, d.maxVolumeDb, undefined),
-        cell('output latency ms', d.outputLatencyMs, d.outputLatencyMs, s?.outputLatencyMs))),
-      a && h('div', { class: 'room-sparks' },
-        spark('drift ppm', r.client, 'driftPpm', 3), spark('offset µs', r.client, 'offsetUs', 1),
-        spark('applied ppm', r.client, 'appliedPpm', 3, plan && !plan.driftCorrected), spark('buffer ms', r.client, 'bufferedMs', 0),
-        clock && spark('hardware clock ppm (programmed)', r.client, 'clockPpm', 0),
-        clock && spark('hardware clock ppm (core target)', r.client, 'clockTargetPpm', 1),
-        clock && spark('sample clock Hz', r.client, 'clockHz', 3)),
-      offline ? h('details', { class: 'sub', 'data-key': `device:${r.client}` },
-        h('summary', {}, 'Device settings'),
-        h('button', { type: 'button', disabled: true, title: why }, 'Reload device settings'),
-        h('p', { class: 'muted small' }, `${why}: Ethernet speed and LED mode are read and changed while it is connected.`))
-        : deviceSettingsEditor(r.client, path),
-      a?.inputs?.length > 0 && inputsEditor(r.client, a.inputs, path, a.deepSleep),
-      a?.capabilities && h('details', { class: 'sub', 'data-key': `caps:${r.client}` },
-        h('summary', {}, `Capabilities (${a.capabilities.formats.length} formats${a.capabilities.accessMode ? `, ${a.capabilities.accessMode}` : ''})`),
-        h('div', { class: 'small mono', style: 'white-space: pre-wrap' }, a.capabilities.formats.map(fmtFmt).join('\n')),
-        a.capabilities.hardwareVolume && h('div', { class: 'small' }, `hardware volume: ${fmtHardwareVolume(a.capabilities.hardwareVolume)}`),
-        a.capabilities.hardwareClock && h('div', { class: 'small' }, `hardware clock: ${a.capabilities.hardwareClock.available
-          ? `${a.capabilities.hardwareClock.control ?? 'yes'} (${a.capabilities.hardwareClock.minPpm} … ${a.capabilities.hardwareClock.maxPpm} ppm)` : 'none'}`)),
-      raw(`room:${r.client}`, r)));
+  const diagnostics = row('pulse', 'Diagnostics', 'The playback plan, the settings as the core has them and the raw record.',
+    a?.notReadyReason && h('p', { class: 'warn small' }, `not ready: ${a.notReadyReason}`),
+    health && h('p', { class: (a.health.state === 'unstable' ? 'bad' : 'warn') + ' small' }, healthText(a.health)),
+    h('div', { class: 'room-pills' }, a?.volumeControl && volumeBadge(a.volumeControl, s),
+      plan && h('span', { class: 'pill badge ' + (plan.driftCorrected ? 'good' : 'muted'), title: a?.driftCorrection?.disabledBy ?? plan.description ?? plan.reason },
+        plan.driftCorrected ? (plan.driftActuator === 'hardwareClock' ? '● drift corrected (hardware clock)' : '● drift corrected') : '○ no drift correction')),
+    plan && h('div', { class: 'small' }, h('span', { class: 'muted' }, 'plan: '), plan.reason,
+      h('div', {}, `out ${fmtFmt(plan.outputFormat)} · src ${fmtFmt(plan.sourceFormat)}`),
+      plan.description && h('div', { class: 'muted' }, plan.description)),
+    a?.startDetail && h('div', { class: 'small muted' }, `start: ${a.startDetail}`),
+    d.grouped && h('div', { class: 'small warn' }, 'In a zone with other rooms this room is drift corrected; Force Bit-Perfect keeps it bitperfect and lets it drift.'),
+    h('div', { class: 'table-wrap plain' }, h('table', { class: 'small' },
+      h('tr', {}, h('th', {}, 'setting'), h('th', {}, 'desired'), h('th', {}, 'effective'), h('th', {}, 'core')),
+      cell('audio control', audioControlLabel(d.audioControl), audioControlLabel(d.audioControl), s && audioControlLabel(s.audioControl)),
+      cell('volume', d.volume, d.effectiveVolume, s?.volume),
+      cell('muted', d.muted, d.effectiveMuted, s?.muted),
+      cell('max volume dB', d.maxVolumeDb, d.maxVolumeDb, undefined),
+      cell('output latency ms', d.outputLatencyMs, d.outputLatencyMs, s?.outputLatencyMs))),
+    raw(`room:${r.client}`, r));
 
-  return h('div', { class: 'room-settings' }, backdrop, hero, h('div', { class: 'room-rows' }, audio, eq, syncRow, advanced));
-}
-
-// A measure's last samples as a small line in a tile.
-function miniSpark(client, key) {
-  const points = (S.history[client] ?? []).filter((p) => p[key] != null).slice(-30);
-  if (points.length < 2) return null;
-  const values = points.map((p) => p[key]);
-  let min = Math.min(...values), max = Math.max(...values);
-  if (min === max) { min -= 1; max += 1; }
-  const d = points.map((p, i) => `${i ? 'L' : 'M'}${((i / (points.length - 1)) * 80).toFixed(1)} ${(22 - ((p[key] - min) / (max - min)) * 20).toFixed(1)}`).join('');
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 80 24');
-  svg.setAttribute('class', 'mini-spark');
-  svg.setAttribute('aria-hidden', 'true');
-  const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  line.setAttribute('d', d);
-  svg.append(line);
-  return svg;
+  return h('div', { class: 'room-settings' }, backdrop, hero,
+    h('div', { class: 'room-rows' }, audio, eq, syncRow, device, buttons, capabilities, diagnostics));
 }
 
 // The size of the room's own buffer (MATP section 58), as its client reported
@@ -2556,27 +2541,32 @@ function deviceSettingsEditor(client, path) {
     finally { state.loading = false; renderRooms(); }
   }, message);
   const minutes = (seconds) => String(Math.round((seconds ?? 0) / 60));
-  // Its section opens it; the settings page, where it is always shown, at once.
-  if (page === 'client' && roomOpen === client && !state.loaded && !state.loading) setTimeout(reload, 0);
-  return h('details', { class: 'sub', 'data-key': `device:${client}`,
-    ontoggle(e) { if (e.target.open && !state.loaded && !state.loading) reload(); } },
-    h('summary', {}, 'Device settings'),
-    h('button', { type: 'button', disabled: state.loading, onclick: reload }, state.loading ? 'Loading…' : 'Reload device settings'),
+  // Read once each time the settings page opens (showPage forgets the last read).
+  if (!state.loaded && !state.loading) setTimeout(reload, 0);
+  const field = roomField;
+  return [
+    !state.loaded && h('p', { class: 'muted small' }, 'Reading the device settings…'),
     state.networkError && h('p', { class: 'bad small' }, state.networkError),
     state.ledsError && h('p', { class: 'bad small' }, state.ledsError),
-    state.network?.supported && h('label', {}, 'Ethernet link speed', h('select', {
+    state.powerError && h('p', { class: 'bad small' }, state.powerError),
+    state.network?.supported && field('Ethernet speed', h('select', {
       value: state.network.network.ethernet.speedMbps, disabled: state.loading, 'aria-label': `Ethernet link speed of ${client}`,
       onchange: e => change('network', { speedMbps: e.target.value }, 'Ethernet speed saved; the client reconnects shortly.'),
     }, [['auto', 'Automatic (10 / 100 Mbps)'], ['10', '10 Mbps'], ['100', '100 Mbps']].map(([value, label]) => h('option', { value }, label)))),
-    state.leds?.supported && h('label', {}, 'LED mode', h('select', {
+    state.leds?.supported && field('LEDs', h('select', {
       value: String(state.leds.off), disabled: state.loading, 'aria-label': `LED mode of ${client}`,
       onchange: e => change('leds', { off: e.target.value === 'true' }, 'LED mode saved.'),
-    }, h('option', { value: 'false' }, 'ON = Lights on'), h('option', { value: 'true' }, 'OFF = Lights off'))),
-    state.leds?.supported && h('p', { class: 'small muted' }, 'Boot and firmware update indications remain enabled.'),
-    state.powerError && h('p', { class: 'bad small' }, state.powerError),
+    }, h('option', { value: 'false' }, 'On'), h('option', { value: 'true' }, 'Off')),
+    h('span', { class: 'small muted' }, 'Boot and firmware update indications stay on.')),
+    state.power?.supported && field('Power',
+      h('span', { class: 'pill' }, powerLabel(state.power.state ?? 'unknown')),
+      h('button', { type: 'button', disabled: state.loading, onclick: () => power('standbyOn', 'standby sent') }, 'Standby'),
+      h('button', { type: 'button', disabled: state.loading, onclick: () => power('standbyOff', 'wake from standby sent') }, 'Wake'),
+      state.power.deepSleep && h('button', { type: 'button', disabled: state.loading,
+        onclick: () => confirm(`Put ${client} into deep sleep? It leaves the network until POWER or Wake-on-LAN wakes it.`) && power('deepSleep', 'deep sleep sent') }, 'Deep sleep')),
     // Idle delays in minutes here, seconds on the client; 0 switches one off.
-    state.power?.supported && h('form', {
-      class: 'room-controls',
+    state.power?.supported && field('Idle timers', h('form', {
+      class: 'room-inline-form',
       onsubmit(e) {
         e.preventDefault();
         const body = { standbyAfterSeconds: Number(e.target.standby.value) * 60 };
@@ -2588,15 +2578,10 @@ function deviceSettingsEditor(client, path) {
       value: minutes(state.power.standbyAfterSeconds), disabled: state.loading, 'aria-label': `Automatic standby of ${client} in minutes` })),
     state.power.deepSleep && h('label', {}, 'Deep sleep after (min)', h('input', { name: 'deepSleep', type: 'number', min: 0, max: 1440, step: 1, class: 'w-num',
       value: minutes(state.power.deepSleepAfterSeconds), disabled: state.loading, 'aria-label': `Automatic deep sleep of ${client} in minutes` })),
-    h('button', { disabled: state.loading }, 'Save')),
-    state.power?.supported && h('div', { class: 'room-controls' },
-      h('span', { class: 'small muted' }, `Power: ${powerLabel(state.power.state ?? 'unknown')}`),
-      h('button', { type: 'button', disabled: state.loading, onclick: () => power('standbyOn', 'standby sent') }, 'Standby'),
-      h('button', { type: 'button', disabled: state.loading, onclick: () => power('standbyOff', 'wake from standby sent') }, 'Wake'),
-      state.power.deepSleep && h('button', { type: 'button', disabled: state.loading,
-        onclick: () => confirm(`Put ${client} into deep sleep? It leaves the network until POWER or Wake-on-LAN wakes it.`) && power('deepSleep', 'deep sleep sent') }, 'Deep sleep')),
-    state.power?.supported && h('p', { class: 'small muted' }, '0 switches a delay off. Deep sleep counts from the same idle start as standby; 1 minute at least.'),
-    (state.network?.supported === false && state.leds?.supported === false) && h('p', { class: 'small muted' }, 'This firmware has no Ethernet speed or LED settings.'));
+    h('button', { class: 'primary', disabled: state.loading }, 'Apply'))),
+    state.power?.supported && h('p', { class: 'small muted' }, '0 switches a timer off. Deep sleep counts from the same idle start as standby; 1 minute at least.'),
+    (state.network?.supported === false && state.leds?.supported === false) && h('p', { class: 'small muted' }, 'This firmware has no Ethernet speed or LED settings.'),
+  ];
 }
 
 function bufferEditor(bufferMs, path) {
@@ -3209,9 +3194,8 @@ const DRIFT_CORRECTIONS = [
 function driftCorrectionEditor(dc, path) {
   const noClock = !dc.hardwareClockAvailable;
   const clock = dc.hardwareClock;
-  const now = dc.actuator === 'hardwareClock'
-    ? `hardware clock${clock ? `, ${clock.appliedPpm} ppm${clock.saturated ? ' (at its limit)' : ''}` : ''}`
-    : dc.actuator === 'resampling' ? 'resampling' : 'not corrected';
+  // What corrects it, not by how much: the Sync & buffer tiles show the ppm.
+  const now = dc.actuator === 'hardwareClock' ? 'hardware clock' : dc.actuator === 'resampling' ? 'resampling' : 'not corrected';
   return h('div', { class: 'room-controls', title: "how this room is kept in step when it is corrected; the client keeps the setting" },
     h('select', {
       value: dc.mode,
@@ -3300,11 +3284,9 @@ function inputsEditor(client, inputs, path, deepSleep) {
         h('td', {}, form)));
     }
   }
-  return h('details', { class: 'sub', 'data-key': `inputs:${client}` },
-    h('summary', {}, `Buttons & encoders (${inputs.length})`),
-    h('table', { class: 'small' },
-      h('tr', {}, h('th', {}, 'input'), h('th', {}, 'gesture'), h('th', {}, 'bound to')),
-      rows));
+  return h('div', { class: 'table-wrap plain' }, h('table', { class: 'small' },
+    h('tr', {}, h('th', {}, 'input'), h('th', {}, 'gesture'), h('th', {}, 'bound to')),
+    rows));
 }
 
 function lastInputLine(e) {
@@ -3679,138 +3661,215 @@ async function loadPlaylists() {
   await renderPlaylistEntries();
 }
 
-// --- the Playlists page: the tree of folders and playlists -------------------
-// Folders first, by name, then the playlists in their order; a folder opens
-// and closes (kept per viewer). Folders and playlists are dragged onto a
-// folder to go in it, onto a playlist to go beside it, onto the tree's
-// ground to go to the top; library items dropped on a playlist are added.
-// Each has a ⋯ menu for the same and more.
-const TREE_TYPE = 'application/x-galdrun-tree';
-const openFolders = new Set((() => { try { return JSON.parse(store.get('vx.playlistFolders', '[]')); } catch { return []; } })());
-const keepOpenFolders = () => store.set('vx.playlistFolders', JSON.stringify([...openFolders]));
-// A folder and those it lies in opened, so what goes into it is seen.
-function openTo(folder) {
-  for (let at = S.playlistFolders.find((f) => f.id === folder); at; at = S.playlistFolders.find((f) => f.id === at.parent)) openFolders.add(at.id);
-  keepOpenFolders();
-}
+// --- folder trees: the Playlists and Radio stations pages --------------------
+// A page's folders as a tree: folders first, by name, then what lies in each
+// (the playlists, in their order; stations are listed beside the tree). A
+// folder opens and closes (kept per viewer). Folders and items are dragged
+// onto a folder to go in it, onto an item to go beside it, onto the tree's
+// ground (or its root) to go to the top. Each has a ⋯ menu for the same and
+// more. A new folder or item, or a new name, is typed in the tree itself.
+//
+// cfg: key (its render key), store (where the open folders are kept), el,
+// label, path (the folders' API path), noun/nouns (what an item is called),
+// folders(), items() (each {id, name, folder}), reload(), moveItem(id, folder)
+// and empty (the text of an empty tree). Optional: item (how items show in the
+// tree: icon, current(x), open(x), count(x), menu(x), drop(x, bodies)),
+// create(name, folder) and rename(id, name) (an item made and named in the
+// tree), created(item), root (a row for the top: name, icon, count()),
+// current() and pick(folder) (a folder picked, null the root), drop(folder,
+// bodies) (library items dropped on a folder), contents(items) (how much a
+// folder's deletion takes, "12 entries") and deleting(folders, items).
+function folderTree(cfg) {
+  const type = `application/x-galdrun-tree-${cfg.key.toLowerCase()}`;
+  const open = new Set((() => { try { return JSON.parse(store.get(cfg.store, '[]')); } catch { return []; } })());
+  const keepOpen = () => store.set(cfg.store, JSON.stringify([...open]));
+  const folderOf = (id) => cfg.folders().find((f) => f.id === id);
+  // The names from the top down to the folder.
+  const pathOf = (f) => { const names = []; for (let at = f; at; at = folderOf(at.parent)) names.unshift(at.name); return names; };
+  // A folder and those it lies in opened, so what goes into it is seen.
+  function openTo(folder) {
+    for (let at = folderOf(folder); at; at = folderOf(at.parent)) open.add(at.id);
+    keepOpen();
+  }
 
-function renderPlaylistTree() {
-  const folders = S.playlistFolders;
-  const kids = (parent) => [
-    treeEdit?.isNew && treeEdit.parent === parent && h('li', { role: 'treeitem' }, editRow(treeEdit.kind === 'folder' ? 'folder' : 'playlists', '')),
-    ...folders.filter((f) => (f.parent ?? null) === parent).map(folderNode),
-    ...S.playlists.filter((p) => (p.folder ?? null) === parent).map(playlistNode)];
-  const folderNode = (f) => {
-    const open = openFolders.has(f.id);
-    return h('li', { role: 'treeitem', 'aria-expanded': String(open) },
-      h('div', { class: 'tree-row folder', ...treeDrag({ folder: f.id }), ...treeDrop(f.id) },
-        editing('folder', f.id) ? editRow('folder', f.name) : [
-          h('button', { type: 'button', class: 'tree-open', title: f.name, onclick() { if (open) openFolders.delete(f.id); else openFolders.add(f.id); keepOpenFolders(); renderPlaylistTree(); } },
-            h('span', { class: 'tree-chevron' }, icon('forward')), icon('folder'), h('span', { class: 'tree-name' }, f.name)),
-          treeMenu(`Folder ${f.name}`, folderMenu(f))]),
-      open && h('ul', { role: 'group' }, kids(f.id)));
-  };
-  const playlistNode = (p) => h('li', { role: 'treeitem', 'aria-selected': String(p.id === S.openPlaylist) },
-    h('div', { class: 'tree-row' + (p.id === S.openPlaylist ? ' current' : ''), ...treeDrag({ playlist: p.id }),
-      ...treeDrop(p.folder ?? null, (items) => act(() => dropOnPlaylist(p.id, items)).then(() => act(loadPlaylists))) },
-      editing('playlist', p.id) ? editRow('playlists', p.name) : [
-        h('button', { type: 'button', class: 'tree-open', title: p.name, onclick: () => openPlaylist(p.id) },
-          icon('playlists'), h('span', { class: 'tree-name' }, p.name), h('span', { class: 'tree-count' }, p.count)),
-        treeMenu(`Playlist ${p.name}`, playlistMenu(p))]));
-  render('playlistTree', $('#plTree'), () => [h('ul', { class: 'tree', role: 'tree', 'aria-label': 'Playlists and folders', ...treeDrop(null) },
-    kids(null),
-    !folders.length && !S.playlists.length && !treeEdit && h('li', { class: 'muted small tree-empty' }, 'No playlists yet: + makes one.'))]);
-  const input = $('#plTree .tree-input');
-  if (input && document.activeElement !== input) { input.focus(); input.select(); }
-}
+  function draw() {
+    const folders = cfg.folders(), items = cfg.items();
+    const kids = (parent) => [
+      edit?.isNew && edit.parent === parent && h('li', { role: 'treeitem' }, editRow(edit.kind === 'folder' ? 'folder' : cfg.item.icon, '')),
+      ...folders.filter((f) => (f.parent ?? null) === parent).map(folderNode),
+      ...(cfg.item ? items.filter((x) => (x.folder ?? null) === parent).map(itemNode) : [])];
+    const folderNode = (f) => {
+      const isOpen = open.has(f.id), current = cfg.current?.() === f.id;
+      return h('li', { role: 'treeitem', 'aria-expanded': String(isOpen), ...(cfg.pick ? { 'aria-selected': String(current) } : {}) },
+        h('div', { class: 'tree-row folder' + (current ? ' current' : ''), ...drag({ folder: f.id }), ...drop(f.id, cfg.drop && ((b) => cfg.drop(f.id, b))) },
+          editing('folder', f.id) ? editRow('folder', f.name) : [
+            h('button', { type: 'button', class: 'tree-open', title: f.name, onclick() {
+              // Picked, a folder opens too; picked already, it opens and closes.
+              if (cfg.pick && !current) { open.add(f.id); cfg.pick(f.id); } else if (isOpen) open.delete(f.id); else open.add(f.id);
+              keepOpen();
+              draw();
+            } },
+              h('span', { class: 'tree-chevron' }, icon('forward')), icon('folder'), h('span', { class: 'tree-name' }, f.name),
+              !cfg.item && h('span', { class: 'tree-count' }, items.filter((x) => x.folder === f.id).length || '')),
+            treeMenu(`Folder ${f.name}`, folderMenu(f))]),
+        isOpen && h('ul', { role: 'group' }, kids(f.id)));
+    };
+    const itemNode = (x) => h('li', { role: 'treeitem', 'aria-selected': String(cfg.item.current(x)) },
+      h('div', { class: 'tree-row' + (cfg.item.current(x) ? ' current' : ''), ...drag({ item: x.id }),
+        ...drop(x.folder ?? null, cfg.item.drop && ((b) => cfg.item.drop(x, b))) },
+        editing('item', x.id) ? editRow(cfg.item.icon, x.name) : [
+          h('button', { type: 'button', class: 'tree-open', title: x.name, onclick: () => cfg.item.open(x) },
+            icon(cfg.item.icon), h('span', { class: 'tree-name' }, x.name), h('span', { class: 'tree-count' }, cfg.item.count(x))),
+          treeMenu(`${cfg.noun[0].toUpperCase()}${cfg.noun.slice(1)} ${x.name}`, cfg.item.menu(x))]));
+    const empty = !folders.length && !(cfg.item && items.length) && !edit && h('li', { class: 'muted small tree-empty' }, cfg.empty);
+    const top = (b) => cfg.drop?.(null, b);
+    render(cfg.key, cfg.el, () => [h('ul', { class: 'tree', role: 'tree', 'aria-label': cfg.label, ...drop(null, cfg.drop && top) },
+      cfg.root ? h('li', { role: 'treeitem', 'aria-expanded': 'true', 'aria-selected': String(cfg.current() == null) },
+        h('div', { class: 'tree-row' + (cfg.current() == null ? ' current' : ''), ...drop(null, cfg.drop && top) },
+          h('button', { type: 'button', class: 'tree-open', title: cfg.root.name, onclick: () => cfg.pick(null) },
+            icon(cfg.root.icon), h('span', { class: 'tree-name' }, cfg.root.name), h('span', { class: 'tree-count' }, cfg.root.count() || ''))),
+        h('ul', { role: 'group' }, kids(null), empty)) : [kids(null), empty])]);
+    const input = cfg.el.querySelector('.tree-input');
+    if (input && document.activeElement !== input) { input.focus(); input.select(); }
+  }
 
-// A name typed in the tree itself: a new folder or playlist, or a new name.
-// Enter or leaving the field keeps it, Escape (or an empty name) drops it.
-let treeEdit = null; // {kind: 'folder'|'playlist', id} or {kind, isNew: true, parent}
-const editing = (kind, id) => treeEdit && !treeEdit.isNew && treeEdit.kind === kind && treeEdit.id === id;
-function editRow(iconName, value) {
-  return h('div', { class: 'tree-row editing' },
-    h('span', { class: 'tree-edit' }, icon(iconName),
-      h('input', {
-        class: 'tree-input', value, maxlength: 200,
-        'aria-label': treeEdit.isNew ? `New ${treeEdit.kind} name` : `New name for ${value}`,
-        placeholder: treeEdit.isNew ? `New ${treeEdit.kind}` : '',
-        onkeydown(e) {
-          if (e.key === 'Enter') { e.preventDefault(); endTreeEdit(this.value); }
-          else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); endTreeEdit(null); }
-        },
-        onblur() { endTreeEdit(this.value); },
-      })));
-}
-function startTreeEdit(edit) {
-  if (edit.isNew && edit.parent != null) openTo(edit.parent);
-  treeEdit = edit;
-  renderPlaylistTree();
-}
-function endTreeEdit(value) {
-  const e = treeEdit;
-  if (!e || e.done) return;
-  e.done = true;
-  treeEdit = null;
-  // Leaving the field lets the tree render again (render waits on a focused input).
-  document.activeElement?.blur();
-  const name = value?.trim();
-  const old = e.isNew ? null : (e.kind === 'folder' ? S.playlistFolders : S.playlists).find((x) => x.id === e.id)?.name;
-  if (!name || name === old) { renderPlaylistTree(); return; }
-  const call = e.isNew
-    ? (e.kind === 'folder' ? api('POST', 'playlist-folders', { name, parent: e.parent ?? 0 }) : api('POST', 'playlists', { name, folder: e.parent ?? 0 }))
-    : api('PATCH', `${e.kind === 'folder' ? 'playlist-folders' : 'playlists'}/${e.id}`, { name });
-  act(() => call, e.isNew ? `${e.kind} created` : 'renamed').then((r) => {
-    if (r && e.isNew && e.kind === 'playlist') S.openPlaylist = r.id;
-    return act(loadPlaylists);
-  }).finally(renderPlaylistTree);
-}
+  // A name typed in the tree itself: a new folder or item, or a new name.
+  // Enter or leaving the field keeps it, Escape (or an empty name) drops it.
+  let edit = null; // {kind: 'folder'|'item', id} or {kind, isNew: true, parent}
+  const editing = (kind, id) => edit && !edit.isNew && edit.kind === kind && edit.id === id;
+  const nounOf = (kind) => (kind === 'folder' ? 'folder' : cfg.noun);
+  function editRow(iconName, value) {
+    return h('div', { class: 'tree-row editing' },
+      h('span', { class: 'tree-edit' }, icon(iconName),
+        h('input', {
+          class: 'tree-input', value, maxlength: 200,
+          'aria-label': edit.isNew ? `New ${nounOf(edit.kind)} name` : `New name for ${value}`,
+          placeholder: edit.isNew ? `New ${nounOf(edit.kind)}` : '',
+          onkeydown(e) {
+            if (e.key === 'Enter') { e.preventDefault(); endEdit(this.value); }
+            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); endEdit(null); }
+          },
+          onblur() { endEdit(this.value); },
+        })));
+  }
+  function startEdit(next) {
+    if (next.isNew && next.parent != null) openTo(next.parent);
+    edit = next;
+    draw();
+  }
+  function endEdit(value) {
+    const e = edit;
+    if (!e || e.done) return;
+    e.done = true;
+    edit = null;
+    // Leaving the field lets the tree render again (render waits on a focused input).
+    document.activeElement?.blur();
+    const name = value?.trim();
+    const old = e.isNew ? null : (e.kind === 'folder' ? cfg.folders() : cfg.items()).find((x) => x.id === e.id)?.name;
+    if (!name || name === old) { draw(); return; }
+    const call = e.kind === 'folder'
+      ? (e.isNew ? api('POST', cfg.path, { name, parent: e.parent ?? 0 }) : api('PATCH', `${cfg.path}/${e.id}`, { name }))
+      : (e.isNew ? cfg.create(name, e.parent) : cfg.rename(e.id, name));
+    act(() => call, e.isNew ? `${nounOf(e.kind)} created` : 'renamed').then((r) => {
+      if (r && e.isNew && e.kind === 'item') cfg.created?.(r);
+      return act(cfg.reload);
+    }).finally(draw);
+  }
 
-function openPlaylist(id) {
-  S.openPlaylist = id;
-  if (smallScreen.matches) showPlaylistPart('list');
-  renderPlaylistTree();
-  act(renderPlaylistEntries);
-}
-
-const treeDrag = (what) => ({
-  draggable: 'true',
-  ondragstart(e) {
-    e.stopPropagation();
-    e.dataTransfer.setData(TREE_TYPE, JSON.stringify(what));
-    e.dataTransfer.effectAllowed = 'move';
-  },
-});
-
-// Into `folder` (null: the top); with onItem, library items too.
-function treeDrop(folder, onItem) {
-  const takes = (e) => e.dataTransfer.types.includes(TREE_TYPE) || (onItem && e.dataTransfer.types.includes(ITEM_TYPE));
-  return {
-    ondragover(e) {
-      if (!takes(e)) return;
-      e.preventDefault();
+  const drag = (what) => ({
+    draggable: 'true',
+    ondragstart(e) {
       e.stopPropagation();
-      this.classList.add('drop');
+      e.dataTransfer.setData(type, JSON.stringify(what));
+      e.dataTransfer.effectAllowed = 'move';
     },
-    ondragleave() { this.classList.remove('drop'); },
-    ondrop(e) {
-      if (!takes(e)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.classList.remove('drop');
-      const tree = e.dataTransfer.getData(TREE_TYPE);
-      if (tree) moveInTree(JSON.parse(tree), folder);
-      else onItem(JSON.parse(e.dataTransfer.getData(ITEM_TYPE)));
-    },
-  };
-}
+  });
 
-function moveInTree(what, folder) {
-  if (what.folder === folder) return;
-  if (folder != null) openTo(folder);
-  act(() => (what.folder != null
-    ? api('PATCH', `playlist-folders/${what.folder}`, { parent: folder ?? 0 })
-    : api('PATCH', `playlists/${what.playlist}`, { folder: folder ?? 0 })), 'moved').then(() => act(loadPlaylists));
+  // Into `folder` (null: the top); with onItems, library items too.
+  function drop(folder, onItems) {
+    const takes = (e) => e.dataTransfer.types.includes(type) || (onItems && e.dataTransfer.types.includes(ITEM_TYPE));
+    return {
+      ondragover(e) {
+        if (!takes(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.add('drop');
+      },
+      ondragleave() { this.classList.remove('drop'); },
+      ondrop(e) {
+        if (!takes(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.remove('drop');
+        const tree = e.dataTransfer.getData(type);
+        if (tree) move(JSON.parse(tree), folder);
+        else onItems(JSON.parse(e.dataTransfer.getData(ITEM_TYPE)));
+      },
+    };
+  }
+
+  function move(what, folder) {
+    if (what.folder === folder) return;
+    if (folder != null) openTo(folder);
+    act(() => (what.folder != null
+      ? api('PATCH', `${cfg.path}/${what.folder}`, { parent: folder ?? 0 })
+      : cfg.moveItem(what.item, folder)), 'moved').then(() => act(cfg.reload));
+  }
+
+  // "Move to…": a dialog with every folder as its path ("Music › Rock"),
+  // filtered as the name is typed; Enter takes the first shown. A folder is not
+  // offered itself or what lies within it; where it already is, is marked.
+  function moveDialog(name, current, onMove, self = null) {
+    const within = (f) => { for (let at = f; at; at = folderOf(at.parent)) if (at.id === self) return true; return false; };
+    const path = (f) => pathOf(f).join(' › ');
+    const targets = [{ id: null, path: 'Top level' },
+      ...cfg.folders().filter((f) => !within(f)).map((f) => ({ id: f.id, path: path(f) })).sort((a, b) => a.path.localeCompare(b.path))];
+    const list = h('div', { class: 'move-list', role: 'listbox', 'aria-label': 'Folders' });
+    const show = (q) => {
+      const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const shown = targets.filter((t) => words.every((w) => t.path.toLowerCase().includes(w)));
+      list.replaceChildren(...shown.map((t) => h('button', {
+        type: 'button', role: 'option', class: t.id === current ? 'here' : '', disabled: t.id === current,
+        title: t.id === current ? 'it is here' : t.path,
+        onclick() { dialog.close(); onMove(t.id); },
+      }, icon(t.id == null ? 'back' : 'folder'), h('span', {}, t.path))),
+      ...(shown.length ? [] : [h('p', { class: 'muted small' }, 'No folder of that name.')]));
+    };
+    const dialog = h('dialog', { class: 'confirm-dialog move-dialog', 'aria-label': `Move ${name}`, onclose() { this.remove(); } },
+      h('div', { class: 'confirm-head' }, h('span', { class: 'confirm-icon move-icon' }, icon('folder')), h('h2', {}, 'Move ', h('span', { class: 'move-name' }, name))),
+      h('input', { type: 'search', class: 'move-filter', placeholder: 'Find a folder…', 'aria-label': 'Find a folder', autocomplete: 'off',
+        oninput() { show(this.value); },
+        onkeydown(e) { if (e.key === 'Enter') { e.preventDefault(); list.querySelector('button:not(:disabled)')?.click(); } } }),
+      list,
+      h('div', { class: 'confirm-buttons' }, h('button', { type: 'button', onclick: () => dialog.close() }, 'Cancel')));
+    show('');
+    document.body.append(dialog);
+    dialog.showModal();
+  }
+
+  const newFolder = (parent = null) => startEdit({ kind: 'folder', isNew: true, parent });
+  const newItem = (folder = null) => startEdit({ kind: 'item', isNew: true, parent: folder });
+  const folderMenu = (f) => [
+    cfg.create && h('button', { type: 'button', onclick: () => newItem(f.id) }, icon('plus'), `New ${cfg.noun} here`),
+    h('button', { type: 'button', onclick: () => newFolder(f.id) }, icon('folder'), 'New folder here'),
+    h('button', { type: 'button', onclick: () => startEdit({ kind: 'folder', id: f.id }) }, icon('edit'), 'Rename'),
+    h('button', { type: 'button', class: 'danger', async onclick() {
+      // Everything within it goes too: with items among it, its name is typed again.
+      const tree = [f.id];
+      for (let i = 0; i < tree.length; i++) tree.push(...cfg.folders().filter((x) => x.parent === tree[i]).map((x) => x.id));
+      const folders = tree.length - 1, inside = cfg.items().filter((x) => tree.includes(x.folder ?? null));
+      const n = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+      const text = inside.length
+        ? `${[folders && n(folders, 'folder', 'folders'), n(inside.length, cfg.noun, cfg.nouns)].filter(Boolean).join(' and ')} in it ${folders + inside.length === 1 ? 'is' : 'are'} deleted with it${cfg.contents ? `, ${cfg.contents(inside)} in all` : ''}. This cannot be undone.`
+        : folders ? `The ${n(folders, 'folder', 'folders')} in it ${folders === 1 ? 'is' : 'are'} deleted with it; there are no ${cfg.nouns} in it.` : 'It is empty.';
+      if (await confirmDelete({ title: 'Delete folder', what: f.name, text, typeName: inside.length > 0 })) {
+        cfg.deleting?.(tree, inside);
+        act(() => api('DELETE', `${cfg.path}/${f.id}`), 'folder deleted').then(() => act(cfg.reload));
+      }
+    } }, icon('trash'), 'Delete folder'),
+    h('button', { type: 'button', onclick: () => moveDialog(f.name, f.parent ?? null, (to) => move({ folder: f.id }, to), f.id) }, icon('folder'), 'Move to…')];
+
+  return { render: draw, startEdit, newFolder, newItem, moveDialog, moveItem: (id, folder) => move({ item: id }, folder), path: (id) => pathOf(folderOf(id)) };
 }
 
 function treeMenu(label, items) {
@@ -3819,74 +3878,6 @@ function treeMenu(label, items) {
     h('div', { class: 'pick-popover', popover: 'auto', role: 'menu', ontoggle(e) { if (e.newState === 'open') placeUnderButton(this); },
       onclick(e) { if (e.target.closest('button')) this.hidePopover(); } }, items));
 }
-
-// "Move to…": a dialog with every folder as its path ("Music › Rock"),
-// filtered as the name is typed; Enter takes the first shown. A folder is not
-// offered itself or what lies within it; where it already is, is marked.
-function moveDialog(name, current, move, self = null) {
-  const parentOf = (f) => S.playlistFolders.find((x) => x.id === f.parent);
-  const within = (f) => { for (let at = f; at; at = parentOf(at)) if (at.id === self) return true; return false; };
-  const path = (f) => { const names = []; for (let at = f; at; at = parentOf(at)) names.unshift(at.name); return names.join(' › '); };
-  const targets = [{ id: null, path: 'Top level' },
-    ...S.playlistFolders.filter((f) => !within(f)).map((f) => ({ id: f.id, path: path(f) })).sort((a, b) => a.path.localeCompare(b.path))];
-  const list = h('div', { class: 'move-list', role: 'listbox', 'aria-label': 'Folders' });
-  const show = (q) => {
-    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-    const shown = targets.filter((t) => words.every((w) => t.path.toLowerCase().includes(w)));
-    list.replaceChildren(...shown.map((t) => h('button', {
-      type: 'button', role: 'option', class: t.id === current ? 'here' : '', disabled: t.id === current,
-      title: t.id === current ? 'it is here' : t.path,
-      onclick() { dialog.close(); move(t.id); },
-    }, icon(t.id == null ? 'back' : 'folder'), h('span', {}, t.path))),
-    ...(shown.length ? [] : [h('p', { class: 'muted small' }, 'No folder of that name.')]));
-  };
-  const dialog = h('dialog', { class: 'confirm-dialog move-dialog', 'aria-label': `Move ${name}`, onclose() { this.remove(); } },
-    h('div', { class: 'confirm-head' }, h('span', { class: 'confirm-icon move-icon' }, icon('folder')), h('h2', {}, 'Move ', h('span', { class: 'move-name' }, name))),
-    h('input', { type: 'search', class: 'move-filter', placeholder: 'Find a folder…', 'aria-label': 'Find a folder', autocomplete: 'off',
-      oninput() { show(this.value); },
-      onkeydown(e) { if (e.key === 'Enter') { e.preventDefault(); list.querySelector('button:not(:disabled)')?.click(); } } }),
-    list,
-    h('div', { class: 'confirm-buttons' }, h('button', { type: 'button', onclick: () => dialog.close() }, 'Cancel')));
-  show('');
-  document.body.append(dialog);
-  dialog.showModal();
-}
-
-function folderMenu(f) {
-  return [
-    h('button', { type: 'button', onclick: () => newPlaylist(f.id) }, icon('plus'), 'New playlist here'),
-    h('button', { type: 'button', onclick: () => newFolder(f.id) }, icon('folder'), 'New folder here'),
-    h('button', { type: 'button', onclick: () => startTreeEdit({ kind: 'folder', id: f.id }) }, icon('edit'), 'Rename'),
-    h('button', { type: 'button', class: 'danger', async onclick() {
-      // Everything within it goes too: with playlists among it, its name is typed again.
-      const tree = [f.id];
-      for (let i = 0; i < tree.length; i++) tree.push(...S.playlistFolders.filter((x) => x.parent === tree[i]).map((x) => x.id));
-      const folders = tree.length - 1, lists = S.playlists.filter((p) => tree.includes(p.folder ?? null));
-      const n = (count, one, many) => `${count} ${count === 1 ? one : many}`;
-      const text = lists.length
-        ? `${[folders && n(folders, 'folder', 'folders'), n(lists.length, 'playlist', 'playlists')].filter(Boolean).join(' and ')} in it ${folders + lists.length === 1 ? 'is' : 'are'} deleted with it, ${n(lists.reduce((sum, p) => sum + p.count, 0), 'entry', 'entries')} in all. This cannot be undone.`
-        : folders ? `The ${n(folders, 'folder', 'folders')} in it ${folders === 1 ? 'is' : 'are'} deleted with it; there are no playlists in it.` : 'It is empty.';
-      if (await confirmDelete({ title: 'Delete folder', what: f.name, text, typeName: lists.length > 0 })) {
-        if (lists.some((p) => p.id === S.openPlaylist)) S.openPlaylist = null;
-        act(() => api('DELETE', `playlist-folders/${f.id}`), 'folder deleted').then(() => act(loadPlaylists));
-      }
-    } }, icon('trash'), 'Delete folder'),
-    h('button', { type: 'button', onclick: () => moveDialog(f.name, f.parent ?? null, (to) => moveInTree({ folder: f.id }, to), f.id) }, icon('folder'), 'Move to…')];
-}
-
-function playlistMenu(p) {
-  return [
-    h('button', { type: 'button', onclick: () => act(() => enqueuePlaylist(p.id, false)) }, icon('queue'), 'Add to the zone’s queue'),
-    h('button', { type: 'button', onclick: () => act(() => enqueuePlaylist(p.id, true)) }, icon('next'), 'Play next'),
-    h('button', { type: 'button', onclick: () => startTreeEdit({ kind: 'playlist', id: p.id }) }, icon('edit'), 'Rename'),
-    h('button', { type: 'button', class: 'danger', async onclick() {
-      if (await confirmDelete({ title: 'Delete playlist', what: p.name, text: `Its ${p.count} ${p.count === 1 ? 'entry goes' : 'entries go'} with it. This cannot be undone.`, typeName: true })) act(() => api('DELETE', `playlists/${p.id}`), 'playlist deleted').then(() => act(loadPlaylists));
-    } }, icon('trash'), 'Delete playlist'),
-    h('button', { type: 'button', onclick: () => moveDialog(p.name, p.folder ?? null, (to) => moveInTree({ playlist: p.id }, to)) }, icon('folder'), 'Move to…')];
-}
-
-const newPlaylist = (folder = null) => startTreeEdit({ kind: 'playlist', isNew: true, parent: folder });
-const newFolder = (parent = null) => startTreeEdit({ kind: 'folder', isNew: true, parent });
 
 // Asks before deleting, in a dialog of the page's own; with typeName the
 // name must be typed again before the button can be pressed. `action` names
@@ -3908,38 +3899,86 @@ function confirmDelete({ title, what, text, typeName = false, action = 'Delete' 
     dialog.showModal();
   });
 }
-$('#plNew').addEventListener('click', () => newPlaylist());
-$('#plNewFolder').addEventListener('click', () => newFolder());
 
-// The tree slides away by its strip, as the library does. Kept per viewer.
-function showPlaylistTree(open) {
-  const toggle = $('#plTreeToggle');
-  toggle.setAttribute('aria-expanded', String(open));
-  toggle.title = open ? 'Hide the playlists' : 'Show the playlists';
-  store.set('vx.playlistTree', open ? 'open' : 'closed');
-  toggle.closest('.page-app').classList.toggle('tree-closed', !open);
+// A tree page's tree slides away by its strip, as the library does. Kept per viewer.
+function treeStrip(toggle, key, name) {
+  const show = (open) => {
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.title = open ? `Hide the ${name}` : `Show the ${name}`;
+    store.set(key, open ? 'open' : 'closed');
+    toggle.closest('.page-app').classList.toggle('tree-closed', !open);
+  };
+  toggle.addEventListener('click', () => show(toggle.getAttribute('aria-expanded') !== 'true'));
+  show(store.get(key, 'open') === 'open');
 }
-// On a small screen the page shows one part at a time: the tree, the open
-// playlist or the library, picked from the ☰ menu (app.css: data-part).
+
+// On a small screen a tree page shows one part at a time, picked from the ☰
+// menu of its bar (app.css: data-part). Answers how to show a part.
 const smallScreen = matchMedia('(max-width: 960px)');
-const PL_PARTS = { tree: 'Playlists', list: 'Playlist', library: 'Library' };
-function showPlaylistPart(part) {
-  $('.page[data-page="playlists"]').dataset.part = part;
-  $('#plPartLabel').textContent = part === 'list' ? S.playlists.find((p) => p.id === S.openPlaylist)?.name ?? PL_PARTS.list : PL_PARTS[part];
-  for (const b of $('#plPartPopover').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.part === part));
+function pageParts(page, labelOf) {
+  const menu = page.querySelector('.pl-small-bar > button'), popover = menu.nextElementSibling;
+  const show = (part) => {
+    page.dataset.part = part;
+    page.querySelector('.pl-part-label').textContent = labelOf(part);
+    for (const b of popover.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.part === part));
+  };
+  menu.addEventListener('click', () => popover.togglePopover());
+  popover.addEventListener('toggle', (e) => { if (e.newState === 'open') placeUnderButton(popover); });
+  popover.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-part]');
+    if (!b) return;
+    popover.hidePopover();
+    show(b.dataset.part);
+  });
+  show('tree');
+  return show;
 }
-$('#plPartMenu').addEventListener('click', (e) => e.currentTarget.nextElementSibling.togglePopover());
-$('#plPartPopover').addEventListener('toggle', (e) => { if (e.newState === 'open') placeUnderButton(e.currentTarget); });
-$('#plPartPopover').addEventListener('click', (e) => {
-  const b = e.target.closest('button[data-part]');
-  if (!b) return;
-  e.currentTarget.hidePopover();
-  showPlaylistPart(b.dataset.part);
-});
-showPlaylistPart('tree');
 
-$('#plTreeToggle').addEventListener('click', (e) => showPlaylistTree(e.currentTarget.getAttribute('aria-expanded') !== 'true'));
-showPlaylistTree(store.get('vx.playlistTree', 'open') === 'open');
+// --- the Playlists page: the tree of folders and playlists -------------------
+// Library items dropped on a playlist are added to it.
+
+const playlistTree = folderTree({
+  key: 'playlistTree', store: 'vx.playlistFolders', el: $('#plTree'), label: 'Playlists and folders', path: 'playlist-folders',
+  noun: 'playlist', nouns: 'playlists', empty: 'No playlists yet: + makes one.',
+  folders: () => S.playlistFolders, items: () => S.playlists, reload: loadPlaylists,
+  moveItem: (id, folder) => api('PATCH', `playlists/${id}`, { folder: folder ?? 0 }),
+  create: (name, folder) => api('POST', 'playlists', { name, folder: folder ?? 0 }),
+  rename: (id, name) => api('PATCH', `playlists/${id}`, { name }),
+  created: (p) => { S.openPlaylist = p.id; },
+  contents: (lists) => { const sum = lists.reduce((all, p) => all + p.count, 0); return `${sum} ${sum === 1 ? 'entry' : 'entries'}`; },
+  deleting: (_, lists) => { if (lists.some((p) => p.id === S.openPlaylist)) S.openPlaylist = null; },
+  item: {
+    icon: 'playlists', current: (p) => p.id === S.openPlaylist, open: (p) => openPlaylist(p.id), count: (p) => p.count, menu: playlistMenu,
+    drop: (p, items) => act(() => dropOnPlaylist(p.id, items)).then(() => act(loadPlaylists)),
+  },
+});
+const renderPlaylistTree = () => playlistTree.render();
+
+function openPlaylist(id) {
+  S.openPlaylist = id;
+  if (smallScreen.matches) showPlaylistPart('list');
+  renderPlaylistTree();
+  act(renderPlaylistEntries);
+}
+
+function playlistMenu(p) {
+  return [
+    h('button', { type: 'button', onclick: () => act(() => enqueuePlaylist(p.id, false)) }, icon('queue'), 'Add to the zone’s queue'),
+    h('button', { type: 'button', onclick: () => act(() => enqueuePlaylist(p.id, true)) }, icon('next'), 'Play next'),
+    h('button', { type: 'button', onclick: () => playlistTree.startEdit({ kind: 'item', id: p.id }) }, icon('edit'), 'Rename'),
+    h('button', { type: 'button', class: 'danger', async onclick() {
+      if (await confirmDelete({ title: 'Delete playlist', what: p.name, text: `Its ${p.count} ${p.count === 1 ? 'entry goes' : 'entries go'} with it. This cannot be undone.`, typeName: true })) act(() => api('DELETE', `playlists/${p.id}`), 'playlist deleted').then(() => act(loadPlaylists));
+    } }, icon('trash'), 'Delete playlist'),
+    h('button', { type: 'button', onclick: () => playlistTree.moveDialog(p.name, p.folder ?? null, (to) => playlistTree.moveItem(p.id, to)) }, icon('folder'), 'Move to…')];
+}
+
+$('#plNew').addEventListener('click', () => playlistTree.newItem());
+$('#plNewFolder').addEventListener('click', () => playlistTree.newFolder());
+treeStrip($('#plTreeToggle'), 'vx.playlistTree', 'playlists');
+// The tree, the open playlist or the library.
+const PL_PARTS = { tree: 'Playlists', list: 'Playlist', library: 'Library' };
+const showPlaylistPart = pageParts($('.page[data-page="playlists"]'),
+  (part) => (part === 'list' ? S.playlists.find((p) => p.id === S.openPlaylist)?.name ?? PL_PARTS.list : PL_PARTS[part]));
 
 // A selected row's trash removes the whole selection of that playlist, as a
 // queue's does: the rows go at once, the playlist is read again after.
@@ -3999,25 +4038,99 @@ async function loadFavorites() {
   favoritesChanged();
 }
 
-// --- stations -------------------------------------------------------------------
+// --- the Radio stations page: the tree of folders, a folder's stations -------
+// The tree's root is the top; the folder picked lists its stations beside it.
+// Stations are dragged by their grip onto a folder to go in it (a selection
+// all of it); added or imported, they go in the folder picked.
 
 async function loadStations() {
-  const r = await api('GET', 'providers/webradio/browse?node=stations&limit=100');
-  $('#stations').replaceChildren(r.items.stations.length ? stationTable(r.items.stations) : h('p', { class: 'muted' }, 'no stations'));
+  const [stations, folders] = await Promise.all([api('GET', 'stations'), api('GET', 'station-folders')]);
+  S.stations = stations.map((e) => ({ id: e.station.providerItemId, name: e.station.name, folder: e.folder, station: e.station }));
+  S.stationFolders = folders;
+  if (!folders.some((f) => f.id === S.stationFolder)) S.stationFolder = null;
+  stationTree.render();
+  renderStations();
 }
 
+const stationTree = folderTree({
+  key: 'stationTree', store: 'vx.stationFolders', el: $('#stTree'), label: 'Station folders', path: 'station-folders',
+  noun: 'station', nouns: 'stations', empty: 'No folders yet.',
+  folders: () => S.stationFolders, items: () => S.stations, reload: loadStations,
+  moveItem: (id, folder) => api('PATCH', `stations/${enc(id)}`, { folder: folder ?? 0 }),
+  root: { name: 'Radio stations', icon: 'radio', count: () => S.stations.filter((s) => s.folder == null).length },
+  current: () => S.stationFolder,
+  pick(folder) {
+    S.stationFolder = folder;
+    if (smallScreen.matches) showStationPart('list');
+    stationTree.render();
+    renderStations();
+  },
+  drop: (folder, bodies) => moveStations(bodies.filter((b) => b.station?.providerId === 'webradio').map((b) => b.station.providerItemId), folder),
+  deleting: (folders) => { if (folders.includes(S.stationFolder)) S.stationFolder = null; },
+});
+
+function moveStations(ids, folder) {
+  if (!ids.length) return;
+  clearSelection();
+  act(async () => {
+    for (const id of ids) await api('PATCH', `stations/${enc(id)}`, { folder: folder ?? 0 });
+  }, ids.length > 1 ? `${ids.length} stations moved` : 'moved').then(() => act(loadStations));
+}
+
+const stationFolderName = () => (S.stationFolder == null ? 'Radio stations' : stationTree.path(S.stationFolder).join(' › '));
+
+function renderStations() {
+  const folder = S.stationFolder;
+  const shown = S.stations.filter((s) => (s.folder ?? null) === folder).map((s) => s.station);
+  const name = stationFolderName();
+  $('#stHead').replaceChildren(
+    h('span', { class: 'queue-count pl-title' }, icon(folder == null ? 'radio' : 'folder'), h('span', { class: 'pl-name', title: name }, name),
+      h('span', { class: 'muted' }, `Stations: ${shown.length}`)),
+    h('span', { class: 'tools' },
+      h('button', { class: 'icon-only', title: 'Import M3U or PLS', 'aria-label': 'Import M3U or PLS', onclick: () => $('#importDialog').showModal() }, icon('playlists')),
+      h('button', { class: 'icon-only', title: 'Add a station', 'aria-label': 'Add a station', onclick: () => $('#stationDialog').showModal() }, icon('plus'))));
+  $('#stations').replaceChildren(shown.length
+    ? h('div', { class: 'table-wrap plain station-list' }, stationTable(shown))
+    : h('p', { class: 'muted small pl-pick' }, folder == null && !S.stations.length
+      ? 'No stations yet: add one with +, or import an M3U or PLS file.'
+      : 'Empty: drag stations onto this folder in the tree, or add one with +.'));
+  if (smallScreen.matches && $('.page[data-page="stations"]').dataset.part === 'list') showStationPart('list');
+}
+
+$('#stNewFolder').addEventListener('click', () => stationTree.newFolder());
+treeStrip($('#stTreeToggle'), 'vx.stationTree', 'folders');
+const showStationPart = pageParts($('.page[data-page="stations"]'), (part) => (part === 'list' ? stationFolderName() : 'Folders'));
+
+for (const dialog of [$('#stationDialog'), $('#importDialog')]) {
+  dialog.querySelector('[data-close]').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', () => { dialog.querySelector('form').reset(); dialog.querySelector('.save-error').hidden = true; });
+}
+// A refusal is said inside the dialog (a toast is hidden behind the backdrop);
+// the dialog stays open so the entry can be corrected.
+async function submitStations(dialog, call, done) {
+  const error = dialog.querySelector('.save-error');
+  error.hidden = true;
+  try {
+    const r = await call();
+    dialog.close();
+    flash(typeof done === 'function' ? done(r) : done);
+    act(loadStations);
+  } catch (err) {
+    error.textContent = err.data?.message ?? err.message;
+    error.hidden = false;
+  }
+}
 $('#stationForm').addEventListener('submit', (e) => {
   e.preventDefault();
-  const body = {};
+  const body = { folder: S.stationFolder ?? 0 };
   for (const [k, v] of new FormData(e.target)) if (String(v).trim()) body[k] = String(v).trim();
-  act(() => api('POST', 'stations', body), 'station added').then((r) => { if (r) e.target.reset(); return act(loadStations); });
+  submitStations($('#stationDialog'), () => api('POST', 'stations', body), 'station added');
 });
 $('#importForm').addEventListener('submit', (e) => {
   e.preventDefault();
-  act(() => api('POST', 'stations/import', { playlist: e.target.playlist.value }), (r) => `${r.length} station(s) imported`)
-    .then((r) => { if (r) e.target.reset(); return act(loadStations); });
+  submitStations($('#importDialog'), () => api('POST', 'stations/import', { playlist: e.target.playlist.value, folder: S.stationFolder ?? 0 }),
+    (r) => `${r.length} station(s) imported`);
 });
-$('#reloadStations').addEventListener('click', () => act(loadStations));
 
 // --- index ----------------------------------------------------------------------
 // What the indexer did: its counters (from status and `indexer.progress`), what
@@ -6695,10 +6808,12 @@ function showPage() {
   if (folded) foldNavGroup(document.querySelector(`[aria-controls="${folded.id}"]`), true);
   const section = document.querySelector(`main > .page[data-page="${page}"]`);
   // The library goes with the Zones and the Playlists page, as it was left.
-  if (section.classList.contains('page-app') && $('#browserPanel').parentElement !== section) section.append($('#libraryToggle'), $('#browserPanel'));
+  if ((page === 'zones' || page === 'playlists') && $('#browserPanel').parentElement !== section) section.append($('#libraryToggle'), $('#browserPanel'));
   document.title = `${section.dataset.title} · Galdrun Server`;
   setNav(false);
   if (!changed) return;
+  // Its device settings are read again each time a client's page opens.
+  if (client) deviceSettings.delete(client);
   window.scrollTo(0, 0);
   onShow[page]?.();
 }

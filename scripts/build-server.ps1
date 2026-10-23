@@ -3,8 +3,8 @@
 # .NET publishes every target from any host, so this also builds the Linux targets; no WSL.
 #
 # Usage:
-#   powershell -ExecutionPolicy Bypass -File build-server.ps1                    # all targets
-#   powershell -ExecutionPolicy Bypass -File build-server.ps1 -Target windows-x64,linux-armv7
+#   powershell -ExecutionPolicy Bypass -File scripts\build-server.ps1                    # all targets
+#   powershell -ExecutionPolicy Bypass -File scripts\build-server.ps1 -Target windows-x64,linux-armv7
 #
 # Targets (all self-contained: nothing has to be installed on the device):
 #   all (default)  windows and linux
@@ -19,7 +19,8 @@ param(
     [string[]] $Target = 'all'
 )
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'scripts\setup\windows.ps1')
+$root = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot 'setup\windows.ps1')
 $rids = @{ 'windows-x64' = 'win-x64'; 'windows-armv8' = 'win-arm64'; 'linux-x64' = 'linux-x64'; 'linux-armv7' = 'linux-arm'; 'linux-armv8' = 'linux-arm64' }
 $selected = @($Target | ForEach-Object {
         switch ($_) {
@@ -30,7 +31,7 @@ $selected = @($Target | ForEach-Object {
         }
     } | Select-Object -Unique)
 
-$server = Join-Path $PSScriptRoot 'server'
+$server = Join-Path $root 'server'
 Push-Location $server
 try {
     Initialize-DotNet
@@ -38,9 +39,9 @@ try {
     foreach ($name in $selected) {
         Write-Host "== $name"
         & dotnet.exe publish 'src\Multiroom.Server\Multiroom.Server.csproj' -c Release -r $rids[$name] `
-            --self-contained true -o (Join-Path $PSScriptRoot "releases\server\$name")
+            --self-contained true -o (Join-Path $root "releases\server\$name")
         Invoke-Checked "Publishing $name"
     }
 }
 finally { Pop-Location }
-Write-Host "Done. Results are in $(Join-Path $PSScriptRoot 'releases\server')"
+Write-Host "Done. Results are in $(Join-Path $root 'releases\server')"

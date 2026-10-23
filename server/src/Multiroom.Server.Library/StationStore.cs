@@ -5,20 +5,23 @@ namespace Multiroom.Server.Library;
 
 // A radio station as the webradio provider keeps it. StreamUrl is the
 // provider's alone: it never leaves this server (rule 7), because the core
-// fetches the media endpoint's relay instead.
+// fetches the media endpoint's relay instead. Folder is the folder it lies
+// in, null at the top.
 public sealed record StoredStation(long Id, string Name, Uri StreamUrl, Uri? Homepage, string? Genre, Uri? Logo,
-    DateTime Added);
+    DateTime Added, long? Folder = null);
 
-// What adding or importing a station takes.
+// What adding or importing a station takes; Folder is where it goes, null the top.
 public sealed record NewStation(string Name, Uri StreamUrl, Uri? Homepage = null, string? Genre = null,
-    Uri? Logo = null);
+    Uri? Logo = null, long? Folder = null);
 
-// Radio stations, in the library's database (Migrations/0004). As the
-// playlist store: one connection per call, one transaction per write,
-// committed only on success.
+// Radio stations and their folders, in the library's database (Migrations/0004,
+// 0028). As the playlist store: one connection per call, one transaction per
+// write, committed only on success.
 public sealed class StationStore(LibraryDatabase database)
 {
-    private const string Columns = "SELECT s.id, s.name, s.stream_url, s.homepage, s.genre, s.logo, s.added FROM station s";
+    private const string Columns = "SELECT s.id, s.name, s.stream_url, s.homepage, s.genre, s.logo, s.added, s.folder_id FROM station s";
+
+    private static readonly FolderTree FolderTable = new("station_folder", "station");
 
     // By name.
     public Result<IReadOnlyList<StoredStation>, LibraryError> Stations(int offset, int limit) =>
@@ -52,7 +55,7 @@ public sealed class StationStore(LibraryDatabase database)
             """, ReadStation, ("$match", match), ("$limit", limit), ("$offset", offset))));
     }
 
-    // A stream URL already here answers its station unchanged.
+    // A stream URL already here answers its station unchanged, where it lies.
     public Result<StoredStation, LibraryError> Add(NewStation station)
     {
         var added = Import([station]);
@@ -75,6 +78,8 @@ public sealed class StationStore(LibraryDatabase database)
             var added = new List<StoredStation>(stations.Count);
             foreach (var station in stations)
             {
+                if (station.Folder is { } folder && !FolderTable.Exists(c, t, folder))
+                    return FolderTable.NotFound(folder);
                 var existing = Rows(c, t, Columns + " WHERE s.stream_url = $url", ReadStation,
                     ("$url", station.StreamUrl.AbsoluteUri));
                 if (existing.Count > 0)
@@ -85,12 +90,12 @@ public sealed class StationStore(LibraryDatabase database)
                 var name = station.Name.Trim();
                 var genre = string.IsNullOrWhiteSpace(station.Genre) ? null : station.Genre.Trim();
                 var id = Rows(c, t, """
-                    INSERT INTO station (name, stream_url, homepage, genre, logo, added)
-                    VALUES ($name, $url, $homepage, $genre, $logo, $added)
+                    INSERT INTO station (name, stream_url, homepage, genre, logo, added, folder_id)
+                    VALUES ($name, $url, $homepage, $genre, $logo, $added, $folder)
                     RETURNING id
                     """, r => r.GetInt64(0), ("$name", name), ("$url", station.StreamUrl.AbsoluteUri),
                     ("$homepage", station.Homepage?.AbsoluteUri), ("$genre", genre),
-                    ("$logo", station.Logo?.AbsoluteUri), ("$added", DateTime.UtcNow.Ticks))[0];
+                    ("$logo", station.Logo?.AbsoluteUri), ("$added", DateTime.UtcNow.Ticks), ("$folder", station.Folder))[0];
                 Execute(c, t, "INSERT INTO station_search (rowid, name, genre) VALUES ($id, $name, $genre)",
                     ("$id", id), ("$name", name), ("$genre", genre));
                 added.Add(ById(c, t, id)!);
@@ -105,6 +110,47 @@ public sealed class StationStore(LibraryDatabase database)
             if (Execute(c, t, "DELETE FROM station WHERE id = $id", ("$id", id)) == 0)
                 return NoStation(id);
             Execute(c, t, "DELETE FROM station_search WHERE rowid = $id", ("$id", id));
+            return true;
+        });
+
+    // Into the folder, or to the top when null.
+    public Result<StoredStation, LibraryError> MoveTo(long id, long? folder) =>
+        Write<StoredStation>((c, t) =>
+        {
+            if (folder is { } f && !FolderTable.Exists(c, t, f))
+                return FolderTable.NotFound(f);
+            return Execute(c, t, "UPDATE station SET folder_id = $folder WHERE id = $id", ("$folder", folder), ("$id", id)) == 0
+                ? NoStation(id)
+                : ById(c, t, id)!;
+        });
+
+    // --- folders ------------------------------------------------------------
+
+    // By name, each with the folder it lies in.
+    public Result<IReadOnlyList<CollectionFolder>, LibraryError> Folders() => Read(c => List(FolderTable.All(c)));
+
+    // In the parent, or at the top when null. Two folders in one place never
+    // share a name (in any case); stations may.
+    public Result<CollectionFolder, LibraryError> CreateFolder(string name, long? parent = null) =>
+        Write((c, t) => FolderTable.Create(c, t, name, parent));
+
+    public Result<CollectionFolder, LibraryError> RenameFolder(long folder, string name) =>
+        Write((c, t) => FolderTable.Rename(c, t, folder, name));
+
+    // Into the parent, or to the top when null; never into itself or a folder within it.
+    public Result<CollectionFolder, LibraryError> MoveFolder(long folder, long? parent) =>
+        Write((c, t) => FolderTable.Move(c, t, folder, parent));
+
+    // With every folder within it and every station in any of them.
+    public Result<bool, LibraryError> DeleteFolder(long folder) =>
+        Write<bool>((c, t) =>
+        {
+            if (!FolderTable.Exists(c, t, folder))
+                return FolderTable.NotFound(folder);
+            const string Doomed = " (SELECT id FROM station WHERE folder_id IN (SELECT id FROM tree))";
+            Execute(c, t, FolderTable.Within + " DELETE FROM station_search WHERE rowid IN" + Doomed, ("$id", folder));
+            Execute(c, t, FolderTable.Within + " DELETE FROM station WHERE id IN" + Doomed, ("$id", folder));
+            FolderTable.Delete(c, t, folder);
             return true;
         });
 
@@ -129,7 +175,7 @@ public sealed class StationStore(LibraryDatabase database)
 
     private static StoredStation ReadStation(SqliteDataReader r) =>
         new(r.GetInt64(0), r.GetString(1), new Uri(r.GetString(2)), UriOrNull(r, 3), r.IsDBNull(4) ? null : r.GetString(4),
-            UriOrNull(r, 5), new DateTime(r.GetInt64(6), DateTimeKind.Utc));
+            UriOrNull(r, 5), new DateTime(r.GetInt64(6), DateTimeKind.Utc), r.IsDBNull(7) ? null : r.GetInt64(7));
 
     private static Uri? UriOrNull(SqliteDataReader r, int column) => r.IsDBNull(column) ? null : new Uri(r.GetString(column));
 

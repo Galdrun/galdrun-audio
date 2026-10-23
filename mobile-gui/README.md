@@ -27,12 +27,12 @@ version in `mobile-gui/global.json`, via Microsoft's dotnet-install). Only the
 desktop version is built so far.
 
 ```sh
-./build-mobile-gui.sh                    # Linux: all targets
+scripts/build-mobile-gui.sh                    # Linux: all targets
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File build-mobile-gui.ps1                    # Windows: all targets
-powershell -ExecutionPolicy Bypass -File build-mobile-gui.ps1 -Target windows-x64
+powershell -ExecutionPolicy Bypass -File scripts\build-mobile-gui.ps1                    # Windows: all targets
+powershell -ExecutionPolicy Bypass -File scripts\build-mobile-gui.ps1 -Target windows-x64
 ```
 
 Targets: `all` (default), `windows` (`windows-x64`, `windows-armv8`), `linux`

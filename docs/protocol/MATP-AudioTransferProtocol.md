@@ -144,7 +144,7 @@ Example:
 4712 = audio
 ```
 
-TCP is intentionally chosen for protocol version 1.
+TCP is intentionally chosen for this protocol.
 
 Advantages:
 
@@ -572,7 +572,7 @@ means, so a half-understood session is worse than no session (section 51).
 
 `clientId` MUST be stable across restarts and reconnects. The server keys each
 client's own output stream, drift model and resampler state on it (see
-`Info.md`), so a client that reports a new id on every start is treated as a
+`client/docs/Info.md`), so a client that reports a new id on every start is treated as a
 new room and loses its accumulated clock model.
 
 It is therefore a persisted client setting (`clientId` in `client.json`), not
@@ -590,7 +590,7 @@ Control messages may initially use JSON.
 `HELLO_ACK`, before any audio is streamed.
 
 The server maintains one individual output stream per client (see
-`Info.md`) and needs to know what each client can actually play before it can
+`client/docs/Info.md`) and needs to know what each client can actually play before it can
 decide that stream's format. The capability list is what decides whether that
 client can be served bitperfect at all (section 2): a source the device accepts
 is sent untouched, and one it does not accept is converted for that client
@@ -818,11 +818,16 @@ except `sleep` and `sleepButtonOnly`, which the core keeps as top-level
 `actual.wakeOnLan`) until the room's next session. For a room in `sleep` the
 core sends a magic packet (UDP port 9, every interface's broadcast address) when
 its zone is played, and on `client.wake` (server: `POST /api/v1/rooms/{client}/wake`).
+The core forgets a sleeping room when it restarts, so `client.wake` also takes an
+optional `wakeOnLan`, used only for a room the core does not hold as asleep. The
+server keeps each sleeping room's `wakeOnLan` in `playback.json` until the room
+connects again, and sends `client.wake` with it after every sync with a core
+that does not hold the room as connected or asleep -- after a restart of either.
 
 A client reporting `"ready": false` is still connected, still answering clock
 sync and still sending telemetry; it simply cannot be scheduled. The server
 keeps that client's stream position, drift model and resampler state
-(`Info.md`) — it is the same room, briefly deaf, not a new one.
+(`client/docs/Info.md`) — it is the same room, briefly deaf, not a new one.
 
 A client MUST NOT report `"ready": true` before its device is open in the
 negotiated format. Reporting it early is what turns a recoverable gap into a
@@ -3287,7 +3292,7 @@ the value changes by any other way.
 ## What the client does with SET_BUFFER
 
 - **It validates and never clamps.** A value outside the range it supports
-  (the reference client: 100 to 10,000 ms), or one whose buffer would not fit
+  (the reference client: 1000 to 11,000 ms), or one whose buffer would not fit
   in its memory for the format it is playing, is answered with `ERROR` (code
   `setBuffer`), and the previous value, the file it is stored in and the
   stream all stay exactly as they were. Silently using a value the server did
@@ -3321,7 +3326,7 @@ ignored, never a session error. A server that never sends `SET_BUFFER` loses
 nothing: the room uses its own configured value and reports it.
 
 One relation is the operator's to keep: a room whose buffer cannot hold the
-the server's start minimum (section 20, the reference core's
+server's start minimum (section 20, the reference core's
 `audio.minimumStartBufferMs`) never counts as ready and is left out of every
 start. The reference client accepts 1000 to 11,000 ms, so with the default
 1000 ms minimum any value it accepts is enough. One at least the server's own
@@ -3577,3 +3582,112 @@ its control path, never in the render callback.
 
 Every addition is optional and defaults to the behaviour before it, and a
 peer ignores a message type it does not know (section 55).
+
+---
+
+# 62. Wire reference
+
+The sections above name messages and fields; the numbers and encodings below
+are what the reference implementation assigns. They live in one copy shared by
+client and core: `shared/matp/include/matp/Protocol.h` and
+`shared/matp/include/matp/AudioPacket.h`. Those files win if this section and
+the code ever disagree.
+
+## Ports
+
+```text
+4711   control connection (core default)
+4712   audio connection (core default; PREPARE_STREAM names it in audioPort)
+```
+
+A client that receives `PREPARE_STREAM` without `audioPort` uses the control
+port plus one. The reference core always sends it.
+
+## Control framing
+
+```text
+uint32 messageLength   big endian; counts messageType + payload, not itself
+uint16 messageType     big endian
+payload                compact JSON object, no terminator
+```
+
+A message longer than 1 MiB is a desync and ends the connection. The JSON
+`type` string is what dispatch reads; the number must agree with it when the
+receiver knows it, and an unknown number with an unknown `type` is ignored.
+
+## Message type numbers
+
+| # | `type` | # | `type` | # | `type` |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `hello` | 14 | `trackBoundary` | 27 | `inputControls` |
+| 2 | `helloAck` | 15 | `pauseAt` | 28 | `inputAction` |
+| 3 | `audioCapabilities` | 16 | `stopAt` | 29 | `setInputBindings` |
+| 4 | `sessionConfig` | 17 | `setVolume` | 30 | `setBuffer` |
+| 5 | `error` | 18 | `trackInfo` | 31 | `bufferConfig` |
+| 6 | `clockSyncRequest` | 19 | `ping` | 32 | `setVolumeControl` |
+| 7 | `clockSyncReply` | 20 | `pong` | 33 | `volumeConfig` |
+| 8 | `prepareStream` | 21 | `clockSyncResult` | 34 | `setRoomName` |
+| 9 | `streamReady` | 22 | `flush` | 35 | `roomName` |
+| 10 | `bufferStatus` | 23 | `systemReport` | 36 | `setDriftCorrection` |
+| 11 | `streamAttach` | 24 | `audioDevices` | 37 | `driftFeedback` |
+| 12 | `startAt` | 25 | `setAudioDevice` | | |
+| 13 | `playbackReport` | 26 | `rescanAudio` | | |
+
+Numbers are never reused or renumbered. `AUDIO_PCM` and `AUDIO_FLAC` in
+sections 17 and 47 have no number: see the audio connection below.
+
+## Session id
+
+128 random bits. In JSON `sessionId` it is 32 lower-case hex digits, high half
+first; in the audio header it is `sessionIdHigh` and `sessionIdLow`. The
+client's session-scoped messages (`STREAM_READY` and the reports and answers
+after it) must carry it. Server→client messages may leave it out; when present
+it must be the current session.
+
+## Audio connection
+
+1. The client connects to the audio port and sends one framed control message,
+   `STREAM_ATTACH` (11): `{"type": "streamAttach", "sessionId": "…",
+   "clientId": "…"}`. Both are required. Nothing is sent back.
+2. From then on the server sends **unframed** audio packets: the 72-byte header
+   of section 14 followed by `payloadBytes` of PCM, back to back. There is no
+   length prefix or message type; `magic` and `headerSize` delimit them.
+
+Limits a receiver enforces: `payloadBytes` at most 1 MiB, `timelineDurationNs`
+at most 1 s, and `outputFrameCount` within a factor of two of what
+`timelineDurationNs` and `sampleRate` imply (section 14).
+
+## sampleFormat codes
+
+| Code | Name | Layout |
+| --- | --- | --- |
+| 1 | `s16le` | signed 16-bit |
+| 2 | `s24le3` | signed 24-bit, 3 bytes packed |
+| 3 | `s24le` | signed 24-bit in a 32-bit container |
+| 4 | `s32le` | signed 32-bit |
+| 5 | `f32le` | 32-bit float |
+
+0 and any other value are refused. Samples in the payload are little endian,
+as the names say; only the header is big endian.
+
+## headerCrc
+
+CRC-32 as in IEEE 802.3 (zlib's `crc32`): reflected, polynomial `0xEDB88320`,
+initial value and final XOR `0xFFFFFFFF`, over header bytes 0 to 67. Zero means
+not supplied; any other value that does not match is broken framing. The
+reference core always supplies it.
+
+## Bodies the sections leave open
+
+| Message | Body |
+| --- | --- |
+| `HELLO_ACK` | `protocolVersion` only. A version mismatch is answered with `ERROR` instead. |
+| `CLOCK_SYNC_REQUEST` | `clientSendNs` (C1) |
+| `CLOCK_SYNC_REPLY` | `clientSendNs` (echoed), `serverReceiveNs` (S2), `serverSendNs` (S3) |
+| `PREPARE_STREAM` | optional `sessionId`, optional `audioPort` |
+| `PING` | `sequence` (uint64). Server → client only. |
+| `PONG` | the `PING` body echoed with `type` changed; a `PONG` without `sequence` is refused |
+| `SET_VOLUME` | optional `value` (linear gain, ≥ 0), optional `muted` (bool), optional `applyAtTimelineNs`. An absent field is unchanged; naming neither `value` nor `muted` is an error. |
+| `TRACK_INFO` | optional `sessionId`, `trackId`, `title`; at least one of the last two. No position (section 44). |
+| `STREAM_READY` | also `standby: true` for automatic standby (section 12) |
+| `ERROR` | `message` (for people), optional `code` (machine-readable, e.g. `setBuffer`) |

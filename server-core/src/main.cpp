@@ -553,8 +553,20 @@ int runServer(const CommandLineOptions& options, bool asService)
 
     // The listeners, every zone's pipeline and every room's output have their
     // own threads, so this one only waits for the signal and sends the beacon.
+    // A listener whose select() failed has stopped for good, and a server
+    // that kept running without it would be reachable in part and say so
+    // only in the log: the same shutdown, then a failure exit, so that the
+    // service manager restarts the whole server.
+    bool listenerLost = false;
     while (g_stopRequested == 0)
     {
+        if (!(*audio)->listening() || !(*control)->listening() || !(*discovery)->listening() ||
+            !(*apiListener)->listening())
+        {
+            MULTIROOM_ERROR("a listener has stopped; shutting down to be restarted");
+            listenerLost = true;
+            break;
+        }
         beacon.poll(clock.monotonicNowNs(), [&beaconText]() { return beaconText; });
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -585,7 +597,7 @@ int runServer(const CommandLineOptions& options, bool asService)
     decoders.reset();
 
     log::closeLogFile();
-    return 0;
+    return listenerLost ? 1 : 0;
 }
 
 } // namespace

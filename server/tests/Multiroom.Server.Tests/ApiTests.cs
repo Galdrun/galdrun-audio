@@ -90,7 +90,7 @@ public sealed partial class ApiTests : IAsyncDisposable
         // The self-check: the media endpoint answered its probe, and the
         // database is at the latest schema.
         Assert.Equal($"reachable at {baseUri}", status["media"]!["reachability"]!.GetValue<string>());
-        Assert.Equal(27, status["library"]!["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(28, status["library"]!["schemaVersion"]!.GetValue<int>());
         Assert.NotNull(status["library"]!["indexer"]!["queueDepth"]);
         Assert.Equal(["local", "webradio", "tidal", "fake", "slow"],
             status["providers"]!.AsArray().Select(p => p!["id"]!.GetValue<string>()));
@@ -984,6 +984,40 @@ public sealed partial class ApiTests : IAsyncDisposable
             HttpStatusCode.BadRequest, "invalidRequest", "unknown field url");
         await Refused(HttpMethod.Post, "stations/import", """{"playlist":"#EXTM3U\nnot a url\n"}""",
             HttpStatusCode.BadRequest, "invalidArgument");
+    }
+
+    [Fact]
+    public async Task Station_folders_hold_stations_and_folders_and_take_them_along_when_removed()
+    {
+        await StartAsync();
+        long Id(JsonNode n) => n["id"]!.GetValue<long>();
+        long? Of(JsonNode n, string field) => n[field]?.GetValue<long>();
+        async Task<List<(string, long?)>> Listed() => [.. (await Ok(HttpMethod.Get, "stations")).AsArray()
+            .Select(e => (e!["station"]!["name"]!.GetValue<string>(), Of(e, "folder")))];
+
+        var news = Id(await Ok(HttpMethod.Post, "station-folders", """{"name":"News"}"""));
+        var local = Id(await Ok(HttpMethod.Post, "station-folders", $$"""{"name":"Local","parent":{{news}}}"""));
+        var jazz = (await Ok(HttpMethod.Post, "stations", """{"name":"Jazz","streamUrl":"http://radio.example/jazz"}"""))["providerItemId"]!
+            .GetValue<string>();
+        await Ok(HttpMethod.Post, "stations", $$"""{"name":"City","streamUrl":"http://radio.example/city","folder":{{local}}}""");
+        await Ok(HttpMethod.Post, "stations/import", $$"""{"playlist":"#EXTM3U\n#EXTINF:-1,World\nhttp://radio.example/world\n","folder":{{news}}}""");
+        Assert.Equal([("City", local), ("Jazz", null), ("World", news)], await Listed());
+
+        var moved = await Ok(HttpMethod.Patch, $"stations/{jazz}", $$"""{"folder":{{news}}}""");
+        Assert.Equal(("Jazz", news), (moved["station"]!["name"]!.GetValue<string>(), Of(moved, "folder")));
+        Assert.DoesNotContain("radio.example", (await Send(HttpMethod.Get, "stations")).Text, StringComparison.Ordinal);
+        await Refused(HttpMethod.Patch, $"stations/{jazz}", """{"folder":999}""", HttpStatusCode.NotFound, "notFound", "no station folder 999");
+        await Refused(HttpMethod.Patch, "stations/station:999", """{"folder":0}""", HttpStatusCode.NotFound, "notFound");
+        await Refused(HttpMethod.Patch, $"station-folders/{news}", $$"""{"parent":{{local}}}""", HttpStatusCode.BadRequest, "invalidArgument");
+        await Refused(HttpMethod.Post, "station-folders", """{"name":"news"}""", HttpStatusCode.Conflict, "alreadyExists");
+        Assert.Null(Of(await Ok(HttpMethod.Patch, $"station-folders/{local}", """{"name":"Town","parent":0}"""), "parent"));
+
+        // Removed, a folder takes every folder within it and every station in any of them.
+        await Ok(HttpMethod.Patch, $"station-folders/{local}", $$"""{"parent":{{news}}}""");
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(HttpMethod.Delete, $"station-folders/{news}")).Status);
+        Assert.Empty((await Ok(HttpMethod.Get, "station-folders")).AsArray());
+        Assert.Empty(await Listed());
+        Assert.Empty((await Ok(HttpMethod.Get, "search?q=jazz&types=all"))["items"]!["stations"]!.AsArray());
     }
 
     // --- the media browser ----------------------------------------------------

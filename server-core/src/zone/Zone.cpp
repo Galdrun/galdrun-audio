@@ -218,7 +218,10 @@ Status<ZoneError> Zone::stage(SourceSegment segment)
     // high-end server may stage the next one at any time, and the timeline
     // carries on from where the last one ended rather than restarting.
     if (state_ == ZoneState::Ended)
+    {
         state_ = ZoneState::Playing;
+        publishEndLocked();
+    }
     endAnnounced_ = false;
 
     staged_.push_back(std::move(segment));
@@ -335,6 +338,12 @@ Status<ZoneError> Zone::play()
         // end: the zone is where it was, and the caller hears why.
         std::lock_guard<std::mutex> lock(mutex_);
         state_ = ZoneState::Idle;
+
+        // Or the staged sources were cleared between the check above and the
+        // open, and nothing was skipped at all.
+        if (failed_.empty())
+            return fail(ZoneError::NothingStaged,
+                        "zone " + id_.str() + " has no source to play");
         const FailedSource& last = failed_.back();
         return fail(ZoneError::SourceFailed, last.sourceId + ": " + last.reason);
     }
@@ -492,6 +501,7 @@ void Zone::dispatch(std::vector<RoomCommand> commands)
             case RoomCommandKind::SetVolumeControl:
             case RoomCommandKind::SetInputBindings:
             case RoomCommandKind::SetRoomName:
+            case RoomCommandKind::WakeStream: // the control API's, sent before a play
                 break; // no payload: the session writes its own id
             }
         }
@@ -536,6 +546,7 @@ void Zone::schedule()
             entry.second.output->setOnLine(
                 running && scheduler_.roomState(entry.first) == RoomStartState::Playing);
         }
+        publishEndLocked();
     }
     dispatch(std::move(commands));
     emit(events);
@@ -845,6 +856,7 @@ Result<SeekPlacement, ZoneError> Zone::seek(uint64_t positionNs)
         ++sourcesOpened_;
         pruneSourcesLocked();
         state_ = ZoneState::Playing;
+        publishEndLocked();
         endAnnounced_ = false;
         replaced = std::exchange(decoder_, std::move(*decoder));
 
@@ -1114,6 +1126,7 @@ Result<bool, ZoneError> Zone::openNext()
                 if (state_ == ZoneState::Playing)
                 {
                     state_ = ZoneState::Ended;
+                    publishEndLocked();
                     MULTIROOM_INFO("zone {}: no source staged after {}", id_.str(),
                              sources_.empty() ? std::string("nothing")
                                               : sources_.back().segment.sourceId);
@@ -1192,6 +1205,7 @@ Result<bool, ZoneError> Zone::openNext()
         ++sourcesOpened_;
         pruneSourcesLocked();
         state_ = ZoneState::Playing;
+        publishEndLocked();
         nothingAfter = staged_.empty();
     }
 
@@ -1349,6 +1363,13 @@ TimelineNs Zone::ceilingLocked(uint64_t latencyNs, uint64_t nowNs) const
         scheduler_.started() ? std::to_underlying(scheduler_.playheadAt(nowNs)) + latencyNs : 0;
     const uint64_t packetNs = static_cast<uint64_t>(settings_.output.packetDurationMs) * 1000000ULL;
     return TimelineNs{line + settings_.output.targetBufferNs + packetNs};
+}
+
+void Zone::publishEndLocked()
+{
+    const TimelineNs end = state_ == ZoneState::Ended ? frontierNs() : TimelineNs{};
+    for (const auto& entry : members_)
+        entry.second.output->setEnd(end);
 }
 
 Result<TimelineNs, ZoneError> Zone::joinPosition() const
@@ -1769,7 +1790,7 @@ const char* rejoinTriggerName(RejoinTrigger trigger)
 }
 
 Result<TimelineNs, ZoneError> Zone::rejoin(const ClientId& client, RejoinTrigger trigger,
-                                           std::unique_ptr<IClientAudioProcessor> processor)
+                                           const PlanForSource& replan)
 {
     // Why it fell behind, before the move replaces it: the strand's own text,
     // or the scheduler's (phase 41's `detail`).
@@ -1784,7 +1805,7 @@ Result<TimelineNs, ZoneError> Zone::rejoin(const ClientId& client, RejoinTrigger
     }
 
     TimelineNs position{};
-    if (const auto moved = moveRoom(client, trigger, position, std::move(processor)); !moved)
+    if (const auto moved = moveRoom(client, trigger, position, replan); !moved)
         return std::unexpected(moved.error());
 
     // After every lock of this zone has been let go, as every event is.
@@ -2080,8 +2101,7 @@ void Zone::alignLineToLoneRoom(const char* why)
 }
 
 Status<ZoneError> Zone::moveRoom(const ClientId& client, RejoinTrigger trigger,
-                                 TimelineNs& movedTo,
-                                 std::unique_ptr<IClientAudioProcessor> processor)
+                                 TimelineNs& movedTo, const PlanForSource& replan)
 {
     // One move at a time: the pipeline thread notices an eviction, the
     // listener's thread notices a device that was reopened or an offset no
@@ -2117,9 +2137,18 @@ Status<ZoneError> Zone::moveRoom(const ClientId& client, RejoinTrigger trigger,
 
     // A room a stop parked still takes the converter for its reopened device,
     // so that the play() which moves it sends what that device was opened in.
-    if (processor != nullptr && was == OutputState::Parked)
+    // Planned against the newest source, which is where play() starts it.
+    if (replan && was == OutputState::Parked)
     {
-        if (const auto reformatted = output->reformat(std::move(processor)); !reformatted)
+        AudioFormat source;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            source = sourceFormat_;
+        }
+        Result<std::unique_ptr<IClientAudioProcessor>, ZoneError> processor = replan(source);
+        if (!processor)
+            return std::unexpected(processor.error());
+        if (const auto reformatted = output->reformat(std::move(*processor)); !reformatted)
             return fail(ZoneError::OutputFailed, describe(reformatted.error()));
     }
 
@@ -2151,6 +2180,24 @@ Status<ZoneError> Zone::moveRoom(const ClientId& client, RejoinTrigger trigger,
                         " ns is behind the oldest audio the store holds");
     }
 
+    // A reopened device's converter is for the audio at the position the room
+    // lands on. Once a format boundary has been opened that is the new
+    // source's (joinPosition() never places a room before it), not the one
+    // the room's current converter was planned for.
+    std::unique_ptr<IClientAudioProcessor> processor;
+    AudioFormat landsIn;
+    if (replan)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            landsIn = formatAtLocked(*position);
+        }
+        Result<std::unique_ptr<IClientAudioProcessor>, ZoneError> made = replan(landsIn);
+        if (!made)
+            return std::unexpected(made.error());
+        processor = std::move(*made);
+    }
+
     // Outside mutex_, because park() joins that room's thread. A stranded room
     // has already stopped producing and park() only joins its thread; a room
     // that is still streaming is stopped here, and in both cases what it had
@@ -2163,6 +2210,14 @@ Status<ZoneError> Zone::moveRoom(const ClientId& client, RejoinTrigger trigger,
     }
     if (const auto moved = output->rejoinAt(*position); !moved)
         return fail(ZoneError::OutputFailed, describe(moved.error()));
+
+    // reformat() dropped any hold the room had, because it was planned for
+    // the device that has gone. A boundary still ahead of the room -- opened
+    // while this move was being made -- is planned again for the new one,
+    // before the room produces anything that could reach it.
+    if (replan)
+        holdAtBoundaryAhead(client, *position, landsIn);
+
     if (const auto running = output->run(); !running)
         return fail(ZoneError::OutputFailed, describe(running.error()));
 
@@ -2232,7 +2287,7 @@ void Zone::rejoinOrWarn(const ClientId& client, RejoinTrigger trigger)
 
 // ---------------------------------------------------------------------------
 
-void Zone::beginTransition(TimelineNs at, const AudioFormat& format)
+void Zone::beginTransition(TimelineNs at, const AudioFormat& format, const ClientId* only)
 {
     struct Room
     {
@@ -2245,6 +2300,9 @@ void Zone::beginTransition(TimelineNs at, const AudioFormat& format)
         std::lock_guard<std::mutex> lock(mutex_);
         for (const auto& entry : members_)
         {
+            if (only != nullptr && entry.first != *only)
+                continue;
+
             // Still reopening for an earlier boundary, past its timeout: it is
             // placed in whatever format is current when its device answers.
             if (entry.second.transitionAt != TimelineNs{})
@@ -2342,6 +2400,16 @@ void Zone::advanceTransitions()
             Member& member = entry.second;
             if (member.transitionAt == TimelineNs{} || member.renegotiatedAtNs != 0)
                 continue;
+
+            // Held while it was not on the line -- placed again after an
+            // earlier boundary when this one was opened -- and started since:
+            // paused on the boundary like the rooms that were playing then
+            // (step 2). One that was paused already is not paused again.
+            if (std::optional<RoomCommand> pause =
+                    scheduler_.pauseForTransition(entry.first, member.transitionAt))
+            {
+                commands.push_back(std::move(*pause));
+            }
 
             // Not before the line gets there: the room is still playing the
             // old source out of the device that is about to be reopened. With
@@ -2464,9 +2532,34 @@ bool Zone::completeTransition(const ClientId& client, const AudioFormat& granted
         scheduler_.rejoin(client, position);
     }
 
+    // A later boundary was opened while this room was held at this one, and
+    // passed it by (beginTransition() leaves a held room to its device): it is
+    // held there now, behind the converter just named.
+    holdAtBoundaryAhead(client, position, plan->sourceFormat);
+
     MULTIROOM_INFO("zone {}: {} carries on from timeline {} ns: {}", id_.str(), client.str(),
              std::to_underlying(position), describePlan(*plan));
     return true;
+}
+
+void Zone::holdAtBoundaryAhead(const ClientId& client, TimelineNs position,
+                               const AudioFormat& format)
+{
+    std::optional<std::pair<TimelineNs, AudioFormat>> ahead;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const StagedSource& source : sources_)
+        {
+            if (std::to_underlying(source.timelineStartNs) > std::to_underlying(position) &&
+                source.format != format)
+            {
+                ahead.emplace(source.timelineStartNs, source.format);
+                break; // ordered oldest first: the first is the room's next boundary
+            }
+        }
+    }
+    if (ahead)
+        beginTransition(ahead->first, ahead->second, &client);
 }
 
 bool Zone::transitionPendingLocked(uint64_t nowNs) const
@@ -2633,12 +2726,10 @@ void Zone::retainLocked(const ClientId& client, Member& leaving)
     // one least likely to come back.
     while (retained_.size() > settings_.maxMembers)
     {
-        auto oldest = retained_.begin();
-        for (auto it = retained_.begin(); it != retained_.end(); ++it)
-        {
-            if (it->second.sinceNs < oldest->second.sinceNs)
-                oldest = it;
-        }
+        const auto oldest = std::min_element(
+            retained_.begin(), retained_.end(), [](const auto& a, const auto& b) {
+                return a.second.sinceNs < b.second.sinceNs;
+            });
         MULTIROOM_DEBUG("zone {}: forgetting {}'s kept state", id_.str(), oldest->first.str());
         retained_.erase(oldest);
     }
@@ -2858,56 +2949,54 @@ void Zone::onStreamReady(const ClientId& client, bool ready, const AudioFormat& 
     // Reopened in another format, or for another actuator: planned again
     // against what the driver granted, exactly as admit() plans a room
     // arriving, and moved with that converter -- the old one would send the
-    // old format's bytes to a device opened in the new one.
-    Result<OutputPlan, PlanError> plan = planner_.plan(current.sourceFormat, settings, capabilities);
-    if (plan)
-        plan = planner_.replanForGrantedFormat(*plan, settings, opened, capabilities);
-    std::string why;
-    std::unique_ptr<IClientAudioProcessor> processor;
-    if (!plan)
-    {
-        why = describe(plan.error());
-    }
-    else if (auto made = makeClientAudioProcessor(*plan, registry_, settings_.dither); !made)
-    {
-        why = describe(made.error());
-    }
-    else
-    {
-        processor = std::move(*made);
-    }
+    // old format's bytes to a device opened in the new one. Planned by the
+    // move, for the source at the position it lands on: not the one this room
+    // plays now when a format boundary has been opened.
+    const PlanForSource replan = [&](const AudioFormat& source)
+        -> Result<std::unique_ptr<IClientAudioProcessor>, ZoneError> {
+        Result<OutputPlan, PlanError> plan = planner_.plan(source, settings, capabilities);
+        if (plan)
+            plan = planner_.replanForGrantedFormat(*plan, settings, opened, capabilities);
+        if (!plan)
+            return fail(ZoneError::PlanFailed, describe(plan.error()));
+        Result<std::unique_ptr<IClientAudioProcessor>, ProcessorError> made =
+            makeClientAudioProcessor(*plan, registry_, settings_.dither);
+        if (!made)
+            return fail(ZoneError::PlanFailed, describe(made.error()));
 
-    if (processor == nullptr)
-    {
-        // That room's failure and not the zone's, as at a format boundary.
-        const std::string detail = "cannot be served in the reopened device's " +
-                                   describeFormat(opened) + ": " + why;
-        MULTIROOM_WARN("zone {}: {} {}", id_.str(), client.str(), detail);
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            scheduler_.explain(client, detail);
+            const auto found = members_.find(client);
+            if (found != members_.end() && found->second.sync != nullptr)
+                found->second.sync->carryOver(plan->outputFormat.sampleRate);
         }
-        ZoneEvent event = eventOf(ZoneEventKind::RoomNotReady);
-        event.client = client;
-        event.reason = detail;
-        emit({event});
-        return;
-    }
+        MULTIROOM_INFO("zone {}: {} reopened in {}: {}", id_.str(), client.str(),
+                 describeFormat(opened), describePlan(*plan));
+        return std::move(*made);
+    };
 
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        const auto found = members_.find(client);
-        if (found != members_.end() && found->second.sync != nullptr)
-            found->second.sync->carryOver(plan->outputFormat.sampleRate);
-    }
-    MULTIROOM_INFO("zone {}: {} reopened in {}: {}", id_.str(), client.str(), describeFormat(opened),
-             describePlan(*plan));
-    if (const auto moved = rejoin(client, RejoinTrigger::DeviceRecovery, std::move(processor));
-        !moved)
+    const auto moved = rejoin(client, RejoinTrigger::DeviceRecovery, replan);
+    if (moved)
+        return;
+    if (moved.error().code != ZoneError::PlanFailed)
     {
         MULTIROOM_WARN("zone {}: {} could not be rejoined after {}: {}", id_.str(), client.str(),
                  rejoinTriggerName(RejoinTrigger::DeviceRecovery), describe(moved.error()));
+        return;
     }
+
+    // That room's failure and not the zone's, as at a format boundary.
+    const std::string detail = "cannot be served in the reopened device's " +
+                               describeFormat(opened) + ": " + moved.error().detail;
+    MULTIROOM_WARN("zone {}: {} {}", id_.str(), client.str(), detail);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        scheduler_.explain(client, detail);
+    }
+    ZoneEvent event = eventOf(ZoneEventKind::RoomNotReady);
+    event.client = client;
+    event.reason = detail;
+    emit({event});
 }
 
 void Zone::onPlaybackReport(const ClientId& client, const matp::PlaybackReport& report,

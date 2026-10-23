@@ -35,6 +35,7 @@
 #include <span>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -584,12 +585,10 @@ MULTIROOM_TEST(two_rooms_with_different_capabilities_share_one_decode)
 
     CHECK(waitFor([&] { return a->packets() >= kSourcePackets; }));
 
-    // The resampled room stops one packet short of the end of the source, and
-    // that is arithmetic rather than a fault: its last output frame is
-    // interpolated from an input frame just past the last one the source has,
-    // so the final packet cannot be completed until something follows. The
-    // bitperfect room has no such lookahead and finishes exactly.
-    CHECK(waitFor([&] { return b->packets() >= kSourcePackets - 1; }));
+    // The resampled room's last output frame is interpolated from an input
+    // frame just past the last one the source has. Nothing is staged after
+    // it, so that frame is silence and the room finishes like the other.
+    CHECK(waitFor([&] { return b->packets() >= kSourcePackets; }));
 
     // The claim of this phase, as a number: two rooms, two formats, one
     // decode. The source was opened once and decoded once through -- serving
@@ -603,7 +602,7 @@ MULTIROOM_TEST(two_rooms_with_different_capabilities_share_one_decode)
     const std::vector<matp::AudioPacketHeader> headersB = decodeHeaders(*sinkB, payloadsB);
 
     CHECK_EQ(headersA.size(), static_cast<size_t>(kSourcePackets));
-    CHECK(headersB.size() == kSourcePackets || headersB.size() == kSourcePackets - 1);
+    CHECK_EQ(headersB.size(), static_cast<size_t>(kSourcePackets));
 
     for (size_t index = 0; index < headersB.size(); ++index)
     {
@@ -953,6 +952,29 @@ void reportBuffer(Zone& zone, const ClientId& client, uint64_t fromNs, uint64_t 
     status.bufferedUntilTimelineNs = fromNs + bufferedNs;
     status.bufferedDurationNs = bufferedNs;
     zone.onBufferStatus(client, status, exchanges);
+}
+
+// How far a room's client holds its stream: the end of the last whole packet
+// its sink took. That is what a real client can report. It is read while
+// nothing is queued here and the sink is the same on both sides of that
+// check, because a packet still in the queue -- or written but not yet popped
+// -- is counted against the target from the report on, and counting it inside
+// the report as well stops the room short. A packet built but not yet queued
+// is in neither, and is counted once when it is.
+uint64_t deliveredThroughNs(const ClientOutput& output, SinkState& sink)
+{
+    const auto lastEnd = [&] {
+        std::string payloads;
+        const std::vector<matp::AudioPacketHeader> headers = decodeHeaders(sink, payloads);
+        return headers.empty() ? uint64_t{0}
+                               : headers.back().timelineStartNs + headers.back().timelineDurationNs;
+    };
+    uint64_t delivered = 0;
+    CHECK(waitFor([&] {
+        delivered = lastEnd();
+        return output.queuedPackets() == 0 && lastEnd() == delivered;
+    }));
+    return delivered;
 }
 
 } // namespace
@@ -1736,6 +1758,7 @@ MULTIROOM_TEST(a_same_format_track_boundary_is_metadata_and_the_stream_carries_o
     // is contiguous across it is contiguous by arithmetic rather than by luck.
     constexpr uint64_t kFrames = 132700;
     constexpr size_t kPackets = (2 * kFrames) / kPacketFrames; // 300, and 800 frames over
+    constexpr uint32_t kOver = static_cast<uint32_t>(2 * kFrames - kPackets * kPacketFrames);
 
     ZoneRig rig(formatOf(), kFrames);
     auto zone = rig.zone();
@@ -1754,7 +1777,7 @@ MULTIROOM_TEST(a_same_format_track_boundary_is_metadata_and_the_stream_carries_o
 
     auto sink = connect(*zone, session, room);
     decodeEverything(*zone);
-    CHECK(waitFor([&] { return output->packets() >= kPackets; }));
+    CHECK(waitFor([&] { return output->packets() >= kPackets + 1; }));
 
     // Both sources were opened, and the second begins where the first ended.
     const std::vector<StagedSource> staged = zone->sources();
@@ -1780,9 +1803,9 @@ MULTIROOM_TEST(a_same_format_track_boundary_is_metadata_and_the_stream_carries_o
 
     std::string payloads;
     const std::vector<matp::AudioPacketHeader> headers = decodeHeaders(*sink, payloads);
-    CHECK_EQ(headers.size(), kPackets);
+    CHECK_EQ(headers.size(), kPackets + 1);
 
-    for (size_t index = 0; index < headers.size(); ++index)
+    for (size_t index = 0; index < kPackets; ++index)
     {
         // Section 22, stated as a number: there is no gap at the boundary,
         // the timeline is not reset, and the frame count does not change.
@@ -1791,6 +1814,14 @@ MULTIROOM_TEST(a_same_format_track_boundary_is_metadata_and_the_stream_carries_o
         CHECK_EQ(headers[index].sequenceNumber, static_cast<uint64_t>(index));
         CHECK_EQ(headers[index].outputFrameCount, kPacketFrames);
     }
+
+    // Nothing is staged after the second, so the frames past the last whole
+    // packet go out in a short one that ends on the zone's frontier.
+    const matp::AudioPacketHeader& last = headers.back();
+    CHECK_EQ(last.timelineStartNs, static_cast<uint64_t>(kPackets) * kPacketNs);
+    CHECK_EQ(last.timelineStartNs + last.timelineDurationNs, std::to_underlying(zone->frontierNs()));
+    CHECK_EQ(last.sequenceNumber, static_cast<uint64_t>(kPackets));
+    CHECK_EQ(last.outputFrameCount, kOver);
 
     // And the bytes across the boundary are the two tracks, end to end, with
     // nothing inserted and nothing repeated.
@@ -1801,7 +1832,71 @@ MULTIROOM_TEST(a_same_format_track_boundary_is_metadata_and_the_stream_carries_o
                                                      bytesPerFrame),
               0, static_cast<uint32_t>(kFrames), kChannels);
 
-    CHECK_EQ(payloads.size(), kPackets * kPacketFrames * bytesPerFrame);
+    CHECK_EQ(payloads.size(), expected.size());
+    CHECK_EQ(std::memcmp(payloads.data(), expected.data(), payloads.size()), 0);
+}
+
+MULTIROOM_TEST(the_last_source_is_sent_to_its_last_frame_and_a_later_one_carries_on_from_it)
+{
+    // Shorter than two packets and not a whole number of them: the second
+    // packet can only ever be a short one.
+    constexpr uint64_t kFrames = 1000;
+    constexpr uint32_t kTail = static_cast<uint32_t>(kFrames) - kPacketFrames; // 118
+
+    ZoneRig rig(formatOf(), kFrames);
+    auto zone = rig.zone();
+
+    CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+    CHECK_OK(zone->play());
+
+    const ClientId room("livingroom");
+    const SessionId session = sessionOf(1);
+    CHECK_OK(zone->admit(session, room, offering({formatOf()}), formatOf()));
+    const std::shared_ptr<ClientOutput> output = zone->member(room);
+    CHECK(output != nullptr);
+    CHECK(output->passThrough());
+
+    auto sink = connect(*zone, session, room);
+    decodeEverything(*zone);
+    CHECK(zone->state() == ZoneState::Ended);
+    CHECK(waitFor([&] { return output->packets() >= 2; }));
+    const TimelineNs firstEnd = zone->frontierNs();
+
+    std::string payloads;
+    std::vector<matp::AudioPacketHeader> headers = decodeHeaders(*sink, payloads);
+    CHECK_EQ(headers.size(), size_t{2});
+    CHECK_EQ(headers[1].timelineStartNs, kPacketNs);
+    CHECK_EQ(headers[1].timelineStartNs + headers[1].timelineDurationNs,
+             std::to_underlying(firstEnd));
+    CHECK_EQ(headers[1].outputFrameCount, kTail);
+    CHECK_EQ(payloads.size(), static_cast<size_t>(kFrames) * formatOf().bytesPerFrame());
+
+    // Staged once the room has sent the end: it carries on from exactly
+    // there, on the same connection and the same numbering.
+    CHECK_OK(zone->stage(segmentOf("two", "ramp")));
+    decodeEverything(*zone);
+    CHECK(waitFor([&] { return output->packets() >= 4; }));
+
+    headers = decodeHeaders(*sink, payloads);
+    CHECK_EQ(headers.size(), size_t{4});
+    for (size_t index = 0; index + 1 < headers.size(); ++index)
+    {
+        CHECK_EQ(headers[index].sequenceNumber + 1, headers[index + 1].sequenceNumber);
+        CHECK_EQ(headers[index].timelineStartNs + headers[index].timelineDurationNs,
+                 headers[index + 1].timelineStartNs);
+    }
+    CHECK_EQ(headers[2].timelineStartNs, std::to_underlying(firstEnd));
+    CHECK_EQ(headers[2].outputFrameCount, kPacketFrames);
+    CHECK_EQ(headers[3].outputFrameCount, kTail);
+    CHECK_EQ(headers[3].timelineStartNs + headers[3].timelineDurationNs,
+             std::to_underlying(zone->frontierNs()));
+
+    const uint32_t bytesPerFrame = formatOf().bytesPerFrame();
+    std::vector<std::byte> expected(static_cast<size_t>(2 * kFrames) * bytesPerFrame);
+    writeRamp(expected, 0, static_cast<uint32_t>(kFrames), kChannels);
+    writeRamp(std::span<std::byte>(expected).subspan(static_cast<size_t>(kFrames) * bytesPerFrame),
+              0, static_cast<uint32_t>(kFrames), kChannels);
+    CHECK_EQ(payloads.size(), expected.size());
     CHECK_EQ(std::memcmp(payloads.data(), expected.data(), payloads.size()), 0);
 }
 
@@ -1937,7 +2032,12 @@ MULTIROOM_TEST(a_stop_drops_what_a_room_holds_and_leaves_a_zone_play_can_restart
     const std::shared_ptr<ClientOutput> output = zone->member(room);
     auto sink = connect(*zone, session, room);
 
-    CHECK(waitFor([&] { zone->pump(); return output->packets() > 0; }));
+    // The whole prebuffer before the report that stops the pacing: the decode
+    // follows what this room has built, and only that much reaches the end.
+    CHECK(waitFor([&] {
+        zone->pump();
+        return std::to_underlying(output->producedThroughNs()) >= settings.output.targetBufferNs;
+    }));
     reportBuffer(*zone, room, 0, 1500 * 1000000ULL);
     zone->pump();
     CHECK(zone->started());
@@ -2323,7 +2423,7 @@ MULTIROOM_TEST(a_room_the_decode_ran_past_is_rejoined_at_a_position_the_store_ho
     {
         rig.clock.advanceMs(100);
         const uint64_t playhead = std::to_underlying(zone->playheadNs());
-        const uint64_t built = std::to_underlying(ahead->producedThroughNs());
+        const uint64_t built = deliveredThroughNs(*ahead, *drainingSink);
         reportBuffer(*zone, draining, playhead, built > playhead ? built - playhead : 0);
         reportBuffer(*zone, quiet, 0, 200ULL * 1000000ULL);
         CHECK(waitFor([&] {
@@ -2442,9 +2542,10 @@ MULTIROOM_TEST(a_forced_hard_resync_moves_one_room_and_no_other)
     CHECK_EQ(rig.starts->count(RoomCommandKind::Pause), size_t{0});
     CHECK(zone->roomStart(still) == RoomStartState::Playing);
 
+    // Its packets are sent by its own thread, so they are waited for.
     size_t packets = 0;
+    CHECK(waitFor([&] { return jumpsIn(*stillSink, packets) == 0 && packets > 0; }));
     CHECK_EQ(jumpsIn(*stillSink, packets), size_t{0});
-    CHECK(packets > 0);
 
     // One jump on the moved one, landing exactly where it was moved to, with
     // its numbering running straight through it. This is where the position is
@@ -2647,8 +2748,14 @@ MULTIROOM_TEST(a_room_on_a_fixed_rate_plays_through_a_format_boundary_the_other_
     CHECK(reopening->plan().mode == OutputMode::BitPerfect);
     CHECK(zone->roomStart(living) == RoomStartState::Waiting);
 
-    constexpr size_t kHighRatePackets = kSourceFrames / kHighRatePacketFrames; // 137
-    CHECK(waitFor([&] { return reopening->packets() >= kSourcePackets + kHighRatePackets; }));
+    // The new source to its last frame: 137 whole packets, then the 780
+    // frames left over as a short one that ends where the source does.
+    constexpr size_t kHighRateWholePackets = kSourceFrames / kHighRatePacketFrames; // 137
+    constexpr auto kHighRateTailFrames =
+        static_cast<uint32_t>(kSourceFrames % kHighRatePacketFrames); // 780
+    constexpr size_t kHighRatePackets = kHighRateWholePackets + 1;
+    constexpr uint64_t kSecondEndNs = kBoundaryNs + kSourceFrames * kNanosecondsPerSecond / 48000;
+    CHECK(waitFor([&] { return reopening->packets() >= kSourcePackets + kHighRateWholePackets; }));
 
     // It is placed on the running line wherever the line has got to, inside
     // what it holds: in sync with the room that never stopped, at the cost of
@@ -2667,13 +2774,26 @@ MULTIROOM_TEST(a_room_on_a_fixed_rate_plays_through_a_format_boundary_the_other_
                  (resumed.timelineNs - std::to_underlying(zone->startTimelineNs())));
 
     // Sample-accurate on both sides of the gap: the old source to its last
-    // frame, then the new one from its first, with no jump on the timeline
-    // and no gap in the numbering.
+    // frame, then the new one from its first to its last, with no jump on the
+    // timeline and no gap in the numbering. What the sink holds is waited for,
+    // because the short last packet is built once the zone has published its
+    // end, which can be after the whole packets before it.
+    std::string payloads;
+    std::vector<matp::AudioPacketHeader> headers;
+    CHECK(waitFor([&] {
+        headers = decodeHeaders(*livingSink, payloads);
+        return headers.size() >= kSourcePackets + kHighRatePackets;
+    }));
     size_t packets = 0;
     CHECK_EQ(jumpsIn(*livingSink, packets), size_t{0});
-    std::string payloads;
-    const std::vector<matp::AudioPacketHeader> headers = decodeHeaders(*livingSink, payloads);
     CHECK_EQ(headers.size(), kSourcePackets + kHighRatePackets);
+    if (!headers.empty())
+    {
+        const matp::AudioPacketHeader& last = headers.back();
+        CHECK_EQ(last.outputFrameCount, kHighRateTailFrames);
+        CHECK_EQ(last.timelineStartNs, kBoundaryNs + kHighRateWholePackets * kPacketNs);
+        CHECK_EQ(last.timelineStartNs + last.timelineDurationNs, kSecondEndNs);
+    }
     CHECK_EQ(headers[kSourcePackets - 1].timelineStartNs + kPacketNs, kBoundaryNs);
     CHECK_EQ(headers[kSourcePackets].timelineStartNs, kBoundaryNs);
     CHECK_EQ(describeFormat(headers[kSourcePackets - 1].format), describeFormat(formatOf()));
@@ -2681,7 +2801,7 @@ MULTIROOM_TEST(a_room_on_a_fixed_rate_plays_through_a_format_boundary_the_other_
     CHECK_EQ(headers[kSourcePackets].outputFrameCount, kHighRatePacketFrames);
 
     const uint32_t bytesPerFrame = formatOf().bytesPerFrame();
-    const size_t newFrames = kHighRatePackets * kHighRatePacketFrames;
+    const size_t newFrames = static_cast<size_t>(kSourceFrames);
     std::vector<std::byte> expected((static_cast<size_t>(kSourceFrames) + newFrames) *
                                     bytesPerFrame);
     writeRamp(expected, 0, static_cast<uint32_t>(kSourceFrames), kChannels);
@@ -2710,6 +2830,42 @@ MULTIROOM_TEST(a_room_on_a_fixed_rate_plays_through_a_format_boundary_the_other_
 
     CHECK(zone->state() != ZoneState::Failed);
     CHECK_EQ(zone->rejoinCount(), 0ULL);
+}
+
+MULTIROOM_TEST(a_room_reopened_in_another_format_after_a_boundary_is_planned_for_the_new_source)
+{
+    // A room playing through a boundary that has been opened, whose device is
+    // then reopened in another format before the line gets there. Its move
+    // lands past the boundary -- a join never starts before the newest
+    // source -- so its new converter is for that source, not for the one the
+    // room was playing.
+    ZoneRig rig;
+    rig.clock.setNs(50ULL * kNanosecondsPerSecond);
+    auto zone = rig.zone(rig.settings());
+
+    CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+    CHECK_OK(zone->stage(segmentOf("two", "other")));
+    CHECK_OK(zone->play());
+
+    const ClientId kitchen("kitchen");
+    CHECK_OK(zone->admit(sessionOf(1), kitchen, offering({fixedRate()}), fixedRate()));
+    connect(*zone, sessionOf(1), kitchen);
+    const std::shared_ptr<ClientOutput> output = zone->member(kitchen);
+
+    playTwoFormats(*zone, {kitchen});
+    CHECK_EQ(std::to_underlying(zone->sources()[1].timelineStartNs), kBoundaryNs);
+    CHECK_EQ(describeFormat(output->plan().sourceFormat), describeFormat(formatOf()));
+
+    const AudioFormat hdmi = formatOf(48000, kChannels, AudioFormat::SampleType::Int32);
+    const ClientCapabilities card = offering({hdmi});
+    zone->onStreamReady(kitchen, true, hdmi, &card);
+
+    CHECK(zone->member(kitchen) == output);
+    CHECK_EQ(zone->rejoinCount(), 1ULL);
+    CHECK_EQ(describeFormat(output->plan().sourceFormat), describeFormat(formatOf(48000)));
+    CHECK_EQ(describeFormat(output->plan().outputFormat), describeFormat(hdmi));
+    CHECK(std::to_underlying(output->producedThroughNs()) >= kBoundaryNs);
+    CHECK(zone->state() != ZoneState::Failed);
 }
 
 MULTIROOM_TEST(rooms_that_all_reopen_resume_together_exactly_where_the_old_source_ended)
@@ -4022,7 +4178,7 @@ MULTIROOM_TEST(a_room_on_a_slow_link_cannot_pull_the_decode_past_the_room_beside
     const ClientId slow("esp");
     CHECK_OK(zone->admit(sessionOf(1), healthy, offering({formatOf()}), formatOf()));
     CHECK_OK(zone->admit(sessionOf(2), slow, offering({formatOf()}), formatOf()));
-    connect(*zone, sessionOf(1), healthy);
+    auto healthySink = connect(*zone, sessionOf(1), healthy);
     connect(*zone, sessionOf(2), slow);
     const std::shared_ptr<ClientOutput> steady = zone->member(healthy);
     const std::shared_ptr<ClientOutput> esp = zone->member(slow);
@@ -4046,7 +4202,7 @@ MULTIROOM_TEST(a_room_on_a_slow_link_cannot_pull_the_decode_past_the_room_beside
     {
         rig.clock.advanceMs(500);
         const uint64_t playhead = std::to_underlying(zone->playheadNs());
-        const uint64_t built = std::to_underlying(steady->producedThroughNs());
+        const uint64_t built = deliveredThroughNs(*steady, *healthySink);
         reportBuffer(*zone, healthy, playhead, built > playhead ? built - playhead : 0);
         reportBuffer(*zone, slow, playhead, 0);
 
@@ -4102,19 +4258,30 @@ MULTIROOM_TEST(a_room_moved_while_the_store_holds_nothing_at_playhead_plus_lead_
     CHECK_OK(zone->stage(segmentOf("one", "ramp")));
     CHECK_OK(zone->play());
 
+    // The retention leaves the slowest room barely a block behind the
+    // furthest, so nothing more is decoded while the rooms' own threads build
+    // their prebuffers: a decode racing them would strand whichever started
+    // later, which is not the move this test is about. The first lookahead is
+    // decoded before anyone joins, and the rooms join on the oldest audio it
+    // left.
+    zone->pump();
+    const uint64_t joinedAt = std::to_underlying(zone->oldestNs());
+
     const ClientId steady("livingroom");
     const ClientId mover("kitchen");
     CHECK_OK(zone->admit(sessionOf(1), steady, offering({formatOf()}), formatOf()));
     CHECK_OK(zone->admit(sessionOf(2), mover, offering({formatOf()}), formatOf()));
-    connect(*zone, sessionOf(1), steady);
-    connect(*zone, sessionOf(2), mover);
+    auto steadySink = connect(*zone, sessionOf(1), steady);
+    auto moverSink = connect(*zone, sessionOf(2), mover);
     const std::shared_ptr<ClientOutput> a = zone->member(steady);
     const std::shared_ptr<ClientOutput> b = zone->member(mover);
 
-    zone->pump();
-    CHECK(waitFor([&] { return a->packets() > 0 && b->packets() > 0; }));
-    reportBuffer(*zone, steady, 0, 200 * kMs);
-    reportBuffer(*zone, mover, 0, 200 * kMs);
+    CHECK(waitFor([&] {
+        return std::to_underlying(a->producedThroughNs()) >= joinedAt + 200 * kMs &&
+               std::to_underlying(b->producedThroughNs()) >= joinedAt + 200 * kMs;
+    }));
+    reportBuffer(*zone, steady, joinedAt, 200 * kMs);
+    reportBuffer(*zone, mover, joinedAt, 200 * kMs);
     zone->pump();
     CHECK(zone->started());
     acknowledge(*zone, steady, std::to_underlying(zone->startTimelineNs()));
@@ -4126,9 +4293,10 @@ MULTIROOM_TEST(a_room_moved_while_the_store_holds_nothing_at_playhead_plus_lead_
     {
         rig.clock.advanceMs(100);
         playhead = std::to_underlying(zone->playheadNs());
-        for (const auto& [client, output] : {std::pair{steady, a}, std::pair{mover, b}})
+        for (const auto& [client, output, sink] :
+             {std::tuple{steady, a, steadySink}, std::tuple{mover, b, moverSink}})
         {
-            const uint64_t built = std::to_underlying(output->producedThroughNs());
+            const uint64_t built = deliveredThroughNs(*output, *sink);
             reportBuffer(*zone, client, playhead, built > playhead ? built - playhead : 0);
         }
         CHECK(waitFor([&] {
@@ -4203,7 +4371,7 @@ MULTIROOM_TEST(a_room_that_keeps_falling_behind_backs_off_is_announced_once_and_
     const ClientId flaky("esp");
     CHECK_OK(zone->admit(sessionOf(1), healthy, offering({formatOf()}), formatOf()));
     CHECK_OK(zone->admit(sessionOf(2), flaky, offering({formatOf()}), formatOf()));
-    connect(*zone, sessionOf(1), healthy);
+    auto healthySink = connect(*zone, sessionOf(1), healthy);
     connect(*zone, sessionOf(2), flaky);
     const std::shared_ptr<ClientOutput> steady = zone->member(healthy);
     const std::shared_ptr<ClientOutput> esp = zone->member(flaky);
@@ -4228,7 +4396,7 @@ MULTIROOM_TEST(a_room_that_keeps_falling_behind_backs_off_is_announced_once_and_
         rig.clock.advanceMs(500);
         const uint64_t elapsedMs = (rig.clock.monotonicNowNs() - beganNs) / kMs;
         const uint64_t playhead = std::to_underlying(zone->playheadNs());
-        const uint64_t built = std::to_underlying(steady->producedThroughNs());
+        const uint64_t built = deliveredThroughNs(*steady, *healthySink);
         reportBuffer(*zone, healthy, playhead, built > playhead ? built - playhead : 0);
 
         // Holding 100 ms from `playhead + lead`, a start delay of one second
@@ -4332,12 +4500,12 @@ std::unique_ptr<Zone> zoneIn(ZoneRig& rig, AudioMemory& memory, const char* id,
     return std::move(*created);
 }
 
-// One room admitted, attached and placed on the line.
-std::shared_ptr<ClientOutput> startOneRoom(ZoneRig& rig, Zone& zone, const ClientId& room,
-                                           const AudioFormat& format, uint64_t targetNs)
+// One room admitted, attached and placed on the line; what it is sent.
+std::shared_ptr<SinkState> startOneRoom(ZoneRig& rig, Zone& zone, const ClientId& room,
+                                        const AudioFormat& format, uint64_t targetNs)
 {
     CHECK_OK(zone.admit(sessionOf(7), room, offering({format}), format));
-    connect(zone, sessionOf(7), room);
+    auto sink = connect(zone, sessionOf(7), room);
     const std::shared_ptr<ClientOutput> output = zone.member(room);
     CHECK(waitFor([&] {
         zone.pump();
@@ -4348,22 +4516,22 @@ std::shared_ptr<ClientOutput> startOneRoom(ZoneRig& rig, Zone& zone, const Clien
     zone.pump();
     CHECK(zone.started());
     acknowledge(zone, room, std::to_underlying(zone.startTimelineNs()));
-    return output;
+    return sink;
 }
 
 // The line runs on in steps, the room reporting what a healthy one holds;
 // `each` sees every step. Waits for the room to fill up to its target, or for
 // a zone that has stopped decoding to have nothing more to give it.
 template <typename Each>
-void playOn(ZoneRig& rig, Zone& zone, const ClientId& room, int steps, uint64_t stepMs,
-            uint64_t targetNs, Each each)
+void playOn(ZoneRig& rig, Zone& zone, const ClientId& room, SinkState& sink, int steps,
+            uint64_t stepMs, uint64_t targetNs, Each each)
 {
     const std::shared_ptr<ClientOutput> output = zone.member(room);
     for (int step = 0; step < steps; ++step)
     {
         rig.clock.advanceMs(stepMs);
         const uint64_t playhead = std::to_underlying(zone.playheadNs());
-        const uint64_t built = std::to_underlying(output->producedThroughNs());
+        const uint64_t built = deliveredThroughNs(*output, sink);
         reportBuffer(zone, room, playhead, built > playhead ? built - playhead : 0);
         CHECK(waitFor([&] {
             zone.pump();
@@ -4455,11 +4623,11 @@ MULTIROOM_TEST(a_zone_at_192_khz_int32_plays_past_its_retention_without_ever_wai
     CHECK_EQ(zone->memoryBytes(), 252ULL * rig.memory.blockBytes());
 
     const ClientId room("study");
-    const std::shared_ptr<ClientOutput> output =
-        startOneRoom(rig, *zone, room, hiRes(), 1500 * kMs);
+    const auto sink = startOneRoom(rig, *zone, room, hiRes(), 1500 * kMs);
+    const std::shared_ptr<ClientOutput> output = zone->member(room);
 
     // Twelve seconds of line, each step filled to the target before the next.
-    playOn(rig, *zone, room, 24, 500, 1500 * kMs, [&](uint64_t) {
+    playOn(rig, *zone, room, *sink, 24, 500, 1500 * kMs, [&](uint64_t) {
         CHECK(output->state() == OutputState::Streaming);
         return true;
     });
@@ -4485,11 +4653,11 @@ MULTIROOM_TEST(a_boundary_to_192_khz_grows_the_zone_and_the_way_back_frees_the_s
     CHECK_EQ(zone->blocks(), size_t{8});
 
     const ClientId room("living");
-    startOneRoom(rig, *zone, room, fixedRate(), 200 * kMs);
+    const auto sink = startOneRoom(rig, *zone, room, fixedRate(), 200 * kMs);
 
     size_t peak = 0;
     size_t atHiRes = 0;
-    playOn(rig, *zone, room, 120, 100, 200 * kMs, [&](uint64_t) {
+    playOn(rig, *zone, room, *sink, 120, 100, 200 * kMs, [&](uint64_t) {
         peak = std::max(peak, zone->blocks());
         const std::vector<StagedSource> opened = zone->sources();
         if (opened.size() == 2 && atHiRes == 0)
@@ -4529,8 +4697,8 @@ MULTIROOM_TEST(a_boundary_the_memory_limit_cannot_hold_fails_the_zone_there_by_n
     CHECK_OK(zone->play());
 
     const ClientId room("living");
-    startOneRoom(rig, *zone, room, fixedRate(), 200 * kMs);
-    playOn(rig, *zone, room, 60, 100, 200 * kMs,
+    const auto sink = startOneRoom(rig, *zone, room, fixedRate(), 200 * kMs);
+    playOn(rig, *zone, room, *sink, 60, 100, 200 * kMs,
            [&](uint64_t) { return zone->state() != ZoneState::Failed; });
 
     CHECK(zone->state() == ZoneState::Failed);
@@ -4559,8 +4727,8 @@ MULTIROOM_TEST(a_paused_zone_keeps_its_memory_and_a_stopped_one_gives_all_of_it_
     CHECK_OK(zone->stage(segmentOf("one", "ramp")));
     CHECK_OK(zone->play());
     const ClientId room("living");
-    startOneRoom(rig, *zone, room, formatOf(), 200 * kMs);
-    playOn(rig, *zone, room, 5, 100, 200 * kMs, [](uint64_t) { return true; });
+    const auto sink = startOneRoom(rig, *zone, room, formatOf(), 200 * kMs);
+    playOn(rig, *zone, room, *sink, 5, 100, 200 * kMs, [](uint64_t) { return true; });
     const uint64_t held = memory.usedBytes();
     CHECK_EQ(held, 8ULL * rig.memory.blockBytes());
 

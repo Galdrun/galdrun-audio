@@ -108,7 +108,7 @@ the menu links of the rest.
 
 Verify client changes with `cmake --build client/build --config Release` and
 `ctest --test-dir client/build -C Release --output-on-failure`. Build firmware with
-`build-client.ps1 -Target <board>` (Linux: `build-client.sh <board>`). Preview desktop and phone widths and check scans,
+`scripts\build-client.ps1 -Target <board>` (Linux: `scripts/build-client.sh <board>`). Preview desktop and phone widths and check scans,
 conditional IP/clock fields, save feedback, and keyboard navigation.
 
 ## Hardware input information

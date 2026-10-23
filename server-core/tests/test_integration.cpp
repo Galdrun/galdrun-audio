@@ -54,6 +54,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -253,6 +254,10 @@ struct Wire
     std::atomic<bool> accepting{true};
     std::atomic<uint64_t> refusals{0};
 
+    // Non-zero: takes that many whole packets and then nothing until a test
+    // clears it -- a room whose thread is descheduled, at a known point.
+    std::atomic<uint64_t> holdAfterPackets{0};
+
     void take(const matp::AudioPacket& packet)
     {
         const matp::AudioPacketHeader& header = packet.header;
@@ -354,6 +359,12 @@ public:
 
         {
             std::lock_guard<std::mutex> lock(wire_->mutex);
+            if (const uint64_t hold = wire_->holdAfterPackets.load();
+                hold != 0 && wire_->packets >= hold)
+            {
+                wire_->refusals.fetch_add(1);
+                return size_t{0};
+            }
             wire_->reader.append(bytes.data(), bytes.size());
             for (;;)
             {
@@ -531,6 +542,7 @@ struct Room
 
     double ppm = 0.0;     // how fast this room's card runs
     bool stalled = false; // takes no byte, ever
+    uint64_t holdAfterPackets = 0; // handed to each connection's wire
     bool connected = false;
 
     Phase phase = Phase::Waiting;
@@ -571,7 +583,8 @@ public:
     // `verify` names the sources a bitperfect room's samples are checked
     // against; it is handed to each connection before its first byte.
     Room& add(const char* id, std::vector<AudioFormat> offers, double ppm = 0.0,
-              std::vector<SourceSpan> verify = {}, bool stalled = false)
+              std::vector<SourceSpan> verify = {}, bool stalled = false,
+              uint64_t holdAfterPackets = 0)
     {
         auto room = std::make_unique<Room>();
         room->id = ClientId(id);
@@ -579,6 +592,7 @@ public:
         room->ppm = ppm;
         room->verify = std::move(verify);
         room->stalled = stalled;
+        room->holdAfterPackets = holdAfterPackets;
         rooms_.push_back(std::move(room));
         connect(*rooms_.back());
         return *rooms_.back();
@@ -593,6 +607,7 @@ public:
         room.wire = std::make_shared<Wire>();
         room.wire->verify = room.verify;
         room.wire->accepting.store(!room.stalled);
+        room.wire->holdAfterPackets.store(room.holdAfterPackets);
         room.phase = Phase::Waiting;
         room.start.reset();
         room.pauseAt.reset();
@@ -858,6 +873,17 @@ private:
 
         const uint64_t target = settings_.output.targetBufferNs;
         const uint64_t margin = 2 * house_.packetNs();
+
+        // A room not started yet is waited for until it holds what a start
+        // needs. A step of simulated time takes well under a millisecond, so
+        // the whole window a room has to become ready in -- the barrier's, or
+        // a latecomer's lead -- can pass while its own thread is descheduled,
+        // and the zone would then start without it or move it, rightly, on
+        // what it reported.
+        const uint64_t ahead =
+            room.phase == Phase::Playing
+                ? target / 2
+                : std::min(target, std::max(target / 2, settings_.start.minimumStartBufferNs));
         const uint64_t frontier = std::to_underlying(zone_->frontierNs());
         const uint64_t audible = static_cast<uint64_t>(room.audibleNs);
 
@@ -882,7 +908,7 @@ private:
             }
             const uint64_t from = std::max(wire.firstNs, audible);
             const uint64_t want = std::min(
-                {from + target / 2, frontier > margin ? frontier - margin : 0, ceiling});
+                {from + ahead, frontier > margin ? frontier - margin : 0, ceiling});
             return wire.throughNs >= want;
         };
         if (enough())
@@ -1229,10 +1255,12 @@ MULTIROOM_TEST(sources_at_44_1_48_and_96_khz_in_one_staged_sequence)
     CHECK_EQ(fixedOutput->formatSwitches(), 2u);
     CHECK_EQ(Sim::read(through, [](const Wire& w) { return w.formats.size(); }), size_t{1});
 
-    // The bitperfect room: paused and reopened twice, started three times,
-    // three formats on one connection with the numbering unbroken and no
-    // jump on the timeline.
-    CHECK_EQ(house.commands->count(RoomCommandKind::Pause, reopen.id), size_t{2});
+    // The bitperfect room: reopened twice, started three times, three formats
+    // on one connection with the numbering unbroken and no jump on the
+    // timeline. It is paused at the second boundary only if it was back on the
+    // line before the line got there, which is the scheduling of its threads.
+    const size_t pauses = house.commands->count(RoomCommandKind::Pause, reopen.id);
+    CHECK(pauses >= 1 && pauses <= 2);
     CHECK_EQ(house.commands->count(RoomCommandKind::Renegotiate, reopen.id), size_t{2});
     CHECK_EQ(house.commands->count(RoomCommandKind::Start, reopen.id), size_t{3});
     CHECK_EQ(reopenOutput->formatSwitches(), 2u);
@@ -1682,6 +1710,52 @@ MULTIROOM_TEST(a_resampled_room_costs_a_measured_fraction_of_one_core)
 }
 
 #endif // MULTIROOM_WITH_SOXR || MULTIROOM_WITH_R8BRAIN
+
+MULTIROOM_TEST(the_simulation_waits_for_a_room_short_of_its_start_minimum)
+{
+    // The fixture's own rule, which the seek and reconnect-storm tests rely
+    // on: a room not started yet is not left behind by simulated time while
+    // its thread has delivered less than a start needs. Here that thread is
+    // held at 800 ms -- more than half the target, less than the minimum --
+    // for a tenth of a real second, which is the whole barrier window many
+    // times over in simulated time.
+    House house(20, 256);
+    const AudioFormat source = formatOf(44100);
+    house.sources.add("track", source, 44100ULL * 30);
+
+    const ZoneSettings settings = house.settings();
+    auto zone = house.zone("living", settings);
+    CHECK_OK(zone->stage(SourceSegment{"1", "track", "", ""}));
+    CHECK_OK(zone->play());
+
+    constexpr uint64_t kHeldPackets = 40; // 800 ms of 20 ms packets
+    CHECK(kHeldPackets * house.packetNs() > settings.output.targetBufferNs / 2);
+    CHECK(kHeldPackets * house.packetNs() < settings.start.minimumStartBufferNs);
+
+    Sim sim(house, *zone, settings);
+    Room& held = sim.add("held", {source}, 0.0, {}, false, kHeldPackets);
+    Room& quick = sim.add("quick", {source});
+    std::thread release([&held] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        held.wire->holdAfterPackets.store(0);
+    });
+    run(house, {&sim}, 8ULL * kSecond, 50ULL * kMs);
+    release.join();
+
+    // One barrier, both rooms in it, and nobody moved.
+    const std::vector<RoomCommand> starts = house.commands->of(RoomCommandKind::Start);
+    CHECK_EQ(starts.size(), size_t{2});
+    if (starts.size() == 2)
+    {
+        CHECK_EQ(starts[0].start.timelineNs, starts[1].start.timelineNs);
+        CHECK_EQ(starts[0].start.serverTimeNs, starts[1].start.serverTimeNs);
+    }
+    CHECK(held.phase == Phase::Playing);
+    CHECK(quick.phase == Phase::Playing);
+    CHECK_EQ(zone->rejoinCount(), 0ULL);
+    checkClean(held);
+    checkClean(quick);
+}
 
 MULTIROOM_TEST(a_seek_moves_two_rooms_through_silence_and_back_onto_the_same_line)
 {

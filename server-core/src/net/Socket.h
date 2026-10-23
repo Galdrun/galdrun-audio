@@ -89,6 +89,12 @@ inline bool selectable(Socket socket)
 #endif
 }
 
+// select() over sets that hold nothing above `highest`, any of them null.
+// Windows ignores the first argument and takes the count from the sets
+// themselves; POSIX wants the highest descriptor plus one.
+int waitReady(Socket highest, fd_set* readable, fd_set* writable, fd_set* failed,
+              timeval& timeout);
+
 // Nagle off. Every control message this server sends is a whole message that
 // the peer is waiting for -- a HELLO_ACK, a SESSION_CONFIG, a clock sync reply
 // whose value *is* the instant it was sent -- so coalescing them into the next

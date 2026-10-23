@@ -102,6 +102,7 @@ public:
         thread_ = std::jthread([this](std::stop_token stop) { loop(stop); });
     }
 
+    [[nodiscard]] bool listening() const noexcept { return listening_.load(); }
     [[nodiscard]] uint64_t accepted() const noexcept { return accepted_.load(); }
     [[nodiscard]] uint64_t refused() const noexcept { return refused_.load(); }
     [[nodiscard]] uint64_t attached() const noexcept { return attached_.load(); }
@@ -147,17 +148,12 @@ private:
             timeout.tv_sec = 0;
             timeout.tv_usec = kSelectTimeoutMs * 1000;
 
-#if defined(_WIN32)
-            static_cast<void>(highest);
-            const int ready = ::select(0, &readable, nullptr, nullptr, &timeout);
-#else
-            const int ready = ::select(static_cast<int>(highest) + 1, &readable, nullptr,
-                                       nullptr, &timeout);
-#endif
+            const int ready = net::waitReady(highest, &readable, nullptr, nullptr, timeout);
             if (ready < 0 && !net::wouldBlock(net::lastError()))
             {
                 MULTIROOM_ERROR("audio listener: select failed: {}",
                           net::errorMessage(net::lastError()));
+                listening_.store(false);
                 break;
             }
 
@@ -408,6 +404,7 @@ private:
 
     std::list<Connection> connections_;
 
+    std::atomic<bool> listening_{true};
     std::atomic<uint64_t> accepted_{0};
     std::atomic<uint64_t> refused_{0};
     std::atomic<uint64_t> attached_{0};
@@ -464,6 +461,11 @@ AudioServer::start(const IClock& clock, AudioServerSettings settings)
 
     MULTIROOM_INFO("audio listener on port {}", port);
     return std::unique_ptr<AudioServer>(new AudioServer(std::move(impl), port));
+}
+
+bool AudioServer::listening() const noexcept
+{
+    return impl_->listening();
 }
 
 uint64_t AudioServer::acceptedCount() const noexcept

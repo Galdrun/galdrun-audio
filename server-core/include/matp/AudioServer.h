@@ -129,6 +129,10 @@ public:
 
     [[nodiscard]] uint16_t port() const noexcept { return port_; }
 
+    // False once the thread has given up on a failed select(), which nothing
+    // here retries: the process is expected to stop and be restarted.
+    [[nodiscard]] bool listening() const noexcept;
+
     // Read from other threads -- the tests', and from phase 17 the control
     // API's -- so each is an atomic the listener thread writes.
     [[nodiscard]] uint64_t acceptedCount() const noexcept;

@@ -454,7 +454,7 @@ public sealed class LibraryTests : IAsyncDisposable
             command.ExecuteNonQuery();
         }
 
-        Assert.Equal(27, _database.Migrate().Value);
+        Assert.Equal(28, _database.Migrate().Value);
 
         Assert.Equal(7, Count("SELECT track_id FROM library_file WHERE path = 'C:\\m\\one.wav'"));
         Assert.Equal(3, Count("SELECT artist_id FROM track WHERE id = 7"));
@@ -466,8 +466,8 @@ public sealed class LibraryTests : IAsyncDisposable
     [Fact]
     public async Task Migrating_twice_changes_nothing_and_a_newer_schema_is_refused()
     {
-        Assert.Equal(27, _database.Migrate().Value);
-        Assert.Equal(27, _database.Migrate().Value);
+        Assert.Equal(28, _database.Migrate().Value);
+        Assert.Equal(28, _database.Migrate().Value);
 
         await using (var connection = _database.Open())
         {

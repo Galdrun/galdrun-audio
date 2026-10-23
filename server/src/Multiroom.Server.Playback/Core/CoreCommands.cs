@@ -103,7 +103,8 @@ public sealed record ClientRejoin(string Client) : CoreCommand<ClientRejoined>("
 
 // A room in a deep sleep the network can end (powerState "sleep"): one
 // Wake-on-LAN magic packet to the address it reported before it went away.
-public sealed record ClientWake(string Client) : CoreCommand<ClientWoken>("client.wake");
+// WakeOnLan is this server's copy of it, for a core that restarted since.
+public sealed record ClientWake(string Client, string? WakeOnLan = null) : CoreCommand<ClientWoken>("client.wake");
 
 public sealed record ClientSetOutputLatency(string Client, ulong LatencyMs)
     : CoreCommand<OutputLatencySet>("client.setOutputLatency");

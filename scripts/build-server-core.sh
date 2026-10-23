@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # build-server-core.sh - Build the Galdrun core audio server for the selected Linux
 # targets, installing whatever they need first. Running it again skips what is already
-# there. On Windows, build-server-core.ps1 builds windows-x64 itself and runs this in WSL.
+# there. On Windows, scripts\build-server-core.ps1 builds windows-x64 itself and runs this in WSL.
 #
 # Usage:
-#   ./build-server-core.sh                       # all targets below
-#   ./build-server-core.sh linux-armv7
-#   ./build-server-core.sh --packages-only ...   # only install missing apt packages
+#   scripts/build-server-core.sh                       # all targets below
+#   scripts/build-server-core.sh linux-armv7
+#   scripts/build-server-core.sh --packages-only ...   # only install missing apt packages
 #
 # Targets:
 #   all, linux (default)  linux-x86 linux-x64 linux-armv7 linux-armv8 linux-armv9
-# windows-x64 needs Windows: use build-server-core.ps1 there.
+# windows-x64 needs Windows: use scripts\build-server-core.ps1 there.
 #
 # Installs when missing (Ubuntu/Debian on x86-64):
 #   apt packages (via sudo)   system-wide
@@ -19,7 +19,7 @@
 #   FFmpeg 9.0.2 per target   server-core/ffmpeg/dist/linux-<arch>-shared (source in server-core/ffmpeg/src)
 # Results go to releases/server-core/<target>. Stops at the first failure.
 set -euo pipefail
-root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 . "$root/scripts/setup/linux.sh"
 linux_targets=(linux-x86 linux-x64 linux-armv7 linux-armv8 linux-armv9)
 
@@ -31,7 +31,7 @@ for name in "$@"; do
     case $name in
         all|linux) targets+=("${linux_targets[@]}") ;;
         linux-x86|linux-x64|linux-armv[7-9]) targets+=("$name") ;;
-        windows|windows-x64) die "$name needs Windows: run build-server-core.ps1 there." ;;
+        windows|windows-x64) die "$name needs Windows: run scripts\build-server-core.ps1 there." ;;
         *) die "Unknown target: $name (see the top of $0)" ;;
     esac
 done

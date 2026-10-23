@@ -73,7 +73,12 @@ Result<std::shared_ptr<Zone>, ZoneError> ZoneManager::create(const ZoneId& id)
 
     std::shared_ptr<Zone> shared(std::move(*zone));
     {
+        // Both checks again: another create() may have inserted while this
+        // zone was being built.
         std::lock_guard<std::mutex> lock(mutex_);
+        if (zones_.size() >= maxZones_ && zones_.find(id) == zones_.end())
+            return fail(ZoneError::Full,
+                        "this server holds " + std::to_string(maxZones_) + " zones");
         if (!zones_.emplace(id, shared).second)
             return fail(ZoneError::AlreadyExists, "zone " + id.str() + " already exists");
     }
@@ -150,9 +155,19 @@ Status<ZoneError> ZoneManager::assign(const ZoneId& zoneId, const SessionId& ses
         return admitted;
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    membership_[client] = zoneId;
-    return {};
+    {
+        // Removed while it admitted the room: remove() has already stopped it
+        // and cleared its memberships, so this one is not recorded either.
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto found = zones_.find(zoneId);
+        if (found != zones_.end() && found->second == zone)
+        {
+            membership_[client] = zoneId;
+            return {};
+        }
+    }
+    static_cast<void>(zone->release(client));
+    return fail(ZoneError::NotPlaying, "zone " + zoneId.str() + " was removed");
 }
 
 void ZoneManager::release(const ClientId& client)

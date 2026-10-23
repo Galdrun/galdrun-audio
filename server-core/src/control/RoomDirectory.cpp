@@ -1,8 +1,38 @@
 #include "control/RoomDirectory.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace multiroom {
+
+namespace {
+
+// Something the control API asked for, which keeps a record whatever its
+// connection does.
+bool configured(const RoomRecord& record)
+{
+    return !record.zone.empty() || record.audioControl || record.grouped || record.volume ||
+           record.muted || record.outputLatencyMs || record.equalizer;
+}
+
+// What a connection says about itself and the client says again on every
+// session: untrue of the room once that connection has gone or been replaced.
+void clearLiveReports(RoomRecord& record)
+{
+    record.streamAnswered = false;
+    record.streamReady = false;
+    record.streamStandby = false;
+    record.hasSystem = false;
+    record.hasAudioDevices = false;
+    record.hasBuffer = false;
+    record.hasVolumeConfig = false;
+    record.hasName = false;
+    record.hasInputs = false;
+    record.inputs.clear();
+    record.deepSleep = false;
+}
+
+} // namespace
 
 RoomDirectory::RoomDirectory(RoomAudioSettings defaults, size_t maxRooms)
     : defaults_(defaults), maxRooms_(maxRooms)
@@ -20,22 +50,12 @@ bool RoomDirectory::onCapabilities(const ClientSession& session)
     // its stream is true of this one.
     if (record.session != session.sessionId())
     {
-        record.streamAnswered = false;
-        record.streamReady = false;
-        record.streamStandby = false;
+        clearLiveReports(record);
         record.powerState.clear();
         record.wakeOnLan.clear();
         record.grantedFormat = AudioFormat();
         record.streamNotReadyReason.clear();
         record.hasReport = false;
-        record.hasSystem = false;
-        record.hasAudioDevices = false;
-        record.hasBuffer = false;
-        record.hasVolumeConfig = false;
-        record.hasName = false;
-        record.hasInputs = false;
-        record.inputs.clear();
-        record.deepSleep = false;
     }
 
     record.connected = true;
@@ -165,9 +185,7 @@ bool RoomDirectory::onClosed(const ClientSession& session)
 
     RoomRecord& record = found->second;
     record.connected = false;
-    record.streamAnswered = false;
-    record.streamReady = false;
-    record.streamStandby = false;
+    clearLiveReports(record);
     // An announced deep sleep is why it went away; that stays true until the
     // room's next session.
     if (record.powerState != "sleep" && record.powerState != "sleepButtonOnly")
@@ -175,14 +193,15 @@ bool RoomDirectory::onClosed(const ClientSession& session)
         record.powerState.clear();
         record.wakeOnLan.clear();
     }
-    record.hasSystem = false;
-    record.hasAudioDevices = false;
-    record.hasBuffer = false;
-    record.hasVolumeConfig = false;
-    record.hasName = false;
-    record.hasInputs = false;
-    record.inputs.clear();
-    record.deepSleep = false;
+
+    // A sleeping room is kept within the ceiling and not past it: the
+    // listener bounds the rooms connected at once, not how many distinct ones
+    // connect, say they are going to sleep and go.
+    if (!configured(record) && !makeRoomLocked(0, {record.client}))
+    {
+        record.powerState.clear();
+        record.wakeOnLan.clear();
+    }
     pruneLocked(found);
     return true;
 }
@@ -194,7 +213,7 @@ bool RoomDirectory::update(const ClientId& client,
     auto found = rooms_.find(client);
     if (found == rooms_.end())
     {
-        if (rooms_.size() >= maxRooms_)
+        if (!makeRoomLocked(1, {}))
             return false;
         found = rooms_.emplace(client, RoomRecord{}).first;
         found->second.client = client;
@@ -202,6 +221,29 @@ bool RoomDirectory::update(const ClientId& client,
 
     change(found->second);
     pruneLocked(found);
+    return true;
+}
+
+bool RoomDirectory::updateAll(const std::vector<ClientId>& clients,
+                              const std::function<void(RoomRecord&)>& change)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    size_t missing = 0;
+    for (const ClientId& client : clients)
+        missing += rooms_.contains(client) ? 0 : 1;
+    // Only a record this would make is refused: a directory already past its
+    // ceiling, through rooms that connected, still takes changes to the
+    // records it holds.
+    if (missing != 0 && !makeRoomLocked(missing, clients))
+        return false;
+
+    for (const ClientId& client : clients)
+    {
+        const auto found = rooms_.try_emplace(client).first;
+        found->second.client = client;
+        change(found->second);
+        pruneLocked(found);
+    }
     return true;
 }
 
@@ -261,12 +303,30 @@ void RoomDirectory::pruneLocked(std::map<ClientId, RoomRecord>::iterator entry)
 {
     const RoomRecord& record = entry->second;
     // A room asleep on purpose is kept so it still says so.
-    if (!record.connected && record.zone.empty() && !record.audioControl &&
-        !record.grouped && !record.volume && !record.muted && !record.outputLatencyMs &&
-        !record.equalizer && record.powerState.empty())
-    {
+    if (!record.connected && !configured(record) && record.powerState.empty())
         rooms_.erase(entry);
-    }
+}
+
+bool RoomDirectory::makeRoomLocked(size_t needed, const std::vector<ClientId>& keep)
+{
+    if (rooms_.size() + needed <= maxRooms_)
+        return true;
+
+    // What may go: a sleeping room's record and nothing else, because nothing
+    // was asked of it and its connection has gone.
+    const auto spare = [&keep](const RoomRecord& record) {
+        return !record.connected && !configured(record) &&
+               std::find(keep.begin(), keep.end(), record.client) == keep.end();
+    };
+    size_t evictable = 0;
+    for (const auto& entry : rooms_)
+        evictable += spare(entry.second) ? 1 : 0;
+    if (rooms_.size() - evictable + needed > maxRooms_)
+        return false; // nothing is evicted for a refusal
+
+    for (auto entry = rooms_.begin(); entry != rooms_.end() && rooms_.size() + needed > maxRooms_;)
+        entry = spare(entry->second) ? rooms_.erase(entry) : std::next(entry);
+    return true;
 }
 
 } // namespace multiroom

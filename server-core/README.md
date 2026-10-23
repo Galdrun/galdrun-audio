@@ -38,6 +38,13 @@ need resampling.
 | Windows | Run `releases\server-core\windows-x64\galdrun-core.exe`. As a Windows service: `galdrun-core.exe --service --config <path>`. |
 | Linux | Copy `releases/server-core/linux-<arch>` to the machine, then `cp server.example.json server.json` and `./run.sh --config server.json`. |
 
+If one of its listeners stops on a socket error it cannot recover from, the
+server shuts down and exits with code 1 so that it can be restarted. The systemd
+unit does this (`Restart=on-failure`). For the Windows service, set recovery
+actions and enable them for errors as well as crashes, for example
+`sc failure <service> reset= 86400 actions= restart/5000` and
+`sc failureflag <service> 1`.
+
 Settings are in `server.json`: `%LOCALAPPDATA%\Galdrun\` on Windows,
 `~/.config/galdrun/` on Linux, or the file given with `--config`.
 
@@ -65,13 +72,13 @@ One script per host builds everything and installs what is missing first.
 Running it again skips what is already there. Run it from the repository root.
 
 ```sh
-./build-server-core.sh                   # Linux: all Linux targets
-./build-server-core.sh linux-armv7       # one target
+scripts/build-server-core.sh                   # Linux: all Linux targets
+scripts/build-server-core.sh linux-armv7       # one target
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File build-server-core.ps1                        # Windows: all targets
-powershell -ExecutionPolicy Bypass -File build-server-core.ps1 -Target windows,linux-armv8
+powershell -ExecutionPolicy Bypass -File scripts\build-server-core.ps1                        # Windows: all targets
+powershell -ExecutionPolicy Bypass -File scripts\build-server-core.ps1 -Target windows,linux-armv8
 ```
 
 Targets: `all` (default), the groups `windows` and `linux`, and every name from
@@ -100,8 +107,8 @@ first build of all targets takes about 20 minutes, most of it FFmpeg.
 
 | Script | Purpose |
 |---|---|
-| `build-server-core.sh`, `.ps1` | Build all targets and install their tools, see [Build](#build). |
-| `server-core/scripts/install-linux-dependencies.sh` | Builds OpenSSL and FFmpeg for one or more Linux targets; called by `build-server-core.sh`. |
+| `scripts/build-server-core.sh`, `.ps1` | Build all targets and install their tools, see [Build](#build). |
+| `server-core/scripts/install-linux-dependencies.sh` | Builds OpenSSL and FFmpeg for one or more Linux targets; called by `scripts/build-server-core.sh`. |
 | `server-core/scripts/verify-linux-binaries.sh` | Starts every Linux release under QEMU: version, help, opening its ports and a clean shutdown. |
 | `server-core/ffmpeg/build.sh`, `build-windows.ps1` | The audio-only FFmpeg build (Linux, and Windows through a portable MSYS2). |
 
@@ -114,7 +121,7 @@ Every release folder carries their notices in `licenses/`.
 ## Development
 
 C++23 and CMake. Code shared with the client is in [`../shared`](../shared), the
-protocol in [`../docs/MATP-AudioTransferProtocol.md`](../docs/MATP-AudioTransferProtocol.md).
+protocol in [`../docs/protocol/MATP-AudioTransferProtocol.md`](../docs/protocol/MATP-AudioTransferProtocol.md).
 
 ```sh
 cd server-core

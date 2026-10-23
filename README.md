@@ -24,7 +24,7 @@ an ESP32 audio board or a Teufel Raumfeld Connector 2 with a custom firmware.
 | [`hardware/buildroot/`](hardware/buildroot/README.md) | Firmware that turns a Raumfeld Connector 2 into a Galdrun client. |
 | [`mobile-gui/`](mobile-gui/README.md) | A remote-control app (Avalonia) for desktop, Android and iOS. Early work. |
 | [`shared/`](shared) | Code and web assets shared by the C++ parts: protocol, discovery, JSON, branding. |
-| [`docs/`](docs/MATP-AudioTransferProtocol.md) | MATP, the protocol between core and clients. |
+| [`docs/`](docs) | [MATP](docs/protocol/MATP-AudioTransferProtocol.md), the protocol between core and clients; hardware port notes. |
 
 A minimal setup is the server and the core on one machine, plus one client per
 room. The server finds new clients on the network by itself.
@@ -43,13 +43,13 @@ and skips what is already there. Results go to `releases/<component>/<target>/`.
 
 | Component | Linux | Windows |
 |---|---|---|
-| Server | `./build-server.sh` | `powershell -ExecutionPolicy Bypass -File build-server.ps1` |
-| Core | `./build-server-core.sh` | `powershell -ExecutionPolicy Bypass -File build-server-core.ps1` |
-| Client | `./build-client.sh` | `powershell -ExecutionPolicy Bypass -File build-client.ps1` |
-| App | `./build-mobile-gui.sh` | `powershell -ExecutionPolicy Bypass -File build-mobile-gui.ps1` |
+| Server | `scripts/build-server.sh` | `powershell -ExecutionPolicy Bypass -File scripts\build-server.ps1` |
+| Core | `scripts/build-server-core.sh` | `powershell -ExecutionPolicy Bypass -File scripts\build-server-core.ps1` |
+| Client | `scripts/build-client.sh` | `powershell -ExecutionPolicy Bypass -File scripts\build-client.ps1` |
+| App | `scripts/build-mobile-gui.sh` | `powershell -ExecutionPolicy Bypass -File scripts\build-mobile-gui.ps1` |
 
-Every script takes targets, for example `./build-client.sh connector2` or
-`build-server.ps1 -Target windows-x64`; the component READMEs list them.
+Every script takes targets, for example `scripts/build-client.sh connector2` or
+`scripts\build-server.ps1 -Target windows-x64`; the component READMEs list them.
 [`scripts/upload/`](scripts/upload) puts a built client onto a Linux device,
 an ESP32 or a Connector 2. On Windows, [`scripts/start-local.ps1`](scripts/start-local.ps1)
 starts the built core, server and one client on this PC; `stop-local.ps1` and

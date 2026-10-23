@@ -1,9 +1,13 @@
 #include "TestSupport.h"
 
+#include "net/Socket.h"
+
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -40,13 +44,22 @@ void failAt(const std::string& message, const char* file, int line)
     throw failure;
 }
 
-int runAll()
+int runAll(const std::vector<std::string>& filters)
 {
     const std::vector<RegisteredTest>& tests = registry();
     int failed = 0;
+    size_t ran = 0;
 
     for (size_t i = 0; i < tests.size(); ++i)
     {
+        const std::string_view name = tests[i].name;
+        if (!filters.empty() &&
+            std::none_of(filters.begin(), filters.end(),
+                         [&](const std::string& filter) { return name.contains(filter); }))
+        {
+            continue;
+        }
+        ++ran;
         try
         {
             tests[i].function();
@@ -64,9 +77,47 @@ int runAll()
         }
     }
 
-    std::printf("\n%lu test(s), %d failure(s)\n",
-                static_cast<unsigned long>(tests.size()), failed);
+    std::printf("\n%lu test(s), %d failure(s)\n", static_cast<unsigned long>(ran), failed);
     return failed == 0 ? 0 : 1;
+}
+
+bool closeListenerOn(uint16_t port, bool datagram)
+{
+    // Socket numbers are small: descriptors on POSIX, and handles on Windows,
+    // which are multiples of four.
+#if defined(_WIN32)
+    constexpr uintptr_t kFirst = 4;
+    constexpr uintptr_t kStep = 4;
+    constexpr uintptr_t kLast = uintptr_t{1} << 20;
+    using Length = int;
+#else
+    constexpr uintptr_t kFirst = 0;
+    constexpr uintptr_t kStep = 1;
+    constexpr uintptr_t kLast = FD_SETSIZE;
+    using Length = socklen_t;
+#endif
+    for (uintptr_t value = kFirst; value < kLast; value += kStep)
+    {
+        const auto socket = static_cast<multiroom::net::Socket>(value);
+        // An accepted TCP connection shares its listener's port, so a stream
+        // socket has to be the one accepting; a datagram socket is the only
+        // one on its port.
+        int answer = 0;
+        Length length = sizeof(answer);
+        const int option = datagram ? SO_TYPE : SO_ACCEPTCONN;
+        if (::getsockopt(socket, SOL_SOCKET, option, reinterpret_cast<char*>(&answer), &length) !=
+                0 ||
+            (datagram ? answer != SOCK_DGRAM : answer == 0))
+        {
+            continue;
+        }
+        uint16_t bound = 0;
+        if (!multiroom::net::boundPort(socket, bound) || bound != port)
+            continue;
+        multiroom::net::closeSocket(socket);
+        return true;
+    }
+    return false;
 }
 
 TempDirectory::TempDirectory(const char* tag)

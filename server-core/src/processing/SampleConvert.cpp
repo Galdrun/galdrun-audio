@@ -176,7 +176,8 @@ void repack(std::span<const std::byte> input, AudioFormat::SampleType from,
 
     const ReadInt read = integerReader(from);
     const WriteInt write = integerWriter(to);
-    if (read == nullptr || write == nullptr)
+    if (read == nullptr || write == nullptr ||
+        AudioFormat::validBits(to) < AudioFormat::validBits(from))
         return; // not a layout pair; the caller has already refused one
 
     // Value preserving means the *level* is preserved, so a narrower source

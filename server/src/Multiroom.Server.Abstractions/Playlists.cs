@@ -15,9 +15,9 @@ namespace Multiroom.Server.Abstractions;
 // Folder the folder it lies in, null at the top.
 public sealed record Playlist(long Id, string Name, int Position, DateTimeOffset Created, int Count, long? Folder = null);
 
-// A folder of playlists and other folders; Parent is the folder it lies in,
-// null at the top.
-public sealed record PlaylistFolder(long Id, string Name, long? Parent);
+// A folder of playlists or of radio stations, and of other folders of the
+// same; Parent is the folder it lies in, null at the top.
+public sealed record CollectionFolder(long Id, string Name, long? Parent);
 
 // One entry of one playlist, in playlist order: a track, or a group (phase
 // 31: a book kept as one entry, its parts stored as they were). Id is never

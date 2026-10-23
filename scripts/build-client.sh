@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # build-client.sh - Build the Galdrun client for the selected targets on Linux,
 # installing whatever they need first. Running it again skips what is already there.
-# On Windows, build-client.ps1 builds windows-x64 itself and runs this script in WSL.
+# On Windows, scripts\build-client.ps1 builds windows-x64 itself and runs this script in WSL.
 #
 # Usage:
-#   ./build-client.sh                        # all targets below
-#   ./build-client.sh connector2
-#   ./build-client.sh linux esp32-a1s
-#   ./build-client.sh --packages-only ...    # only install missing apt packages
+#   scripts/build-client.sh                        # all targets below
+#   scripts/build-client.sh connector2
+#   scripts/build-client.sh linux esp32-a1s
+#   scripts/build-client.sh --packages-only ...    # only install missing apt packages
 #
 # Targets:
 #   all (default)  linux, esp32 and connector2
 #   linux          linux-x86 linux-x64 linux-armv6 linux-armv7 linux-armv8 linux-armv9
 #   esp32          esp32-a1s esp32-s3-devkitc
 #   connector2     Raumfeld Connector 2 firmware with the linux-armv6 client
-# windows-x64 needs Windows: use build-client.ps1 there.
+# windows-x64 needs Windows: use scripts\build-client.ps1 there.
 #
 # Installs when missing (Ubuntu/Debian on x86-64):
 #   apt packages (via sudo)            system-wide
@@ -24,7 +24,7 @@
 # Results go to releases/client/<target>, the Connector 2 USB image to
 # releases/client/raumfeld/connector2. Stops at the first failure.
 set -euo pipefail
-root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 . "$root/scripts/setup/linux.sh"
 idf_version=v5.5.1
 idf="$HOME/esp/esp-idf-$idf_version"
@@ -41,7 +41,7 @@ for name in "$@"; do
         linux) targets+=("${linux_targets[@]}") ;;
         esp32) targets+=("${esp32_targets[@]}") ;;
         linux-x86|linux-x64|linux-armv[6-9]|esp32-a1s|esp32-s3-devkitc|connector2) targets+=("$name") ;;
-        windows|windows-x64) die "$name needs Windows: run build-client.ps1 there." ;;
+        windows|windows-x64) die "$name needs Windows: run scripts\build-client.ps1 there." ;;
         *) die "Unknown target: $name (see the top of $0)" ;;
     esac
 done

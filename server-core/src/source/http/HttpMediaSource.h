@@ -88,6 +88,11 @@ private:
     // A connection whose body starts at position_, retrying what is transient.
     Status<MediaSourceError> connect();
 
+    // The broken connection replaced by one from position_, refused as
+    // `failure` where the resource's length is not the one it was opened with:
+    // that is another file, and its bytes are not the rest of this one.
+    Status<MediaSourceError> reconnect(MediaSourceError failure);
+
     // Whether another attempt is allowed; if so, counts it and waits its
     // backoff first.
     bool mayRetry();

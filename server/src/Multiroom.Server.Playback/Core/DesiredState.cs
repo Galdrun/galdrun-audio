@@ -7,7 +7,9 @@ namespace Multiroom.Server.Playback.Core;
 // is away is still shown by it. The client owns it, so it is never sent.
 // MaxVolumeDb is the room's level at full volume, for a line input that
 // clips at full scale; it is not a core setting either, only an offset in the
-// volume Effective() sends.
+// volume Effective() sends. WakeOnLan is the MAC the room said before it went
+// into a deep sleep the network can end, kept until it connects again: the
+// core forgets it when it restarts, and Diff() wakes the room with it.
 public sealed record DesiredRoom(
     AudioControl? AudioControl = null,
     double? Volume = null,
@@ -15,7 +17,8 @@ public sealed record DesiredRoom(
     ulong? OutputLatencyMs = null,
     string? Name = null,
     CoreEqualizer? Equalizer = null,
-    double? MaxVolumeDb = null);
+    double? MaxVolumeDb = null,
+    string? WakeOnLan = null);
 
 // A zone's own volume and mute (phase 15): a level over each member's volume
 // and a mute over each member's mute. Neither is a core setting.
@@ -193,6 +196,19 @@ public sealed class DesiredState
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    // The MAC a sleeping room is woken at, null once it is back; unchanged is
+    // not a change.
+    public void RememberWake(string client, string? wakeOnLan)
+    {
+        lock (_lock)
+        {
+            if (_rooms.GetValueOrDefault(client)?.WakeOnLan == wakeOnLan)
+                return;
+            SetRoom(client, r => r with { WakeOnLan = wakeOnLan });
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     // A room gone for good (phase 39): its settings, its kept name and its
     // place in any membership. The zones stay; one left empty is ZoneKeeper's.
     public void Forget(string client)
@@ -325,6 +341,13 @@ public sealed class DesiredState
                     commands.Add(new ClientSetOutputLatency(client, latency));
                 if (wanted.Equalizer is { } equalizer && actual?.Equalizer != equalizer)
                     commands.Add(ClientSetEqualizer.For(client, equalizer));
+                // Asleep, and a core that no longer holds it so has restarted
+                // since: nothing else would wake it.
+                if (wanted.WakeOnLan is { } mac &&
+                    model.Rooms.GetValueOrDefault(client) is not ({ Connected: true } or { PowerState: "sleep" }))
+                {
+                    commands.Add(new ClientWake(client, mac));
+                }
             }
         }
         return commands;

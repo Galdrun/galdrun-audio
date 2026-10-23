@@ -656,6 +656,10 @@ std::vector<RoomCommand> StartScheduler::stop(uint64_t nowNs, TimelineNs& positi
         room.startServerTimeNs = 0;
     }
 
+    // A move asked for on the line that has just stopped is not one the next
+    // play() wants: every room starts that one from its first position.
+    rejoinWanted_.clear();
+
     transport_ = TransportState::Stopped;
     startTimelineNs_ = TimelineNs{};
     startServerTimeNs_ = 0;

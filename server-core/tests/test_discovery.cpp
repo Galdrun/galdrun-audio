@@ -13,6 +13,7 @@
 #include "util/Json.h"
 #include "net/Socket.h"
 
+#include <atomic>
 #include <chrono>
 #include <string>
 #include <thread>
@@ -137,6 +138,34 @@ MULTIROOM_TEST(discovery_listener_hears_a_beacon_and_drops_noise)
     CHECK_EQ(kitchen->platform, std::string("linux-armv6"));
     CHECK_EQ(kitchen->host, std::string("kitchen-pi"));
     CHECK_EQ(kitchen->lastSeenNs, uint64_t(5000));
+}
+
+MULTIROOM_TEST(discovery_listener_says_so_when_select_fails_and_stops_ticking)
+{
+    // As for the TCP listeners: stopped for good and said so, so that main()
+    // can have the server restarted -- and not spinning on a select() that
+    // fails at once, which would also call the tick as fast as it could.
+    multiroomtest::ManualClock clock{0};
+    DiscoveredClients clients;
+    std::atomic<uint64_t> ticks{0};
+    DiscoveryListenerSettings settings;
+    settings.bindAddress = "127.0.0.1";
+    settings.port = 0;
+    settings.onTick = [&ticks] { ticks.fetch_add(1); };
+    auto listener = DiscoveryListener::start(settings, clients, clock);
+    CHECK_OK(listener);
+    CHECK((*listener)->listening());
+
+    CHECK(multiroomtest::closeListenerOn((*listener)->port(), true));
+    CHECK(waitFor([&] { return !(*listener)->listening(); }));
+
+    const uint64_t stoppedAt = ticks.load();
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    CHECK_EQ(ticks.load(), stoppedAt);
+
+    const auto before = std::chrono::steady_clock::now();
+    listener->reset();
+    CHECK(std::chrono::steady_clock::now() - before < std::chrono::seconds(1));
 }
 
 MULTIROOM_TEST(discovery_listener_refuses_an_address_it_cannot_bind)

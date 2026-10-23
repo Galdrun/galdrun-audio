@@ -25,7 +25,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $release = Join-Path $root "releases\client\$Board"
-if (-not (Test-Path -LiteralPath (Join-Path $release 'flash_args'))) { throw "No release for '$Board' under releases\client - build it first: build-client.ps1 -Target $Board" }
+if (-not (Test-Path -LiteralPath (Join-Path $release 'flash_args'))) { throw "No release for '$Board' under releases\client - build it first: scripts\build-client.ps1 -Target $Board" }
 if ($Baud -notin 9600..921600) { throw 'Baud must be between 9600 and 921600.' }
 $ports = @([System.IO.Ports.SerialPort]::GetPortNames())
 if (-not $Port -and $ports.Count -eq 1) { $Port = $ports[0] }

@@ -71,6 +71,28 @@ public sealed class CoreLinkTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_sleeping_room_is_woken_at_its_kept_address_by_a_core_that_restarted()
+    {
+        await StartAsync();
+        await _core.EmitAsync("""{"event":"room.powerState","client":"roomA","powerState":"sleep","wakeOnLan":"02:00:00:00:00:01"}""");
+        await _events.WaitForAsync<RoomPowerState>(e => e.PowerState == "sleep");
+        await _core.EmitAsync("""{"event":"room.disconnected","client":"roomA","reason":"test"}""");
+        await _events.WaitForAsync<RoomDisconnected>();
+        Assert.Equal("02:00:00:00:00:01", _link.Desired.Rooms["roomA"].WakeOnLan);
+        Assert.DoesNotContain(_core.All, r => r.Command == "client.wake");
+
+        // A core that knows nothing of the room, as one does after a restart.
+        _core.Drop();
+        await _events.WaitForAsync<CoreSynchronised>(s => s.Reconnected);
+        Assert.Contains(_core.All, r => r.Command == "client.wake" &&
+            r.Params == """{"client":"roomA","wakeOnLan":"02:00:00:00:00:01"}""");
+
+        await _core.EmitAsync("""{"event":"room.connected","client":"roomA","deviceName":"d","reconnect":true}""");
+        await _events.WaitForAsync<RoomConnected>();
+        Assert.Null(_link.Desired.Rooms["roomA"].WakeOnLan);
+    }
+
+    [Fact]
     public async Task Every_command_round_trips_typed_with_the_core_s_exact_field_names()
     {
         await StartAsync();

@@ -41,7 +41,7 @@ internal sealed class FakeCore : IAsyncDisposable
         ["client.setAudioControl"] = ["client", "audioControl"],
         ["client.setVolume"] = ["client", "value?", "muted?", "applyAtTimelineNs?"],
         ["client.rejoin"] = ["client"],
-        ["client.wake"] = ["client"],
+        ["client.wake"] = ["client", "wakeOnLan?"],
         ["client.setOutputLatency"] = ["client", "latencyMs"],
         ["client.setEqualizer"] = ["client", "enabled", "preampDb?", "bands?"],
         ["client.setAudioDevice"] = ["client", "deviceId"],

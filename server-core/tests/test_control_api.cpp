@@ -1742,6 +1742,78 @@ MULTIROOM_TEST(control_api_keeps_the_wake_address_of_a_sleeping_room_and_wakes_i
     CHECK_EQ(text(woken, "wakeOnLan"), std::string("02:00:00:00:00:01"));
     CHECK_EQ(errorOf(caller.request(R"({"command":"client.wake","params":{"client":"nobody"}})")),
              std::string("notFound"));
+
+    // A room this core never saw asleep, woken at the MAC the caller kept.
+    const auto remembered = caller.request(
+        R"({"command":"client.wake","params":{"client":"nobody","wakeOnLan":"02:00:00:00:00:02"}})");
+    CHECK(isOk(remembered));
+    CHECK_EQ(text(remembered, "wakeOnLan"), std::string("02:00:00:00:00:02"));
+    CHECK_EQ(errorOf(caller.request(
+                 R"({"command":"client.wake","params":{"client":"nobody","wakeOnLan":"02:00:00:00:00:0G"}})")),
+             std::string("invalidArgument"));
+    // Its own report wins over the caller's copy.
+    const auto own = caller.request(
+        R"({"command":"client.wake","params":{"client":"lan-room","wakeOnLan":"02:00:00:00:00:02"}})");
+    CHECK_EQ(text(own, "wakeOnLan"), std::string("02:00:00:00:00:01"));
+}
+
+MULTIROOM_TEST(control_api_keeps_sleeping_rooms_within_the_directory_s_ceiling)
+{
+    ApiRig rig;
+    LineClient caller(rig.listener->port());
+    const size_t ceiling = rig.rooms.maxRooms();
+
+    // One at a time, so the listener's connection ceiling is never what
+    // bounds them.
+    for (size_t i = 0; i <= ceiling; ++i)
+    {
+        Room room(rig, "sleeper-" + std::to_string(i), {formatOf(kRate)}, i + 1);
+        room.connect();
+        room.reportPowerState("sleepButtonOnly");
+        room.session().close(kClosedByPeer);
+        CHECK(rig.rooms.size() <= ceiling);
+    }
+    CHECK_EQ(rig.rooms.size(), ceiling);
+    // The newest is the one kept.
+    CHECK(rig.rooms.find(ClientId("sleeper-" + std::to_string(ceiling))).has_value());
+
+    // A record the control API makes takes a sleeping room's place.
+    CHECK(isOk(caller.request(R"({"command":"zone.create","params":{"zone":"living"}})")));
+    CHECK(isOk(caller.request(
+        R"({"command":"zone.setClients","params":{"zone":"living","clients":["fresh"]}})")));
+    CHECK_EQ(rig.rooms.size(), ceiling);
+    CHECK(rig.rooms.zoneFor(ClientId("fresh")) == ZoneId("living"));
+}
+
+MULTIROOM_TEST(control_api_changes_membership_on_a_directory_past_its_ceiling)
+{
+    ApiRig rig;
+    LineClient caller(rig.listener->port());
+    const size_t ceiling = rig.rooms.maxRooms();
+
+    CHECK(isOk(caller.request(R"({"command":"zone.create","params":{"zone":"living"}})")));
+    for (size_t i = 0; i < ceiling; ++i)
+    {
+        CHECK(rig.rooms.update(ClientId("saved-" + std::to_string(i)),
+                               [](RoomRecord& r) { r.zone = ZoneId("living"); }));
+    }
+
+    // A room that connects is given a record whatever the directory holds.
+    Room room(rig, "visitor", {formatOf(kRate)}, 1);
+    room.connect();
+    CHECK_EQ(rig.rooms.size(), ceiling + 1);
+
+    // A record this would make is still refused; changes to records that
+    // exist are not.
+    CHECK_EQ(errorOf(caller.request(
+                 R"({"command":"zone.setClients","params":{"zone":"living","clients":["nobody"]}})")),
+             std::string("unavailable"));
+    CHECK_EQ(rig.rooms.size(), ceiling + 1);
+    const json::Value cleared = caller.request(
+        R"({"command":"zone.setClients","params":{"zone":"living","clients":[]}})");
+    CHECK(isOk(cleared));
+    CHECK_EQ(strings(cleared, "removed").size(), ceiling);
+    CHECK_EQ(rig.rooms.size(), size_t{1});
 }
 
 MULTIROOM_TEST(control_api_sends_events_only_to_a_connection_that_asked_for_them)
@@ -1887,6 +1959,24 @@ MULTIROOM_TEST(control_api_announces_rooms_as_they_come_join_move_fall_silent_an
     CHECK_EQ(text(expectEvent(feed, "room.disconnected"), "reason"), std::string("displaced"));
     first.session().close(kClosedByPeer); // closed long ago: says nothing again
     CHECK(isOk(feed.request(R"({"command":"zones"})")));
+}
+
+MULTIROOM_TEST(control_api_listener_says_so_when_select_fails_and_still_stops)
+{
+    // As for the two MATP listeners: stopped for good, said so, and
+    // destroyed without waiting on a socket that is no longer there.
+    auto started = ControlListener::start({"127.0.0.1", 0}, [](const std::string&, bool&) {
+        return std::string("{\"ok\":true}\n");
+    });
+    CHECK_OK(started);
+    CHECK((*started)->listening());
+
+    CHECK(multiroomtest::closeListenerOn((*started)->port()));
+    CHECK(waitFor([&] { return !(*started)->listening(); }));
+
+    const auto before = std::chrono::steady_clock::now();
+    started->reset();
+    CHECK(std::chrono::steady_clock::now() - before < std::chrono::seconds(1));
 }
 
 MULTIROOM_TEST(control_api_a_subscriber_that_stops_reading_loses_events_and_not_memory)

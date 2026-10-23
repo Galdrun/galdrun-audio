@@ -716,11 +716,16 @@ public:
     // plays on. A room held at a format boundary is not moved: its stream is
     // already standing still, and the device answering section 24's
     // re-negotiation is what places it again.
-    // A `processor` replaces the room's converter while it is parked for the
-    // move: a device reopened in another format.
-    [[nodiscard]] Result<TimelineNs, ZoneError> rejoin(
-        const ClientId& client, RejoinTrigger trigger,
-        std::unique_ptr<IClientAudioProcessor> processor = nullptr);
+    // A `replan` replaces the room's converter while it is parked for the
+    // move: a device reopened in another format. It is asked for the format
+    // of the audio at the position the room is moved to, which is the new
+    // source's once a format boundary has been opened, and its failure is the
+    // move's.
+    using PlanForSource = std::function<
+        Result<std::unique_ptr<IClientAudioProcessor>, ZoneError>(const AudioFormat& source)>;
+    [[nodiscard]] Result<TimelineNs, ZoneError> rejoin(const ClientId& client,
+                                                       RejoinTrigger trigger,
+                                                       const PlanForSource& replan = {});
 
     // Phase 27: this room is heard `latencyNs` after its card plays, through
     // a receiver or speakers with their own DSP. Its START_AT is moved that
@@ -986,6 +991,13 @@ private:
     // began -- is what applies. Called under mutex_.
     [[nodiscard]] TimelineNs ceilingLocked(uint64_t latencyNs, uint64_t nowNs) const;
 
+    // Tells every room where the decode has ended for good -- the frontier of
+    // a zone that has run out of staged sources -- or that it has not, so the
+    // last packet of the last source is cut short and sent instead of waiting
+    // for audio that is not coming (ClientOutput::setEnd()). Called under
+    // mutex_ whenever the state moves to or from Ended, and every pass.
+    void publishEndLocked();
+
     // The position a room joining now starts at.
     //
     // Before the first START_AT there is no playhead for a join to be ahead
@@ -1038,8 +1050,17 @@ private:
     // Every room of this zone, re-planned for a source in `format` that
     // begins at `at`, before a block of it is published. A room whose device
     // keeps its format gets its new converter at the boundary; one that has to
-    // be reopened is held there and paused there.
-    void beginTransition(TimelineNs at, const AudioFormat& format);
+    // be reopened is held there and paused there. With `only`, that room
+    // alone: one whose converter was replaced after the boundary was opened,
+    // which took the boundary's hold with it.
+    void beginTransition(TimelineNs at, const AudioFormat& format,
+                         const ClientId* only = nullptr);
+
+    // beginTransition() for one room, at the first source past `position`
+    // whose format is not `format` -- the one its new converter reads -- if
+    // the zone has opened one.
+    void holdAtBoundaryAhead(const ClientId& client, TimelineNs position,
+                             const AudioFormat& format);
 
     // The rooms held at a boundary the line has now reached, asked to
     // re-negotiate (section 24 steps 3 and 4) -- and the line itself stopped
@@ -1113,8 +1134,7 @@ private:
     // The move rejoin() makes, and where it put the room. rejoin() is this
     // and its event.
     [[nodiscard]] Status<ZoneError> moveRoom(const ClientId& client, RejoinTrigger trigger,
-                                             TimelineNs& position,
-                                             std::unique_ptr<IClientAudioProcessor> processor);
+                                             TimelineNs& position, const PlanForSource& replan);
 
     // --- fixed for the life of the zone -------------------------------------
 

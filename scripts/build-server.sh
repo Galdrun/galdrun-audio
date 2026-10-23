@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# build-mobile-gui.sh - Build the Galdrun app's desktop version for the selected targets,
-# installing the .NET SDK first when it is missing. Early work: Android needs the .NET
-# android workload and iOS a Mac, so neither is built here.
+# build-server.sh - Build the Galdrun server (.NET) for the selected targets, installing
+# the .NET SDK first when it is missing. Running it again skips what is already there.
+# .NET publishes every target from any host, so this also builds the Windows targets.
 #
 # Usage:
-#   ./build-mobile-gui.sh                 # all targets below
-#   ./build-mobile-gui.sh linux-x64
+#   scripts/build-server.sh                     # all targets below
+#   scripts/build-server.sh linux-armv7
+#   scripts/build-server.sh linux windows-x64
 #
 # Targets (all self-contained: nothing has to be installed on the device):
 #   all (default)  windows and linux
@@ -14,10 +15,10 @@
 #
 # Installs when missing:
 #   apt packages (via sudo)   curl, ca-certificates, ICU (Ubuntu/Debian)
-#   .NET SDK                  the version in mobile-gui/global.json, into ~/.dotnet (dotnet-install)
-# Results go to releases/mobile-gui/<target>. Stops at the first failure.
+#   .NET SDK                  the version in server/global.json, into ~/.dotnet (dotnet-install)
+# Results go to releases/server/<target>. Stops at the first failure.
 set -euo pipefail
-root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 . "$root/scripts/setup/linux.sh"
 
 declare -A rids=([windows-x64]=win-x64 [windows-armv8]=win-arm64
@@ -36,12 +37,13 @@ mapfile -t targets < <(printf '%s\n' "${targets[@]}" | awk '!seen[$0]++')
 
 install_packages curl ca-certificates libicu-dev
 [[ $EUID -ne 0 ]] || die 'Run as your normal user, not root; the SDK is installed into your home directory.'
-cd "$root/mobile-gui"
+
+cd "$root/server"
 ensure_dotnet
 
 for target in "${targets[@]}"; do
     echo "== $target"
-    dotnet publish src/Multiroom.App.Desktop/Multiroom.App.Desktop.csproj -c Release -r "${rids[$target]}" \
-        --self-contained true -nodeReuse:false -o "$root/releases/mobile-gui/$target"
+    dotnet publish src/Multiroom.Server/Multiroom.Server.csproj -c Release -r "${rids[$target]}" \
+        --self-contained true -o "$root/releases/server/$target"
 done
-echo "Built: ${targets[*]}. Results are in $root/releases/mobile-gui"
+echo "Built: ${targets[*]}. Results are in $root/releases/server"

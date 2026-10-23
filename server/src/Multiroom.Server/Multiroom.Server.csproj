@@ -35,8 +35,8 @@
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- Releases come from publishing (build-server.sh / .ps1 in the repository
-       root), with the README and example config beside the executable. -->
+  <!-- Releases come from publishing (scripts/build-server.sh / .ps1),
+       with the README and example config beside the executable. -->
   <ItemGroup Condition="'$(RuntimeIdentifier)' != ''">
     <None Include="release/README.md" Link="README.md" CopyToPublishDirectory="PreserveNewest" />
     <None Include="release/server.example.json" Link="server.example.json" CopyToPublishDirectory="PreserveNewest" />

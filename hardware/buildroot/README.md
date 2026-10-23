@@ -18,8 +18,8 @@ missing (on Windows inside WSL Ubuntu), builds the Linux ARMv6 client the firmwa
 bundles, then the firmware:
 
 ```sh
-./build-client.sh connector2                                         # Linux
-powershell -ExecutionPolicy Bypass -File build-client.ps1 -Target connector2   # Windows
+scripts/build-client.sh connector2                                         # Linux
+powershell -ExecutionPolicy Bypass -File scripts\build-client.ps1 -Target connector2   # Windows
 ```
 
 Ubuntu host packages, if you set up Linux yourself:
@@ -29,7 +29,7 @@ sudo apt install build-essential bison flex cpio libssl-dev libncurses-dev patch
   file wget curl git rsync python3 bc bzip2 xz-utils e2fsprogs
 ```
 
-Firmware only (needs `releases/client/linux-armv6` built first: `./build-client.sh linux-armv6`):
+Firmware only (needs `releases/client/linux-armv6` built first: `scripts/build-client.sh linux-armv6`):
 
 ```powershell
 hardware\buildroot\Build.ps1 -Boards connector2     # Windows, runs build.sh in WSL

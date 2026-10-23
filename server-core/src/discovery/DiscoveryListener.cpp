@@ -101,6 +101,7 @@ public:
         thread_ = std::jthread([this](std::stop_token stop) { loop(stop); });
     }
 
+    [[nodiscard]] bool listening() const noexcept { return listening_.load(); }
     [[nodiscard]] uint64_t received() const noexcept { return received_.load(); }
     [[nodiscard]] uint64_t rejected() const noexcept { return rejected_.load(); }
 
@@ -114,11 +115,16 @@ private:
             FD_SET(socket_, &readable);
             timeval timeout{};
             timeout.tv_usec = kSelectTimeoutMs * 1000;
-#if defined(_WIN32)
-            const int ready = ::select(0, &readable, nullptr, nullptr, &timeout);
-#else
-            const int ready = ::select(socket_ + 1, &readable, nullptr, nullptr, &timeout);
-#endif
+            const int ready = net::waitReady(socket_, &readable, nullptr, nullptr, timeout);
+            if (ready < 0 && !net::wouldBlock(net::lastError()))
+            {
+                // It would fail again at once, every pass: a loop that went on
+                // would spin, and the tick with it.
+                MULTIROOM_ERROR("discovery listener: select failed: {}",
+                          net::errorMessage(net::lastError()));
+                listening_.store(false);
+                break;
+            }
             if (ready > 0)
                 drain();
             if (onTick_)
@@ -172,6 +178,7 @@ private:
     std::function<void()> onTick_;
     net::Library library_;
     net::Socket socket_ = net::kInvalidSocket;
+    std::atomic<bool> listening_{true};
     std::atomic<uint64_t> received_{0};
     std::atomic<uint64_t> rejected_{0};
     std::jthread thread_; // last: stopped before anything it reads
@@ -198,6 +205,11 @@ DiscoveryListener::start(DiscoveryListenerSettings settings, DiscoveredClients& 
 
     MULTIROOM_INFO("discovery beacons on {}:{} (udp)", settings.bindAddress, port);
     return std::unique_ptr<DiscoveryListener>(new DiscoveryListener(std::move(impl), port));
+}
+
+bool DiscoveryListener::listening() const noexcept
+{
+    return impl_->listening();
 }
 
 uint64_t DiscoveryListener::received() const noexcept

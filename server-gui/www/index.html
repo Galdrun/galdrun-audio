@@ -170,41 +170,61 @@
         <i data-icon="back"></i><span>Playlists</span>
       </button>
 
-      <section class="pane playlist-pane" aria-label="Playlist">
+      <section class="pane list-pane" aria-label="Playlist">
         <div id="plHead" class="queue-head"></div>
         <div id="entries" class="pl-entries"></div>
       </section>
     </section>
 
-    <section class="page" data-page="stations" data-title="Radio stations" hidden>
-      <div class="page-heading with-tools">
-        <div>
-          <h1>Radio stations</h1>
-          <p class="subtitle">Your own web radio stations.</p>
+    <!-- As the Playlists page: the folders of the stations as a tree (slid
+         away by its strip) and the stations of the folder picked in it. -->
+    <section class="page page-app" data-page="stations" data-title="Radio stations" data-part="tree" hidden>
+      <!-- On a small screen one part at a time, picked here (app.css hides it otherwise). -->
+      <div class="pl-small-bar">
+        <button type="button" class="icon-only" aria-haspopup="menu" aria-label="Switch view" title="Switch view"><i data-icon="menu"></i></button>
+        <div class="pick-popover" popover="auto" role="menu" aria-label="Show">
+          <button type="button" data-part="tree"><i data-icon="folder"></i>Folders</button>
+          <button type="button" data-part="list"><i data-icon="radio"></i>Stations</button>
         </div>
-        <button type="button" id="reloadStations">Reload</button>
+        <span class="pl-part-label">Folders</span>
       </div>
-      <section class="panel"><div id="stations" class="table-wrap plain"></div></section>
-      <div class="two-col">
-        <section class="panel">
-          <header class="panel-head"><span class="panel-icon"><i data-icon="radio"></i></span><h2>Add a station</h2></header>
-          <form id="stationForm" class="fields">
-            <label for="stName">Name *</label><input id="stName" name="name" required>
-            <label for="stUrl">Stream URL *</label><input id="stUrl" name="streamUrl" placeholder="http(s)://…" required>
-            <label for="stHome">Homepage</label><input id="stHome" name="homepage">
-            <label for="stGenre">Genre</label><input id="stGenre" name="genre">
-            <label for="stLogo">Logo URL</label><input id="stLogo" name="logo">
-            <span></span><div class="form-actions start"><button class="primary">Add station</button></div>
-          </form>
-        </section>
-        <section class="panel">
-          <header class="panel-head"><span class="panel-icon"><i data-icon="playlists"></i></span><h2>Import</h2></header>
-          <form id="importForm" class="stack">
-            <textarea name="playlist" rows="7" placeholder="Paste M3U or PLS text" aria-label="M3U or PLS text"></textarea>
-            <div class="form-actions start"><button class="primary">Import</button></div>
-          </form>
-        </section>
-      </div>
+      <section id="stTreePane" class="pane pl-tree-pane" aria-label="Station folders">
+        <div class="pane-bar">
+          <span class="pane-title">Folders</span>
+          <button type="button" id="stNewFolder" class="icon-only" title="New folder" aria-label="New folder"><i data-icon="folder"></i></button>
+        </div>
+        <div id="stTree" class="pl-tree"></div>
+      </section>
+
+      <button type="button" id="stTreeToggle" class="library-toggle tree-toggle" aria-controls="stTreePane" aria-expanded="true" title="Hide the folders">
+        <i data-icon="back"></i><span>Folders</span>
+      </button>
+
+      <section class="pane list-pane" aria-label="Stations">
+        <div id="stHead" class="queue-head"></div>
+        <div id="stations" class="pl-entries"></div>
+      </section>
+
+      <dialog id="stationDialog" class="confirm-dialog station-dialog" aria-label="Add a station">
+        <div class="confirm-head"><span class="confirm-icon move-icon"><i data-icon="radio"></i></span><h2>Add a station</h2></div>
+        <form id="stationForm" class="fields">
+          <label for="stName">Name *</label><input id="stName" name="name" required>
+          <label for="stUrl">Stream URL *</label><input id="stUrl" name="streamUrl" placeholder="http(s)://…" required>
+          <label for="stHome">Homepage</label><input id="stHome" name="homepage">
+          <label for="stGenre">Genre</label><input id="stGenre" name="genre">
+          <label for="stLogo">Logo URL</label><input id="stLogo" name="logo">
+          <p class="save-error" role="alert" hidden></p>
+          <span></span><div class="confirm-buttons"><button type="button" data-close>Cancel</button><button class="primary">Add station</button></div>
+        </form>
+      </dialog>
+      <dialog id="importDialog" class="confirm-dialog station-dialog" aria-label="Import stations">
+        <div class="confirm-head"><span class="confirm-icon move-icon"><i data-icon="playlists"></i></span><h2>Import stations</h2></div>
+        <form id="importForm" class="stack">
+          <textarea name="playlist" rows="7" placeholder="Paste M3U or PLS text" aria-label="M3U or PLS text" required></textarea>
+          <p class="save-error" role="alert" hidden></p>
+          <div class="confirm-buttons"><button type="button" data-close>Cancel</button><button class="primary">Import</button></div>
+        </form>
+      </dialog>
     </section>
 
     <section class="page page-chat" data-page="assistant" data-title="Assistant" hidden>

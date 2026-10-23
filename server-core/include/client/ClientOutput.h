@@ -246,9 +246,8 @@ public:
     //
     // Accepted on a stream that is parked (section 38) or stranded (the decode
     // ran past its cursor) and refused on one that is still producing:
-    // park() is what stops a running one. run() starts the thread again where
-    // park() stopped it, and is a no-op for a stranded room, whose thread
-    // never stopped.
+    // park() is what stops a running one. A stranded room's thread, which
+    // never stopped, is stopped here; run() starts the thread again either way.
     [[nodiscard]] Status<OutputError> rejoinAt(TimelineNs position);
 
     // Section 54's seek (phase 26): the same move, announced. The first packet
@@ -283,11 +282,13 @@ public:
     // be one this room's converter cannot read at all.
     //
     // Recorded here and granted by pump() on this room's own thread, which is
-    // the shape setDriftTrim() has and for the same reason. A second hold
-    // replaces the first; a hold at a position this stream has already
-    // produced past is refused, because there is no packet left to cut. A hold
-    // exactly where the stream has got to is a stream that produces nothing
-    // more, which is what a room that joined past the boundary needs.
+    // the shape setDriftTrim() has and for the same reason. A second hold at
+    // or before the first replaces it, and one past it is queued behind it --
+    // switchTo() then names the converter for that later one. A hold at a
+    // position this stream has already produced past is refused, because
+    // there is no packet left to cut. A hold exactly where the stream has got
+    // to is a stream that produces nothing more, which is what a room that
+    // joined past the boundary needs.
     [[nodiscard]] Status<OutputError> holdAt(TimelineNs position);
 
     // The converter for what follows the hold, and where this room's stream
@@ -350,6 +351,16 @@ public:
     // so a room placed ahead of the line can still fill before the line gets
     // there. Zero, the default, is no ceiling: a stream with no zone behind it.
     void setCeiling(TimelineNs ceiling) noexcept { ceilingNs_.store(std::to_underlying(ceiling)); }
+
+    // Where the zone's decode has ended with nothing staged after it, which
+    // the zone moves with its state beside the ceiling. The packet that would
+    // cross it is cut short to end on it, as at a hold, and a converter is
+    // finished from silence -- so the last frames of the last source are sent
+    // instead of waiting at the frontier for a next source that may never
+    // come. Moved on or cleared (zero) when the zone has more: the stream then
+    // carries on from exactly where it stopped, its converter started afresh
+    // there. Zero, the default, is no end.
+    void setEnd(TimelineNs end) noexcept { endNs_.store(std::to_underlying(end)); }
 
     // Whether this room is playing on a running line: started, confirmed by a
     // PLAYBACK_REPORT, and its zone's transport playing. The zone says so
@@ -568,6 +579,12 @@ private:
     // source goes out before the first packet of the new one is built.
     void applyFormatSwitch();
 
+    // The grid, the store cursor and the converter moved on to where the last
+    // packet was cut by setEnd(), once the end has moved past it. The clock is
+    // left alone: it is continuous across the cut, and framesSent_ is its
+    // target there.
+    void resumeAfterEnd();
+
     // replaceProcessor()'s priming, on a stream just moved to `at` and with
     // the new converter in place.
     void preRoll(SourceFrame at);
@@ -590,6 +607,16 @@ private:
     // that is merely short of input from one that is broken.
     bool extendCarry(uint32_t shown);
 
+    // The packet grid and this converter's clock begun again at `position`:
+    // what joinAt(), rejoinAt() and a format switch start a stream from. Not
+    // resumeAfterEnd(), whose clock runs on across the cut.
+    void anchorAt(TimelineNs position);
+
+    // Drops the block being read, the carry and the packet being assembled:
+    // what a stream moved to another position or converter must not read on
+    // from.
+    void clearAssembly();
+
     // Copies `frames` from the current block onto the end of the carry.
     void appendToCarry(uint32_t frames);
 
@@ -597,6 +624,11 @@ private:
     // for a converter that needs input past a boundary the old source ended
     // on (section 24).
     void appendSilenceToCarry();
+
+    // Whether the frontier the last nextBlock() met is a boundary or an end
+    // the packet being built was sized for, so silence may finish it. One
+    // sized before that hold or end was published would run past it.
+    bool silenceMayFinishPacket() const;
 
     // The block the cursor is in, or false at the frontier. Failures are
     // recorded and end the room.
@@ -706,6 +738,25 @@ private:
     // it: what the converter still wants before it is silence (section 24).
     bool atBoundary_ = false;
 
+    // The last read found the frontier at the zone's end (setEnd()), so what
+    // a converter still wants is silence. Set by every nextBlock().
+    bool atEnd_ = false;
+
+    // The last packet was cut short on the zone's end, and the grid has to be
+    // moved to it before anything more is built (resumeAfterEnd()).
+    bool cutAtEnd_ = false;
+
+    // The zone's end and the hold as produce() read them when it sized the
+    // packet being built. Either can be published between that read and the
+    // read that reaches it, and a packet sized before it runs past it: fill()
+    // leaves that one to be sized again rather than finishing it from
+    // silence.
+    uint64_t packetEndNs_ = 0;
+    uint64_t packetHoldNs_ = 0;
+
+    // The hold the last nextBlock() put a block back on, beside atBoundary_.
+    uint64_t boundaryNs_ = 0;
+
     // The packet being assembled. Exactly one packet's worth: the loop asks
     // the processor for what is still missing rather than for whatever fits,
     // so nothing is ever produced that this packet cannot carry.
@@ -748,6 +799,15 @@ private:
     // The pending converter is replaceProcessor()'s: no boundary, the next
     // packet, primed.
     bool pendingInPlace_ = false;                                  // guarded by mutex_
+    // Boundaries past `holdNs_`, oldest first, each with what switchTo() named
+    // for it. The front becomes `holdNs_` when the switch before it installs.
+    struct LaterHold
+    {
+        uint64_t holdNs = 0;
+        std::unique_ptr<IClientAudioProcessor> processor;
+        TimelineNs position{};
+    };
+    std::deque<LaterHold> laterHolds_;                             // guarded by mutex_
 
     // Written by this room's thread after every packet and read by the zone's
     // pipeline, which is why it is an atomic rather than the packetIndex_
@@ -756,6 +816,9 @@ private:
 
     // Phase 39's ceiling, written by the zone's pipeline and read here.
     std::atomic<uint64_t> ceilingNs_{0};
+
+    // setEnd()'s, written by the zone and read here.
+    std::atomic<uint64_t> endNs_{0};
 
     // Written by the zone's pipeline beside the ceiling.
     std::atomic<bool> onLine_{false};

@@ -147,6 +147,7 @@ public:
         thread_ = std::jthread([this](std::stop_token stop) { loop(stop); });
     }
 
+    [[nodiscard]] bool listening() const noexcept { return listening_.load(); }
     [[nodiscard]] uint64_t accepted() const noexcept { return accepted_.load(); }
 
     void publish(const std::string& line)
@@ -245,17 +246,12 @@ private:
             timeval timeout{};
             timeout.tv_usec = kSelectTimeoutMs * 1000;
 
-#if defined(_WIN32)
-            static_cast<void>(highest);
-            const int ready = ::select(0, &readable, &writable, nullptr, &timeout);
-#else
-            const int ready =
-                ::select(static_cast<int>(highest) + 1, &readable, &writable, nullptr, &timeout);
-#endif
+            const int ready = net::waitReady(highest, &readable, &writable, nullptr, timeout);
             if (ready < 0 && !net::wouldBlock(net::lastError()))
             {
                 MULTIROOM_ERROR("control API listener: select failed: {}",
                           net::errorMessage(net::lastError()));
+                listening_.store(false);
                 break;
             }
             if (stop.stop_requested())
@@ -411,6 +407,7 @@ private:
     net::Library library_;
     net::Socket listener_ = net::kInvalidSocket;
     std::list<Connection> connections_;
+    std::atomic<bool> listening_{true};
     std::atomic<uint64_t> accepted_{0};
 
     // The one thing here another thread touches: a queue per subscribed
@@ -445,6 +442,11 @@ ControlListener::start(ControlListenerSettings settings, Handler handler)
 
     MULTIROOM_INFO("control API on {}:{}", settings.bindAddress, port);
     return std::unique_ptr<ControlListener>(new ControlListener(std::move(impl), port));
+}
+
+bool ControlListener::listening() const noexcept
+{
+    return impl_->listening();
 }
 
 uint64_t ControlListener::acceptedCount() const noexcept

@@ -1,10 +1,10 @@
 # build-server-core.ps1 - Build the Galdrun core audio server on Windows: windows-x64
-# here, the Linux targets through build-server-core.sh in WSL Ubuntu. Installs what is
+# here, the Linux targets through scripts/build-server-core.sh in WSL Ubuntu. Installs what is
 # missing first; running it again skips what is already installed.
 #
 # Usage:
-#   powershell -ExecutionPolicy Bypass -File build-server-core.ps1                    # all targets
-#   powershell -ExecutionPolicy Bypass -File build-server-core.ps1 -Target windows,linux-armv7
+#   powershell -ExecutionPolicy Bypass -File scripts\build-server-core.ps1                    # all targets
+#   powershell -ExecutionPolicy Bypass -File scripts\build-server-core.ps1 -Target windows,linux-armv7
 #
 # Targets:
 #   all (default)  everything below
@@ -15,7 +15,7 @@
 #   Visual Studio 2022 Build Tools (C++)  via winget
 #   CMake                                 via winget
 #   WSL Ubuntu                            then asks you to create your Ubuntu user and run this again
-#   everything else                       inside Ubuntu, as listed in build-server-core.sh
+#   everything else                       inside Ubuntu, as listed in scripts/build-server-core.sh
 # Results go to releases\server-core\<target>. Stops at the first failure.
 param(
     [ValidateSet('all', 'windows', 'linux', 'windows-x64',
@@ -23,7 +23,8 @@ param(
     [string[]] $Target = 'all'
 )
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'scripts\setup\windows.ps1')
+$root = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot 'setup\windows.ps1')
 $windows = [bool]($Target | Where-Object { $_ -in 'all', 'windows', 'windows-x64' })
 $wslTargets = @($Target | ForEach-Object {
         switch ($_) { 'all' { 'linux' } 'windows' {} 'windows-x64' {} default { $_ } }
@@ -32,7 +33,7 @@ $wslTargets = @($Target | ForEach-Object {
 if ($windows) {
     Initialize-Msvc
     Write-Host '== windows-x64'
-    Push-Location (Join-Path $PSScriptRoot 'server-core')
+    Push-Location (Join-Path $root 'server-core')
     try {
         & cmake --preset windows-x64
         Invoke-Checked 'Configuring windows-x64'
@@ -41,5 +42,5 @@ if ($windows) {
     }
     finally { Pop-Location }
 }
-if ($wslTargets) { Invoke-WslBuild 'build-server-core.sh' $wslTargets }
-Write-Host "Done. Results are in $(Join-Path $PSScriptRoot 'releases\server-core')"
+if ($wslTargets) { Invoke-WslBuild 'scripts/build-server-core.sh' $wslTargets }
+Write-Host "Done. Results are in $(Join-Path $root 'releases\server-core')"

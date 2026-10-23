@@ -14,7 +14,7 @@
 #                 it exists (its .pub built in via GALDRUN_SSH_PUBKEY). Without a key, ssh asks for the password
 #                 twice (copy, then install); it is never stored.
 #
-# What it does: copies releases\client\linux-armv6 (build it first: build-client.ps1 -Target
+# What it does: copies releases\client\linux-armv6 (build it first: scripts\build-client.ps1 -Target
 # linux-armv6) and connector2-remote.sh to /tmp, checks that the new binary starts there, then
 # stops the client, replaces binary, libraries and licenses, keeps the old binary as
 # galdrun-client.previous and starts it again.
@@ -26,7 +26,7 @@ $address = $null
 if (-not [System.Net.IPAddress]::TryParse($IP, [ref]$address) -or $address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) { throw 'Enter a valid IPv4 address.' }
 if ($User -notmatch '^[a-z_][a-z0-9_-]*$') { throw 'Enter a valid Linux username.' }
 $release = Join-Path $root 'releases\client\linux-armv6'
-if (-not (Test-Path -LiteralPath "$release\galdrun-client")) { throw "Build linux-armv6 first: build-client.ps1 -Target linux-armv6" }
+if (-not (Test-Path -LiteralPath "$release\galdrun-client")) { throw "Build linux-armv6 first: scripts\build-client.ps1 -Target linux-armv6" }
 if (-not $IdentityFile) {
     $default = Join-Path $root 'hardware\buildroot\private\connector2\id_ed25519'
     if (Test-Path -LiteralPath $default) { $IdentityFile = $default }

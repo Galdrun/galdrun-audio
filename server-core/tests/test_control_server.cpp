@@ -497,3 +497,20 @@ MULTIROOM_TEST(control_server_carries_every_room_message_across_the_thread_bound
     CHECK(waitFor([&] { return (*server)->connectionCount() == 1; }));
     CHECK_EQ((*server)->commandsSentCount(), 2ULL);
 }
+
+MULTIROOM_TEST(control_server_says_so_when_select_fails_and_still_stops)
+{
+    // As for the audio listener: stopped for good, said so, and destroyed
+    // without waiting on a socket that is no longer there.
+    const SystemClock clock;
+    auto server = ControlServer::start(clock, loopbackSettings());
+    CHECK_OK(server);
+    CHECK((*server)->listening());
+
+    CHECK(multiroomtest::closeListenerOn((*server)->port()));
+    CHECK(waitFor([&] { return !(*server)->listening(); }));
+
+    const auto before = std::chrono::steady_clock::now();
+    server->reset();
+    CHECK(std::chrono::steady_clock::now() - before < std::chrono::seconds(1));
+}

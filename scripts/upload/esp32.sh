@@ -31,7 +31,7 @@ while (( $# )); do
     esac
 done
 release="$root/releases/client/$board"
-[[ -f $release/flash_args ]] || { echo "No release for '$board' under releases/client - build it first: ./build-client.sh $board" >&2; exit 1; }
+[[ -f $release/flash_args ]] || { echo "No release for '$board' under releases/client - build it first: scripts/build-client.sh $board" >&2; exit 1; }
 [[ $baud =~ ^[0-9]+$ ]] && (( baud >= 9600 && baud <= 921600 )) || { echo 'Baud must be between 9600 and 921600.' >&2; exit 2; }
 shopt -s nullglob
 ports=(/dev/ttyUSB* /dev/ttyACM*)

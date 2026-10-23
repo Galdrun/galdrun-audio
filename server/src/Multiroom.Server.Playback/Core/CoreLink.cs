@@ -616,7 +616,7 @@ public sealed partial class CoreLink : BackgroundService
 
         LogEvent(_log, name);
         Model.Apply(coreEvent);
-        RememberNames();
+        RememberRooms();
         if (coreEvent is EventsLost)
             _resyncRequests.Writer.TryWrite(true);
         _events.Writer.TryWrite(coreEvent);
@@ -624,12 +624,17 @@ public sealed partial class CoreLink : BackgroundService
 
     // A room's name outlives its connection and the core (phase 39): what the
     // core said last is kept in the desired state, and so in playback.json.
-    private void RememberNames()
+    // So is a deep sleep's wake address, until the room is back.
+    private void RememberRooms()
     {
         foreach (var room in Model.Current.Rooms.Values)
         {
             if (room.Name is { } name)
                 Desired.RememberName(room.Client, name);
+            if (room is { PowerState: "sleep", WakeOnLan: { } mac })
+                Desired.RememberWake(room.Client, mac);
+            else if (room.Connected)
+                Desired.RememberWake(room.Client, null);
         }
     }
 
@@ -650,7 +655,7 @@ public sealed partial class CoreLink : BackgroundService
             {
                 var reply = root.Deserialize(command.ReplyType, Json)!;
                 Model.Apply(command, reply);
-                RememberNames();
+                RememberRooms();
                 answer = new Answer(reply, default);
             }
             catch (JsonException e)

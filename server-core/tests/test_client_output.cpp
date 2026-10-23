@@ -21,9 +21,11 @@
 #include "resampler/ResamplerRegistry.h"
 #include "timeline/SourceTimeline.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -291,6 +293,49 @@ private:
     uint64_t calls_ = 0;
 };
 
+// What is left of a 1000-frame source after one whole packet.
+constexpr uint32_t kTailFrames = 118;
+
+// A converter that copies, and runs `onTail` once from inside its call for
+// the last kTailFrames of the source. With `lookahead` it keeps back the last
+// frame it is shown, as an interpolating converter does, so a single frame
+// gets nothing until there is a frame (or silence) behind it.
+class TailHookProcessor final : public IClientAudioProcessor
+{
+public:
+    TailHookProcessor(OutputPlan plan, std::function<void()> onTail, bool lookahead)
+        : plan_(std::move(plan)), frameBytes_(plan_.outputFormat.bytesPerFrame()),
+          onTail_(std::move(onTail)), lookahead_(lookahead)
+    {
+    }
+
+    const OutputPlan& plan() const noexcept override { return plan_; }
+    double ratio() const noexcept override { return 1.0; }
+    Status<ProcessorError> setRatio(double) override { return {}; }
+
+    Result<ProcessResult, ProcessorError> process(std::span<const std::byte> input,
+                                                  std::span<std::byte> output) override
+    {
+        const size_t shown = input.size() / frameBytes_;
+        const size_t usable = lookahead_ && shown > 0 ? shown - 1 : shown;
+        const size_t frames = std::min(usable, output.size() / frameBytes_);
+        if (frames > 0)
+            std::memcpy(output.data(), input.data(), frames * frameBytes_);
+        if (shown == kTailFrames && onTail_)
+            std::exchange(onTail_, nullptr)();
+        return ProcessResult{frames, frames};
+    }
+
+    void reset() override {}
+    double latencyFrames() const noexcept override { return 0.0; }
+
+private:
+    OutputPlan plan_;
+    size_t frameBytes_;
+    std::function<void()> onTail_;
+    bool lookahead_;
+};
+
 std::unique_ptr<ClientOutput> makeOutput(FakeZone& zone, const IClock& clock,
                                          const OutputPlan& plan,
                                          ClientOutputSettings settings = {},
@@ -331,6 +376,40 @@ std::vector<matp::AudioPacket> decode(SinkState& state, matp::AudioPacketReader&
         break;
     }
     return packets;
+}
+
+// What a room is sent of a 1000-frame source -- one whole packet, then the
+// frames left over -- when `hook` runs from inside the converter's call for
+// those last frames. That is after produce() has sized the second packet and
+// before the read that reaches the frontier: the gap a zone's end or a hold
+// can be published in. With `lookahead`, the converter's next call is the
+// last frame alone, which it does not take: the read past the frontier then
+// happens in extendCarry() rather than fill().
+std::vector<matp::AudioPacket> buildWithTailHook(FakeZone& zone, const IClock& clock,
+                                                 const std::function<void(ClientOutput&)>& hook,
+                                                 bool lookahead = false)
+{
+    zone.publish();
+    zone.publish(kTailFrames);
+
+    ClientOutput* room = nullptr;
+    auto created = ClientOutput::create(
+        testSessionId(), ClientId("livingroom"), *zone.store, zone.timeline,
+        std::make_unique<TailHookProcessor>(resampledPlan(zone.format, zone.format),
+                                            [&] { hook(*room); }, lookahead),
+        clock, {});
+    CHECK_OK(created);
+    room = created->get();
+
+    auto state = std::make_shared<SinkState>();
+    CHECK_OK(room->joinAt(TimelineNs{0}));
+    room->attach(std::make_unique<FakeSink>(state));
+    room->pump();
+    room->pump();
+
+    matp::AudioPacketReader reader;
+    size_t consumed = 0;
+    return decode(*state, reader, consumed);
 }
 
 template <typename Predicate>
@@ -954,10 +1033,10 @@ MULTIROOM_TEST(client_output_strands_a_room_whose_cursor_the_decode_ran_past)
     CHECK(output->state() == OutputState::Stranded);
     CHECK_EQ(output->queuedPackets(), size_t(0));
 
-    // And a position the store still holds is all it needs. Its thread was
-    // never stopped, so run() is a no-op and the same loop carries on -- the
-    // packetizer's sequence with it, because the client reads a gap in the
-    // numbering on one connection as a server that skipped ahead.
+    // And a position the store still holds is all it needs. The same loop
+    // carries on -- the packetizer's sequence with it, because the client
+    // reads a gap in the numbering on one connection as a server that skipped
+    // ahead.
     const Result<TimelineNs, TimelineError> oldest =
         zone.timeline.timelineAt(zone.store->oldestFrame());
     CHECK_OK(oldest);
@@ -1000,6 +1079,86 @@ MULTIROOM_TEST(client_output_waits_for_a_decode_that_has_not_got_there_yet)
     const std::vector<matp::AudioPacket> packets = decode(*state, reader, consumed);
     CHECK_EQ(packets.size(), size_t(5));
     CHECK_EQ(packets[4].header.timelineStartNs, 4 * kPacketNs);
+}
+
+MULTIROOM_TEST(client_output_cuts_a_packet_on_an_end_published_while_it_was_being_built)
+{
+    // The zone's end arrives in the gap: the packet was sized whole, and is
+    // cut on the end rather than finished with silence that would run past it.
+    multiroomtest::ManualClock clock;
+    FakeZone zone;
+    const auto end = zone.timeline.timelineAt(SourceFrame{kPacketFrames + kTailFrames});
+    CHECK_OK(end);
+
+    const std::vector<matp::AudioPacket> packets =
+        buildWithTailHook(zone, clock, [&](ClientOutput& room) { room.setEnd(*end); });
+    CHECK_EQ(packets.size(), size_t(2));
+    CHECK_EQ(packets[1].header.outputFrameCount, kTailFrames);
+    CHECK_EQ(packets[1].header.timelineStartNs + packets[1].header.timelineDurationNs,
+             std::to_underlying(*end));
+}
+
+MULTIROOM_TEST(client_output_cuts_a_packet_on_a_hold_installed_while_it_was_being_built)
+{
+    // Section 24's boundary arriving in the same gap, in the zone's order: the
+    // hold, then the first block past it. The packet stops on the boundary
+    // rather than being finished with silence across it -- which would also
+    // have moved the switch past the boundary, and lost the start of the new
+    // source to that silence.
+    multiroomtest::ManualClock clock;
+    FakeZone zone;
+    const auto boundary = zone.timeline.timelineAt(SourceFrame{kPacketFrames + kTailFrames});
+    CHECK_OK(boundary);
+
+    const std::vector<matp::AudioPacket> packets =
+        buildWithTailHook(zone, clock, [&](ClientOutput& room) {
+            CHECK_OK(room.holdAt(*boundary));
+            zone.publish();
+        });
+    CHECK_EQ(packets.size(), size_t(2));
+    CHECK_EQ(packets[1].header.outputFrameCount, kTailFrames);
+    CHECK_EQ(packets[1].header.timelineStartNs + packets[1].header.timelineDurationNs,
+             std::to_underlying(*boundary));
+}
+
+MULTIROOM_TEST(client_output_cuts_a_packet_on_an_end_a_converter_s_lookahead_reached)
+{
+    // The same gap, with a converter that keeps its last frame back until
+    // there is something behind it: the end is met while the carry is being
+    // extended, and silence is still only added once the packet is cut on it.
+    multiroomtest::ManualClock clock;
+    FakeZone zone;
+    const auto end = zone.timeline.timelineAt(SourceFrame{kPacketFrames + kTailFrames});
+    CHECK_OK(end);
+
+    const std::vector<matp::AudioPacket> packets = buildWithTailHook(
+        zone, clock, [&](ClientOutput& room) { room.setEnd(*end); }, true);
+    CHECK_EQ(packets.size(), size_t(2));
+    CHECK_EQ(packets[1].header.outputFrameCount, kTailFrames);
+    CHECK_EQ(packets[1].header.timelineStartNs + packets[1].header.timelineDurationNs,
+             std::to_underlying(*end));
+}
+
+MULTIROOM_TEST(client_output_cuts_a_packet_on_a_hold_a_converter_s_lookahead_reached)
+{
+    // The hold's counterpart: the block past the boundary is put back while
+    // the carry is being extended, and the packet is cut on the boundary.
+    multiroomtest::ManualClock clock;
+    FakeZone zone;
+    const auto boundary = zone.timeline.timelineAt(SourceFrame{kPacketFrames + kTailFrames});
+    CHECK_OK(boundary);
+
+    const std::vector<matp::AudioPacket> packets = buildWithTailHook(
+        zone, clock,
+        [&](ClientOutput& room) {
+            CHECK_OK(room.holdAt(*boundary));
+            zone.publish();
+        },
+        true);
+    CHECK_EQ(packets.size(), size_t(2));
+    CHECK_EQ(packets[1].header.outputFrameCount, kTailFrames);
+    CHECK_EQ(packets[1].header.timelineStartNs + packets[1].header.timelineDurationNs,
+             std::to_underlying(*boundary));
 }
 
 MULTIROOM_TEST(client_output_joins_a_zone_that_is_already_playing)
@@ -1479,5 +1638,44 @@ MULTIROOM_TEST(client_output_drops_a_waiting_replacement_at_a_boundary)
                               TimelineNs{10ULL * kPacketNs}));
     output->pump();
     CHECK_EQ(output->formatSwitches(), 1ULL);
+    CHECK(output->plan().mode == OutputMode::BitPerfect);
+}
+
+MULTIROOM_TEST(client_output_takes_two_boundaries_ahead_of_it_in_turn)
+{
+    // Two short sources in different formats inside one lookahead: the
+    // second boundary is announced before this stream has reached the first.
+    // It is queued behind the first rather than replacing it, so the stream
+    // stops at each one and takes the converter named for it there.
+    multiroomtest::ManualClock clock;
+    FakeZone zone;
+    zone.publishBlocks(20);
+
+    ClientOutputSettings settings;
+    settings.targetBufferNs = 200000000ULL; // ten packets
+
+    auto output = makeOutput(zone, clock, bitperfectPlan(zone.format, zone.format), settings);
+    CHECK_OK(output->joinAt(TimelineNs{0}));
+    output->attach(std::make_unique<FakeSink>(std::make_shared<SinkState>()));
+
+    CHECK_OK(output->holdAt(TimelineNs{5ULL * kPacketNs}));
+    CHECK_OK(output->switchTo(processorFor(correctedPlan(zone.format, zone.format)),
+                              TimelineNs{5ULL * kPacketNs}));
+    CHECK_OK(output->holdAt(TimelineNs{8ULL * kPacketNs}));
+    CHECK_OK(output->switchTo(processorFor(bitperfectPlan(zone.format, zone.format)),
+                              TimelineNs{8ULL * kPacketNs}));
+
+    output->pump();
+    CHECK_EQ(output->packets(), 5ULL);
+    CHECK_EQ(output->formatSwitches(), 0ULL);
+
+    output->pump();
+    CHECK_EQ(output->packets(), 8ULL);
+    CHECK_EQ(output->formatSwitches(), 1ULL);
+    CHECK(output->plan().mode == OutputMode::Resampled);
+
+    output->pump();
+    CHECK_EQ(output->packets(), 10ULL);
+    CHECK_EQ(output->formatSwitches(), 2ULL);
     CHECK(output->plan().mode == OutputMode::BitPerfect);
 }

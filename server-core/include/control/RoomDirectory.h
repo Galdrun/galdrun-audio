@@ -21,7 +21,12 @@
 // made, because the listener's connection ceiling bounds those already. A
 // record that has nothing left in it -- no connection, no zone and no
 // setting of its own -- is forgotten on the spot, so a room that connected
-// once and was never configured costs nothing after it goes.
+// once and was never configured costs nothing after it goes. A room that
+// went away saying it was going to sleep is kept, for its sleep and its wake
+// address, only within `maxRooms`: past it, another such record makes way
+// for it or it is forgotten, and a record the control API makes takes the
+// place of one of them rather than being refused. Which one makes way is
+// the first by client id.
 //
 // **Threading.** One mutex over the map, taken for a copy or an assignment
 // and never across a call out of this class.
@@ -199,6 +204,12 @@ public:
     [[nodiscard]] bool update(const ClientId& client,
                               const std::function<void(RoomRecord&)>& change);
 
+    // update() for every one of `clients` under one lock: all of them, or --
+    // when the records it would make take the directory past its ceiling --
+    // none, so a room connecting meanwhile cannot leave it half applied.
+    [[nodiscard]] bool updateAll(const std::vector<ClientId>& clients,
+                                 const std::function<void(RoomRecord&)>& change);
+
     // Drops the record for `client` whatever it holds -- zone, settings,
     // name. False when there was none.
     bool forget(const ClientId& client);
@@ -224,6 +235,11 @@ public:
 private:
     // Forgets a record with nothing left in it. Called under mutex_.
     void pruneLocked(std::map<ClientId, RoomRecord>::iterator entry);
+
+    // Room for `needed` more records within the ceiling, made by forgetting
+    // sleeping rooms' records other than `keep`'s; false, with nothing
+    // forgotten, when that is not enough. Called under mutex_.
+    bool makeRoomLocked(size_t needed, const std::vector<ClientId>& keep);
 
     const RoomAudioSettings defaults_;
     const size_t maxRooms_;

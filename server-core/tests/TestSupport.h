@@ -6,15 +6,18 @@
 // something that fits in seventy lines, and CTest already provides discovery
 // and reporting.
 
+#include <cstdint>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace multiroomtest {
 
 using TestFunction = void (*)();
 
 void registerTest(const char* name, TestFunction function);
-int runAll();
+// Every test, or with `filters` only those whose name contains one of them.
+int runAll(const std::vector<std::string>& filters = {});
 
 // Thrown by a failing assertion; caught by the runner so the remaining tests
 // still execute.
@@ -24,6 +27,14 @@ struct Failure
 };
 
 void failAt(const std::string& message, const char* file, int line);
+
+// Closes the listening socket this process has bound to `port` -- a TCP one
+// that accepts, or with `datagram` a UDP one -- under the listener that owns
+// it: the next select() that listener makes fails as a broken socket
+// library's would, which nothing else here can cause. False when no such
+// socket was found. The owner closes the number again on its way out, so
+// nothing may open a socket between this and its destruction.
+bool closeListenerOn(uint16_t port, bool datagram = false);
 
 template <typename T>
 std::string toText(const T& value)

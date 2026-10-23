@@ -16,7 +16,7 @@ namespace multiroom {
 //
 // This class measures and nothing else. The client never corrects its own
 // playback rate -- the result is reported to the server, which owns the
-// correction (see docs/MATP-AudioTransferProtocol.md section 50).
+// correction (see docs/protocol/MATP-AudioTransferProtocol.md section 50).
 //
 // Platform-independent and testable with no sound card present.
 class DriftEstimator

@@ -16,13 +16,10 @@
 
 namespace multiroom {
 
-// Sends `{"command":"setServer","params":{"server":<server>}}` to
-// `address:controlPort` and returns the client's response line. False with
-// `error` set when there is no answer, not when the client says no: a refusal
-// is a response like any other.
-bool sendClientSetServer(const std::string& address, uint16_t controlPort,
-                         const std::string& server, uint32_t timeoutMs, std::string& response,
-                         std::string& error);
+// Sends `{"command":<command>,"params":<params>}` to `address:controlPort`
+// and returns the client's response line. False with `error` set when there
+// is no answer, not when the client says no: a refusal is a response like any
+// other.
 bool sendClientControl(const std::string& address, uint16_t controlPort,
                        const std::string& command, const json::Value& params,
                        uint32_t timeoutMs, std::string& response, std::string& error);

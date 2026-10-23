@@ -212,11 +212,7 @@ Status<OutputError> ClientOutput::joinAt(TimelineNs position)
         return multiroom::fail(OutputError::TimelineFailed, describe(frame.error()));
 
     reader_ = store_.addReader(*frame);
-    outputClock_ = OutputClock(processor_->plan().outputFormat.sampleRate, position);
-    originNs_ = position;
-    packetIndex_ = 0;
-    framesSent_ = OutputFrame{0};
-    producedThroughNs_.store(std::to_underlying(position));
+    anchorAt(position);
     joined_ = true;
 
     {
@@ -337,6 +333,13 @@ Status<OutputError> ClientOutput::rejoinAt(TimelineNs position)
         }
     }
 
+    // A stranded room's thread is still running -- strandRoom() cannot join
+    // the thread it runs on -- and everything below is that thread's. It is
+    // stopped here as park() stops a streaming one, and run() starts it again.
+    thread_.request_stop();
+    if (thread_.joinable())
+        thread_.join();
+
     const Result<SourceFrame, TimelineError> frame = timeline_.frameAt(position);
     if (!frame)
         return multiroom::fail(OutputError::TimelineFailed, describe(frame.error()));
@@ -347,20 +350,12 @@ Status<OutputError> ClientOutput::rejoinAt(TimelineNs position)
     // position. The packetizer is deliberately not among them: its sequence
     // numbering runs on, because the client reads a gap in it on one
     // connection as a server that skipped ahead.
-    outputClock_ = OutputClock(processor_->plan().outputFormat.sampleRate, position);
-    originNs_ = position;
-    packetIndex_ = 0;
-    framesSent_ = OutputFrame{0};
-    producedThroughNs_.store(std::to_underlying(position));
+    anchorAt(position);
     processor_->reset();
 
-    block_.reset();
-    blockOffsetFrames_ = 0;
-    carry_.clear();
-    carryFrames_ = 0;
-    carryOffsetFrames_ = 0;
-    packetFrames_ = 0;
+    clearAssembly();
     atBoundary_ = false;
+    cutAtEnd_ = false;
 
     double trim = 1.0;
     bool logged = false;
@@ -424,8 +419,12 @@ Status<OutputError> ClientOutput::reformat(std::unique_ptr<IClientAudioProcessor
         }
     }
 
-    // The thread is stopped, as it is for rejoinAt(), so the converter and the
-    // packetizer are this caller's for the call.
+    // Stopped, as it is for rejoinAt(), so the converter and the packetizer
+    // are this caller's for the call.
+    thread_.request_stop();
+    if (thread_.joinable())
+        thread_.join();
+
     const AudioFormat previousOutput = processor_->plan().outputFormat;
     processor_ = std::move(processor);
     adoptPlan();
@@ -440,6 +439,7 @@ Status<OutputError> ClientOutput::reformat(std::unique_ptr<IClientAudioProcessor
         pendingProcessor_.reset();
         pendingInPlace_ = false;
         holdNs_ = 0;
+        laterHolds_.clear();
 
         // What is queued was built for the device that was reopened in
         // another format, so those bytes are noise to it (applyFormatSwitch).
@@ -494,7 +494,21 @@ Status<OutputError> ClientOutput::holdAt(TimelineNs position)
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+
+    // A boundary past the one this stream has still to reach -- two short
+    // sources in different formats inside one lookahead -- is queued behind
+    // it rather than replacing it: replacing it would let the stream run
+    // across the first one with the converter for the source before it.
+    if (holdNs_ != 0 && at > holdNs_)
+    {
+        while (!laterHolds_.empty() && laterHolds_.back().holdNs >= at)
+            laterHolds_.pop_back();
+        laterHolds_.push_back(LaterHold{at, nullptr, TimelineNs{}});
+        return {};
+    }
+
     holdNs_ = at;
+    laterHolds_.clear();
 
     // A converter replaceProcessor() is still waiting to install was planned
     // against the source this boundary ends; the boundary plans the room
@@ -518,6 +532,21 @@ Status<OutputError> ClientOutput::switchTo(std::unique_ptr<IClientAudioProcessor
         return multiroom::fail(OutputError::InvalidPlan, describePlan(plan));
 
     std::lock_guard<std::mutex> lock(mutex_);
+    if (!laterHolds_.empty())
+    {
+        // The converter for the latest boundary this stream is held at.
+        LaterHold& last = laterHolds_.back();
+        if (std::to_underlying(position) < last.holdNs)
+        {
+            return multiroom::fail(OutputError::TimelineFailed,
+                                std::to_string(std::to_underlying(position)) +
+                                    " ns is behind the boundary this stream is held at (" +
+                                    std::to_string(last.holdNs) + " ns)");
+        }
+        last.processor = std::move(processor);
+        last.position = position;
+        return {};
+    }
     if (holdNs_ == 0)
     {
         // A converter installed anywhere but on a boundary reads the wrong
@@ -631,23 +660,26 @@ void ClientOutput::applyFormatSwitch()
     // format. The packetizer's sequence is deliberately not among them: the
     // audio connection outlives a device that was reopened on it, and a gap in
     // the numbering on one connection is a server that skipped ahead.
-    outputClock_ = OutputClock(output.sampleRate, position);
-    originNs_ = position;
-    packetIndex_ = 0;
-    framesSent_ = OutputFrame{0};
-    producedThroughNs_.store(std::to_underlying(position));
+    anchorAt(position);
 
-    block_.reset();
-    blockOffsetFrames_ = 0;
-    carry_.clear();
-    carryFrames_ = 0;
-    carryOffsetFrames_ = 0;
-    packetFrames_ = 0;
+    clearAssembly();
     atBoundary_ = false;
+    cutAtEnd_ = false;
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
         holdNs_ = 0;
+
+        // The next boundary, in the same step: the stream reads on from this
+        // one, and the blocks past the next are already published.
+        if (!laterHolds_.empty())
+        {
+            LaterHold next = std::move(laterHolds_.front());
+            laterHolds_.pop_front();
+            holdNs_ = next.holdNs;
+            pendingProcessor_ = std::move(next.processor);
+            pendingPosition_ = next.position;
+        }
 
         if (output != previousOutput)
         {
@@ -689,6 +721,46 @@ void ClientOutput::applyFormatSwitch()
              inPlace ? ", in place" : "");
 }
 
+void ClientOutput::resumeAfterEnd()
+{
+    if (!cutAtEnd_)
+        return;
+
+    const uint64_t at = producedThroughNs_.load();
+    if (const uint64_t end = endNs_.load(); end != 0 && end <= at)
+        return; // still the end
+    {
+        // A boundary on the same position moves the stream itself, with the
+        // converter for what follows (applyFormatSwitch()).
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (holdNs_ != 0 && holdNs_ <= at)
+            return;
+    }
+
+    // The converter was finished from silence, and the cursor may have run
+    // past the end with the block it read for that; both start again from the
+    // first frame after the last one sent.
+    const Result<SourceFrame, TimelineError> frame = timeline_.frameAt(TimelineNs{at});
+    if (!frame)
+    {
+        failRoom(OutputError::TimelineFailed, describe(frame.error()));
+        return;
+    }
+    if (const auto sought = store_.seek(reader_, *frame); !sought)
+    {
+        strandRoom(describe(sought.error()));
+        return;
+    }
+    processor_->reset();
+
+    originNs_ = TimelineNs{at};
+    packetIndex_ = 0;
+    clearAssembly();
+    cutAtEnd_ = false;
+    MULTIROOM_DEBUG("client output {}: stream carries on past the zone's end at timeline {} ns",
+              client_.str(), at);
+}
+
 void ClientOutput::preRoll(SourceFrame at)
 {
     const OutputPlan& plan = processor_->plan();
@@ -704,12 +776,7 @@ void ClientOutput::preRoll(SourceFrame at)
 
     const auto cold = [&](const char* why) {
         processor_->reset();
-        block_.reset();
-        blockOffsetFrames_ = 0;
-        carry_.clear();
-        carryFrames_ = 0;
-        carryOffsetFrames_ = 0;
-        packetFrames_ = 0;
+        clearAssembly();
         if (const auto back = store_.seek(reader_, at); !back)
         {
             strandRoom(describe(back.error()));
@@ -767,6 +834,7 @@ void ClientOutput::pump()
     // before the trim that is expressed through it, and before anything is
     // produced in a format that has just stopped being this room's.
     applyFormatSwitch();
+    resumeAfterEnd();
 
     // Before anything is produced, so that a correction lands on the packet
     // boundary it was computed against rather than in the middle of a
@@ -858,6 +926,7 @@ bool ClientOutput::produce()
     // is not built at all until switchTo() has said what it is made of.
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        packetHoldNs_ = holdNs_;
         if (holdNs_ != 0)
         {
             if (startNs >= holdNs_)
@@ -866,7 +935,19 @@ bool ClientOutput::produce()
                 endNs = holdNs_;
         }
     }
+
+    // The zone's end, cut the same way: the last source is played to its last
+    // frame, and nothing is built past it until the zone has more.
+    const uint64_t end = endNs_.load();
+    packetEndNs_ = end;
+    if (end != 0)
+    {
+        if (startNs >= end)
+            return false;
+        endNs = std::min(endNs, end);
+    }
     const uint64_t durationNs = endNs - startNs;
+    const bool cutAtEnd = endNs == end && durationNs < packetDurationNs_;
 
     // Phase 39: as far as the zone lets this room get ahead of its line, and
     // waited at like a full buffer rather than counted as starved.
@@ -893,8 +974,9 @@ bool ClientOutput::produce()
         // stops here rather than sending a packet with nothing in it, and is
         // counted as built up to the boundary, because that is the condition
         // applyFormatSwitch() waits for -- a stream that is contiguous to
-        // within a position no frame occupies.
+        // within a position no frame occupies. The zone's end is the same.
         producedThroughNs_.store(endNs);
+        cutAtEnd_ = cutAtEnd_ || cutAtEnd;
         return false;
     }
     if (wanted64 == 0 || wanted64 > std::numeric_limits<uint32_t>::max())
@@ -928,6 +1010,7 @@ bool ClientOutput::produce()
     framesSent_ = OutputFrame{std::to_underlying(framesSent_) + wanted};
     ++packetIndex_;
     producedThroughNs_.store(endNs);
+    cutAtEnd_ = cutAtEnd;
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -986,7 +1069,10 @@ bool ClientOutput::fill(uint32_t wanted)
         uint32_t carried = carryFrames_ - carryOffsetFrames_;
         if (carried == 0 && block_ == nullptr && !nextBlock())
         {
-            if (!atBoundary_)
+            // Silence finishes a packet only on a boundary or an end it was
+            // sized for. Otherwise it is kept as far as it got, and the next
+            // pass cuts it there.
+            if (!silenceMayFinishPacket())
                 return false;
             appendSilenceToCarry();
             carried = carryFrames_ - carryOffsetFrames_;
@@ -1104,8 +1190,11 @@ bool ClientOutput::extendCarry(uint32_t shown)
 
     if (!nextBlock())
     {
-        if (!atBoundary_)
-            return false; // the decode has not got here yet, or the room has failed
+        // The decode has not got here yet, the room has failed, or the packet
+        // was sized before the hold or the end it has met: the carry is kept,
+        // and the next pass cuts the packet there.
+        if (!silenceMayFinishPacket())
+            return false;
         appendSilenceToCarry();
         return true;
     }
@@ -1114,6 +1203,25 @@ bool ClientOutput::extendCarry(uint32_t shown)
     block_.reset();
     blockOffsetFrames_ = 0;
     return true;
+}
+
+void ClientOutput::anchorAt(TimelineNs position)
+{
+    outputClock_ = OutputClock(processor_->plan().outputFormat.sampleRate, position);
+    originNs_ = position;
+    packetIndex_ = 0;
+    framesSent_ = OutputFrame{0};
+    producedThroughNs_.store(std::to_underlying(position));
+}
+
+void ClientOutput::clearAssembly()
+{
+    block_.reset();
+    blockOffsetFrames_ = 0;
+    carry_.clear();
+    carryFrames_ = 0;
+    carryOffsetFrames_ = 0;
+    packetFrames_ = 0;
 }
 
 void ClientOutput::appendSilenceToCarry()
@@ -1125,6 +1233,13 @@ void ClientOutput::appendSilenceToCarry()
     const uint32_t frames = std::max<uint32_t>(maxCarryFrames_ / 2, 1);
     carry_.resize(carry_.size() + static_cast<size_t>(frames) * sourceBytesPerFrame_);
     carryFrames_ += frames;
+}
+
+bool ClientOutput::silenceMayFinishPacket() const
+{
+    const bool onBoundary = atBoundary_ && boundaryNs_ == packetHoldNs_;
+    const bool onEnd = atEnd_ && packetEndNs_ != 0;
+    return onBoundary || onEnd;
 }
 
 void ClientOutput::appendToCarry(uint32_t frames)
@@ -1144,11 +1259,22 @@ void ClientOutput::appendToCarry(uint32_t frames)
 
 bool ClientOutput::nextBlock()
 {
+    atEnd_ = false;
     const Result<NativePcmStore::Read, PcmStoreError> read = store_.read(reader_);
     if (!read)
     {
         if (read.error().code == PcmStoreError::AtFrontier)
-            return false; // the decoder has not got here yet; not a fault
+        {
+            // The decoder has not got here yet, which is not a fault -- or
+            // never will, because the zone ended here (setEnd()).
+            if (const uint64_t end = endNs_.load(); end != 0)
+            {
+                const Result<SourceFrame, TimelineError> last = timeline_.frameAt(TimelineNs{end});
+                atEnd_ = last && std::to_underlying(store_.nextFrame()) >=
+                                     std::to_underlying(*last);
+            }
+            return false;
+        }
 
         // Evicted: the audio this cursor named has been dropped, which is a
         // room that stopped draining for long enough that the decode ran past
@@ -1166,7 +1292,7 @@ bool ClientOutput::nextBlock()
     // converter still needs to finish the old source is silence, because the
     // old source has ended. This is also what covers a packet whose hold
     // arrived after it had started: the check in produce() and this read are
-    // not one step.
+    // not one step, and fill() has that packet sized again on the hold.
     uint64_t holdNs = 0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -1184,6 +1310,7 @@ bool ClientOutput::nextBlock()
                 return false;
             }
             atBoundary_ = true;
+            boundaryNs_ = holdNs;
             return false;
         }
     }

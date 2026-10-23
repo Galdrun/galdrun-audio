@@ -6,7 +6,7 @@
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File scripts\start-local.ps1
 #
-# Build the three first: build-server-core.ps1, build-server.ps1, build-client.ps1 -Target windows-x64.
+# Build the three first: scripts\build-server-core.ps1, scripts\build-server.ps1, scripts\build-client.ps1 -Target windows-x64.
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
