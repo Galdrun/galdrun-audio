@@ -214,12 +214,15 @@ const char* rejoinTriggerName(RejoinTrigger trigger);
 // What a playing room's plan needed when a setting it is planned from changed
 //: nothing, a new converter on the stream
 // it already has, or a re-negotiation -- the device would have to change, or
-// the stream is not running to take a converter.
+// the stream is not running to take a converter. Pending is a room left alone
+// in a zone that plays, planned again at its next track boundary
+// (Zone::replanAlone).
 enum class Replan
 {
     Unchanged,
     InPlace,
-    Renegotiate
+    Renegotiate,
+    Pending
 };
 
 // A staged source this zone could not play (phase 22): it could not be
@@ -750,8 +753,36 @@ public:
     // (ClientOutput::replaceProcessor). A room held at a format boundary is
     // Unchanged: the device it is reopening is planned from the new settings
     // when it answers. Renegotiate is the caller's to do. A room replanned in
-    // place while it plays the line alone has the line moved onto it.
+    // place while it plays the line alone has the line moved onto it. A room
+    // whose replanAlone() was still waiting is grouped again instead: from the
+    // boundary it was to be switched at, if it has not reached it yet.
     [[nodiscard]] Replan replanInPlace(const ClientId& client);
+
+    // This room was left alone in its zone: it is to have the plan it would
+    // have had if nobody had joined it, planned from its whole capability list
+    // rather than the one format its stream is in. Never in the middle of a
+    // track while the line plays, because a converter changed there is heard:
+    //
+    //   * The line is not playing (stopped, paused, starting): now. InPlace
+    //     where its device can stay as it is, Renegotiate where only another
+    //     format makes it bitperfect again -- the join had changed it.
+    //   * The line plays: Pending, and the switch is made at the next track
+    //     boundary still ahead of what the room has built -- the source the
+    //     decode has opened already, if it is in the same format, or the next
+    //     one opened. There the room gets the new converter (switchTo), or is
+    //     held while its device is reopened, as at a change of format
+    //     (section 24). pendingAlone() is what a line that stops playing first
+    //     asks this again for.
+    //
+    // A room held at a format boundary is Pending until a later one.
+    [[nodiscard]] Replan replanAlone(const ClientId& client);
+
+    // The rooms whose replanAlone() is waiting for a boundary.
+    [[nodiscard]] std::vector<ClientId> pendingAlone() const;
+
+    // For status: this room waits for a boundary to be planned alone, or the
+    // line has not reached the boundary it is switched at.
+    [[nodiscard]] bool replanPending(const ClientId& client) const;
 
     // The control API's audio.configure, for every room from now on.
     void setTiming(const ZoneTiming& timing);
@@ -894,6 +925,11 @@ private:
         // -- the ready timeout runs from there.
         TimelineNs transitionAt{};
         uint64_t renegotiatedAtNs = 0;
+
+        // replanAlone(): waiting for a track boundary, and the boundary the
+        // switch was made at once there was one (zero: none).
+        bool alonePending = false;
+        TimelineNs aloneAt{};
 
         // Phase 26: the server instant the seeked audio becomes audible in
         // this room, and zero when no flush is in progress. Until then the
@@ -1062,6 +1098,27 @@ private:
     void holdAtBoundaryAhead(const ClientId& client, TimelineNs position,
                              const AudioFormat& format);
 
+    // --- replanAlone() ------------------------------------------------------
+
+    // What being alone asks of this room for a source in `format`: Unchanged;
+    // InPlace, with the plan for the output format it has in `inPlace`; or
+    // Renegotiate, where only another output format makes it bitperfect.
+    [[nodiscard]] Replan planAlone(const ClientId& client, const AudioFormat& format,
+                                   const OutputPlan& current,
+                                   const ClientCapabilities& capabilities,
+                                   std::optional<OutputPlan>& inPlace) const;
+
+    // Holds the room on the boundary `at` -- never past it, which would cut
+    // the track it is playing -- and gives it `plan` from there, or keeps it
+    // held while its device is reopened where there is no plan. False, with
+    // nothing changed, when the room is held already or has built past `at`.
+    // Called with rejoinMutex_ held.
+    bool switchAt(const ClientId& client, TimelineNs at, const std::optional<OutputPlan>& plan);
+
+    // The pending rooms, at the source openNext() has just opened at `at`. One
+    // in a new format was planned alone by beginTransition() already.
+    void switchAloneRooms(TimelineNs at, const AudioFormat& format, bool transition);
+
     // The rooms held at a boundary the line has now reached, asked to
     // re-negotiate (section 24 steps 3 and 4) -- and the line itself stopped
     // there if no room is left playing through it. Called by schedule().
@@ -1211,8 +1268,9 @@ private:
 
     // One move at a time, whichever thread noticed. A rejoin stops a room's
     // thread, moves its cursor and starts it again, and two of those racing on
-    // one room would be two answers to where that room is. It is never taken
-    // while mutex_ is held, and mutex_ is taken inside it.
+    // one room would be two answers to where that room is. The same for a
+    // room being planned alone, at a boundary or grouped again. It is never
+    // taken while mutex_ is held, and mutex_ is taken inside it.
     std::mutex rejoinMutex_;
 
     // The decoder's, and one pass of pump() at a time against a seek that

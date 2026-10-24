@@ -264,7 +264,7 @@ public sealed partial class CoreLink : BackgroundService
     }
 
     private EffectiveRoom Effective(CoreCommand command) =>
-        Desired.With(command, Model.Current).Effective(command switch
+        Desired.With(command).Effective(command switch
         {
             ClientSetVolume c => c.Client,
             _ => throw new ArgumentException(command.Name, nameof(command)),
@@ -275,16 +275,15 @@ public sealed partial class CoreLink : BackgroundService
     private async Task<Answer> SendRecordedAsync(CoreCommand intent, CoreCommand wire,
         CancellationToken cancellationToken)
     {
-        var model = Model.Current;
         var answer = await SendRawAsync(wire, cancellationToken).ConfigureAwait(false);
         if (answer.Reply is not null || answer.Failure.Code is CoreError.ConnectionLost or CoreError.NotConnected)
-            Desired.Record(intent, model);
+            Desired.Record(intent);
         return answer;
     }
 
     private async Task<Answer> SendMembershipAsync(CoreCommand command, CancellationToken cancellationToken)
     {
-        var after = Desired.With(command, Model.Current);
+        var after = Desired.With(command);
         var clients = Desired.Clients.Union(after.Clients, StringComparer.Ordinal).ToList();
         var before = clients.ToDictionary(c => c, Desired.Effective, StringComparer.Ordinal);
         // Grouped before the membership names another room, so a room is
@@ -317,22 +316,6 @@ public sealed partial class CoreLink : BackgroundService
                 await SendRawAsync(new ClientSetVolume(client, volume, muted), cancellationToken).ConfigureAwait(false);
         }
         return answer;
-    }
-
-    // A zone stopped, paused or played out: a room left alone in it while it
-    // played is no longer grouped (phase 16).
-    private async Task ReleasePendingStopAsync(CoreEvent coreEvent, CancellationToken cancellationToken)
-    {
-        var zone = coreEvent switch
-        {
-            ZoneTransport { State: TransportState.Stopped or TransportState.Paused } e => e.Zone,
-            ZoneEnded e => e.Zone,
-            _ => null,
-        };
-        if (zone is null)
-            return;
-        foreach (var client in Desired.ReleasePendingStop(zone))
-            await SendRawAsync(new ClientSetGrouped(client, false), cancellationToken).ConfigureAwait(false);
     }
 
     // A room's grouping goes to the core when it changed, or when the core
@@ -702,7 +685,6 @@ public sealed partial class CoreLink : BackgroundService
                     LogEventsDropped(_log, lost);
                     await DeliverAsync(new EventsLost((ulong)lost, Local: true), cancellationToken).ConfigureAwait(false);
                 }
-                await ReleasePendingStopAsync(coreEvent, cancellationToken).ConfigureAwait(false);
                 await DeliverAsync(coreEvent, cancellationToken).ConfigureAwait(false);
             }
         }

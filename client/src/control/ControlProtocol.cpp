@@ -49,6 +49,8 @@ const CommandEntry kCommands[] = {
     {ControlCommand::GetDac, "getDac"},
     {ControlCommand::SetDac, "setDac"},
     {ControlCommand::ResetDac, "resetDac"},
+    {ControlCommand::GetAudioProfile, "getAudioProfile"},
+    {ControlCommand::SetAudioProfile, "setAudioProfile"},
     {ControlCommand::GetLeds, "getLeds"},
     {ControlCommand::SetLeds, "setLeds"},
     {ControlCommand::GetPower, "getPower"},

@@ -56,7 +56,9 @@ Keep ownership straight when changing settings:
 
 - `.NET DesiredState`: requested memberships, audio control, latency, EQ, room
   levels and zone levels. Effective volume incorporates zone and maximum level
-  in decibels; preserve the room's own slider value separately.
+  in decibels; preserve the room's own slider value separately. A room is
+  grouped exactly while its zone's wanted list names another room; the core
+  decides when a room left alone changes plan (next track while playing).
 - Client config: identity/name, device, buffer, Volume Control, drift actuator,
   inputs and hardware settings. Commands go through the core; returned client
   reports update the actual view. Remembered names are not replayed as intent.

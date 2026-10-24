@@ -27,9 +27,9 @@ public sealed record DesiredZoneLevel(double Volume = 1.0, bool Muted = false);
 // What is sent for a room: its own settings with its zone's applied. Volume
 // is the room's lowered by the zone's and its maximum (in decibels), Muted the room's or the zone's. Grouped is
 // whether it shares its zone, which has the core correct it unless it is
-// BitPerfect: while its zone's wanted list names another room, and while it
-// was left alone in a zone that plays, until that zone stops (phase 16). Null
-// is not asked.
+// BitPerfect: while its zone's wanted list names another room. A room left
+// alone in a zone that plays is told so at once; the core keeps its plan to
+// the end of the track and plans it alone from the next. Null is not asked.
 public sealed record EffectiveRoom(
     double? Volume,
     bool? Muted,
@@ -60,10 +60,6 @@ public sealed class DesiredState
     private readonly Dictionary<string, IReadOnlyList<string>?> _zones = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DesiredRoom> _rooms = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DesiredZoneLevel> _levels = new(StringComparer.Ordinal);
-
-    // Rooms left alone in a zone that was playing: their correction stays on
-    // until that zone stops, pauses or plays out. Not kept across a restart.
-    private readonly HashSet<string> _pendingStop = new(StringComparer.Ordinal);
 
     // Every zone that must exist, in creation order, with the membership
     // asked for (null: none asked).
@@ -130,9 +126,7 @@ public sealed class DesiredState
         }
     }
 
-    // `model` is the core as it stands when the command was sent: a room left
-    // alone in a zone that plays keeps its correction until the zone stops.
-    public void Record(CoreCommand command, CoreSnapshot? model = null)
+    public void Record(CoreCommand command)
     {
         if (command is not (ZoneCreate or ZoneDelete or ZoneSetClients or ClientSetAudioControl
             or ClientSetVolume or ClientSetOutputLatency or ClientSetEqualizer))
@@ -150,22 +144,14 @@ public sealed class DesiredState
                     _zones.Remove(c.Zone);
                     _zoneOrder.Remove(c.Zone);
                     _levels.Remove(c.Zone);
-                    _pendingStop.RemoveWhere(client => ZoneOfLocked(client) is null);
                     break;
                 case ZoneSetClients c:
-                    var shared = _zoneOrder.Where(z => _zones[z] is { Count: > 1 }).ToList();
                     AddZone(c.Zone);
                     _zones[c.Zone] = [.. c.Clients];
                     // A room is in one zone at most: asked in here, it is out
                     // of wherever it was asked before.
                     foreach (var other in _zoneOrder.Where(z => z != c.Zone && _zones[z] is not null).ToList())
                         _zones[other] = [.. _zones[other]!.Where(client => !c.Clients.Contains(client))];
-                    _pendingStop.RemoveWhere(client => ZoneOfLocked(client) is not { } zone || _zones[zone]!.Count > 1);
-                    foreach (var zone in shared.Where(z => _zones.GetValueOrDefault(z) is { Count: 1 }))
-                    {
-                        if (model?.Zones.GetValueOrDefault(zone)?.Transport is TransportState.Playing or TransportState.Starting)
-                            _pendingStop.Add(_zones[zone]![0]);
-                    }
                     break;
                 case ClientSetAudioControl c:
                     SetRoom(c.Client, r => r with { AudioControl = c.AudioControl });
@@ -218,7 +204,6 @@ public sealed class DesiredState
             _rooms.Remove(client);
             foreach (var zone in _zoneOrder.Where(z => _zones[z]?.Contains(client) == true).ToList())
                 _zones[zone] = [.. _zones[zone]!.Where(c => c != client)];
-            _pendingStop.Remove(client);
         }
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -240,18 +225,6 @@ public sealed class DesiredState
         lock (_lock)
             SetRoom(client, r => r with { MaxVolumeDb = maxVolumeDb < 0.0 ? maxVolumeDb : null });
         Changed?.Invoke(this, EventArgs.Empty);
-    }
-
-    // The zone stopped, paused or played out: the correction its lone room
-    // kept may go. Answers the rooms released.
-    public IReadOnlyList<string> ReleasePendingStop(string zone)
-    {
-        lock (_lock)
-        {
-            var released = _pendingStop.Where(client => ZoneOfLocked(client) == zone).ToList();
-            _pendingStop.ExceptWith(released);
-            return released;
-        }
     }
 
     // The zone whose wanted list names the room, or null.
@@ -276,7 +249,7 @@ public sealed class DesiredState
 
     // A copy with `command` recorded, to compare the effective settings before
     // and after it; this table is left as it is.
-    public DesiredState With(CoreCommand command, CoreSnapshot model)
+    public DesiredState With(CoreCommand command)
     {
         var copy = new DesiredState();
         lock (_lock)
@@ -288,9 +261,8 @@ public sealed class DesiredState
                 copy._rooms[client] = room;
             foreach (var (zone, level) in _levels)
                 copy._levels[zone] = level;
-            copy._pendingStop.UnionWith(_pendingStop);
         }
-        copy.Record(command, model);
+        copy.Record(command);
         return copy;
     }
 
@@ -385,7 +357,7 @@ public sealed class DesiredState
             volume = Lower(volume ?? 1.0, maxDb);
         var muted = level is null ? room.Muted : (room.Muted ?? false) || level.Muted;
 
-        var grouped = (zone is not null && _zones[zone]!.Count > 1) || _pendingStop.Contains(client);
+        var grouped = zone is not null && _zones[zone]!.Count > 1;
         return new EffectiveRoom(volume, muted, grouped);
     }
 

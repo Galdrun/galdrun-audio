@@ -32,6 +32,7 @@ const Field fields[] = {
     {"ETH_DNS", "ethernet", "dns", ""},
     {"WIFI_SSID", "wifi", "ssid", ""},
     {"WIFI_BSSID", "wifi", "bssid", ""},
+    {"WIFI_RADIO", "wifi", "radio", ""},
     {"WIFI_PASSWORD", "wifi", "password", ""},
     {"WIFI_COUNTRY", "wifi", "country", "AT"},
     {"WIFI_IP_MODE", "wifi", "ipMode", "dhcp"},
@@ -181,6 +182,9 @@ bool validate(const json::Value& settings, std::string& error)
     const auto country = value(wifi, "country");
     if (ssid.size() > 32)
         error = "Wi-Fi network name must be at most 32 bytes";
+    else if (!value(wifi, "radio").empty() &&
+             (!macAddress(value(wifi, "radio")) || value(wifi, "radio").find_first_of("ABCDEF") != std::string::npos))
+        error = "Wi-Fi radio must be a lowercase MAC address, or empty for automatic";
     else if (!value(wifi, "bssid").empty() && !macAddress(value(wifi, "bssid")))
         error = "access point must be a MAC address, or empty for automatic";
     else if (!password.empty() && (password.size() < 8 || password.size() > 63))
@@ -258,6 +262,13 @@ json::Value publicSettings(json::Value settings)
         if (entry.first != "password")
             wifi[entry.first] = entry.second;
     settings["wifi"] = wifi;
+    settings["wifi"]["radios"] = json::Value::makeArray();
+    std::string selectedInterface, apSupported;
+    fileutil::readTextFile("/run/raumfeld-network/interface", selectedInterface, error);
+    selectedInterface = selectedInterface.substr(0, selectedInterface.find_first_of("\r\n"));
+    settings["wifi"]["activeInterface"] = json::Value(selectedInterface);
+    if (fileutil::readTextFile("/run/raumfeld-network/ap-supported", apSupported, error))
+        settings["wifi"]["apSupported"] = json::Value(apSupported == "1\n");
     ifaddrs* interfaces = nullptr;
     if (getifaddrs(&interfaces) == 0)
     {
@@ -267,6 +278,15 @@ json::Value publicSettings(json::Value settings)
             const bool wireless = name != MULTIROOM_BRAND_SLUG "scan0" && fileutil::exists("/sys/class/net/" + name + "/phy80211");
             if (wireless && current->ifa_addr != nullptr && current->ifa_addr->sa_family == AF_PACKET)
             {
+                std::string mac;
+                if (fileutil::readTextFile("/sys/class/net/" + name + "/address", mac, error))
+                {
+                    auto radio = json::Value::makeObject();
+                    radio["id"] = json::Value(mac.substr(0, mac.find_first_of("\r\n")));
+                    radio["interface"] = json::Value(name);
+                    settings["wifi"]["radios"].pushBack(radio);
+                }
+                if (!selectedInterface.empty() && name != selectedInterface) continue;
                 const int fd = socket(AF_INET, SOCK_DGRAM, 0);
                 iwreq request{};
                 std::strncpy(request.ifr_name, name.c_str(), IFNAMSIZ - 1);

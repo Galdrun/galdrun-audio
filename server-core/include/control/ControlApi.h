@@ -201,8 +201,14 @@ private:
 
     // Its grouping changed: a room playing in a zone takes the plan that
     // follows on the stream it has, without leaving the line, wherever its
-    // device can stay as it is (Zone::replanInPlace); otherwise replan().
+    // device can stay as it is (Zone::replanInPlace); otherwise replan(). A
+    // room left alone is planned alone (Zone::replanAlone), at its next track
+    // while its zone plays.
     void regroup(const ClientId& client);
+
+    // The zone's line stopped playing: its rooms waiting to be planned alone
+    // are planned now.
+    void replanAloneRooms(Zone& zone);
 
     // Takes a connected room out of whatever zone it is in and asks it to
     // choose its format again, which puts it in the zone the directory names

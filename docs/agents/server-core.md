@@ -62,6 +62,12 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
 - The zone timeline continues across tracks and membership changes. A format
   boundary is handled per room, with renegotiation only where its device
   needs reopening. Same-format gapless playback must keep flowing.
+- Grouping a room (`client.setGrouped true`) replans it on the stream it has
+  (`Zone::replanInPlace`). A room left alone gets its solo plan
+  (`Zone::replanAlone`): at once while the line is not playing, otherwise at
+  its next track boundary, through the same converter switch or device reopen
+  as a format change. Status reports the wait as `output.replanPending`;
+  `zone.pause`/`zone.stop` apply it.
 - Rejoin is one coordinated move of cursor, packet grid, output clock and
   converter followed by scheduling. Keep packet sequence accounting correct
   when dropping queued packets. Losing an audio socket differs from losing

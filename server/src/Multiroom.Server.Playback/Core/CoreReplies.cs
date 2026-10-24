@@ -363,6 +363,8 @@ public sealed record CoreDriftCorrection(bool Requested, bool? Active = null, st
 public sealed record CoreHardwareClockState(int AppliedPpm, bool Saturated, string? Error = null);
 
 // Present for a room that is a member of a zone: its plan and its stream.
+// ReplanPending: left alone while its zone plays, it keeps this plan until its
+// next track.
 public sealed record CoreOutput(
     string State,
     AudioFormatInfo SourceFormat,
@@ -377,7 +379,8 @@ public sealed record CoreOutput(
     ulong ConnectionDrops,
     string? Resampler = null,
     string? LastError = null,
-    CoreOutputEqualizer? Equalizer = null);
+    CoreOutputEqualizer? Equalizer = null,
+    bool? ReplanPending = null);
 
 // Active: on and changing samples, which a bitperfect stream never is.
 // ClippedSamples: samples past full scale after it, since the room joined.

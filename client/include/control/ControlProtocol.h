@@ -65,6 +65,8 @@ enum class ControlCommand
     GetDac,
     SetDac,
     ResetDac,
+    GetAudioProfile,
+    SetAudioProfile,
     GetLeds,
     SetLeds,
     GetPower,

@@ -9,6 +9,7 @@
 #include "input/InputController.h"
 #include "util/Logger.h"
 #include "util/Time.h"
+#include "util/FileUtil.h"
 #if defined(__linux__) && !defined(ESP_PLATFORM)
 #include "net/NetworkSettings.h"
 #include "config/BoardConfig.h"
@@ -548,6 +549,65 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
             runtime_.config->ledsOff = off;
         }
         response["off"] = json::Value(runtime_.config->ledsOff);
+        return response;
+    }
+    case ControlCommand::GetAudioProfile:
+    case ControlCommand::SetAudioProfile:
+    {
+        auto response = makeControlSuccess(request);
+        response["supported"] = json::Value(false);
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+        const char* helper = "/usr/sbin/galdrun-audio-profile";
+        if (!board_config::enabled(board_config::current(), "audioProfiles") || ::access(helper, X_OK) != 0)
+            return request.command == ControlCommand::GetAudioProfile ? response :
+                makeControlError(request, control_error::kUnavailable, "Audio profiles are unavailable");
+        std::string text, error;
+        json::Value profiles;
+        if (!fileutil::readTextFile("/usr/share/galdrun-audio-profiles.json", text, error) ||
+            !json::parse(text, profiles, error) || !profiles.isArray())
+            return makeControlError(request, control_error::kFailed, "Cannot read audio profiles");
+        if (request.command == ControlCommand::SetAudioProfile)
+        {
+            std::string profile;
+            if (request.params.members().size() != 1 || !json::getString(request.params, "profile", profile))
+                return makeControlError(request, control_error::kInvalidArgument, "Expected one audio profile");
+            bool known = profile == "rollback";
+            for (size_t i = 0; i < profiles.size(); ++i)
+            {
+                std::string id;
+                json::getString(profiles.at(i), "id", id);
+                known |= profile == id;
+            }
+            if (!known)
+                return makeControlError(request, control_error::kInvalidArgument, "Unknown audio profile");
+            char* args[] = {const_cast<char*>(helper), const_cast<char*>(profile.c_str()), nullptr};
+            pid_t pid = 0;
+            if (::posix_spawn(&pid, helper, nullptr, nullptr, args, environ) != 0)
+                return makeControlError(request, control_error::kFailed, "Cannot start audio profile helper");
+            int status = 0;
+            pid_t waited;
+            do { waited = ::waitpid(pid, &status, 0); } while (waited < 0 && errno == EINTR);
+            if (waited != pid || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+                return makeControlError(request, control_error::kFailed,
+                    "Profile rejected; check board wiring, conflicting boot overlays and /run/log/galdrun-client.log");
+        }
+        text.clear();
+        if (!fileutil::readTextFile("/boot/galdrun-audio.txt", text, error))
+            return makeControlError(request, control_error::kFailed, error);
+        std::string selected = "usb";
+        for (size_t i = 0; i < profiles.size(); ++i)
+        {
+            std::string id;
+            json::getString(profiles.at(i), "id", id);
+            if (text.find("# Galdrun audio profile: " + id + "\n") != std::string::npos) selected = id;
+        }
+        std::string bootProfile;
+        const bool captured = fileutil::readTextFile("/run/galdrun-audio-boot.txt", bootProfile, error);
+        response["supported"] = json::Value(true);
+        response["profiles"] = profiles;
+        response["profile"] = json::Value(selected);
+        response["rebootRequired"] = json::Value(!captured || bootProfile != text);
+#endif
         return response;
     }
     case ControlCommand::GetDac:

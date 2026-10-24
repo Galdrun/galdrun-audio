@@ -4953,3 +4953,455 @@ MULTIROOM_TEST(a_bitperfect_room_with_a_trimmable_clock_is_trimmed_once_it_is_gr
     CHECK_EQ(rig.starts->of(RoomCommandKind::Renegotiate, "kitchen").size(), size_t{0});
     CHECK_EQ(zone->rejoinCount(), 0ULL);
 }
+
+// --- a room left alone in its zone (roadmap/zone-leave-restores-solo-plan.md) ---
+
+namespace {
+
+// Settings for a room whose grouping a test changes while it plays.
+ZoneSettings groupable(ZoneSettings settings, std::shared_ptr<std::atomic<bool>> grouped,
+                       AudioControl audioControl = AudioControl::Auto)
+{
+    settings.roomPreference = [grouped, audioControl](const ClientId&) {
+        return RoomAudioSettings{audioControl, grouped->load()};
+    };
+    return settings;
+}
+
+// One room, alone and bitperfect, then grouped in place: resampled and
+// corrected on the stream it has, with the line started under it.
+std::shared_ptr<ClientOutput> groupOnTheLine(Zone& zone, const ClientId& room,
+                                             std::atomic<bool>& grouped,
+                                             std::shared_ptr<SinkState>* sink = nullptr)
+{
+    CHECK_OK(zone.admit(sessionOf(1), room, offering({formatOf()}), formatOf()));
+    const std::shared_ptr<SinkState> connected = connect(zone, sessionOf(1), room);
+    if (sink != nullptr)
+        *sink = connected;
+    const std::shared_ptr<ClientOutput> output = zone.member(room);
+    CHECK(output->plan().mode == OutputMode::BitPerfect);
+
+    grouped.store(true);
+    CHECK(zone.replanInPlace(room) == Replan::InPlace);
+    CHECK(waitFor([&] { return output->formatSwitches() == 1; }));
+    CHECK(output->plan().reason == PlanReason::Grouped);
+
+    reportBuffer(zone, room, 0, 1500 * kMs);
+    zone.pump();
+    CHECK(zone.started());
+    CHECK(zone.transport() == TransportState::Playing);
+    acknowledge(zone, room, std::to_underlying(zone.startTimelineNs()));
+    return output;
+}
+
+// What a room was sent from `boundaryNs` on is `frames` of the ramp from its
+// first frame, byte for byte: nothing skipped, nothing converted.
+void rampFrom(SinkState& sink, uint64_t boundaryNs, uint64_t frames)
+{
+    std::string payloads;
+    const std::vector<matp::AudioPacketHeader> headers = decodeHeaders(sink, payloads);
+    const uint32_t bytesPerFrame = formatOf().bytesPerFrame();
+    size_t offset = 0;
+    for (const matp::AudioPacketHeader& header : headers)
+    {
+        if (header.timelineStartNs >= boundaryNs)
+            break;
+        offset += static_cast<size_t>(header.outputFrameCount) * bytesPerFrame;
+    }
+    std::vector<std::byte> expected(static_cast<size_t>(frames) * bytesPerFrame);
+    writeRamp(expected, 0, static_cast<uint32_t>(frames), kChannels);
+    CHECK(payloads.size() >= offset + expected.size());
+    if (payloads.size() >= offset + expected.size())
+        CHECK_EQ(std::memcmp(payloads.data() + offset, expected.data(), expected.size()), 0);
+}
+
+// A grouped room on a short line, played on until the decode has opened the
+// second of two sources and the room has not built into it yet.
+struct NearBoundary
+{
+    std::unique_ptr<Zone> zone;
+    std::shared_ptr<SinkState> sink;
+    std::shared_ptr<ClientOutput> output;
+    uint64_t boundaryNs = 0;
+};
+
+NearBoundary groupedNearBoundary(ZoneRig& rig, const ClientId& room,
+                                 std::shared_ptr<std::atomic<bool>> grouped)
+{
+    NearBoundary near;
+    near.zone = rig.zone(groupable(shortLine(rig), grouped));
+    CHECK_OK(near.zone->stage(segmentOf("one", "ramp")));
+    CHECK_OK(near.zone->stage(segmentOf("two", "ramp")));
+    CHECK_OK(near.zone->play());
+    near.sink = startOneRoom(rig, *near.zone, room, formatOf(), 200 * kMs);
+    near.output = near.zone->member(room);
+
+    grouped->store(true);
+    CHECK(near.zone->replanInPlace(room) == Replan::InPlace);
+    CHECK(waitFor([&] { return near.output->formatSwitches() == 1; }));
+
+    playOn(rig, *near.zone, room, *near.sink, 60, 100, 200 * kMs,
+           [&](uint64_t) { return near.zone->sources().size() < 2; });
+    CHECK_EQ(near.zone->sources().size(), size_t{2});
+    near.boundaryNs = std::to_underlying(near.zone->sources().back().timelineStartNs);
+    CHECK(std::to_underlying(near.output->producedThroughNs()) < near.boundaryNs);
+    return near;
+}
+
+} // namespace
+
+MULTIROOM_TEST(a_room_left_alone_while_it_plays_is_bitperfect_again_from_its_next_track)
+{
+    // Grouped, it is resampled to be corrected. Left alone in the middle of a
+    // track, it keeps that converter to the end of the track -- a converter
+    // changed mid-track is heard -- and the next one is bitperfect, on the
+    // same device and the same stream: no re-negotiation, nothing skipped.
+    ZoneRig rig;
+    rig.clock.setNs(90ULL * kNanosecondsPerSecond);
+    auto grouped = std::make_shared<std::atomic<bool>>(false);
+    auto zone = rig.zone(groupable(rig.settings(), grouped));
+    CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+    CHECK_OK(zone->play());
+
+    const ClientId room("livingroom");
+    std::shared_ptr<SinkState> sink;
+    const std::shared_ptr<ClientOutput> output = groupOnTheLine(*zone, room, *grouped, &sink);
+
+    grouped->store(false);
+    CHECK(zone->replanAlone(room) == Replan::Pending);
+    CHECK(zone->replanPending(room));
+    CHECK_EQ(zone->pendingAlone().size(), size_t{1});
+    CHECK(waitFor([&] { return output->packets() >= kSourcePackets; }));
+    CHECK_EQ(output->formatSwitches(), 1u);
+    CHECK(output->plan().reason == PlanReason::Grouped);
+
+    // The next track is the boundary.
+    CHECK_OK(zone->stage(segmentOf("two", "ramp")));
+    zone->pump();
+    CHECK(waitFor([&] { return output->formatSwitches() == 2; }));
+    CHECK(zone->member(room) == output);
+    CHECK(output->plan().mode == OutputMode::BitPerfect);
+    CHECK(!output->driftCorrected());
+    CHECK(zone->pendingAlone().empty());
+
+    // Pending until the line reaches the boundary, which is when it is heard.
+    CHECK(zone->replanPending(room));
+    rig.clock.advanceMs(4100);
+    CHECK(!zone->replanPending(room));
+
+    CHECK(waitFor([&] { return output->packets() >= 2 * kSourcePackets; }));
+    size_t packets = 0;
+    CHECK_EQ(jumpsIn(*sink, packets), size_t{0});
+    rampFrom(*sink, 3ULL * kNanosecondsPerSecond, kSourceFrames);
+    CHECK_EQ(rig.starts->of(RoomCommandKind::Renegotiate, "livingroom").size(), size_t{0});
+    CHECK_EQ(rig.starts->of(RoomCommandKind::Pause, "livingroom").size(), size_t{0});
+    CHECK_EQ(zone->rejoinCount(), 0ULL);
+    CHECK(zone->state() != ZoneState::Failed);
+}
+
+MULTIROOM_TEST(a_room_left_alone_after_the_next_track_was_opened_switches_at_that_track)
+{
+    // The decode opens a source a lookahead before it is heard. A room left
+    // alone after that, but before it built into the new track, switches on
+    // that track's first frame rather than one track later.
+    ZoneRig rig;
+    const ClientId room("livingroom");
+    auto grouped = std::make_shared<std::atomic<bool>>(false);
+    NearBoundary near = groupedNearBoundary(rig, room, grouped);
+
+    grouped->store(false);
+    CHECK(near.zone->replanAlone(room) == Replan::Pending);
+    CHECK(near.zone->pendingAlone().empty()); // switched there already
+    CHECK(near.zone->replanPending(room));
+    CHECK(near.output->plan().reason == PlanReason::Grouped);
+
+    playOn(rig, *near.zone, room, *near.sink, 30, 100, 200 * kMs,
+           [&](uint64_t playhead) { return playhead < near.boundaryNs + 300 * kMs; });
+    CHECK(waitFor([&] { return near.output->formatSwitches() == 2; }));
+    CHECK(near.output->plan().mode == OutputMode::BitPerfect);
+    CHECK(!near.zone->replanPending(room));
+
+    size_t packets = 0;
+    CHECK_EQ(jumpsIn(*near.sink, packets), size_t{0});
+    std::string payloads;
+    const std::vector<matp::AudioPacketHeader> headers = decodeHeaders(*near.sink, payloads);
+    uint64_t framesAfter = 0;
+    for (const matp::AudioPacketHeader& header : headers)
+    {
+        if (header.timelineStartNs >= near.boundaryNs)
+            framesAfter += header.outputFrameCount;
+    }
+    CHECK(framesAfter > 0);
+    rampFrom(*near.sink, near.boundaryNs, framesAfter);
+    CHECK_EQ(rig.starts->of(RoomCommandKind::Renegotiate, "livingroom").size(), size_t{0});
+    CHECK_EQ(rig.starts->of(RoomCommandKind::Pause, "livingroom").size(), size_t{0});
+    CHECK(near.zone->state() != ZoneState::Failed);
+}
+
+MULTIROOM_TEST(a_room_grouped_again_before_its_boundary_keeps_its_grouped_plan)
+{
+    // Waiting for its next track: grouped again, nothing is waited for.
+    {
+        ZoneRig rig;
+        rig.clock.setNs(90ULL * kNanosecondsPerSecond);
+        auto grouped = std::make_shared<std::atomic<bool>>(false);
+        auto zone = rig.zone(groupable(rig.settings(), grouped));
+        CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+        CHECK_OK(zone->play());
+        const ClientId room("livingroom");
+        const std::shared_ptr<ClientOutput> output = groupOnTheLine(*zone, room, *grouped);
+
+        grouped->store(false);
+        CHECK(zone->replanAlone(room) == Replan::Pending);
+        grouped->store(true);
+        CHECK(zone->replanInPlace(room) == Replan::Unchanged);
+        CHECK(zone->pendingAlone().empty());
+        CHECK(!zone->replanPending(room));
+
+        CHECK_OK(zone->stage(segmentOf("two", "ramp")));
+        zone->pump();
+        CHECK(waitFor([&] { return output->packets() >= 2 * kSourcePackets; }));
+        CHECK_EQ(output->formatSwitches(), 1u);
+        CHECK(output->plan().reason == PlanReason::Grouped);
+    }
+
+    // Its switch made at a boundary it has not reached: the switch there is to
+    // the grouped plan instead, so the stream changes nothing mid-track.
+    {
+        ZoneRig rig;
+        const ClientId room("livingroom");
+        auto grouped = std::make_shared<std::atomic<bool>>(false);
+        NearBoundary near = groupedNearBoundary(rig, room, grouped);
+
+        grouped->store(false);
+        CHECK(near.zone->replanAlone(room) == Replan::Pending);
+        grouped->store(true);
+        CHECK(near.zone->replanInPlace(room) == Replan::InPlace);
+        CHECK(!near.zone->replanPending(room));
+        CHECK(near.output->plan().reason == PlanReason::Grouped);
+
+        playOn(rig, *near.zone, room, *near.sink, 30, 100, 200 * kMs,
+               [&](uint64_t playhead) { return playhead < near.boundaryNs + 300 * kMs; });
+        CHECK(waitFor([&] { return near.output->formatSwitches() == 2; }));
+        CHECK(near.output->plan().reason == PlanReason::Grouped);
+        CHECK(near.output->driftCorrected());
+        size_t packets = 0;
+        CHECK_EQ(jumpsIn(*near.sink, packets), size_t{0});
+        CHECK_EQ(rig.starts->of(RoomCommandKind::Renegotiate, "livingroom").size(), size_t{0});
+    }
+}
+
+MULTIROOM_TEST(a_room_the_join_reopened_in_another_format_is_reopened_at_its_next_track)
+{
+    // Its device was opened at 96 kHz for the group. Only the source's own
+    // format makes it bitperfect again, so it plays the track out, is held on
+    // the boundary and reopened there, as at a change of format -- and is
+    // then planned exactly as it would have been had nobody joined it.
+    ZoneRig rig;
+    rig.clock.setNs(50ULL * kNanosecondsPerSecond);
+    auto grouped = std::make_shared<std::atomic<bool>>(true);
+    auto zone = rig.zone(groupable(rig.settings(), grouped));
+    CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+    CHECK_OK(zone->play());
+
+    const ClientId room("livingroom");
+    const ClientCapabilities capabilities = offering({formatOf(), fixedRate()});
+    CHECK_OK(zone->admit(sessionOf(1), room, capabilities, fixedRate()));
+    const std::shared_ptr<ClientOutput> output = zone->member(room);
+    CHECK(output->plan().outputFormat == fixedRate());
+    reportBuffer(*zone, room, 0, 1500 * kMs);
+    zone->pump();
+    CHECK(zone->started());
+    acknowledge(*zone, room, std::to_underlying(zone->startTimelineNs()));
+
+    // In place it could only be resampled into the format its device has.
+    grouped->store(false);
+    CHECK(zone->replanAlone(room) == Replan::Pending);
+    CHECK_EQ(output->formatSwitches(), 0u);
+    CHECK(output->plan().outputFormat == fixedRate());
+
+    CHECK_OK(zone->stage(segmentOf("two", "ramp")));
+    zone->pump();
+    CHECK(zone->pendingAlone().empty());
+    const std::vector<RoomCommand> pauses = rig.starts->of(RoomCommandKind::Pause, "livingroom");
+    CHECK_EQ(pauses.size(), size_t{1});
+    if (!pauses.empty())
+        CHECK_EQ(pauses.front().at.timelineNs, 3ULL * kNanosecondsPerSecond);
+    CHECK(waitFor([&] {
+        return std::to_underlying(output->producedThroughNs()) == 3ULL * kNanosecondsPerSecond;
+    }));
+    CHECK_EQ(rig.starts->count(RoomCommandKind::Renegotiate), size_t{0});
+
+    rig.clock.advanceMs(4100);
+    zone->pump();
+    CHECK_EQ(rig.starts->of(RoomCommandKind::Renegotiate, "livingroom").size(), size_t{1});
+
+    zone->onStreamReady(room, true, formatOf());
+    CHECK(waitFor([&] { return output->formatSwitches() == 1; }));
+    CHECK(zone->member(room) == output);
+    const auto solo = rig.planner->plan(formatOf(), RoomAudioSettings{}, capabilities);
+    CHECK_OK(solo);
+    CHECK(output->plan().mode == OutputMode::BitPerfect);
+    CHECK(output->plan().mode == solo->mode);
+    CHECK(output->plan().outputFormat == solo->outputFormat);
+    CHECK(output->plan().driftActuator == solo->driftActuator);
+    CHECK(zone->state() != ZoneState::Failed);
+}
+
+MULTIROOM_TEST(a_room_left_alone_while_its_zone_does_not_play_is_planned_alone_at_once)
+{
+    // Paused: nothing is audible to change in the middle of, so the converter
+    // goes on the stream it has, now.
+    {
+        ZoneRig rig;
+        rig.clock.setNs(90ULL * kNanosecondsPerSecond);
+        auto grouped = std::make_shared<std::atomic<bool>>(false);
+        auto zone = rig.zone(groupable(rig.settings(), grouped));
+        CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+        CHECK_OK(zone->play());
+        const ClientId room("livingroom");
+        const std::shared_ptr<ClientOutput> output = groupOnTheLine(*zone, room, *grouped);
+        CHECK_OK(zone->pausePlayback());
+
+        grouped->store(false);
+        CHECK(zone->replanAlone(room) == Replan::InPlace);
+        CHECK(waitFor([&] { return output->formatSwitches() == 2; }));
+        CHECK(output->plan().mode == OutputMode::BitPerfect);
+        CHECK(!zone->replanPending(room));
+        CHECK_EQ(rig.starts->count(RoomCommandKind::Renegotiate), size_t{0});
+    }
+
+    // Pending when the line stopped playing: due then.
+    {
+        ZoneRig rig;
+        rig.clock.setNs(90ULL * kNanosecondsPerSecond);
+        auto grouped = std::make_shared<std::atomic<bool>>(false);
+        auto zone = rig.zone(groupable(rig.settings(), grouped));
+        CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+        CHECK_OK(zone->play());
+        const ClientId room("livingroom");
+        const std::shared_ptr<ClientOutput> output = groupOnTheLine(*zone, room, *grouped);
+
+        grouped->store(false);
+        CHECK(zone->replanAlone(room) == Replan::Pending);
+        CHECK_OK(zone->pausePlayback());
+        CHECK_EQ(zone->pendingAlone().size(), size_t{1});
+        CHECK(zone->replanAlone(room) == Replan::InPlace);
+        CHECK(zone->pendingAlone().empty());
+        CHECK(waitFor([&] { return output->plan().mode == OutputMode::BitPerfect; }));
+    }
+
+    // Stopped, with a device the join reopened in another format: only a
+    // re-negotiation gives it its own plan back.
+    {
+        ZoneRig rig;
+        rig.clock.setNs(90ULL * kNanosecondsPerSecond);
+        auto grouped = std::make_shared<std::atomic<bool>>(true);
+        auto zone = rig.zone(groupable(rig.settings(), grouped));
+        CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+        CHECK_OK(zone->play());
+        const ClientId room("livingroom");
+        CHECK_OK(zone->admit(sessionOf(1), room, offering({formatOf(), fixedRate()}), fixedRate()));
+        reportBuffer(*zone, room, 0, 1500 * kMs);
+        zone->pump();
+        CHECK(zone->started());
+        CHECK_OK(zone->stopPlayback());
+
+        grouped->store(false);
+        CHECK(zone->replanAlone(room) == Replan::Renegotiate);
+        CHECK(zone->pendingAlone().empty());
+    }
+
+    // A bitPerfect room is planned the same alone: nothing to do.
+    {
+        ZoneRig rig;
+        auto grouped = std::make_shared<std::atomic<bool>>(true);
+        auto zone = rig.zone(groupable(rig.settings(), grouped, AudioControl::BitPerfect));
+        CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+        CHECK_OK(zone->play());
+        const ClientId room("livingroom");
+        CHECK_OK(zone->admit(sessionOf(1), room, offering({formatOf()}), formatOf()));
+        grouped->store(false);
+        CHECK(zone->replanAlone(room) == Replan::Unchanged);
+        CHECK(!zone->replanPending(room));
+    }
+}
+
+MULTIROOM_TEST(a_trimmed_room_left_alone_is_untrimmed_at_its_next_track)
+{
+    // A bitPerfect room whose own clock was trimmed for the group keeps its
+    // samples either way; the trim stops where the next track begins.
+    ZoneRig rig;
+    rig.clock.setNs(90ULL * kNanosecondsPerSecond);
+    auto grouped = std::make_shared<std::atomic<bool>>(true);
+    auto zone = rig.zone(groupable(rig.settings(), grouped, AudioControl::BitPerfect));
+    CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+    CHECK_OK(zone->play());
+
+    ClientCapabilities trimmed = offering({formatOf()});
+    trimmed.driftFeedback = true;
+    trimmed.hardwareClock.available = true;
+    trimmed.hardwareClock.minPpm = -500;
+    trimmed.hardwareClock.maxPpm = 500;
+    const ClientId room("kitchen");
+    CHECK_OK(zone->admit(sessionOf(1), room, trimmed, formatOf()));
+    const std::shared_ptr<ClientOutput> output = zone->member(room);
+    CHECK(output->driftActuator() == DriftActuator::ClientHardwareClock);
+    reportBuffer(*zone, room, 0, 1500 * kMs);
+    zone->pump();
+    CHECK(zone->started());
+    acknowledge(*zone, room, std::to_underlying(zone->startTimelineNs()));
+
+    grouped->store(false);
+    CHECK(zone->replanAlone(room) == Replan::Pending);
+    CHECK(output->driftActuator() == DriftActuator::ClientHardwareClock);
+
+    CHECK_OK(zone->stage(segmentOf("two", "ramp")));
+    zone->pump();
+    CHECK(waitFor([&] { return output->formatSwitches() == 1; }));
+    CHECK(output->plan().mode == OutputMode::BitPerfect);
+    CHECK(output->driftActuator() == DriftActuator::None);
+    CHECK_EQ(rig.starts->of(RoomCommandKind::Renegotiate, "kitchen").size(), size_t{0});
+}
+
+MULTIROOM_TEST(a_room_left_alone_while_it_reopens_for_a_format_boundary_is_planned_alone_by_it)
+{
+    // Held at a change of format, its device reopening: it stays pending, and
+    // the plan the reopened device is given is already the one for a room
+    // alone -- so the next track has nothing left to do.
+    ZoneRig rig;
+    rig.clock.setNs(50ULL * kNanosecondsPerSecond);
+    auto grouped = std::make_shared<std::atomic<bool>>(true);
+    auto zone = rig.zone(groupable(rig.settings(), grouped));
+    CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+    CHECK_OK(zone->stage(segmentOf("two", "other")));
+    CHECK_OK(zone->play());
+
+    const ClientId room("livingroom");
+    CHECK_OK(zone->admit(sessionOf(1), room, eitherRate(), formatOf()));
+    const std::shared_ptr<ClientOutput> output = zone->member(room);
+    CHECK(output->plan().reason == PlanReason::Grouped);
+    playTwoFormats(*zone, {room});
+    CHECK_EQ(rig.starts->of(RoomCommandKind::Pause, "livingroom").size(), size_t{1});
+
+    grouped->store(false);
+    CHECK(zone->replanAlone(room) == Replan::Pending);
+    CHECK_EQ(zone->pendingAlone().size(), size_t{1});
+
+    CHECK(waitFor([&] { return std::to_underlying(output->producedThroughNs()) == kBoundaryNs; }));
+    rig.clock.advanceMs(4100);
+    zone->pump();
+    CHECK_EQ(rig.starts->of(RoomCommandKind::Renegotiate, "livingroom").size(), size_t{1});
+    zone->onStreamReady(room, true, formatOf(48000));
+    CHECK(waitFor([&] { return output->formatSwitches() == 1; }));
+    CHECK(output->plan().mode == OutputMode::BitPerfect);
+    CHECK(output->plan().outputFormat == formatOf(48000));
+
+    CHECK_OK(zone->stage(segmentOf("three", "other")));
+    zone->pump();
+    CHECK(zone->pendingAlone().empty());
+    CHECK(!zone->replanPending(room));
+    CHECK_EQ(output->formatSwitches(), 1u);
+    CHECK_EQ(rig.starts->of(RoomCommandKind::Renegotiate, "livingroom").size(), size_t{1});
+    CHECK(zone->state() != ZoneState::Failed);
+}

@@ -6,6 +6,9 @@
 #include "matp/Session.h"
 #include "util/Logger.h"
 #include "util/Time.h"
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+#include "config/BoardConfig.h"
+#endif
 
 #include <algorithm>
 #include <cstdio>
@@ -54,9 +57,17 @@ const AudioDeviceInfo* selectDevice(const AudioDeviceCacheData& cache,
         const AudioDeviceInfo* device = cache.findById(configuredId);
         if (device != nullptr)
             return device;
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+        if (board_config::enabled(board_config::current(), "requireConfiguredAudioDevice"))
+            return nullptr;
+#endif
         MULTIROOM_WARN("configured audio device %s not found, falling back to the default",
                  configuredId.c_str());
     }
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+    if (board_config::enabled(board_config::current(), "requireConfiguredAudioDevice"))
+        return nullptr;
+#endif
     return cache.findDefault();
 }
 

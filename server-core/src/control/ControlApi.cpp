@@ -1102,6 +1102,7 @@ ControlApi::Reply ControlApi::zonePause(const json::Value& params)
         paused = true;
         MULTIROOM_INFO("control API: zone {} pauses at timeline {} ns", name,
                  std::to_underlying(position));
+        replanAloneRooms(*zone);
         break;
     }
     case TransportState::Stopped:
@@ -1182,6 +1183,7 @@ ControlApi::Reply ControlApi::zoneStop(const json::Value& params)
     if (!stopped)
         return Reply::failure(kFailed, stopped.error().detail);
     MULTIROOM_INFO("control API: zone {} stopped", name);
+    replanAloneRooms(*zone);
 
     reply.body["stopped"] = json::Value(true);
     if (lineRunning)
@@ -2066,15 +2068,29 @@ void ControlApi::replan(const ClientId& client)
 void ControlApi::regroup(const ClientId& client)
 {
     // A bitPerfect room is planned the same grouped or not, unless its own
-    // clock can be trimmed -- which only the zone that holds it knows.
+    // clock can be trimmed -- which only the zone that holds it knows. A room
+    // left alone gets the plan it had before anyone joined, from its next
+    // track while its zone plays.
     if (const std::shared_ptr<Zone> zone = zones_.zoneOf(client))
     {
-        if (zone->replanInPlace(client) == Replan::Renegotiate)
+        const Replan replanned = rooms_.preference(client).grouped ? zone->replanInPlace(client)
+                                                                   : zone->replanAlone(client);
+        if (replanned == Replan::Renegotiate)
             replan(client);
         return;
     }
     if (rooms_.preference(client).audioControl == AudioControl::Auto)
         replan(client);
+}
+
+void ControlApi::replanAloneRooms(Zone& zone)
+{
+    // A line that does not play has no boundary to wait for.
+    for (const ClientId& client : zone.pendingAlone())
+    {
+        if (zone.replanAlone(client) == Replan::Renegotiate)
+            replan(client);
+    }
 }
 
 void ControlApi::renegotiate(const RoomRecord& room, const char* cause)
@@ -2639,6 +2655,8 @@ json::Value ControlApi::clientJson(const RoomRecord& room, uint64_t nowNs) const
         o["bitPerfect"] = json::Value(plan.mode == OutputMode::BitPerfect);
         o["reason"] = json::Value(planReasonText(plan.reason));
         o["plan"] = json::Value(describePlan(plan));
+        // Left alone while its zone plays: this plan until its next track.
+        o["replanPending"] = json::Value(zone->replanPending(room.client));
         if (!plan.resamplerId.empty())
             o["resampler"] = json::Value(plan.resamplerId);
         o["ratio"] = json::Value(output->driftTrim());

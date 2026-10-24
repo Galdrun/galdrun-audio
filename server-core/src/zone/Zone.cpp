@@ -30,6 +30,22 @@ std::optional<uint64_t> remainingFrames(const SourceStreamInfo& info, uint64_t s
     return *info.totalFrames - std::min(*info.totalFrames, skipped);
 }
 
+// A device's clock and its trim range, with its formats narrowed to the one
+// its stream is in: what a room is planned against to keep its device open.
+ClientCapabilities keepingFormat(ClientCapabilities capabilities, const AudioFormat& format)
+{
+    capabilities.formats = {format};
+    capabilities.preferredSampleRate = format.sampleRate;
+    return capabilities;
+}
+
+// Two plans a room would be sent identically.
+bool samePlan(const OutputPlan& a, const OutputPlan& b)
+{
+    return a.mode == b.mode && a.driftActuator == b.driftActuator &&
+           a.resamplerId == b.resamplerId && a.outputFormat == b.outputFormat;
+}
+
 } // namespace
 
 const char* errorName(ZoneError error)
@@ -1225,6 +1241,10 @@ Result<bool, ZoneError> Zone::openNext()
         beginTransition(*base, info.format);
     }
 
+    // A room left alone while the zone played is planned alone from here.
+    if (previous.isValid())
+        switchAloneRooms(*base, info.format, transition);
+
     // Section 23, announced before any room reaches it and after the timeline
     // knows where it is. The first source of a zone is announced too: a room
     // that was already a member is owed the name of what it is about to hear,
@@ -2000,13 +2020,20 @@ Result<bool, ZoneError> Zone::setOutputLatency(const ClientId& client, uint64_t 
 
 Replan Zone::replanInPlace(const ClientId& client)
 {
+    std::lock_guard<std::mutex> moving(rejoinMutex_);
+
     std::shared_ptr<ClientOutput> output;
     ClientCapabilities capabilities;
+    TimelineNs aloneAt{};
     {
         std::lock_guard<std::mutex> lock(mutex_);
         const auto found = members_.find(client);
         if (found == members_.end())
             return Replan::Renegotiate;
+
+        // Whatever replanAlone() was waiting for is not wanted any more.
+        found->second.alonePending = false;
+        aloneAt = std::exchange(found->second.aloneAt, TimelineNs{});
         if (found->second.transitionAt != TimelineNs{})
             return Replan::Unchanged;
         output = found->second.output;
@@ -2019,19 +2046,22 @@ Replan Zone::replanInPlace(const ClientId& client)
     // the widest one a renegotiated plan would choose, which is the price of
     // not reopening its device.
     const OutputPlan current = output->plan();
-    ClientCapabilities same = capabilities;
-    same.formats = {current.outputFormat};
-    same.preferredSampleRate = current.outputFormat.sampleRate;
-
-    const Result<OutputPlan, PlanError> fresh =
-        planner_.plan(current.sourceFormat, settingsFor(client), same);
+    const Result<OutputPlan, PlanError> fresh = planner_.plan(
+        current.sourceFormat, settingsFor(client), keepingFormat(capabilities, current.outputFormat));
     if (!fresh)
         return Replan::Renegotiate;
-    if (fresh->mode == current.mode && fresh->driftActuator == current.driftActuator &&
-        fresh->resamplerId == current.resamplerId && fresh->outputFormat == current.outputFormat)
+
+    // Its switch to being alone is waiting at a boundary it has not built past:
+    // that switch is to this plan instead, so nothing changes mid-track. Past
+    // it, the switch was made and this plan goes in place as any other.
+    if (aloneAt != TimelineNs{} && switchAt(client, aloneAt, *fresh))
     {
-        return Replan::Unchanged;
+        MULTIROOM_INFO("zone {}: {} is grouped again from timeline {} ns: {}", id_.str(),
+                       client.str(), std::to_underlying(aloneAt), describePlan(*fresh));
+        return Replan::InPlace;
     }
+    if (samePlan(*fresh, current))
+        return Replan::Unchanged;
 
     Result<std::unique_ptr<IClientAudioProcessor>, ProcessorError> processor =
         makeClientAudioProcessor(*fresh, registry_, settings_.dither);
@@ -2048,6 +2078,260 @@ Replan Zone::replanInPlace(const ClientId& client)
              describePlan(*fresh));
     alignLineToLoneRoom("it was replanned");
     return Replan::InPlace;
+}
+
+Replan Zone::replanAlone(const ClientId& client)
+{
+    std::lock_guard<std::mutex> moving(rejoinMutex_);
+
+    std::shared_ptr<ClientOutput> output;
+    ClientCapabilities capabilities;
+    bool playing = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto found = members_.find(client);
+        if (found == members_.end())
+            return Replan::Renegotiate;
+        Member& member = found->second;
+        member.alonePending = false;
+        member.aloneAt = TimelineNs{};
+
+        // Held at a format boundary: its device is reopening for a plan made
+        // before it was alone, so the boundary after that one decides.
+        if (member.transitionAt != TimelineNs{})
+        {
+            member.alonePending = true;
+            return Replan::Pending;
+        }
+        output = member.output;
+        capabilities = member.capabilities;
+        playing = scheduler_.transport() == TransportState::Playing;
+    }
+
+    const OutputPlan current = output->plan();
+    std::optional<OutputPlan> inPlace;
+    const Replan needs = planAlone(client, current.sourceFormat, current, capabilities, inPlace);
+    if (needs == Replan::Unchanged)
+        return Replan::Unchanged;
+
+    // Nothing is audible to change in the middle of: now, on the stream it
+    // has, or with its device reopened.
+    if (!playing)
+    {
+        if (needs == Replan::Renegotiate)
+            return Replan::Renegotiate;
+        Result<std::unique_ptr<IClientAudioProcessor>, ProcessorError> processor =
+            makeClientAudioProcessor(*inPlace, registry_, settings_.dither);
+        if (!processor)
+            return Replan::Renegotiate;
+        if (const auto replaced = output->replaceProcessor(std::move(*processor)); !replaced)
+        {
+            MULTIROOM_INFO("zone {}: {} cannot be planned alone in place: {}", id_.str(),
+                           client.str(), describe(replaced.error()));
+            return Replan::Renegotiate;
+        }
+        MULTIROOM_INFO("zone {}: {} planned alone in place: {}", id_.str(), client.str(),
+                       describePlan(*inPlace));
+        return Replan::InPlace;
+    }
+
+    // The decode opens the next source a lookahead before it is heard. One it
+    // has opened already in this format, and that this room has not built
+    // into, is the boundary -- as long as it is the only one ahead of the
+    // room, so that the hold is not queued behind another.
+    TimelineNs at{};
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const uint64_t built = std::to_underlying(output->producedThroughNs());
+        if (sources_.size() > 1 && sources_.back().format == current.sourceFormat &&
+            std::to_underlying(sources_.back().timelineStartNs) > built &&
+            std::to_underlying(sources_[sources_.size() - 2].timelineStartNs) <= built)
+        {
+            at = sources_.back().timelineStartNs;
+        }
+    }
+    const std::optional<OutputPlan> plan =
+        needs == Replan::InPlace ? inPlace : std::optional<OutputPlan>{};
+    const bool switched = at != TimelineNs{} && switchAt(client, at, plan);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (const auto found = members_.find(client); found != members_.end())
+        {
+            found->second.alonePending = !switched;
+            found->second.aloneAt = switched ? at : TimelineNs{};
+        }
+    }
+    if (!switched)
+        MULTIROOM_INFO("zone {}: {} is planned alone from its next track", id_.str(), client.str());
+    return Replan::Pending;
+}
+
+std::vector<ClientId> Zone::pendingAlone() const
+{
+    std::vector<ClientId> pending;
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& [id, member] : members_)
+    {
+        if (member.alonePending)
+            pending.push_back(id);
+    }
+    return pending;
+}
+
+bool Zone::replanPending(const ClientId& client) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto found = members_.find(client);
+    if (found == members_.end())
+        return false;
+    if (found->second.alonePending)
+        return true;
+    return found->second.aloneAt != TimelineNs{} &&
+           scheduler_.transport() == TransportState::Playing &&
+           std::to_underlying(scheduler_.playheadAt(clock_.monotonicNowNs())) <
+               std::to_underlying(found->second.aloneAt);
+}
+
+Replan Zone::planAlone(const ClientId& client, const AudioFormat& format,
+                       const OutputPlan& current, const ClientCapabilities& capabilities,
+                       std::optional<OutputPlan>& inPlace) const
+{
+    const RoomAudioSettings settings = settingsFor(client);
+    const Result<OutputPlan, PlanError> kept =
+        planner_.plan(format, settings, keepingFormat(capabilities, current.outputFormat));
+    const Result<OutputPlan, PlanError> whole = planner_.plan(format, settings, capabilities);
+
+    // The join reopened its device in a format that is not the source's: only
+    // another one makes it bitperfect again. Any other difference the whole
+    // list would make is not worth reopening a device for.
+    if (whole && whole->mode == OutputMode::BitPerfect &&
+        whole->outputFormat != current.outputFormat &&
+        (!kept || kept->mode != OutputMode::BitPerfect))
+    {
+        return Replan::Renegotiate;
+    }
+    if (!kept)
+        return Replan::Renegotiate;
+    if (samePlan(*kept, current))
+        return Replan::Unchanged;
+    inPlace = *kept;
+    return Replan::InPlace;
+}
+
+bool Zone::switchAt(const ClientId& client, TimelineNs at, const std::optional<OutputPlan>& plan)
+{
+    std::shared_ptr<ClientOutput> output;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto found = members_.find(client);
+        if (found == members_.end() || found->second.transitionAt != TimelineNs{})
+            return false;
+        output = found->second.output;
+    }
+    const OutputState state = output->state();
+    if (state == OutputState::Failed || state == OutputState::Stopped)
+        return false;
+
+    // The boundary itself, unlike beginTransition(): a room that has built
+    // past it is not held where it has got to, in the middle of the track.
+    if (const auto holding = output->holdAt(at); !holding)
+        return false;
+
+    // As at a change of format: a new converter for the output it has, and
+    // the old one's tail finished from silence.
+    if (plan)
+    {
+        Result<std::unique_ptr<IClientAudioProcessor>, ProcessorError> processor =
+            makeClientAudioProcessor(*plan, registry_, settings_.dither);
+        if (processor)
+        {
+            if (const auto switched = output->switchTo(std::move(*processor), at); switched)
+            {
+                MULTIROOM_INFO("zone {}: {} switches at timeline {} ns: {}", id_.str(),
+                               client.str(), std::to_underlying(at), describePlan(*plan));
+
+                // A hold at a boundary it already had replaces the ones
+                // queued behind it: a source in another format opened past
+                // it is planned for again.
+                holdAtBoundaryAhead(client, at, plan->sourceFormat);
+                return true;
+            }
+        }
+    }
+
+    // Its device is reopened there, as for a source in another format
+    // (section 24): paused on the boundary, asked to re-negotiate when the
+    // line reaches it, and planned against what it then opens.
+    std::optional<RoomCommand> pause;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto found = members_.find(client);
+        if (found == members_.end())
+            return false;
+        found->second.transitionAt = at;
+        found->second.renegotiatedAtNs = 0;
+        pause = scheduler_.pauseForTransition(client, at);
+    }
+    if (pause)
+        dispatch({std::move(*pause)});
+    MULTIROOM_INFO("zone {}: {} is held at timeline {} ns until its device is reopened", id_.str(),
+                   client.str(), std::to_underlying(at));
+    return true;
+}
+
+void Zone::switchAloneRooms(TimelineNs at, const AudioFormat& format, bool transition)
+{
+    std::lock_guard<std::mutex> moving(rejoinMutex_);
+
+    struct Room
+    {
+        ClientId client;
+        std::shared_ptr<ClientOutput> output;
+        ClientCapabilities capabilities;
+    };
+    std::vector<Room> rooms;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto& [id, member] : members_)
+        {
+            if (!member.alonePending)
+                continue;
+
+            // Planned for this boundary by beginTransition(), from settings
+            // that say it is alone -- unless it is held at an earlier one.
+            if (transition)
+            {
+                if (member.transitionAt == TimelineNs{} ||
+                    std::to_underlying(member.transitionAt) >= std::to_underlying(at))
+                {
+                    member.alonePending = false;
+                }
+                continue;
+            }
+            if (member.transitionAt != TimelineNs{})
+                continue;
+            rooms.push_back({id, member.output, member.capabilities});
+        }
+    }
+
+    for (const Room& room : rooms)
+    {
+        const OutputPlan current = room.output->plan();
+        std::optional<OutputPlan> inPlace;
+        const Replan needs = planAlone(room.client, format, current, room.capabilities, inPlace);
+        const bool switched =
+            needs == Replan::Unchanged ||
+            switchAt(room.client, at,
+                     needs == Replan::InPlace ? inPlace : std::optional<OutputPlan>{});
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (const auto found = members_.find(room.client); found != members_.end() && switched)
+        {
+            found->second.alonePending = false;
+            if (needs != Replan::Unchanged)
+                found->second.aloneAt = at;
+        }
+    }
 }
 
 void Zone::alignLineToLoneRoom(const char* why)

@@ -75,7 +75,7 @@ public enum RoomHealthState
 }
 
 // The room's actual plan, from room.joined or from status. SourceFormat,
-// Description and Equalizer only come with status.
+// Description, Equalizer and ReplanPending only come with status.
 public sealed record CorePlan(
     bool BitPerfect,
     string Reason,
@@ -84,7 +84,8 @@ public sealed record CorePlan(
     AudioFormatInfo? SourceFormat = null,
     string? Description = null,
     CoreOutputEqualizer? Equalizer = null,
-    string? DriftActuator = null);
+    string? DriftActuator = null,
+    bool ReplanPending = false);
 
 public sealed record CoreSnapshot(
     ImmutableDictionary<string, CoreZone> Zones,
@@ -135,7 +136,7 @@ public sealed class CoreModel(TimeProvider? time = null)
         c.Settings,
         c.Output is { } o
             ? new CorePlan(o.BitPerfect, o.Reason, o.Format, c.DriftCorrection.Active ?? false, o.SourceFormat, o.Plan,
-                o.Equalizer, c.DriftCorrection.Actuator)
+                o.Equalizer, c.DriftCorrection.Actuator, o.ReplanPending ?? false)
             : null,
         c.Stream is { Ready: false } s ? s.Reason : null,
         c.StartDetail,

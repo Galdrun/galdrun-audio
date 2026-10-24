@@ -2140,6 +2140,24 @@ function renderClients() {
     : h('p', { class: 'muted' }, 'no client heard, no room known')]);
 }
 
+// Whether the room plays the source's own samples: the core sends them
+// unchanged, and nothing on the client changes them after it -- software
+// volume below full or muted, or a shared output the system mixer may change.
+// Value is null without a plan; reason says why it is not.
+function bitPerfectOf(a) {
+  const plan = a?.plan, settings = a?.settings;
+  const scaling = a?.volumeControl?.effective === 'software' && ((settings?.volume ?? 1) < 1 || settings?.muted);
+  const shared = a?.capabilities?.accessMode === 'shared';
+  return {
+    value: plan ? plan.bitPerfect && !scaling && !shared : null,
+    reason: [
+      plan?.bitPerfect === false && (plan.reason || 'The server is resampling the audio'),
+      scaling && 'Software volume or mute changes the samples',
+      shared && 'Shared audio output allows the system mixer to change the samples',
+    ].filter(Boolean).join('; '),
+  };
+}
+
 // A client as a card, as the Home page's zones: the room's picture, its name
 // and device, what is known of it as pills, its buttons. A room the core does
 // not hear says only whether it is connected.
@@ -2159,15 +2177,7 @@ function clientCard({ c, r }) {
   const eq = r && (r.desired?.equalizer ?? a?.settings?.equalizer);
   // A key and its value, a row of the card's list.
   const info = (key, value, vc = '', title = '') => [h('dt', {}, key), h('dd', { class: vc, title }, value)];
-  const plan = a?.plan, settings = a?.settings;
-  const scaling = a?.volumeControl?.effective === 'software' && ((settings?.volume ?? 1) < 1 || settings?.muted);
-  const shared = a?.capabilities?.accessMode === 'shared';
-  const bitPerfect = plan ? plan.bitPerfect && !scaling && !shared : null;
-  const bitPerfectReason = [
-    plan?.bitPerfect === false && (plan.reason || 'The server is resampling the audio'),
-    scaling && 'Software volume or mute changes the samples',
-    shared && 'Shared audio output allows the system mixer to change the samples',
-  ].filter(Boolean).join('; ');
+  const { value: bitPerfect, reason: bitPerfectReason } = bitPerfectOf(a);
   // What the equalizer does, as eqBadge says it on the room's page.
   const core = a?.plan?.equalizer, clipped = core?.clippedSamples > 0 ? `, ${core.clippedSamples} samples clipped` : '';
   const eqInfo = !r ? ['—'] : !eq?.enabled ? ['off', 'muted']
@@ -2319,6 +2329,7 @@ const roomField = (label, ...control) => h('div', { class: 'room-field' }, h('sp
 // everything else folded into Advanced.
 function roomSettings(r) {
   const a = r.actual, d = r.desired, s = a?.settings, sync = a?.sync, plan = a?.plan;
+  const bitPerfect = bitPerfectOf(a);
   const path = `rooms/${enc(r.client)}`;
   const patch = (body) => act(() => api('PATCH', path, body));
   const name = r.name ?? r.client;
@@ -2424,9 +2435,13 @@ function roomSettings(r) {
     field('Audio control',
       h('select', { value: d.audioControl ?? s?.audioControl ?? 'auto', 'aria-label': 'Audio control', onchange: (e) => patch({ audioControl: e.target.value }) },
         AUDIO_CONTROLS.map(([m, label, about]) => h('option', { value: m, title: about }, label))),
-      plan && h('span', { class: 'pill badge ' + (plan.bitPerfect ? 'good' : s?.audioControl === 'bitPerfect' ? 'bad' : 'muted'), title: plan.reason },
-        plan.bitPerfect ? (plan.driftActuator === 'hardwareClock' ? '● bitperfect · hardware clock synchronized' : '● bitperfect')
-          : s?.audioControl === 'bitPerfect' ? '○ Force Bit-Perfect set, not reached' : '○ resampled')),
+      plan && h('span', { class: 'pill badge ' + (bitPerfect.value ? 'good' : s?.audioControl === 'bitPerfect' ? 'bad' : plan.bitPerfect ? 'warn' : 'muted'),
+        title: bitPerfect.value ? plan.reason : bitPerfect.reason },
+        bitPerfect.value ? (plan.driftActuator === 'hardwareClock' ? '● bitperfect · hardware clock synchronized' : '● bitperfect')
+          : s?.audioControl === 'bitPerfect' ? '○ Force Bit-Perfect set, not reached'
+            : plan.bitPerfect ? '○ not bitperfect at the device' : '○ resampled'),
+      plan?.replanPending && h('span', { class: 'pill badge muted', title: 'Left alone in its zone while it plays: this plan is kept to the end of the track, and the next one plays as the room did alone.' },
+        'alone from next track')),
     offline && h('p', { class: 'muted small' }, `${why}: its output, buffer, volume control and drift correction are changed while it is connected.`));
 
   const eq = row('wave', 'Equalizer', 'Adjust the sound for this room.', eqEditor(r.client, d.equalizer ?? s?.equalizer, plan, path));

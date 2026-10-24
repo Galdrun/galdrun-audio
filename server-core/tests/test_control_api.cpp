@@ -1419,6 +1419,24 @@ MULTIROOM_TEST(control_api_moves_a_room_whose_settings_changed)
     CHECK(!flag(set, "changed"));
     CHECK_EQ(rig.log.count(RoomCommandKind::Renegotiate, "roomA"), asked);
 
+    // Left alone while its line is not playing: bitperfect again at once, on
+    // the same stream, with nothing left waiting for a track boundary.
+    CHECK(living->transport() != TransportState::Playing);
+    set = caller.request(
+        R"({"command":"client.setGrouped","params":{"client":"roomA","grouped":false}})");
+    CHECK(flag(set, "changed"));
+    CHECK(living->member(ClientId("roomA")) == playing);
+    CHECK(waitFor([&] { return playing->formatSwitches() == 2; }));
+    CHECK(playing->plan().mode == OutputMode::BitPerfect);
+    CHECK_EQ(rig.log.count(RoomCommandKind::Renegotiate, "roomA"), asked);
+    clients = caller.request(R"({"command":"clients"})");
+    CHECK(!flag(*entry(clients, "clients", "clientId", "roomA")->find("output"), "replanPending"));
+
+    set = caller.request(
+        R"({"command":"client.setGrouped","params":{"client":"roomA","grouped":true}})");
+    CHECK(waitFor([&] { return playing->formatSwitches() == 3; }));
+    CHECK(playing->plan().reason == PlanReason::Grouped);
+
     // bitPerfect opts out, grouped or not: bitperfect again, and status says
     // why it is not corrected.
     set = caller.request(

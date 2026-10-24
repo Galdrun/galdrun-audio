@@ -344,7 +344,7 @@ public sealed class ZoneSettingsTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_room_is_grouped_while_its_zone_names_another_and_until_the_zone_stops()
+    public async Task A_room_is_grouped_while_its_zone_names_another()
     {
         var (link, _) = await StartAsync();
         await Send(link, new ZoneCreate("living"));
@@ -367,8 +367,9 @@ public sealed class ZoneSettingsTests : IAsyncDisposable
             SentSince(mark));
         Assert.True(link.Desired.Effective("roomA").Grouped);
 
-        // Back to one room while playing: the one left stays grouped until the
-        // zone stops; the one that left is not.
+        // Back to one room while playing: neither is grouped any more, at once.
+        // The core keeps the room left alone on its plan to the end of the
+        // track, so a pause sends nothing more.
         await _core.EmitAsync("""{"event":"zone.transport","zone":"living","state":"playing","timelineNs":100}""");
         await Until(() => link.Model.Current.Zones["living"].Transport == TransportState.Playing);
         mark = _core.All.Count;
@@ -376,16 +377,18 @@ public sealed class ZoneSettingsTests : IAsyncDisposable
         Assert.Equal(
             [
                 ("zone.setClients", """{"zone":"living","clients":["roomA"]}"""),
+                ("client.setGrouped", """{"client":"roomA","grouped":false}"""),
                 ("client.setGrouped", """{"client":"roomB","grouped":false}"""),
             ],
             SentSince(mark));
-        Assert.True(link.Desired.Effective("roomA").Grouped);
+        Assert.False(link.Desired.Effective("roomA").Grouped);
+        Assert.Empty(link.Desired.Diff(link.Model.Current).OfType<ClientSetGrouped>());
 
         mark = _core.All.Count;
         await _core.EmitAsync("""{"event":"zone.transport","zone":"living","state":"paused","timelineNs":200}""");
-        await Until(() => _core.All.Count > mark);
-        Assert.Equal([("client.setGrouped", """{"client":"roomA","grouped":false}""")], SentSince(mark));
-        Assert.False(link.Desired.Effective("roomA").Grouped);
+        await Until(() => link.Model.Current.Zones["living"].Transport == TransportState.Paused);
+        await Task.Delay(100, Ct);
+        Assert.Empty(SentSince(mark));
 
         // A reconnect to a core that holds nothing sends no grouping for a
         // room alone.
