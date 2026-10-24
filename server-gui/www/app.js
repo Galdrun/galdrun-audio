@@ -413,8 +413,6 @@ for (const type of ['pointerup', 'pointercancel']) {
 }
 document.addEventListener('focusout', () => { if (!pointerDown) flushDirty(); });
 
-const raw = (key, value) => h('details', { 'data-key': key }, h('summary', {}, 'raw'), h('pre', { class: 'json' }, json(mask(value))));
-
 // Which zone and room cards stand collapsed, kept across renders and reloads.
 let collapsedCards = [];
 try { collapsedCards = JSON.parse(store.get('vx.collapsed', '[]')); } catch { /* per-viewer convenience only */ }
@@ -916,13 +914,16 @@ function dropTarget(onRoom, onItem, mark) {
 // What is dragged is known only here (a dragover cannot read the data), so a
 // row dropped on another list is not taken.
 const ROW_TYPE = 'application/x-galdrun-row';
-let rowDragging = null; // {list, row, group, rows, ids, dropped}
+let rowDragging = null; // {list, row, group, rows, ids, carried, dropped}
 // The grip a row is dragged by, in its first cell: only it starts a move, so
 // the row's text and buttons stay as they are. The whole row is what is seen
 // dragging, or "3 items" when it is selected with others: they all go. While
 // they are dragged, the rows themselves move to where they would land
-// (listDrop); a drag that is not dropped puts them back.
-function rowHandle(list, label) {
+// (listDrop); a drag that is not dropped puts them back. With items(id), the
+// bodies a row is added by, they drag as library items too, so they can be
+// dropped on another list (a playlist in the tree); `carried` names the rows
+// that have bodies.
+function rowHandle(list, label, items) {
   return h('td', {
     class: 'drag-handle', draggable: 'true', title: 'drag to move', 'aria-label': 'Drag to move',
     ondragstart(e) {
@@ -931,9 +932,11 @@ function rowHandle(list, label) {
       const many = SEL.list === list && SEL.ids.has(row.dataset.id) && SEL.ids.size > 1;
       const group = many ? rows.filter((r) => SEL.ids.has(r.dataset.id)) : [row];
       e.dataTransfer.setData(ROW_TYPE, list);
+      const carried = items ? group.map((r) => [r.dataset.id, items(r.dataset.id)]).filter(([, b]) => b.length) : [];
+      if (items) e.dataTransfer.setData(ITEM_TYPE, JSON.stringify(carried.flatMap(([, b]) => b)));
       e.dataTransfer.effectAllowed = 'move';
       if (group.length > 1) dragBadge(e, `${group.length} items`); else e.dataTransfer.setDragImage(row, 12, 12);
-      rowDragging = { list, row, group, rows, ids: rows.map((r) => r.dataset.id) };
+      rowDragging = { list, row, group, rows, ids: rows.map((r) => r.dataset.id), carried: carried.map(([id]) => id) };
       S.dragging = true;
       // After the drag image is taken, so it is not faded.
       setTimeout(() => group.forEach((r) => r.classList.add('row-dragging')));
@@ -1807,8 +1810,7 @@ function zoneStatus(z) {
         const seconds = Number(e.target.pos.value);
         act(() => api('POST', `${path}/seek`, { item: q?.current, positionMs: Math.round(seconds * 1000) }));
       } }, h('input', { name: 'pos', type: 'number', step: '0.1', min: 0, placeholder: 'seconds', class: 'w-sm', 'aria-label': 'Seek to seconds' }), h('button', {}, 'Seek current item')),
-      h('div', { class: 'row' }, h('button', { class: 'danger', onclick: () => confirm(`Delete zone ${z.name ?? z.zone}? Its queue goes, and each of its rooms gets a zone of its own.`) && act(() => api('DELETE', path), 'zone deleted') }, 'Delete zone')),
-      raw(`zone:${z.zone}`, z));
+      h('div', { class: 'row' }, h('button', { class: 'danger', onclick: () => confirm(`Delete zone ${z.name ?? z.zone}? Its queue goes, and each of its rooms gets a zone of its own.`) && act(() => api('DELETE', path), 'zone deleted') }, 'Delete zone')));
 }
 
 function renderZoneStatus() {
@@ -2504,8 +2506,7 @@ function roomSettings(r) {
       cell('volume', d.volume, d.effectiveVolume, s?.volume),
       cell('muted', d.muted, d.effectiveMuted, s?.muted),
       cell('max volume dB', d.maxVolumeDb, d.maxVolumeDb, undefined),
-      cell('output latency ms', d.outputLatencyMs, d.outputLatencyMs, s?.outputLatencyMs))),
-    raw(`room:${r.client}`, r));
+      cell('output latency ms', d.outputLatencyMs, d.outputLatencyMs, s?.outputLatencyMs))));
 
   return h('div', { class: 'room-settings' }, backdrop, hero,
     h('div', { class: 'room-rows' }, audio, eq, syncRow, device, buttons, capabilities, diagnostics));
@@ -3949,13 +3950,23 @@ const playlistTree = folderTree({
   deleting: (_, lists) => { if (lists.some((p) => p.id === S.openPlaylist)) S.openPlaylist = null; },
   item: {
     icon: 'playlists', current: (p) => p.id === S.openPlaylist, open: (p) => openPlaylist(p.id), count: (p) => p.count, menu: playlistMenu,
-    drop: (p, items) => act(() => dropOnPlaylist(p.id, items)).then(() => act(loadPlaylists)),
+    drop: (p, items) => {
+      // Entries of another playlist move here: added, then taken out of it.
+      const from = rowDragging?.list.startsWith('playlist:') ? { id: Number(rowDragging.list.slice(9)), ids: rowDragging.carried } : null;
+      if (from?.id === p.id) return;
+      if (from) clearSelection();
+      act(async () => {
+        await dropOnPlaylist(p.id, items);
+        if (from) for (const e of from.ids) await api('DELETE', `playlists/${from.id}/entries/${e}`);
+      }, from && (from.ids.length > 1 ? `${from.ids.length} entries moved` : 'moved')).then(() => act(loadPlaylists));
+    },
   },
 });
 const renderPlaylistTree = () => playlistTree.render();
 
 function openPlaylist(id) {
   S.openPlaylist = id;
+  $('#plSearch').value = '';
   if (smallScreen.matches) showPlaylistPart('list');
   renderPlaylistTree();
   act(renderPlaylistEntries);
@@ -3973,6 +3984,7 @@ function playlistMenu(p) {
 }
 
 $('#plNew').addEventListener('click', () => playlistTree.newItem());
+$('#plSearch').addEventListener('input', filterPlaylistEntries);
 $('#plNewFolder').addEventListener('click', () => playlistTree.newFolder());
 treeStrip($('#plTreeToggle'), 'vx.playlistTree', 'playlists');
 // The tree, the open playlist or the library.
@@ -4010,7 +4022,7 @@ async function renderPlaylistEntries() {
     for (const m of moves) await api('PATCH', `playlists/${id}/entries/${m.id}`, { index: m.to });
   }, 'moved').then(reload);
   $('#plHead').replaceChildren(
-    h('span', { class: 'queue-count pl-title' }, icon('playlists'), h('span', { class: 'pl-name' }, p.name), h('span', { class: 'muted' }, `Tracks: ${entries.length}`)),
+    h('span', { class: 'queue-count pl-title' }, icon('playlists'), h('span', { class: 'pl-name' }, p.name), h('span', { class: 'muted pl-count' }, `Tracks: ${entries.length}`)),
     h('span', { class: 'tools' },
       h('button', { class: 'icon-only', title: 'Play next in the zone', 'aria-label': 'Play next in the zone', disabled: !entries.length, onclick: () => act(() => enqueuePlaylist(id, true)) }, icon('next')),
       h('button', { class: 'icon-only', title: 'Add to the zone’s queue', 'aria-label': 'Add to the zone’s queue', disabled: !entries.length, onclick: () => act(() => enqueuePlaylist(id, false)) }, icon('queue'))));
@@ -4018,7 +4030,7 @@ async function renderPlaylistEntries() {
     h('table', { class: 'small' },
       h('tr', {}, h('th', {}, '#'), h('th', {}, 'Track'), h('th', { class: 'queue-actions' }, 'Duration')),
       entries.map((en, i) => h('tr', { 'data-index': String(i), 'data-list': list, 'data-id': String(en.id), 'data-selected': rowSelected(list, en.id) },
-        rowHandle(list, i + 1),
+        rowHandle(list, i + 1, (rowId) => entryBody(entries.find((e) => String(e.id) === rowId))),
         h('td', {}, h('div', { class: 'with-art' },
           infoArt(en.item, artSlot(en.item.artworkId)),
           h('div', { class: 'grow' }, queueLines(en.item)))),
@@ -4030,7 +4042,33 @@ async function renderPlaylistEntries() {
               () => (media(en, 'group') ? addBookFavorite(en.item.source) : addFavorite(en.item)), Boolean(media(en, 'group'))),
             h('button', { class: 'danger', title: 'remove from the playlist (with the rows selected, all of them)', 'aria-label': 'Remove from the playlist', onclick: () => removeEntries(id, list, entries, en.id) }, icon('trash')))))))),
     !entries.length && h('p', { class: 'muted small' }, 'Empty: drag tracks, albums or books here from the library, or add them with a cover’s buttons.'),
+    h('p', { class: 'muted small pl-no-match', hidden: true }, 'No track matches.'),
     h('p', { class: 'muted small drop-hint' }, 'Drop to add to the playlist.')));
+  filterPlaylistEntries();
+}
+
+// An entry as the bodies it is added by elsewhere: a book by the node it came
+// from (none when it names none).
+function entryBody(en) {
+  const book = media(en, 'group');
+  if (!book) return [{ tracks: [en.item] }];
+  const at = book.source?.indexOf(':') ?? -1;
+  return at < 0 ? [] : [{ node: { provider: book.source.slice(0, at), id: book.source.slice(at + 1) }, group: true }];
+}
+
+// Searched, only the entries whose title, artist or album hold every word show.
+function filterPlaylistEntries() {
+  const words = $('#plSearch').value.toLowerCase().split(/\s+/).filter(Boolean);
+  const rows = [...$('#entries').querySelectorAll('tr[data-id]')];
+  let shown = 0;
+  for (const row of rows) {
+    const hit = words.every((w) => row.querySelector('.with-art').textContent.toLowerCase().includes(w));
+    row.classList.toggle('no-match', !hit);
+    if (hit) shown++;
+  }
+  const count = $('#plHead .pl-count'), none = $('#entries .pl-no-match');
+  if (count) count.textContent = words.length ? `Tracks: ${shown} of ${rows.length}` : `Tracks: ${rows.length}`;
+  if (none) none.hidden = !rows.length || shown > 0;
 }
 
 async function loadFavorites() {
@@ -4061,6 +4099,7 @@ const stationTree = folderTree({
   current: () => S.stationFolder,
   pick(folder) {
     S.stationFolder = folder;
+    $('#stSearch').value = '';
     if (smallScreen.matches) showStationPart('list');
     stationTree.render();
     renderStations();
@@ -4079,25 +4118,30 @@ function moveStations(ids, folder) {
 
 const stationFolderName = () => (S.stationFolder == null ? 'Radio stations' : stationTree.path(S.stationFolder).join(' › '));
 
+// Searched, the stations of every folder whose name, genre or homepage holds every word.
 function renderStations() {
   const folder = S.stationFolder;
-  const shown = S.stations.filter((s) => (s.folder ?? null) === folder).map((s) => s.station);
-  const name = stationFolderName();
+  const query = $('#stSearch').value.trim();
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const hit = (s) => { const text = [s.name, s.genre, s.homepage].filter(Boolean).join(' ').toLowerCase(); return words.every((w) => text.includes(w)); };
+  const shown = S.stations.filter((s) => (query ? hit(s.station) : (s.folder ?? null) === folder)).map((s) => s.station);
+  const name = query ? `Search: ${query}` : stationFolderName();
   $('#stHead').replaceChildren(
-    h('span', { class: 'queue-count pl-title' }, icon(folder == null ? 'radio' : 'folder'), h('span', { class: 'pl-name', title: name }, name),
+    h('span', { class: 'queue-count pl-title' }, icon(query ? 'search' : folder == null ? 'radio' : 'folder'), h('span', { class: 'pl-name', title: name }, name),
       h('span', { class: 'muted' }, `Stations: ${shown.length}`)),
     h('span', { class: 'tools' },
       h('button', { class: 'icon-only', title: 'Import M3U or PLS', 'aria-label': 'Import M3U or PLS', onclick: () => $('#importDialog').showModal() }, icon('playlists')),
       h('button', { class: 'icon-only', title: 'Add a station', 'aria-label': 'Add a station', onclick: () => $('#stationDialog').showModal() }, icon('plus'))));
   $('#stations').replaceChildren(shown.length
     ? h('div', { class: 'table-wrap plain station-list' }, stationTable(shown))
-    : h('p', { class: 'muted small pl-pick' }, folder == null && !S.stations.length
+    : h('p', { class: 'muted small pl-pick' }, query && S.stations.length ? 'No station matches.' : folder == null && !S.stations.length
       ? 'No stations yet: add one with +, or import an M3U or PLS file.'
       : 'Empty: drag stations onto this folder in the tree, or add one with +.'));
   if (smallScreen.matches && $('.page[data-page="stations"]').dataset.part === 'list') showStationPart('list');
 }
 
 $('#stNewFolder').addEventListener('click', () => stationTree.newFolder());
+$('#stSearch').addEventListener('input', renderStations);
 treeStrip($('#stTreeToggle'), 'vx.stationTree', 'folders');
 const showStationPart = pageParts($('.page[data-page="stations"]'), (part) => (part === 'list' ? stationFolderName() : 'Folders'));
 
@@ -4282,8 +4326,7 @@ function folderCard(f) {
         h('input', { name: 'user', placeholder: 'user (empty = guest)', size: 12, value: f.user ?? '' }),
         h('input', { name: 'password', type: 'password', placeholder: f.hasPassword ? 'unchanged' : 'none', size: 12, autocomplete: 'new-password' }),
         h('input', { name: 'domain', placeholder: 'domain', size: 8, value: f.domain ?? '' }),
-        h('button', {}, 'set'))),
-    raw(`folder:${f.id}`, f));
+        h('button', {}, 'set'))));
 }
 
 function onFolderChanged(data) {
@@ -5188,7 +5231,7 @@ function renderStatus() {
   pill.className = 'pill ' + (c.connected ? 'good' : 'bad');
   if (page === 'services') renderTidalState(st);
   if (page === 'ai') renderAi();
-  if (page === 'core') loadCores().catch(() => {}); // a server before core discovery answers 404
+  if (page === 'settings') loadCores().catch(() => {}); // a server before core discovery answers 404
   if (page !== 'status') return;
   const text = json(st);
   if ($('#statusJson').textContent !== text) $('#statusJson').textContent = text;
@@ -5272,8 +5315,7 @@ function systemCard(title, key, m, rows, detail, extra) {
     m && usageBox(key, m),
     extra,
     m && h('details', { class: 'sub', 'data-key': `sysFigures:${key}` }, h('summary', {}, 'All figures'),
-      h('div', { class: 'kv' }, rows.flatMap(([k, v]) => kv(k, v)))),
-    m && raw(`sys:${key}`, m));
+      h('div', { class: 'kv' }, rows.flatMap(([k, v]) => kv(k, v)))));
 }
 
 const usedOf = (total, available) => total == null || available == null
@@ -5606,7 +5648,10 @@ async function loadCoreAudio() {
   $('#coreAudioFixed').replaceChildren(h('table', { class: 'small' },
     Object.entries(r.audio).filter(([key]) => !r.live.includes(key))
       .map(([key, value]) => h('tr', {}, h('td', {}, key), h('td', { class: 'mono' }, String(value))))));
-  if (!$('#resampler').value) $('#resampler').value = r.audio.resampler ?? '';
+  // A core before the resampler list offers only the configured one.
+  const resamplers = r.resamplers ?? [r.audio.resampler].filter(Boolean);
+  $('#resampler').replaceChildren(...resamplers.map((id) => h('option', { value: id }, id)));
+  $('#resampler').value = r.audio.resampler ?? '';
 }
 $('#coreAudioForm').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -5625,7 +5670,7 @@ function renderTidalState(st) {
     : h('span', { class: 'muted' }, 'TIDAL is not available'));
 }
 
-$('#setResampler').addEventListener('click', () => act(() => api('PUT', 'core/resampler', { resampler: $('#resampler').value.trim() }), (r) => `resampler ${r.resampler}${r.changed ? ' (changed)' : ''}`));
+$('#setResampler').addEventListener('click', () => act(() => api('PUT', 'core/resampler', { resampler: $('#resampler').value }), (r) => `resampler ${r.resampler}${r.changed ? ' (changed)' : ''}`));
 
 // --- AI: providers, keys, models and settings (server phase 21); browser login (phase 22)
 
@@ -5832,8 +5877,9 @@ function aiCard(p) {
   const change = (fn, done) => act(fn, done).then(() => act(loadAi));
   const filter = (AI.filter[p.id] ?? '').toLowerCase();
   const models = AI.models[p.id];
-  return h('div', { class: 'card' },
-    h('h3', {}, p.displayName, h('span', { class: 'muted' }, p.id),
+  // Folded by default; render() keeps an opened one open.
+  return h('details', { class: 'card', 'data-key': `aiProvider:${p.id}` },
+    h('summary', {}, p.displayName, h('span', { class: 'muted' }, p.id),
       p.authMethods.map((m) => h('span', { class: 'pill' }, m)),
       (p.capabilities ?? []).map((c) => h('span', { class: 'pill good', title: 'a capability: the request may ask for it' }, c)),
       fixed && h('span', { class: 'pill warn', title: 'the key is from the config file: read-only here' }, 'config')),
@@ -5897,8 +5943,7 @@ function aiCard(p) {
       models.map((m) => {
         const text = `${m.id} ${m.name ?? ''}`.toLowerCase();
         return h('tr', { 'data-model': text, hidden: Boolean(filter) && !text.includes(filter) }, h('td', { class: 'mono' }, m.id), h('td', {}, m.name ?? ''));
-      }))),
-    raw(`ai:${p.id}`, p));
+      }))));
 }
 
 // A call on one provider: its refusal stays on the card verbatim, and the
@@ -6757,8 +6802,6 @@ async function refreshCore(quiet = true) {
 const PAGES = [...document.querySelectorAll('main > .page')].map((p) => p.dataset.page);
 const onShow = {
   home: () => { act(loadHome); if (homeDetail) loadHomeDetail(); },
-  // Picks up a change made in another browser.
-  general: () => loadGuiSettings(),
   // Places the track on the picked zone, which may have changed elsewhere.
   zones: () => renderZoneTabs(),
   status: () => { renderStatus(); renderZoneStatus(); },
@@ -6771,7 +6814,8 @@ const onShow = {
   aiStatus: () => { act(loadProposals); act(loadAiUsage); },
   assistant: () => { renderChat(); act(loadChats); act(loadChatModels); },
   services: () => { if (S.status) renderTidalState(S.status); act(loadArtwork); },
-  core: () => { act(loadCores); act(loadCoreAudio); loadPlayback(); },
+  // The GUI settings pick up a change made in another browser.
+  settings: () => { loadGuiSettings(); act(loadCores); act(loadCoreAudio); loadPlayback(); },
   playlists: () => act(loadPlaylists),
   stations: () => act(loadStations),
 };

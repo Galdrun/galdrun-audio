@@ -47,7 +47,7 @@ struct AudioConfig
     // ceiling -- and a zone whose format would go past this is refused by
     // name. It replaced `blockCount`, the size of one pool every zone shared.
     // audio.configure can change it while the core runs.
-    uint32_t memoryLimitMb = 64;
+    uint32_t memoryLimitMb = 128;
 
     // MATP section 46's normal prebuffer, and the only thing a room's pacing
     // compares against (section 18). A duration for the same reason the packet

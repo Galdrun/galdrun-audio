@@ -1253,6 +1253,7 @@ MULTIROOM_TEST(control_api_reads_and_changes_the_live_audio_settings)
     CHECK(isOk(settings));
     CHECK_EQ(settings.find("audio")->find("startDelayMs")->asInt(), int64_t(1000));
     CHECK_EQ(settings.find("live")->size(), size_t(6));
+    CHECK(settings.find("resamplers") != nullptr && settings.find("resamplers")->isArray());
 
     CHECK(isOk(caller.request(R"({"command":"zone.create","params":{"zone":"living"}})")));
     json::Value answer = caller.request(toFaster);
@@ -1324,7 +1325,7 @@ MULTIROOM_TEST(control_api_checks_and_changes_the_audio_memory_limit_while_zones
     CHECK(limit != nullptr);
     if (limit != nullptr)
     {
-        CHECK_EQ(limit->find("mb")->asInt(), int64_t(64));
+        CHECK_EQ(limit->find("mb")->asInt(), int64_t(AudioConfig{}.memoryLimitMb));
         CHECK_EQ(limit->find("minMb")->asInt(), static_cast<int64_t>(held));
         CHECK_EQ(limit->find("usedMb")->asInt(), static_cast<int64_t>(held));
         CHECK(limit->find("maxMb") != nullptr);

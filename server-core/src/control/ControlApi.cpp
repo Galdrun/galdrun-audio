@@ -1625,6 +1625,12 @@ ControlApi::Reply ControlApi::audioSettings()
         memory["maxMb"] = json::Value(*ceiling);
     memory["usedMb"] = json::Value(megabytesUp(zones_.memory().usedBytes()));
     reply.body["memoryLimit"] = std::move(memory);
+
+    // What resampler.configure takes.
+    json::Value resamplers = json::Value::makeArray();
+    for (const std::string& id : registry_.ids())
+        resamplers.pushBack(json::Value(id));
+    reply.body["resamplers"] = std::move(resamplers);
     return reply;
 }
 

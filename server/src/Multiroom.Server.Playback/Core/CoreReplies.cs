@@ -98,12 +98,14 @@ public sealed record ClientPowerSettings(string Client, bool Supported, string? 
     uint? StandbyAfterSeconds = null, uint? DeepSleepAfterSeconds = null, bool? DeepSleep = null);
 
 // The core config's `audio` section. Live names the keys audio.configure takes;
-// the others are read at the core's start. Changed only answers audio.configure.
+// the others are read at the core's start. Resamplers names what
+// resampler.configure takes. Changed only answers audio.configure.
 public sealed record AudioSettingsReply(
     CoreAudioSettings Audio,
     IReadOnlyList<string> Live,
     CoreMemoryLimit MemoryLimit,
-    bool? Changed = null);
+    bool? Changed = null,
+    IReadOnlyList<string>? Resamplers = null);
 
 // The core's phase 42: one ceiling over every zone's audio memory
 // (audio.memoryLimitMb), with the range audio.configure accepts for it. MaxMb

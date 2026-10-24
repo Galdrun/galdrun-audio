@@ -32,16 +32,15 @@
     <a href="#/home"><i data-icon="home"></i>Home</a>
     <a href="#/zones"><i data-icon="zones"></i>Zones</a>
     <a href="#/playlists"><i data-icon="playlists"></i>Playlists</a>
-    <a href="#/rooms"><i data-icon="device"></i>Clients</a>
     <a href="#/stations"><i data-icon="radio"></i>Radio stations</a>
+    <a href="#/rooms"><i data-icon="device"></i>Clients</a>
     <a href="#/assistant"><i data-icon="chat"></i>Assistant</a>
 
     <!-- These two groups fold up and down by their headings (kept per viewer). -->
     <button type="button" class="nav-group nav-group-toggle" data-group="settings" data-short="S" title="Settings" aria-controls="navSettings" aria-expanded="true">Settings<i data-icon="forward"></i></button>
     <div id="navSettings" class="nav-links">
-      <a href="#/general"><i data-icon="setup"></i>General</a>
+      <a href="#/settings"><i data-icon="setup"></i>Settings</a>
       <a href="#/folders"><i data-icon="folder"></i>Music library</a>
-      <a href="#/core"><i data-icon="chip"></i>Core &amp; playback</a>
       <a href="#/services"><i data-icon="cloud"></i>Online services</a>
       <a href="#/ai"><i data-icon="sparkle"></i>AI providers</a>
       <a href="#/listeners"><i data-icon="rooms"></i>Listeners</a>
@@ -172,6 +171,7 @@
 
       <section class="pane list-pane" aria-label="Playlist">
         <div id="plHead" class="queue-head"></div>
+        <input type="search" id="plSearch" class="pane-search" placeholder="Search the playlist" aria-label="Search the playlist" autocomplete="off">
         <div id="entries" class="pl-entries"></div>
       </section>
     </section>
@@ -202,6 +202,7 @@
 
       <section class="pane list-pane" aria-label="Stations">
         <div id="stHead" class="queue-head"></div>
+        <input type="search" id="stSearch" class="pane-search" placeholder="Search all stations" aria-label="Search all stations" autocomplete="off">
         <div id="stations" class="pl-entries"></div>
       </section>
 
@@ -262,7 +263,7 @@
       </div>
     </section>
 
-    <section class="page" data-page="listeners" data-title="Listeners" hidden>
+    <section class="page settings-page" data-page="listeners" data-title="Listeners" hidden>
       <div class="page-heading with-tools">
         <div>
           <h1>Listeners</h1>
@@ -270,23 +271,32 @@
         </div>
         <button type="button" id="reloadListeners">Reload</button>
       </div>
-      <section class="panel">
-        <header class="panel-head"><span class="panel-icon"><i data-icon="plus"></i></span><h2>Add a listener</h2></header>
+
+      <div class="room-rows">
+      <section class="room-row">
+        <div class="room-row-intro"><div class="card-icon"><i data-icon="plus"></i></div><div><h2>Add a listener</h2><p>A name, no login.</p></div></div>
+        <div class="room-row-content">
         <form id="userForm" class="row" autocomplete="off">
           <input name="name" placeholder="name (1 to 40 characters)" aria-label="New listener's name">
           <button class="primary">Add</button>
         </form>
         <p class="help">POST users <code>{name}</code>: trimmed, unique without regard to case. Removing one moves their likes, favourites and plays to the household; their proposals go.</p>
+        </div>
       </section>
-      <section class="panel">
-        <header class="panel-head"><span class="panel-icon"><i data-icon="rooms"></i></span><h2>Listeners</h2></header>
+      <section class="room-row">
+        <div class="room-row-intro"><div class="card-icon"><i data-icon="rooms"></i></div><div><h2>Listeners</h2><p>Everyone a like, a favourite or a play can belong to.</p></div></div>
+        <div class="room-row-content">
         <div id="users" class="table-wrap plain"></div>
+        </div>
       </section>
-      <section class="panel">
-        <header class="panel-head"><span class="panel-icon"><i data-icon="zones"></i></span><h2>Who listens where</h2></header>
+      <section class="room-row">
+        <div class="room-row-intro"><div class="card-icon"><i data-icon="zones"></i></div><div><h2>Who listens where</h2><p>The plays in a zone are its listener's.</p></div></div>
+        <div class="room-row-content">
         <p class="help">PATCH zones/{zone} <code>{user}</code>: the plays in a zone are its listener's.</p>
         <div id="zoneListeners" class="table-wrap plain"></div>
+        </div>
       </section>
+      </div>
     </section>
 
 <!-- ============================== SETTINGS ============================== -->
@@ -297,23 +307,25 @@
         <p class="subtitle">The folders the server indexes, and what the indexer found.</p>
       </div>
 
-      <section class="settings-card">
-        <div class="card-intro">
+      <div class="room-rows">
+
+      <section class="room-row">
+        <div class="room-row-intro">
           <div class="card-icon"><i data-icon="folder"></i></div>
           <div><h2>Folders</h2><p>Local, network and SMB folders. Folders from the config file are read-only here.</p></div>
         </div>
-        <div class="card-content">
+        <div class="room-row-content">
           <div class="row"><button type="button" id="reloadFolders">Reload</button> <span id="folderProgress" class="small"></span></div>
           <div id="folders" class="card-list"></div>
         </div>
       </section>
 
-      <section class="settings-card">
-        <div class="card-intro">
+      <section class="room-row">
+        <div class="room-row-intro">
           <div class="card-icon"><i data-icon="plus"></i></div>
           <div><h2>Add a folder</h2><p>For SMB, list the shares and pick a directory; the password is only sent, never shown again.</p></div>
         </div>
-        <form id="folderForm" class="card-content fields" autocomplete="off">
+        <form id="folderForm" class="room-row-content fields" autocomplete="off">
           <label for="ffType">Type</label>
           <select id="ffType" name="type"><option value="local">local</option><option value="network">network</option><option value="smb">smb</option></select>
           <fieldset id="smbFields" class="field-group" hidden>
@@ -344,12 +356,12 @@
         </form>
       </section>
 
-      <section class="settings-card">
-        <div class="card-intro">
+      <section class="room-row">
+        <div class="room-row-intro">
           <div class="card-icon"><i data-icon="search"></i></div>
           <div><h2>Indexer</h2><p>What the indexer did since the server started, and what the local library holds now.</p></div>
         </div>
-        <div class="card-content">
+        <div class="room-row-content">
           <div id="indexer"></div>
           <div class="row"><button type="button" id="reloadIndex">Count what was found</button></div>
           <div id="indexFound"></div>
@@ -357,86 +369,73 @@
           <details class="sub" data-key="indexFailed"><summary>Not indexed <span class="muted small">(from the tailed server log)</span></summary><div id="indexFailed" class="small log-box"></div></details>
         </div>
       </section>
+      </div>
     </section>
 
-    <!-- This page's own settings, the same in every browser: kept by the
-         server's GUI listener (GET/PUT /gui/settings), not by the API. -->
-    <section class="page settings-page" data-page="general" data-title="General" hidden>
+    <!-- The server's settings as one block of rows, like a client's page.
+         The zone background is this page's own setting, the same in every
+         browser: kept by the server's GUI listener (GET/PUT /gui/settings). -->
+    <section class="page settings-page" data-page="settings" data-title="Settings" hidden>
       <div class="page-heading">
-        <h1>General</h1>
-        <p class="subtitle">How this page looks, in every browser; the server keeps it in gui-settings.json.</p>
+        <h1>Settings</h1>
+        <p class="subtitle">How this page looks, which audio core the server uses, and how it plays.</p>
       </div>
 
-      <section class="settings-card">
-        <div class="card-intro">
-          <div class="card-icon"><i data-icon="image"></i></div>
-          <div><h2>Zones</h2><p>The picture behind each zone's header.</p></div>
-        </div>
-        <div class="card-content">
-          <label>Zone background image source
-            <select id="zoneBackground" disabled>
-              <option value="media">Media art</option>
-              <option value="room">Room</option>
-            </select>
-          </label>
-          <p class="help">Room: the zone's first room's picture. Media art: the artwork of what plays, the room's while there is none.</p>
-        </div>
-      </section>
-    </section>
+      <div class="room-rows">
+        <section class="room-row">
+          <div class="room-row-intro"><span class="card-icon"><i data-icon="image"></i></span>
+            <div><h2>Zones</h2><p>The picture behind each zone's header, in every browser; the server keeps it in gui-settings.json.</p></div></div>
+          <div class="room-row-content">
+            <label>Zone background image source
+              <select id="zoneBackground" disabled>
+                <option value="media">Media art</option>
+                <option value="room">Room</option>
+              </select>
+            </label>
+            <p class="help">Room: the zone's first room's picture. Media art: the artwork of what plays, the room's while there is none.</p>
+          </div>
+        </section>
 
-    <section class="page settings-page" data-page="core" data-title="Core &amp; playback" hidden>
-      <div class="page-heading">
-        <h1>Core &amp; playback</h1>
-        <p class="subtitle">Which audio core the server uses, and how it plays.</p>
+        <section class="room-row">
+          <div class="room-row-intro"><span class="card-icon"><i data-icon="chip"></i></span>
+            <div><h2>Server core</h2><p>Every core announcing itself in the last 6 s. The choice is kept by core id; the zones move with it.</p></div></div>
+          <div class="room-row-content">
+            <p class="small" id="coreSelected"></p>
+            <div id="cores"></div>
+            <div class="row"><button type="button" id="reloadCores">Reload</button> <button type="button" id="useConfigured">Use configured address</button></div>
+          </div>
+        </section>
+
+        <section class="room-row">
+          <div class="room-row-intro"><span class="card-icon"><i data-icon="play"></i></span>
+            <div><h2>Playback</h2><p>How books go into a queue or a playlist, and what liked radio songs play as.</p></div></div>
+          <div class="room-row-content">
+            <label class="toggle" title="PATCH settings/playback {groupBooks}"><input type="checkbox" id="groupBooks" checked disabled> Group audiobooks</label>
+            <p class="help">On: a book (two or more audiobook tracks) goes in as one item with its chapters. Off: as single tracks.</p>
+            <label class="toggle" title="PATCH settings/playback {findRadioLikes}"><input type="checkbox" id="findRadioLikes" checked disabled> Find liked radio songs</label>
+            <p class="help">On: a song liked off the radio is looked for in the library first, then the streaming services, and plays as the track found. Off: not looked for; what was found stays.</p>
+          </div>
+        </section>
+
+        <section class="room-row">
+          <div class="room-row-intro"><span class="card-icon"><i data-icon="wave"></i></span>
+            <div><h2>Core audio</h2><p>Timing used from the next start, pause, stop or seek. <span id="coreAudioState" class="bad"></span></p></div></div>
+          <div class="room-row-content">
+            <form id="coreAudioForm" class="fields wide-labels" autocomplete="off"></form>
+            <p class="help">A shorter start delay makes transport react sooner; too short and a room on a slow link gets the message too late and has to rejoin.</p>
+            <details class="sub" data-key="coreAudioFixed"><summary>Read at the core's start only</summary><div id="coreAudioFixed" class="small table-wrap plain"></div></details>
+          </div>
+        </section>
+
+        <section class="room-row">
+          <div class="room-row-intro"><span class="card-icon"><i data-icon="gauge"></i></span>
+            <div><h2>Resampler</h2><p>The core's sample-rate converter.</p></div></div>
+          <div class="room-row-content fields">
+            <label for="resampler">Resampler</label>
+            <div class="row"><select id="resampler"></select><button type="button" id="setResampler">Apply</button></div>
+          </div>
+        </section>
       </div>
-
-      <section class="settings-card">
-        <div class="card-intro">
-          <div class="card-icon"><i data-icon="chip"></i></div>
-          <div><h2>Server core</h2><p>Every core announcing itself in the last 6 s. The choice is kept by core id; the zones move with it.</p></div>
-        </div>
-        <div class="card-content">
-          <p class="small" id="coreSelected"></p>
-          <div id="cores"></div>
-          <div class="row"><button type="button" id="reloadCores">Reload</button> <button type="button" id="useConfigured">Use configured address</button></div>
-        </div>
-      </section>
-
-      <section class="settings-card">
-        <div class="card-intro">
-          <div class="card-icon"><i data-icon="play"></i></div>
-          <div><h2>Playback</h2><p>How books go into a queue or a playlist, and what liked radio songs play as.</p></div>
-        </div>
-        <div class="card-content">
-          <label class="toggle" title="PATCH settings/playback {groupBooks}"><input type="checkbox" id="groupBooks" checked disabled> Group audiobooks</label>
-          <p class="help">On: a book (two or more audiobook tracks) goes in as one item with its chapters. Off: as single tracks.</p>
-          <label class="toggle" title="PATCH settings/playback {findRadioLikes}"><input type="checkbox" id="findRadioLikes" checked disabled> Find liked radio songs</label>
-          <p class="help">On: a song liked off the radio is looked for in the library first, then the streaming services, and plays as the track found. Off: not looked for; what was found stays.</p>
-        </div>
-      </section>
-
-      <section class="settings-card">
-        <div class="card-intro">
-          <div class="card-icon"><i data-icon="wave"></i></div>
-          <div><h2>Core audio</h2><p>Timing used from the next start, pause, stop or seek. <span id="coreAudioState" class="bad"></span></p></div>
-        </div>
-        <div class="card-content">
-          <form id="coreAudioForm" class="fields wide-labels" autocomplete="off"></form>
-          <p class="help">A shorter start delay makes transport react sooner; too short and a room on a slow link gets the message too late and has to rejoin.</p>
-          <details class="sub" data-key="coreAudioFixed"><summary>Read at the core's start only</summary><div id="coreAudioFixed" class="small table-wrap plain"></div></details>
-        </div>
-      </section>
-
-      <section class="settings-card">
-        <div class="card-intro">
-          <div class="card-icon"><i data-icon="gauge"></i></div>
-          <div><h2>Resampler</h2><p>The core's sample-rate converter.</p></div>
-        </div>
-        <div class="card-content fields">
-          <label for="resampler">Resampler</label>
-          <div class="row"><input id="resampler" placeholder="resampler name"><button type="button" id="setResampler">Apply</button></div>
-        </div>
-      </section>
     </section>
 
     <section class="page settings-page" data-page="services" data-title="Online services" hidden>
@@ -444,12 +443,14 @@
         <h1>Online services</h1>
         <p class="subtitle">Credentials and switches for services on the net: music providers and artwork.</p>
       </div>
-      <section class="settings-card">
-        <div class="card-intro">
+
+      <div class="room-rows">
+      <section class="room-row">
+        <div class="room-row-intro">
           <div class="card-icon"><i data-icon="cloud"></i></div>
           <div><h2>Tidal</h2><p>Sign in once to link your account. Approve the device code in TIDAL from any browser. The server keeps your account linked automatically. The TIDAL applications are set in the server's config file.</p></div>
         </div>
-          <div class="card-content tidal-content">
+          <div class="room-row-content tidal-content">
             <div class="form-actions">
               <button type="button" id="tidalLogin" class="primary">Sign in to TIDAL</button>
             </div>
@@ -459,12 +460,12 @@
             <p id="tidalLoginLink" class="small"></p>
           </div>
       </section>
-      <section class="settings-card">
-        <div class="card-intro">
+      <section class="room-row">
+        <div class="room-row-intro">
           <div class="card-icon"><i data-icon="library"></i></div>
           <div><h2>Artwork</h2><p>Where the library's missing covers and artist pictures are looked for; what is found is kept on the server. A change looks again for what was not found. <code>GET artwork</code></p></div>
         </div>
-        <form id="artworkForm" class="card-content fields" autocomplete="off">
+        <form id="artworkForm" class="room-row-content fields" autocomplete="off">
           <span class="field-label">MusicBrainz</span>
           <div><label class="toggle" title="PATCH artwork {musicBrainz}"><input type="checkbox" id="artMusicBrainz" disabled> Cover Art Archive and Wikidata; finds albums and artists by name</label> <span id="artMusicBrainzOrigin" class="muted small"></span></div>
           <span class="field-label">fanart.tv</span>
@@ -479,6 +480,7 @@
           </div>
         </form>
       </section>
+      </div>
     </section>
 
     <section class="page settings-page" data-page="ai" data-title="AI providers" hidden>
@@ -490,12 +492,14 @@
         <button type="button" id="reloadAi">Reload</button>
       </div>
 
-      <section class="settings-card">
-        <div class="card-intro">
+      <div class="room-rows">
+
+      <section class="room-row">
+        <div class="room-row-intro">
           <div class="card-icon"><i data-icon="sparkle"></i></div>
           <div><h2>Defaults</h2><p>An empty field clears that default. Reasoning <code>default</code> lets the vendor decide. Web lookup is billed by most vendors.</p></div>
         </div>
-        <form id="aiSettingsForm" class="card-content fields wide-labels" autocomplete="off">
+        <form id="aiSettingsForm" class="room-row-content fields wide-labels" autocomplete="off">
           <label for="aiProv">Default provider</label><select id="aiProv" name="defaultProvider"></select>
           <label for="aiModel">Default model</label><input id="aiModel" name="defaultModel" list="aiModelList">
           <datalist id="aiModelList"></datalist>
@@ -517,12 +521,12 @@
         </form>
       </section>
 
-      <section class="settings-card">
-        <div class="card-intro">
+      <section class="room-row">
+        <div class="room-row-intro">
           <div class="card-icon"><i data-icon="sparkle"></i></div>
           <div><h2>Proposals</h2><p>What the house (or the header's listener) might like next, from what it liked. Background runs cost tokens; a refresh runs whenever an AI is configured.</p></div>
         </div>
-        <form id="proposalsForm" class="card-content fields wide-labels" autocomplete="off">
+        <form id="proposalsForm" class="room-row-content fields wide-labels" autocomplete="off">
           <span></span><label class="toggle"><input type="checkbox" name="enabled"> Background runs</label>
           <label for="prInterval">Every</label><div class="unit-input"><input id="prInterval" name="intervalHours" type="number"><span>h</span></div>
           <label for="prDebounce">Quiet for</label><div class="unit-input"><input id="prDebounce" name="debounceMinutes" type="number"><span>min</span></div>
@@ -537,11 +541,14 @@
         </form>
       </section>
 
-      <section class="panel">
-        <header class="panel-head"><span class="panel-icon"><i data-icon="key"></i></span><h2>Providers</h2></header>
+      <section class="room-row">
+        <div class="room-row-intro"><div class="card-icon"><i data-icon="key"></i></div><div><h2>Providers</h2><p>Each vendor's key, login and models; open one to change it.</p></div></div>
+        <div class="room-row-content">
         <p class="help">Keys, OAuth codes and tokens are sent and never shown again. <em>Log in</em> opens the vendor in a new window and returns to <code>ai-login.html</code> here; <em>log in on this machine</em> returns to the server's own callback. OpenAI's ChatGPT sign-in takes only a loopback return: open this page as <code>http://127.0.0.1:…</code> or <code>localhost</code>.</p>
         <div id="aiProviders" class="card-list"></div>
+        </div>
       </section>
+      </div>
     </section>
 
 <!-- ============================== DIAGNOSTICS ============================== -->

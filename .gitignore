@@ -28,6 +28,7 @@ __pycache__/
 # Private notes and local tool config
 /TODOS.md
 /BugFindings*.md
+/roadmap/
 /.mcp.json
 /.playwright-mcp/
 # Local release tooling
