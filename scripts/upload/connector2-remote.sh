@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs on the Connector 2 (BusyBox sh), copied to /tmp by connector2.ps1 / connector2.sh
+# Runs on Galdrun Buildroot appliances (BusyBox sh). Connector uploaders copy it
 # together with /tmp/galdrun-client.tar, the linux-armv6 release. Not meant to be run by hand.
 # Replaces the client only; settings, room ID and the firmware stay as they are.
 set -eu
@@ -7,8 +7,12 @@ dir=/opt/galdrun-client
 next=$dir/.next
 archive=/tmp/galdrun-client.tar
 trap 'rm -rf "$next" "$archive" "$0"' EXIT
-grep -q '"raumfeld-connector2"' /etc/galdrun-board.json 2>/dev/null ||
-    { echo 'This device is not running the Galdrun Connector 2 firmware.' >&2; exit 1; }
+grep -Eq '"(raumfeld-connector2|raspberrypi-rpi1|raspberrypi-rpi3)"' /etc/galdrun-board.json 2>/dev/null ||
+    { echo 'This device is not running a supported Galdrun Buildroot image.' >&2; exit 1; }
+if [ "${1:-}" = --stdin ]; then
+    # Generic Linux uploaders stream gzip; BusyBox images have neither bash nor systemd.
+    sed '1s/^\xef\xbb\xbf//' | gzip -dc > "$archive"
+fi
 
 rm -rf "$next"
 mkdir "$next"

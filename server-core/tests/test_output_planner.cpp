@@ -4,9 +4,11 @@
 #include "util/FileUtil.h"
 #include "util/Logger.h"
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -702,6 +704,37 @@ MULTIROOM_TEST(output_planner_refuses_a_client_that_reported_nothing)
               PlanError::InvalidSourceFormat);
     CHECK_ERR(fixture.planner().plan(format(44100, 0, SampleType::Int24In32), settings, matching()),
               PlanError::InvalidSourceFormat);
+}
+
+// resampler.configure swaps the server's planner while zones plan rooms on
+// their own threads: every plan is made whole by one of them, never a mix.
+MULTIROOM_TEST(shared_planner_swaps_while_rooms_are_planned)
+{
+    const Fixture variable;
+    const Fixture fixed("fixed", false);
+    SharedPlanner shared(variable.planner());
+
+    std::atomic<bool> stop{false};
+    std::atomic<int> plans{0};
+    std::atomic<int> mixed{0};
+    std::thread planning([&] {
+        const RoomAudioSettings grouped{AudioControl::Auto, true};
+        while (!stop.load())
+        {
+            const std::shared_ptr<const OutputPlanner> planner = shared.get();
+            const auto plan = planner->plan(kSource, grouped, mismatching());
+            if (!plan || plan->resamplerId != planner->resamplerId() ||
+                plan->driftCorrected() != planner->resamplerCapabilities().variableRatio)
+                ++mixed;
+            ++plans;
+        }
+    });
+    for (int i = 0; i < 2000 || plans.load() < 100; ++i)
+        shared.set(i % 2 == 0 ? fixed.planner() : variable.planner());
+    stop = true;
+    planning.join();
+
+    CHECK_EQ(mixed.load(), 0);
 }
 
 MULTIROOM_TEST(output_planner_logs_the_fixed_ratio_resolution_once_at_startup)

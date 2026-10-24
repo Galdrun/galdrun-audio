@@ -12,6 +12,12 @@ def check(scenario="baseline"):
         root = Path(directory)
         (root / "sys/eth0").mkdir(parents=True)
         (root / "sys/wlan0/phy80211").mkdir(parents=True)
+        (root / "sys/wlan0/address").write_text("02:11:22:33:44:00\n")
+        if scenario == "wifi-radio-hotplug":
+            (root / "sys/wlan1/phy80211").mkdir(parents=True)
+            (root / "sys/wlan1/address").write_text("02:11:22:33:44:01\n")
+        if scenario == "wifi-station-only":
+            (root / "sys/wlan0/phy80211/name").write_text("phy0\n")
         (root / "sys/eth0/carrier").write_text("1\n" if scenario in ("ethernet-static", "reload", "ethernet-no-lease") else "0\n")
         (root / "step").write_text("0")
         config = root / "network.conf"
@@ -19,6 +25,8 @@ def check(scenario="baseline"):
         (root / "hostname").write_text("connector2\n")
         user_config = root / "galdrun-network.conf"
         user_config.write_text((source / "etc/galdrun-network.conf").read_text())
+        if scenario == "wifi-radio-hotplug":
+            user_config.write_text(user_config.read_text().replace("WIFI_RADIO=\n", "WIFI_RADIO=02:11:22:33:44:01\n"))
         if scenario in ("wifi-dhcp", "reload"):
             user_config.write_text(user_config.read_text().replace("DEVICE_NAME=\n", "DEVICE_NAME=kitchen-connector\n"))
         if scenario in ("ethernet-10", "ethernet-100"):
@@ -96,12 +104,15 @@ elif name=='sleep':
  if args==['2']:time.sleep(0.05);sys.exit(0)
  step+=1
  (r/'step').write_text(str(step))
+ if scenario=='wifi-radio-hotplug':
+  if step==1:(r/'sys/wlan1/phy80211').rmdir()
+  if step==2:(r/'sys/wlan1/phy80211').mkdir()
  if scenario=='wifi-wpa-exit' and step==1:
   p=r/'run/wpa.pid';os.kill(int(p.read_text()),signal.SIGTERM);p.unlink()
  if scenario=='baseline':(r/'sys/eth0/carrier').write_text(('1' if step in (1,2) else '0')+'\\n')
  if scenario=='reload' and step==1:
   p=r/'galdrun-network.conf';p.write_text(p.read_text().replace('ETH_IP_MODE=dhcp','ETH_IP_MODE=static').replace('ETH_IP=\\n','ETH_IP=10.0.0.38\\n').replace('DEVICE_NAME=kitchen-connector','DEVICE_NAME='))
- if step>={'wifi-failed':8,'ethernet-no-lease':12}.get(scenario,4):os.kill(os.getppid(),signal.SIGTERM)
+ if step>={'wifi-failed':8,'wifi-station-only':8,'ethernet-no-lease':12}.get(scenario,4):os.kill(os.getppid(),signal.SIGTERM)
  time.sleep(0.05)
 ''')
         mock.chmod(0o755)
@@ -167,6 +178,17 @@ elif name=='sleep':
                     assert not any(e.startswith("hostapd ") for e in events), events
                     if scenario == "wifi-wpa-exit":
                         assert sum(e.startswith("wpa_supplicant ") for e in events) == 2, events
+                elif scenario == "wifi-station-only":
+                    assert not any(e.startswith('hostapd ') for e in events), events
+                    assert sum(e.startswith('wpa_supplicant ') for e in events) == 1, events
+                    assert (root / 'run/ap-supported').read_text() == '0\n'
+                elif scenario == "wifi-radio-hotplug":
+                    stations = [e.split(' -i ')[1].split()[0] for e in events if e.startswith('wpa_supplicant ')]
+                    assert stations == ['wlan1', 'wlan0', 'wlan1'], events
+                    assert 'ip -4 route flush dev wlan1' in events, events
+                    assert 'ip -4 route flush dev wlan0' in events, events
+                    assert not any(e.startswith('hostapd ') for e in events), events
+                    assert (root / 'run/interface').read_text().strip() == 'wlan1'
                 else:
                     assert any(e.startswith("hostapd ") for e in events), events
             assert not (root / "run/hostapd.pid").exists()
@@ -184,5 +206,5 @@ elif name=='sleep':
 
 if __name__ == "__main__":
     for scenario in ("baseline", "ethernet-static", "ethernet-10", "ethernet-100", "ethernet-no-lease", "wifi-dhcp", "wifi-static",
-                     "wifi-failed", "wifi-wpa-exit", "reload"):
+                     "wifi-failed", "wifi-wpa-exit", "wifi-radio-hotplug", "wifi-station-only", "reload"):
         check(scenario)

@@ -161,7 +161,7 @@ Played play(const std::vector<std::pair<std::string, std::string>>& sources,
 
     AudioMemory memory(blockBytesFor(kRate, kChannels, 20), 256ULL * 1024 * 1024);
     ResamplerRegistry resamplers;
-    const OutputPlanner planner = OutputPlanner::withoutResampler();
+    const SharedPlanner planner(OutputPlanner::withoutResampler());
     multiroomtest::ManualClock clock;
 
     ZoneSettings settings;

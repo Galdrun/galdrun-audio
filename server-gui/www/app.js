@@ -2514,7 +2514,9 @@ function roomSettings(r) {
       h('div', {}, `out ${fmtFmt(plan.outputFormat)} · src ${fmtFmt(plan.sourceFormat)}`),
       plan.description && h('div', { class: 'muted' }, plan.description)),
     a?.startDetail && h('div', { class: 'small muted' }, `start: ${a.startDetail}`),
-    d.grouped && h('div', { class: 'small warn' }, 'In a zone with other rooms this room is drift corrected; Force Bit-Perfect keeps it bitperfect and lets it drift.'),
+    d.grouped && h('div', { class: 'small warn' }, driftNotCorrected(a?.driftCorrection)
+      ? `In a zone with other rooms, but not drift corrected: ${driftNotCorrected(a.driftCorrection)}.`
+      : 'In a zone with other rooms this room is drift corrected; Force Bit-Perfect keeps it bitperfect and lets it drift.'),
     h('div', { class: 'table-wrap plain' }, h('table', { class: 'small' },
       h('tr', {}, h('th', {}, 'setting'), h('th', {}, 'desired'), h('th', {}, 'effective'), h('th', {}, 'core')),
       cell('audio control', audioControlLabel(d.audioControl), audioControlLabel(d.audioControl), s && audioControlLabel(s.audioControl)),
@@ -3207,9 +3209,22 @@ const DRIFT_CORRECTIONS = [
   ['hardwareClock', 'Hardware clock', "the client trims its DAC clock on the core's command; the samples stay bitperfect"],
 ];
 
+// Why a room that asks for drift correction does not get it, with what to
+// change, or null. The texts are the core's (driftDisabledText).
+const DRIFT_FIXES = {
+  "the configured resampler cannot vary a ratio": 'choose soxr under Settings → Resampler, or a device with a hardware clock',
+  "the room's Audio Control is bitPerfect": 'set Audio control to Auto',
+};
+function driftNotCorrected(dc) {
+  if (!dc?.requested || dc.active || !dc.disabledBy) return null;
+  const fix = DRIFT_FIXES[dc.disabledBy];
+  return fix ? `${dc.disabledBy}: ${fix}` : dc.disabledBy;
+}
+
 function driftCorrectionEditor(dc, path) {
   const noClock = !dc.hardwareClockAvailable;
   const clock = dc.hardwareClock;
+  const why = driftNotCorrected(dc);
   // What corrects it, not by how much: the Sync & buffer tiles show the ppm.
   const now = dc.actuator === 'hardwareClock' ? 'hardware clock' : dc.actuator === 'resampling' ? 'resampling' : 'not corrected';
   return h('div', { class: 'room-controls', title: "how this room is kept in step when it is corrected; the client keeps the setting" },
@@ -3222,8 +3237,8 @@ function driftCorrectionEditor(dc, path) {
       disabled: m === 'hardwareClock' && noClock && dc.mode !== 'hardwareClock',
       title: m === 'hardwareClock' && noClock ? 'this device has no verified hardware clock' : title,
     }, label))),
-    h('span', { class: 'small ' + (clock?.error || (dc.mode === 'hardwareClock' && dc.actuator === 'resampling') ? 'warn' : 'muted') },
-      `→ ${now}`, clock?.error && ` (${clock.error})`));
+    h('span', { class: 'small ' + (why || clock?.error || (dc.mode === 'hardwareClock' && dc.actuator === 'resampling') ? 'warn' : 'muted') },
+      `→ ${now}`, why && `: ${why}`, clock?.error && ` (${clock.error})`));
 }
 
 // One measure per chart, over the samples this page has read (at the start and after events).
@@ -5667,7 +5682,19 @@ async function loadCoreAudio() {
   const resamplers = r.resamplers ?? [r.audio.resampler].filter(Boolean);
   $('#resampler').replaceChildren(...resamplers.map((id) => h('option', { value: id }, id)));
   $('#resampler').value = r.audio.resampler ?? '';
+  showResamplerHint();
 }
+// What the selected resampler means for drift correction (core: variableRatio).
+const RESAMPLER_HINTS = {
+  soxr: 'Variable ratio: corrects drift between grouped rooms in software.',
+  r8brain: 'Fixed ratio: cannot be used for software drift correction. Grouped rooms stay in step only where the client trims its own clock.',
+};
+function showResamplerHint() {
+  const hint = RESAMPLER_HINTS[$('#resampler').value] ?? '';
+  $('#resamplerHint').textContent = hint;
+  $('#resamplerHint').className = $('#resampler').value === 'r8brain' ? 'hint warn' : 'hint';
+}
+$('#resampler').addEventListener('change', showResamplerHint);
 $('#coreAudioForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const body = {};
@@ -5685,7 +5712,9 @@ function renderTidalState(st) {
     : h('span', { class: 'muted' }, 'TIDAL is not available'));
 }
 
-$('#setResampler').addEventListener('click', () => act(() => api('PUT', 'core/resampler', { resampler: $('#resampler').value }), (r) => `resampler ${r.resampler}${r.changed ? ' (changed)' : ''}`));
+$('#setResampler').addEventListener('click', () => act(() => api('PUT', 'core/resampler', { resampler: $('#resampler').value }), (r) => `resampler ${r.resampler}${r.changed ? ' (changed)' : ''}`
+  + (r.renegotiated?.length ? `; re-negotiating ${r.renegotiated.join(', ')}` : '')
+  + (r.variableRatio ? '' : '; no software drift correction')));
 
 // --- AI: providers, keys, models and settings (server phase 21); browser login (phase 22)
 

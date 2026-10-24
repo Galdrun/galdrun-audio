@@ -10,10 +10,11 @@
 #   scripts/build-client.sh --packages-only ...    # only install missing apt packages
 #
 # Targets:
-#   all (default)  linux, esp32 and connector2
+#   all (default)  linux, esp32, connector2, rpi1 and rpi3
 #   linux          linux-x86 linux-x64 linux-armv6 linux-armv7 linux-armv8 linux-armv9
 #   esp32          esp32-a1s esp32-s3-devkitc
 #   connector2     Raumfeld Connector 2 firmware with the linux-armv6 client
+#   rpi1 rpi3      Raspberry Pi SD images with ARMv6 / ARMv7 clients
 # windows-x64 needs Windows: use scripts\build-client.ps1 there.
 #
 # Installs when missing (Ubuntu/Debian on x86-64):
@@ -37,10 +38,10 @@ if [[ ${1:-} == --packages-only ]]; then packages_only=true; shift; fi
 targets=()
 for name in "$@"; do
     case $name in
-        all) targets+=("${linux_targets[@]}" "${esp32_targets[@]}" connector2) ;;
+        all) targets+=("${linux_targets[@]}" "${esp32_targets[@]}" connector2 rpi1 rpi3) ;;
         linux) targets+=("${linux_targets[@]}") ;;
         esp32) targets+=("${esp32_targets[@]}") ;;
-        linux-x86|linux-x64|linux-armv[6-9]|esp32-a1s|esp32-s3-devkitc|connector2) targets+=("$name") ;;
+        linux-x86|linux-x64|linux-armv[6-9]|esp32-a1s|esp32-s3-devkitc|connector2|rpi1|rpi3) targets+=("$name") ;;
         windows|windows-x64) die "$name needs Windows: run scripts\build-client.ps1 there." ;;
         *) die "Unknown target: $name (see the top of $0)" ;;
     esac
@@ -52,22 +53,22 @@ has() { local target; for target in "${targets[@]}"; do [[ $target == $1 ]] && r
 
 # --- apt packages
 packages=()
-if has 'linux-*' || has connector2; then
+if has 'linux-*' || has connector2 || has 'rpi*'; then
     packages+=(build-essential cmake ninja-build curl xz-utils bzip2 libasound2-dev gcc-i686-linux-gnu g++-i686-linux-gnu)
 fi
 if has 'esp32-*'; then
     packages+=(git wget flex bison gperf python3 python3-pip python3-venv cmake ninja-build ccache libffi-dev
         libssl-dev dfu-util libusb-1.0-0)
 fi
-if has connector2; then
-    packages+=(bison flex cpio libssl-dev libncurses-dev patch unzip file wget git rsync python3 bc e2fsprogs)
+if has connector2 || has 'rpi*'; then
+    packages+=(bison flex cpio libssl-dev libncurses-dev patch unzip file wget git rsync python3 bc e2fsprogs qemu-user)
 fi
 install_packages "${packages[@]}"
 $packages_only && exit 0
 require_build_user
 
 # --- tools
-if has 'linux-*' || has connector2; then
+if has 'linux-*' || has connector2 || has 'rpi*'; then
     bash "$root/client/scripts/install-linux-tools.sh"
 fi
 if has 'esp32-*' && [[ ! -f $idf/.installed ]]; then
@@ -113,12 +114,27 @@ build_connector2() {
     cp -r "$root/hardware/buildroot/output/connector2/usb-install/licenses" "$release/"
 }
 
+build_rpi() {
+    local board=$1 arch=linux-armv7
+    [[ $board != rpi1 ]] || arch=linux-armv6
+    build_linux "$arch"
+    bash "$root/hardware/buildroot/build.sh" "$board"
+    local source="$root/hardware/buildroot/output/$board"
+    local release="$root/releases/client/raspberrypi/$board"
+    mkdir -p "$release"
+    cp "$source/galdrun-$board-sdcard.img.gz" "$source/firmware-manifest.json" "$source/SHA256SUMS" "$release/"
+    rm -rf "$release/licenses"
+    cp -a "$source/licenses" "$release/"
+    cp "$root/hardware/buildroot/board/rpi/README.md" "$release/README.md"
+}
+
 for target in "${targets[@]}"; do
     echo "== $target"
     case $target in
         linux-*) build_linux "$target" ;;
         esp32-*) build_esp32 "$target" ;;
         connector2) build_connector2 ;;
+        rpi1|rpi3) build_rpi "$target" ;;
     esac
 done
 echo "Built: ${targets[*]}. Results are in $root/releases/client"

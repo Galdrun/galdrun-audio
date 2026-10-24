@@ -6,6 +6,28 @@
 
 using namespace multiroom;
 
+MULTIROOM_TEST(network_radio_selection_persists_mac_and_rejects_injection)
+{
+    multiroomtest::TempDirectory directory("wifi-radio");
+    const auto path = directory.file("network.conf");
+    std::string error, before, after;
+    json::Value settings, changes = json::Value::makeObject();
+    changes["wifi"]["radio"] = json::Value("02:11:22:33:44:55");
+    CHECK(network_settings::save(changes, settings, error, path));
+    CHECK(network_settings::load(settings, error, path));
+    CHECK_EQ(settings["wifi"]["radio"].asString(), std::string("02:11:22:33:44:55"));
+    CHECK(fileutil::readTextFile(path, before, error));
+    for (const char* invalid : {"wlan1", "aa:bb:cc:dd:ee", "AA:BB:CC:DD:EE:FF", "wlan0;reboot", "\nWIFI_PASSWORD=x"})
+    {
+        changes["wifi"]["radio"] = json::Value(invalid);
+        CHECK(!network_settings::save(changes, settings, error, path));
+        CHECK(fileutil::readTextFile(path, after, error));
+        CHECK_EQ(before, after);
+    }
+    changes["wifi"]["radio"] = json::Value("");
+    CHECK(network_settings::save(changes, settings, error, path));
+}
+
 MULTIROOM_TEST(network_device_name_persists_and_rejects_invalid_names)
 {
     multiroomtest::TempDirectory directory("device-name");

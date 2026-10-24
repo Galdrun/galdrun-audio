@@ -1,0 +1,480 @@
+[
+  {
+    "id": "usb",
+    "name": "USB / onboard audio",
+    "overlay": "",
+    "clock": "server resampling",
+    "certified": false
+  },
+  {
+    "id": "pcm5102a",
+    "name": "PCM5102A / HiFiBerry DAC",
+    "overlay": "hifiberry-dac",
+    "module": "snd-soc-rpi-simple-soundcard",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_DAC",
+    "pins": "GPIO18,19,20,21; 40-pin header only",
+    "i2cAddresses": [],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-dac-overlay.dts"
+  },
+  {
+    "id": "hifiberry-dacplus",
+    "name": "HiFiBerry DAC+ / DAC2",
+    "overlay": "hifiberry-dacplus",
+    "module": "snd-soc-hifiberry-dacplus",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_DACPLUS",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4d",
+      "0x60"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-dacplus-overlay.dts"
+  },
+  {
+    "id": "hifiberry-dacplus-pro",
+    "name": "HiFiBerry DAC+ Pro / DAC2 Pro",
+    "overlay": "hifiberry-dacplus-pro",
+    "module": "snd-soc-hifiberry-dacplus",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_DACPLUS",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4d",
+      "0x60"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-dacplus-pro-overlay.dts"
+  },
+  {
+    "id": "hifiberry-dacplus-std",
+    "name": "HiFiBerry DAC+ Standard",
+    "overlay": "hifiberry-dacplus-std",
+    "module": "snd-soc-hifiberry-dacplus",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_DACPLUS",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4d",
+      "0x60"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-dacplus-std-overlay.dts"
+  },
+  {
+    "id": "hifiberry-dacplushd",
+    "name": "HiFiBerry DAC+ HD",
+    "overlay": "hifiberry-dacplushd",
+    "module": "snd-soc-hifiberry-dacplushd",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_DACPLUSHD",
+    "pins": "GPIO2,3,16,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4c",
+      "0x62"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-dacplushd-overlay.dts"
+  },
+  {
+    "id": "hifiberry-dacplusadc",
+    "name": "HiFiBerry DAC+ ADC",
+    "overlay": "hifiberry-dacplusadc",
+    "module": "snd-soc-hifiberry-dacplusadc",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_DACPLUSADC",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4d"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-dacplusadc-overlay.dts"
+  },
+  {
+    "id": "hifiberry-dacplusadcpro",
+    "name": "HiFiBerry DAC+ ADC Pro",
+    "overlay": "hifiberry-dacplusadcpro",
+    "module": "snd-soc-hifiberry-dacplusadcpro",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_DACPLUSADCPRO",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4a",
+      "0x4d",
+      "0x60"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-dacplusadcpro-overlay.dts"
+  },
+  {
+    "id": "hifiberry-dacplusdsp",
+    "name": "HiFiBerry DAC+ DSP",
+    "overlay": "hifiberry-dacplusdsp",
+    "module": "snd-soc-rpi-simple-soundcard",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_DACPLUSDSP",
+    "pins": "GPIO18,19,20,21; 40-pin header only",
+    "i2cAddresses": [],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-dacplusdsp-overlay.dts",
+    "notes": "I2S transport only. DSP must already contain a working program; program/coefficient loading is not provided."
+  },
+  {
+    "id": "hifiberry-digi",
+    "name": "HiFiBerry Digi / Digi+",
+    "overlay": "hifiberry-digi",
+    "module": "snd-soc-rpi-wm8804-soundcard",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_DIGI",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x3b"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-digi-overlay.dts"
+  },
+  {
+    "id": "hifiberry-digi-pro",
+    "name": "HiFiBerry Digi+ Pro / Digi2 Pro",
+    "overlay": "hifiberry-digi-pro",
+    "module": "snd-soc-rpi-wm8804-soundcard",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_DIGI",
+    "pins": "GPIO2,3,5,6,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x3b"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-digi-pro-overlay.dts"
+  },
+  {
+    "id": "hifiberry-amp",
+    "name": "HiFiBerry Amp / Amp+",
+    "overlay": "hifiberry-amp",
+    "module": "snd-soc-rpi-simple-soundcard",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_AMP",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x1b"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-amp-overlay.dts"
+  },
+  {
+    "id": "hifiberry-amp100",
+    "name": "HiFiBerry AMP100",
+    "overlay": "hifiberry-amp100",
+    "module": "snd-soc-hifiberry-dacplus",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_DACPLUS",
+    "pins": "GPIO2,3,4,17,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4d"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-amp100-overlay.dts"
+  },
+  {
+    "id": "hifiberry-amp4pro",
+    "name": "HiFiBerry AMP4 Pro",
+    "overlay": "hifiberry-amp4pro",
+    "module": "snd-soc-hifiberry-dacplus",
+    "kconfig": "SND_BCM2708_SOC_HIFIBERRY_DACPLUS",
+    "pins": "GPIO2,3,4,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4d"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/hifiberry-amp4pro-overlay.dts"
+  },
+  {
+    "id": "iqaudio-dac",
+    "name": "IQaudio DAC",
+    "overlay": "iqaudio-dac",
+    "module": "snd-soc-iqaudio-dac",
+    "kconfig": "SND_BCM2708_SOC_IQAUDIO_DAC",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4c"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/iqaudio-dac-overlay.dts"
+  },
+  {
+    "id": "iqaudio-dacplus",
+    "name": "IQaudio DAC+ / Raspberry Pi DAC+",
+    "overlay": "iqaudio-dacplus",
+    "module": "snd-soc-iqaudio-dac",
+    "kconfig": "SND_BCM2708_SOC_IQAUDIO_DAC",
+    "pins": "GPIO2,3,18,19,20,21,22; 40-pin header only",
+    "i2cAddresses": [
+      "0x4c"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/iqaudio-dacplus-overlay.dts"
+  },
+  {
+    "id": "rpi-dacpro",
+    "name": "Raspberry Pi DAC Pro",
+    "overlay": "rpi-dacpro",
+    "module": "snd-soc-iqaudio-dac",
+    "kconfig": "SND_BCM2708_SOC_IQAUDIO_DAC",
+    "pins": "GPIO2,3,18,19,20,21,22; 40-pin header only",
+    "i2cAddresses": [
+      "0x4c"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/rpi-dacpro-overlay.dts"
+  },
+  {
+    "id": "iqaudio-codec",
+    "name": "IQaudio Codec",
+    "overlay": "iqaudio-codec",
+    "module": "snd-soc-iqaudio-codec",
+    "kconfig": "SND_BCM2708_SOC_IQAUDIO_CODEC",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x1a"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/iqaudio-codec-overlay.dts"
+  },
+  {
+    "id": "iqaudio-digi",
+    "name": "IQaudio Digi (WM8804)",
+    "overlay": "iqaudio-digi-wm8804-audio",
+    "module": "snd-soc-rpi-wm8804-soundcard",
+    "kconfig": "SND_BCM2708_SOC_IQAUDIO_DIGI",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x3b"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/iqaudio-digi-wm8804-audio-overlay.dts"
+  },
+  {
+    "id": "justboom-dac",
+    "name": "JustBoom DAC / Amp",
+    "overlay": "justboom-dac",
+    "module": "snd-soc-justboom-dac",
+    "kconfig": "SND_BCM2708_SOC_JUSTBOOM_DAC",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4d"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/justboom-dac-overlay.dts"
+  },
+  {
+    "id": "justboom-digi",
+    "name": "JustBoom Digi",
+    "overlay": "justboom-digi",
+    "module": "snd-soc-rpi-wm8804-soundcard",
+    "kconfig": "SND_BCM2708_SOC_JUSTBOOM_DIGI",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x3b"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/justboom-digi-overlay.dts"
+  },
+  {
+    "id": "allo-boss",
+    "name": "Allo Boss (PCM512x)",
+    "overlay": "allo-boss-dac-pcm512x-audio",
+    "module": "snd-soc-allo-boss-dac",
+    "kconfig": "SND_BCM2708_SOC_ALLO_BOSS_DAC",
+    "pins": "GPIO2,3,6,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4d"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/allo-boss-dac-pcm512x-audio-overlay.dts"
+  },
+  {
+    "id": "inno-maker-hifi-dac",
+    "name": "INNO-MAKER HiFi DAC / DAC Mini HAT (PCM5122)",
+    "overlay": "allo-boss-dac-pcm512x-audio",
+    "module": "snd-soc-allo-boss-dac",
+    "kconfig": "SND_BCM2708_SOC_ALLO_BOSS_DAC",
+    "pins": "GPIO2,3,6,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4d"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/INNO-MAKER/HIFI-DAC-Hat-For-Raspberry-Pi",
+    "notes": "Uses the manufacturer's Allo Boss driver configuration. ALSA lists this board as BossDAC."
+  },
+  {
+    "id": "allo-boss2",
+    "name": "Allo Boss2 (CS43198)",
+    "overlay": "allo-boss2-dac-audio",
+    "module": "snd-soc-allo-boss2-dac",
+    "kconfig": "SND_BCM2708_SOC_ALLO_BOSS2_DAC",
+    "pins": "GPIO2,3,5,6,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x30"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/allo-boss2-dac-audio-overlay.dts"
+  },
+  {
+    "id": "allo-digione",
+    "name": "Allo DigiOne",
+    "overlay": "allo-digione",
+    "module": "snd-soc-rpi-wm8804-soundcard",
+    "kconfig": "SND_BCM2708_SOC_ALLO_DIGIONE",
+    "pins": "GPIO2,3,5,6,17,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x3b"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/allo-digione-overlay.dts"
+  },
+  {
+    "id": "allo-piano",
+    "name": "Allo Piano 2.0",
+    "overlay": "allo-piano-dac-pcm512x-audio",
+    "module": "snd-soc-allo-piano-dac",
+    "kconfig": "SND_BCM2708_SOC_ALLO_PIANO_DAC",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x4c"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/allo-piano-dac-pcm512x-audio-overlay.dts"
+  },
+  {
+    "id": "allo-piano-plus",
+    "name": "Allo Piano 2.1",
+    "overlay": "allo-piano-dac-plus-pcm512x-audio",
+    "module": "snd-soc-allo-piano-dac-plus",
+    "kconfig": "SND_BCM2708_SOC_ALLO_PIANO_DAC_PLUS",
+    "pins": "GPIO2,3,6,18,19,20,21,25; 40-pin header only",
+    "i2cAddresses": [
+      "0x4c",
+      "0x4d"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/allo-piano-dac-plus-pcm512x-audio-overlay.dts",
+    "notes": "Galdrun plays stereo; multichannel/subwoofer routing needs board-specific setup."
+  },
+  {
+    "id": "allo-katana",
+    "name": "Allo Katana",
+    "overlay": "allo-katana-dac-audio",
+    "module": "snd-soc-allo-katana-codec",
+    "kconfig": "SND_BCM2708_SOC_ALLO_KATANA_DAC",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x30"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/allo-katana-dac-audio-overlay.dts"
+  },
+  {
+    "id": "audioinjector-stereo",
+    "name": "AudioInjector Stereo / Zero (WM8731)",
+    "overlay": "audioinjector-wm8731-audio",
+    "module": "snd-soc-audioinjector-pi-soundcard",
+    "kconfig": "SND_AUDIOINJECTOR_PI_SOUNDCARD",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x1a"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/audioinjector-wm8731-audio-overlay.dts"
+  },
+  {
+    "id": "audioinjector-isolated",
+    "name": "AudioInjector Isolated (CS4271)",
+    "overlay": "audioinjector-isolated-soundcard",
+    "module": "snd-soc-audioinjector-isolated-soundcard",
+    "kconfig": "SND_AUDIOINJECTOR_ISOLATED_SOUNDCARD",
+    "pins": "GPIO2,3,5,17,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x10"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/audioinjector-isolated-soundcard-overlay.dts"
+  },
+  {
+    "id": "fe-pi-audio",
+    "name": "Fe-Pi Audio (SGTL5000)",
+    "overlay": "fe-pi-audio",
+    "module": "snd-soc-fe-pi-audio",
+    "kconfig": "SND_BCM2708_SOC_FE_PI_AUDIO",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x0a"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/fe-pi-audio-overlay.dts"
+  },
+  {
+    "id": "i-sabre-q2m",
+    "name": "Audiophonics I-Sabre Q2M",
+    "overlay": "i-sabre-q2m",
+    "module": "snd-soc-i-sabre-q2m",
+    "kconfig": "SND_BCM2708_SOC_I_SABRE_Q2M",
+    "pins": "GPIO2,3,18,19,20,21; 40-pin header only",
+    "i2cAddresses": [
+      "0x48"
+    ],
+    "i2cHz": 100000,
+    "clock": "card driver; server resampling",
+    "certified": false,
+    "source": "https://github.com/raspberrypi/linux/blob/9cf0f5c001b790d53689b4aadca873db169cbc44/arch/arm/boot/dts/overlays/i-sabre-q2m-overlay.dts"
+  }
+]

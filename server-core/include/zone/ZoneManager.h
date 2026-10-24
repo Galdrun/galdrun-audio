@@ -48,10 +48,10 @@ public:
 
     // Everything here outlives the manager and every zone in it: `memory` is
     // the process's one audio ceiling, which every zone's own blocks are
-    // counted against (phase 42), the planner is the one the resampler was
-    // resolved into at startup, and the factory is what turns a staged URI
-    // into a decoder.
-    ZoneManager(AudioMemory& memory, const OutputPlanner& planner, const ResamplerRegistry& registry,
+    // counted against (phase 42), the planner is the server's one, which
+    // resampler.configure may replace, and the factory is what turns a staged
+    // URI into a decoder.
+    ZoneManager(AudioMemory& memory, const SharedPlanner& planner, const ResamplerRegistry& registry,
                 IDecoderFactory& decoders, const IClock& clock, ZoneSettings defaults = {},
                 size_t maxZones = kDefaultMaxZones);
 
@@ -128,7 +128,7 @@ public:
 
 private:
     AudioMemory& memory_;
-    const OutputPlanner& planner_;
+    const SharedPlanner& planner_;
     const ResamplerRegistry& registry_;
     IDecoderFactory& decoders_;
     const IClock& clock_;

@@ -3,7 +3,9 @@
 #include <string>
 
 namespace multiroom::dac_settings {
-// Connector 2 opts in. ALSA owns the codec's I2C registers and cache.
+// Firmware opts in. ALSA owns the codec's I2C registers and cache.
+// Select/restore the concrete card on the owner thread; Connector 2 stays fixed.
+bool selectDevice(const std::string& deviceId, const std::string& volumeElement, std::string& error);
 bool supported(); // the board file (config/BoardConfig.h), read once
 bool supported(const std::string& boardPath);
 bool load(json::Value& settings, std::string& error);

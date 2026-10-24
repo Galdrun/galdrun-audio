@@ -1,0 +1,12 @@
+{
+  "board": "raspberrypi-rpi3",
+  "networkSettings": true,
+  "audioProfiles": true,
+  "sshSettings": true,
+  "statusLeds": false,
+  "cpuFrequency": true,
+  "dacControls": true,
+  "selectedCardDacControls": true,
+  "resetHardwareVolume": false,
+  "requireConfiguredAudioDevice": true
+}

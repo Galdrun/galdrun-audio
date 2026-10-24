@@ -42,6 +42,39 @@ bool saveConfig(ClientRuntime& runtime, const ClientConfig& config, std::string&
 
 namespace {
 
+bool restartSupported()
+{
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+    return ::geteuid() == 0 && ::access("/usr/sbin/galdrun-restart", X_OK) == 0;
+#else
+    return false; // ESP32's web server uses its existing deferred restart.
+#endif
+}
+
+bool requestRestart(ClientRuntime& runtime, std::string& error)
+{
+    if (!restartSupported())
+    {
+        error = "Restart is unavailable on this client";
+        return false;
+    }
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+    if (runtime.restartProcess != 0) return true;
+    char* args[] = {const_cast<char*>("/usr/sbin/galdrun-restart"), nullptr};
+    pid_t pid = 0;
+    const int result = ::posix_spawn(&pid, args[0], nullptr, nullptr, args, environ);
+    if (result != 0)
+    {
+        error = std::string("Cannot start restart helper: ") + std::strerror(result);
+        return false;
+    }
+    runtime.restartProcess = static_cast<int>(pid);
+#else
+    (void)runtime;
+#endif
+    return true;
+}
+
 #if defined(__linux__) && !defined(ESP_PLATFORM)
 const char* const kDeepSleepHelper = "/usr/sbin/raumfeld-suspend";
 
@@ -383,6 +416,16 @@ bool ClientCommandHandler::dispatchInputAction(const matp::InputActionEvent& eve
 void ClientCommandHandler::pollPower(uint64_t nowNs)
 {
 #if defined(__linux__) && !defined(ESP_PLATFORM)
+    if (runtime_.restartProcess != 0)
+    {
+        int status = 0;
+        if (::waitpid(runtime_.restartProcess, &status, WNOHANG) > 0)
+        {
+            runtime_.restartProcess = 0;
+            if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+                MULTIROOM_WARN("restart helper failed; see system log");
+        }
+    }
     if (runtime_.deepSleepProcess != 0)
     {
         int status = 0;
@@ -450,6 +493,17 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
 {
     switch (request.command)
     {
+    case ControlCommand::Restart:
+    {
+        if (!request.params.members().empty())
+            return makeControlError(request, control_error::kInvalidArgument, "restart takes no parameters");
+        std::string error;
+        if (!requestRestart(runtime_, error))
+            return makeControlError(request, restartSupported() ? control_error::kFailed : control_error::kUnavailable, error);
+        auto response = makeControlSuccess(request);
+        response["restarting"] = json::Value(true);
+        return response;
+    }
     case ControlCommand::GetPower:
     case ControlCommand::SetPower:
     case ControlCommand::StandbyOff:
@@ -460,6 +514,7 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
         const bool supported = runtime_.session != nullptr && runtime_.playback != nullptr;
         auto response = makeControlSuccess(request);
         response["supported"] = json::Value(supported);
+        response["restart"] = json::Value(restartSupported());
         if (!supported || runtime_.config == nullptr)
             return request.command == ControlCommand::GetPower ? response :
                 makeControlError(request, control_error::kUnavailable,
@@ -568,6 +623,8 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
             return makeControlError(request, control_error::kFailed, "Cannot read audio profiles");
         if (request.command == ControlCommand::SetAudioProfile)
         {
+            if (!restartSupported())
+                return makeControlError(request, control_error::kUnavailable, "Audio profile changes require restart support");
             std::string profile;
             if (request.params.members().size() != 1 || !json::getString(request.params, "profile", profile))
                 return makeControlError(request, control_error::kInvalidArgument, "Expected one audio profile");
@@ -607,6 +664,15 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
         response["profiles"] = profiles;
         response["profile"] = json::Value(selected);
         response["rebootRequired"] = json::Value(!captured || bootProfile != text);
+        if (request.command == ControlCommand::SetAudioProfile && (!captured || bootProfile != text))
+        {
+            if (!requestRestart(runtime_, error))
+                return makeControlError(request, control_error::kFailed, "Profile saved, but " + error);
+            response["restarting"] = json::Value(true);
+        }
+#else
+        if (request.command == ControlCommand::SetAudioProfile)
+            return makeControlError(request, control_error::kUnavailable, "Audio profiles are unavailable");
 #endif
         return response;
     }
@@ -620,6 +686,26 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
         response["supported"] = json::Value(supported);
         if (supported)
         {
+            json::Value changes = request.params;
+            if (request.command != ControlCommand::GetDac &&
+                board_config::enabled(board_config::current(), "selectedCardDacControls"))
+            {
+                std::string expectedCard;
+                const std::string prefix = "hw:CARD=";
+                const auto comma = runtime_.deviceId.find(',');
+                const std::string selectedCard = runtime_.deviceId.compare(0, prefix.size(), prefix) == 0 ?
+                    runtime_.deviceId.substr(prefix.size(), comma - prefix.size()) : std::string();
+                if (!json::getString(request.params, "card", expectedCard) || expectedCard != selectedCard ||
+                    request.params.members().size() != (request.command == ControlCommand::SetDac ? 2u : 1u))
+                    return makeControlError(request, control_error::kInvalidArgument, "DAC card changed; reload its settings");
+                if (request.command == ControlCommand::SetDac)
+                {
+                    const auto* controls = request.params.find("controls");
+                    if (controls == nullptr || !controls->isObject())
+                        return makeControlError(request, control_error::kInvalidArgument, "Expected DAC controls");
+                    changes = *controls;
+                }
+            }
             // The room's volume owns the DAC's master level and switch when it
             // plays on this card, which has hardware volume: the webpage locks
             // them, and neither a change nor a reset here writes them.
@@ -627,10 +713,11 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
                                                 ? runtime_.deviceCache->findById(runtime_.deviceId)
                                                 : nullptr;
             const bool roomVolume = device != nullptr && device->hardwareVolume.available &&
-                                    device->id.find("CARD=Connector2,") != std::string::npos;
-            if (roomVolume && request.command == ControlCommand::SetDac && request.params.isObject())
+                (device->id.find("CARD=Connector2,") != std::string::npos ||
+                 board_config::enabled(board_config::current(), "selectedCardDacControls"));
+            if (roomVolume && request.command == ControlCommand::SetDac && changes.isObject())
             {
-                for (const auto& member : request.params.members())
+                for (const auto& member : changes.members())
                     if (dac_settings::isRoomVolumeControl(member.first))
                         return makeControlError(request, control_error::kInvalidArgument,
                                                 member.first + " is set by the room's volume");
@@ -638,12 +725,21 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
             json::Value settings;
             std::string error;
             const bool ok = request.command == ControlCommand::SetDac ?
-                dac_settings::save(request.params, settings, error) :
+                dac_settings::save(changes, settings, error) :
                 request.command == ControlCommand::ResetDac ? dac_settings::reset(settings, error, roomVolume) :
                 dac_settings::load(settings, error);
             if (!ok) return makeControlError(request, control_error::kFailed, error);
             response["dac"] = settings;
             response["roomVolume"] = json::Value(roomVolume);
+            response["roomVolumeControls"] = json::Value::makeArray();
+            if (roomVolume)
+                for (size_t i = 0; i < settings["controls"].size(); ++i)
+                {
+                    std::string name;
+                    json::getString(settings["controls"].at(i), "name", name);
+                    if (dac_settings::isRoomVolumeControl(name))
+                        response["roomVolumeControls"].pushBack(json::Value(name));
+                }
             return response;
         }
 #else
@@ -824,6 +920,10 @@ json::Value ClientCommandHandler::handleAudioDevices(const ControlRequest& reque
     // reports to the server as AUDIO_CAPABILITIES.
     response["cache"] = device_cache::toJson(*runtime_.deviceCache);
     response["selectedDeviceId"] = json::Value(runtime_.deviceId);
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+    response["requiresConfiguredDevice"] = json::Value(
+        board_config::enabled(board_config::current(), "requireConfiguredAudioDevice"));
+#endif
     // As client.json has it: empty is the default device, whatever was picked.
     if (runtime_.config != nullptr)
         response["configuredDeviceId"] = json::Value(runtime_.config->audioDeviceId);

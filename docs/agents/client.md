@@ -42,8 +42,10 @@ device with silence; only the scheduled `START_AT` makes buffered PCM audible.
 | Volume/clock correction execution | `src/audio/VolumeControl.cpp`, `HardwareVolume.cpp`, `HardwareClock.cpp`, `DriftEstimator.cpp` |
 | Windows / Linux / ESP32 audio | `src/audio/windows/WasapiBackend.cpp`, `src/audio/linux/AlsaBackend.cpp`, `src/audio/esp32/I2sBackend.cpp` / `Es8388.cpp` |
 | Settings commands/status/device web UI | `src/app/ClientCommandHandler.cpp`, `src/control/ControlProtocol.cpp`, `ControlHttp.cpp`, `ControlServer.cpp`, `ClientStatus.cpp` |
+| Device restart / profile reboot | Local `restart` command and `getPower.restart` in `ClientCommandHandler.cpp`; Buildroot `board/common/overlay/usr/sbin/galdrun-restart`; ESP32 `WebUi.cpp` `/api/restart`. Pi `S41galdrun-audio-profile` invalidates the device cache before startup when the boot profile changes. |
 | Buttons/encoders and gesture dispatch | `src/input/InputController.cpp`, platform input backends, `src/app/InputPump.cpp`, `InputSettings.cpp` |
 | Linux networking, CPU, SSH, DAC options | `src/net/NetworkSettings.cpp`, `SshSettings.cpp`, `src/config/CpuSettings.cpp`, `src/audio/linux/AlsaDacSettings.cpp` |
+| Raspberry Pi Buildroot images/profiles | Root `hardware/buildroot/board/rpi/README.md`, `board/rpi/audio-profiles.json`, `configs/raumfeld_rpi{1,3}_defconfig`; shared services in `board/common/` |
 | ESP32 board configuration/setup UI | `esp32/boards/`, `esp32/main/WifiSettings.cpp`, `WebUi.cpp`, `src/config/BoardConfig.cpp` |
 
 Headers in `include/` document public contracts; backend-private headers stay
@@ -93,3 +95,10 @@ desktop CMake and `esp32/main/CMakeLists.txt`. Shared sources added to the
 desktop build may also need adding to ESP-IDF's explicit shared-source list.
 Read [ESP32 notes](../../client/esp32/README.md) or
 [Connector 2 port notes](../hardware/raumfeld/connector2.md) for those targets.
+
+Pi firmware uses the same network/SSH/standby services, with MAC-based Wi-Fi
+radio selection/hotplug and AP fallback. `getAudioProfile`/`setAudioProfile`
+manage its boot audio include; only the explicit profile selector remounts FAT.
+`DeviceSelection.cpp` binds DAC persistence to the selected ALSA card on opted-in
+Pi images; Connector 2 retains its CS4271 defaults. See the
+[Pi guide](../../hardware/buildroot/board/rpi/README.md) for capability limits.

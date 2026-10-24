@@ -230,7 +230,7 @@ void playsThroughAZone(const std::string& uri, const multiroomtest::PcmFixture& 
 
     AudioMemory memory(blockBytesFor(192000, 2, 20), 256ULL * 1024 * 1024);
     ResamplerRegistry resamplers;
-    const OutputPlanner planner = OutputPlanner::withoutResampler();
+    const SharedPlanner planner(OutputPlanner::withoutResampler());
     multiroomtest::ManualClock clock;
 
     ZoneSettings settings;

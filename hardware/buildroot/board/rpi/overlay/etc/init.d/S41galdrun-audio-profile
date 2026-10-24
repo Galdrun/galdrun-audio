@@ -1,0 +1,13 @@
+#!/bin/sh
+case "$1" in
+    start)
+        # Invalidate before the client starts, including changes made offline.
+        if ! cmp -s /boot/galdrun-audio.txt /etc/galdrun/audio-profile-scanned.txt; then
+            rm -f /etc/galdrun/audio_devices.json
+            cp /boot/galdrun-audio.txt /etc/galdrun/audio-profile-scanned.txt || exit 1
+        fi
+        cp /boot/galdrun-audio.txt /run/galdrun-audio-boot.txt
+        ;;
+    stop) : ;;
+    *) exit 1 ;;
+esac

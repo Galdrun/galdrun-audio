@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict'), cp = require('node:child_process');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const vm = require('node:vm');
-for (const file of ['ServerGui/www/app.js', 'ServerGui/www/legacy/app.js']) {
+for (const file of ['server-gui/www/app.js']) {
   const declaration=fs.readFileSync(file,'utf8').match(/const INPUT_ACTIONS = [\s\S]*?;/)[0];
   const actions=vm.runInNewContext(declaration+' INPUT_ACTIONS');
   assert.deepEqual(Array.from(actions.slice(actions.indexOf('toggleMute')+1,actions.indexOf('toggleMute')+5)),['standbyOn','standbyOff','toggleStandby','deepSleep']);
@@ -68,6 +68,7 @@ const api = async (command, params={}) => {
         assert.equal((await api('status')).status.audio.driftCorrection.configured, mode);
       }
       assert(await evaluate("!document.querySelector('#powerBox').classList.contains('hidden')"));
+      assert(await evaluate("document.querySelector('#restart').classList.contains('hidden')"), 'Desktop clients must not offer a system restart');
       assert(await evaluate("!document.querySelector('#standbyOn').classList.contains('hidden') && document.querySelector('#standbyOff').classList.contains('hidden')"), 'Only Standby must show while on');
       const actions=await evaluate("[...document.querySelector('[data-input-id=POWER] select').options].map(o=>o.value)");
       assert.deepEqual(actions.slice(actions.indexOf('toggleMute')+1,actions.indexOf('toggleMute')+5),['standbyOn','standbyOff','toggleStandby','action1'], 'Deep sleep must be hidden where unsupported');

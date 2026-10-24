@@ -3,4 +3,12 @@
 /output/
 /reference/
 /private/
+/build/
+/cache/
+/legal-info/
+# Accidental exports outside output/ are release assets too.
+*.img
+*.img.gz
+*.tar.gz
+*.tar.xz
 __pycache__/

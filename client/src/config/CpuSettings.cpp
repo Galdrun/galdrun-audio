@@ -124,6 +124,7 @@ bool load(json::Value& settings, std::string& error, const std::string& policy, 
         !read(policy + "/scaling_governor", governor, error)) return false;
     settings = json::Value::makeObject();
     settings["mhz"] = json::Value(selected);
+    settings["configured"] = json::Value(fileutil::exists(path));
     settings["defaultMhz"] = json::Value(available.front());
     settings["currentMhz"] = json::Value(static_cast<int32_t>(std::strtol(current.c_str(), nullptr, 10) / 1000));
     settings["governor"] = json::Value(governor);
@@ -156,6 +157,10 @@ bool save(const json::Value& changes, json::Value& settings, std::string& error,
 
 bool restore(std::string& error, const std::string& policy, const std::string& path)
 {
+    error.clear();
+    // A new Pi keeps its kernel/firmware governor until the user saves a MHz.
+    // Connector images ship an explicit CPU_MHZ default, so retain their policy.
+    if (!fileutil::exists(path)) return true;
     json::Value settings;
     if (!load(settings, error, policy, path)) return false;
     return apply(static_cast<int>(settings.find("mhz")->asDouble()), policy, nullptr, error);

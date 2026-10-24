@@ -1,0 +1,29 @@
+From: Custom Raumfeld firmware project
+Subject: [PATCH] ALSA: pcm: preserve driver timestamp in 32-bit status
+
+The time32 status conversion copies audio_tstamp into driver_tstamp.
+Audio time is relative to the PCM run; driver time uses the configured
+system clock. Mixing them makes ARM32 clients schedule playback against
+elapsed audio time instead of CLOCK_MONOTONIC.
+
+Copy the driver's seconds and nanoseconds from their matching fields.
+
+Signed-off-by: Custom Raumfeld firmware project
+---
+ sound/core/pcm_native.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/core/pcm_native.c b/sound/core/pcm_native.c
+--- a/sound/core/pcm_native.c
++++ b/sound/core/pcm_native.c
+@@ -1164,8 +1164,8 @@ static int snd_pcm_status_user32(struct snd_pcm_substream *substream,
+ 		.audio_tstamp_data = status64.audio_tstamp_data,
+ 		.audio_tstamp_sec = status64.audio_tstamp_sec,
+ 		.audio_tstamp_nsec = status64.audio_tstamp_nsec,
+-		.driver_tstamp_sec = status64.audio_tstamp_sec,
+-		.driver_tstamp_nsec = status64.audio_tstamp_nsec,
++		.driver_tstamp_sec = status64.driver_tstamp_sec,
++		.driver_tstamp_nsec = status64.driver_tstamp_nsec,
+ 		.audio_tstamp_accuracy = status64.audio_tstamp_accuracy,
+ 	};
+ 

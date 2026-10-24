@@ -278,11 +278,11 @@ json::Value publicSettings(json::Value settings)
             const bool wireless = name != MULTIROOM_BRAND_SLUG "scan0" && fileutil::exists("/sys/class/net/" + name + "/phy80211");
             if (wireless && current->ifa_addr != nullptr && current->ifa_addr->sa_family == AF_PACKET)
             {
-                std::string mac;
-                if (fileutil::readTextFile("/sys/class/net/" + name + "/address", mac, error))
+                std::string radioMac;
+                if (fileutil::readTextFile("/sys/class/net/" + name + "/address", radioMac, error))
                 {
                     auto radio = json::Value::makeObject();
-                    radio["id"] = json::Value(mac.substr(0, mac.find_first_of("\r\n")));
+                    radio["id"] = json::Value(radioMac.substr(0, radioMac.find_first_of("\r\n")));
                     radio["interface"] = json::Value(name);
                     settings["wifi"]["radios"].pushBack(radio);
                 }

@@ -432,7 +432,9 @@
             <div><h2>Resampler</h2><p>The core's sample-rate converter.</p></div></div>
           <div class="room-row-content fields">
             <label for="resampler">Resampler</label>
-            <div class="row"><select id="resampler"></select><button type="button" id="setResampler">Apply</button></div>
+            <div class="row"><select id="resampler" aria-describedby="resamplerHint"></select><button type="button" id="setResampler">Apply</button></div>
+            <span></span><p class="hint" id="resamplerHint"></p>
+            <span></span><p class="hint"><em>soxr</em> varies its ratio and corrects drift between grouped rooms in software. <em>r8brain</em> converts at a fixed ratio and cannot be used for software drift correction: grouped rooms then stay in step only where the client trims its own clock, and drift apart otherwise. A change applies at once and is kept for the core's next start; rooms in a zone that the new resampler serves differently drop out briefly while they re-negotiate.</p>
           </div>
         </section>
       </div>

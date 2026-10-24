@@ -516,7 +516,7 @@ struct House
     std::unique_ptr<AudioMemory> memory;
     std::vector<const Zone*> watched; // the zones refused() counts; each outlives its entry
     ResamplerRegistry resamplers;
-    std::optional<OutputPlanner> planner;
+    std::optional<SharedPlanner> planner;
     Sources sources;
     std::shared_ptr<CommandLog> commands = std::make_shared<CommandLog>();
     ClientClockModel model = clockModel();

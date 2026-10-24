@@ -362,7 +362,7 @@ std::string errorLine(const std::string& command, const json::Value& id, const c
 } // namespace
 
 ControlApi::ControlApi(ZoneManager& zones, RoomDirectory& rooms,
-                       const DiscoveredClients& discovered, OutputPlanner& planner,
+                       const DiscoveredClients& discovered, SharedPlanner& planner,
                        const ResamplerRegistry& registry, const IClock& clock, MediaOrigin media,
                        std::function<bool(const RoomCommand&)> sendToRoom,
                        std::function<void(const std::string&)> publishEvent)
@@ -2029,30 +2029,56 @@ ControlApi::Reply ControlApi::resamplerConfigure(const json::Value& params)
     if (!requireString(params, "resampler", id, reply))
         return reply;
 
-    const bool changed = id != planner_.resamplerId();
+    const bool changed = id != planner_.get()->resamplerId();
+    std::optional<OutputPlanner> created;
+    if (changed)
+    {
+        auto made = OutputPlanner::create(registry_, id);
+        if (!made)
+            return Reply::failure(kInvalidArgument, made.error().detail);
+        created.emplace(std::move(*made));
+    }
+
+    // Written before it is used, as audio.configure does: the next core start
+    // reads audio.resampler, and a change that is live but not kept would be
+    // gone then.
+    if (hasAudio_ && persistAudio_ && audio_.resampler != id)
+    {
+        AudioConfig candidate = audio_;
+        candidate.resampler = id;
+        std::string error;
+        if (!persistAudio_(candidate, error))
+            return Reply::failure(kInvalidArgument, error);
+        audio_ = std::move(candidate);
+    }
+
+    json::Value renegotiated = json::Value::makeArray();
     if (changed)
     {
         // Phase 6's rule: every resampled room of a house is converted by one
-        // filter, never a mix. A zone holds the planner by reference and plans
-        // its rooms on two other threads, so the only moment the planner can
-        // be replaced without both a mix and a race is before any zone exists.
-        if (zones_.size() != 0)
-        {
-            return Reply::failure(kUnavailable,
-                                  "the resampler can only change while no zone exists: every "
-                                  "room of a house is converted by one filter");
-        }
-
-        auto created = OutputPlanner::create(registry_, id);
-        if (!created)
-            return Reply::failure(kInvalidArgument, created.error().detail);
-        planner_ = std::move(*created);
+        // filter, never a mix. Zones plan from a snapshot of the planner, so
+        // it can be swapped while they play; a room planned before the swap
+        // keeps the old filter until it is re-negotiated, so every zoned room
+        // the new planner serves differently is, at the cost of a short
+        // drop-out. A bitperfect room the converter never touched keeps
+        // playing.
+        planner_.set(std::move(*created));
         MULTIROOM_INFO("control API: resampler {}", id);
+        for (const RoomRecord& room : rooms_.rooms())
+        {
+            const std::shared_ptr<Zone> zone = room.connected ? zones_.zoneOf(room.client) : nullptr;
+            if (zone == nullptr || !zone->planOutdated(room.client))
+                continue;
+            renegotiate(room, "replanned");
+            renegotiated.pushBack(json::Value(room.client.str()));
+        }
     }
 
     reply.body["resampler"] = json::Value(id);
-    reply.body["variableRatio"] = json::Value(planner_.resamplerCapabilities().variableRatio);
+    reply.body["variableRatio"] =
+        json::Value(planner_.get()->resamplerCapabilities().variableRatio);
     reply.body["changed"] = json::Value(changed);
+    reply.body["renegotiated"] = std::move(renegotiated);
     return reply;
 }
 
@@ -2522,8 +2548,8 @@ json::Value ControlApi::serverJson() const
     json::Value server = json::Value::makeObject();
     server["version"] = json::Value(MULTIROOM_SERVER_VERSION);
     server["uptimeMs"] = json::Value(millisecondsOf(clock_.monotonicNowNs() - startedAtNs_));
-    if (planner_.hasResampler())
-        server["resampler"] = json::Value(planner_.resamplerId());
+    if (const std::shared_ptr<const OutputPlanner> planner = planner_.get(); planner->hasResampler())
+        server["resampler"] = json::Value(planner->resamplerId());
     server["zones"] = json::Value(static_cast<uint64_t>(zones_.size()));
     server["clients"] = json::Value(static_cast<uint64_t>(rooms.size()));
     server["connected"] = json::Value(static_cast<uint64_t>(connected));
@@ -2612,7 +2638,7 @@ json::Value ControlApi::clientJson(const RoomRecord& room, uint64_t nowNs) const
     DriftDisabledReason disabledBy = !wish.grouped ? DriftDisabledReason::NotDisabled
                                      : wish.audioControl == AudioControl::BitPerfect
                                          ? DriftDisabledReason::BitperfectForced
-                                         : planner_.correctionUnavailable();
+                                         : planner_.get()->correctionUnavailable();
     if (output != nullptr)
     {
         const OutputPlan plan = output->plan();

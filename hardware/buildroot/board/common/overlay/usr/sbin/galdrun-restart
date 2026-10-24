@@ -1,0 +1,6 @@
+#!/bin/sh
+# Let the control response reach the browser before init stops the client.
+set -eu
+sleep 2
+sync
+exec /sbin/reboot

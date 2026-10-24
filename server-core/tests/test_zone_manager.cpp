@@ -127,7 +127,7 @@ struct ManagerRig
     multiroomtest::ManualClock clock;
     AudioMemory memory{blockBytesFor(192000, 2, 20), 256ULL * 1024 * 1024};
     ResamplerRegistry resamplers;
-    std::optional<OutputPlanner> planner;
+    std::optional<SharedPlanner> planner;
     ZoneSettings settings;
 };
 

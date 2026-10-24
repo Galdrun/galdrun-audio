@@ -1,0 +1,9 @@
+# Kernel DTBs and overlays are built from the same pinned Linux source.
+kernel=zImage
+arm_64bit=0
+gpu_mem=32
+enable_uart=1
+dtoverlay=
+dtparam=audio=on
+include galdrun-audio.txt
+dtoverlay=disable-bt

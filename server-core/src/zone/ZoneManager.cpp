@@ -6,7 +6,7 @@
 
 namespace multiroom {
 
-ZoneManager::ZoneManager(AudioMemory& memory, const OutputPlanner& planner,
+ZoneManager::ZoneManager(AudioMemory& memory, const SharedPlanner& planner,
                          const ResamplerRegistry& registry, IDecoderFactory& decoders,
                          const IClock& clock, ZoneSettings defaults, size_t maxZones)
     : memory_(memory), planner_(planner), registry_(registry), decoders_(decoders), clock_(clock),

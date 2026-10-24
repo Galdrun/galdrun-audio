@@ -96,6 +96,23 @@ MULTIROOM_TEST(deep_sleep_is_refused_locally_on_a_host_without_the_board_helper)
     CHECK(error.find("no session") == std::string::npos);
 }
 
+MULTIROOM_TEST(restart_is_validated_and_unavailable_without_the_appliance_helper)
+{
+    Fixture fixture;
+    ClientCommandHandler handler(fixture.runtime);
+    const auto power = handler.handle(makeRequest("getPower", ControlCommand::GetPower));
+    CHECK(power.find("restart") != nullptr);
+    auto request = makeRequest("restart", ControlCommand::Restart);
+    request.params["command"] = json::Value("reboot");
+    CHECK_EQ(fieldString(handler.handle(request), "error"), std::string(control_error::kInvalidArgument));
+    if (!fieldBool(power, "restart", false))
+    {
+        request.params = json::Value::makeObject();
+        CHECK_EQ(fieldString(handler.handle(request), "error"), std::string(control_error::kUnavailable));
+        CHECK_EQ(fixture.runtime.restartProcess, 0);
+    }
+}
+
 MULTIROOM_TEST(power_commands_and_button_actions_work_without_a_server)
 {
     Fixture fixture;

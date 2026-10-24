@@ -1,0 +1,50 @@
+#!/bin/sh
+# The managed include owns audio overlays. Never rewrite the main boot config.
+set -eu
+boot=/boot
+requested=${1:-}
+if [ "$requested" = rollback ]; then
+    [ -s "$boot/galdrun-audio.previous.txt" ] || { echo 'No previous profile' >&2; exit 1; }
+    requested=$(sed -n 's/^# Galdrun audio profile: //p' "$boot/galdrun-audio.previous.txt")
+fi
+case "$requested" in
+    usb) overlay= ;;
+    *)
+        overlay=$(awk -F '\t' -v id="$requested" '$1 == id { print $2; exit }' /usr/share/galdrun-audio-profiles.tsv)
+        case "$overlay" in ''|*[!a-z0-9_-]*) echo 'Unknown audio profile' >&2; exit 1 ;; esac
+        ;;
+esac
+if [ -n "$overlay" ]; then
+    model=$(tr -d '\000' < /proc/device-tree/model)
+    case "$model" in
+        'Raspberry Pi 3 Model B Rev '*|'Raspberry Pi Model B Plus Rev '*) : ;;
+        *) echo 'I2S profiles require a supported 40-pin Pi; Pi 1 Model B/P5 wiring is not certified' >&2; exit 1 ;;
+    esac
+    [ -s "$boot/overlays/$overlay.dtbo" ] || { echo 'Profile overlay is missing' >&2; exit 1; }
+fi
+mkdir /run/galdrun-profile.lock || { echo 'Another profile update is running' >&2; exit 1; }
+cleanup() {
+    rm -f "$boot/galdrun-audio.next" "$boot/galdrun-audio.previous.next"
+    mount -o remount,ro "$boot" || :
+    rmdir /run/galdrun-profile.lock
+}
+trap cleanup EXIT
+trap 'exit 1' INT TERM
+mount -o remount,rw "$boot"
+{
+    printf '# Galdrun audio profile: %s\n' "$requested"
+    if [ -n "$overlay" ]; then
+        printf 'dtparam=audio=off\ndtparam=i2c_arm=on,i2c_arm_baudrate=100000\ndtoverlay=%s\n' "$overlay"
+    fi
+} > "$boot/galdrun-audio.next"
+# Refuse a second active overlay in the main file or an unknown include.
+if grep -E '^[[:space:]]*(dtoverlay=|include )' "$boot/config.txt" | \
+    grep -Ev '^(dtoverlay=|dtoverlay=disable-bt|include galdrun-audio.txt)$' >/dev/null; then
+    echo 'Conflicting custom overlays/includes in config.txt; resolve them before selecting a profile' >&2; exit 1
+fi
+cp "$boot/galdrun-audio.txt" "$boot/galdrun-audio.previous.next"
+sync
+mv "$boot/galdrun-audio.previous.next" "$boot/galdrun-audio.previous.txt"
+mv "$boot/galdrun-audio.next" "$boot/galdrun-audio.txt"
+sync
+echo 'Audio profile saved. Reboot required; select the ALSA output after reboot.'

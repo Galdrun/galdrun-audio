@@ -65,6 +65,7 @@ struct ClientRuntime
     bool deepSleepTimerRunning = false;
     uint64_t deepSleepIdleSinceNs = 0;
     int deepSleepProcess = 0; // Linux helper; reaped if it fails before stopping us
+    int restartProcess = 0; // appliance restart helper; waits for the API reply
 
     // Scheduled playback (MATP sections 20 and 21), published by the main
     // thread for the same reason the playback fields below are: reading it

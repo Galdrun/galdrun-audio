@@ -8,6 +8,7 @@
 #include "util/Time.h"
 #if defined(__linux__) && !defined(ESP_PLATFORM)
 #include "config/BoardConfig.h"
+#include "config/DacSettings.h"
 #endif
 
 #include <algorithm>
@@ -52,20 +53,25 @@ void logFormats(const char* label, const std::vector<AudioFormat>& formats)
 const AudioDeviceInfo* selectDevice(const AudioDeviceCacheData& cache,
                                     const std::string& configuredId)
 {
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+    const bool requireHardware = board_config::enabled(board_config::current(), "requireConfiguredAudioDevice");
+    if (requireHardware && configuredId.compare(0, 8, "hw:CARD=") != 0)
+        return nullptr;
+#endif
     if (!configuredId.empty())
     {
         const AudioDeviceInfo* device = cache.findById(configuredId);
         if (device != nullptr)
             return device;
 #if defined(__linux__) && !defined(ESP_PLATFORM)
-        if (board_config::enabled(board_config::current(), "requireConfiguredAudioDevice"))
+        if (requireHardware)
             return nullptr;
 #endif
         MULTIROOM_WARN("configured audio device %s not found, falling back to the default",
                  configuredId.c_str());
     }
 #if defined(__linux__) && !defined(ESP_PLATFORM)
-    if (board_config::enabled(board_config::current(), "requireConfiguredAudioDevice"))
+    if (requireHardware)
         return nullptr;
 #endif
     return cache.findDefault();
@@ -166,6 +172,10 @@ void applyDeviceSelection(ClientRuntime& runtime)
     const AudioDeviceInfo* device = selectDevice(*runtime.deviceCache, config.audioDeviceId);
     if (device == nullptr)
     {
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+        std::string error;
+        dac_settings::selectDevice("", "", error);
+#endif
         MULTIROOM_ERROR("no usable audio playback device");
         return;
     }
@@ -173,6 +183,11 @@ void applyDeviceSelection(ClientRuntime& runtime)
     runtime.deviceSelected = true;
     runtime.deviceId = device->id;
     runtime.deviceName = device->name;
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+    std::string dacError;
+    if (!dac_settings::selectDevice(device->id, device->hardwareVolume.control, dacError))
+        MULTIROOM_WARN("cannot restore selected-card DAC settings: %s", dacError.c_str());
+#endif
 
     MULTIROOM_INFO("selected device: %s [%s]", device->name.c_str(), device->id.c_str());
     MULTIROOM_INFO("access mode: %s", audioAccessPreferenceName(config.audioAccessMode));
@@ -343,6 +358,14 @@ void currentAudioDevices(const ClientRuntime& runtime, matp::AudioDeviceList& ou
 AudioDeviceChange changeAudioDevice(ClientRuntime& runtime, const std::string& deviceId,
                                     std::string& error)
 {
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+    if (!deviceId.empty() && board_config::enabled(board_config::current(), "requireConfiguredAudioDevice") &&
+        deviceId.compare(0, 8, "hw:CARD=") != 0)
+    {
+        error = "select a concrete ALSA hardware output";
+        return AudioDeviceChange::UnknownDevice;
+    }
+#endif
     // Only a device the last scan found: a typo stored here would be a stale
     // id the selection silently falls back from on every start.
     if (!deviceId.empty() && runtime.deviceCache->findById(deviceId) == nullptr)

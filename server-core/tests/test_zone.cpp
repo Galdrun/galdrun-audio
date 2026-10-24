@@ -347,7 +347,7 @@ struct ZoneRig
     multiroomtest::ManualClock clock;
     mutable AudioMemory memory{blockBytesFor(192000, 2, kPacketMs), 256ULL * 1024 * 1024};
     mutable ResamplerRegistry resamplers;
-    std::optional<OutputPlanner> planner;
+    std::optional<SharedPlanner> planner;
 
     // Shared rather than owned, because the sender outlives the settings it
     // was copied into and a test reads it after the zone has used it.
@@ -3062,7 +3062,7 @@ MULTIROOM_TEST(a_room_that_cannot_be_served_after_a_boundary_stays_held_and_says
     // rather than only in the log.
     ZoneRig rig;
     rig.clock.setNs(50ULL * kNanosecondsPerSecond);
-    const OutputPlanner planner = OutputPlanner::withoutResampler();
+    const SharedPlanner planner(OutputPlanner::withoutResampler());
     std::vector<ZoneEvent> silent;
     ZoneSettings settings = rig.settings();
     settings.onEvent = [&silent](const ZoneEvent& event) {
@@ -3118,7 +3118,7 @@ MULTIROOM_TEST(a_source_no_room_can_play_is_skipped_for_the_next)
     // is skipped as one that will not open is, and the third plays on.
     ZoneRig rig;
     rig.clock.setNs(50ULL * kNanosecondsPerSecond);
-    const OutputPlanner planner = OutputPlanner::withoutResampler();
+    const SharedPlanner planner(OutputPlanner::withoutResampler());
     std::vector<ZoneEvent> failed;
     ZoneSettings settings = rig.settings();
     settings.onEvent = [&failed](const ZoneEvent& event) {
@@ -5239,7 +5239,7 @@ MULTIROOM_TEST(a_room_the_join_reopened_in_another_format_is_reopened_at_its_nex
     zone->onStreamReady(room, true, formatOf());
     CHECK(waitFor([&] { return output->formatSwitches() == 1; }));
     CHECK(zone->member(room) == output);
-    const auto solo = rig.planner->plan(formatOf(), RoomAudioSettings{}, capabilities);
+    const auto solo = rig.planner->get()->plan(formatOf(), RoomAudioSettings{}, capabilities);
     CHECK_OK(solo);
     CHECK(output->plan().mode == OutputMode::BitPerfect);
     CHECK(output->plan().mode == solo->mode);

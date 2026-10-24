@@ -21,6 +21,7 @@ load_settings() {
     ETH_IP_MODE=dhcp; ETH_IP=; ETH_NETMASK=255.255.255.0; ETH_GATEWAY=; ETH_DNS=
     WIFI_SSID=; WIFI_PASSWORD=; WIFI_IP_MODE=dhcp; WIFI_IP=; WIFI_NETMASK=255.255.255.0
     WIFI_GATEWAY=; WIFI_DNS=; WIFI_BSSID=
+    WIFI_RADIO=
     if [ -f /etc/galdrun-network.conf ]; then
         # Values are data, including quotes, dollar signs and backticks. No eval.
         while IFS= read -r line; do
@@ -36,6 +37,7 @@ load_settings() {
                 WIFI_IP_MODE) WIFI_IP_MODE=$value ;; WIFI_IP) WIFI_IP=$value ;;
                 WIFI_NETMASK) WIFI_NETMASK=$value ;; WIFI_GATEWAY) WIFI_GATEWAY=$value ;;
                 WIFI_DNS) WIFI_DNS=$value ;;
+                WIFI_RADIO) WIFI_RADIO=$value ;;
             esac
         done < /etc/galdrun-network.conf
     fi
@@ -58,11 +60,43 @@ apply_eth_speed() {
 settings_checksum() { cksum < /etc/galdrun-network.conf 2>/dev/null || echo missing; }
 address() { ip -4 -o addr show dev "$1" scope global 2>/dev/null; }
 choose_wifi() {
-    wifi=$WIFI_INTERFACE
-    if [ ! -d "/sys/class/net/$wifi/phy80211" ]; then
-        wifi=$(iw dev 2>/dev/null | awk '$1 == "Interface" && $2 != "galdrunscan0" {print $2; exit}')
-    fi
+    [ -n "$wifi" ] && [ -d "/sys/class/net/$wifi/phy80211" ] || return 1
     [ -n "$wifi" ]
+}
+select_wifi() {
+    # MAC selection survives wlan0/wlan1 enumeration changes. Prefer the board's
+    # default interface, then lexical order when the saved radio is unplugged.
+    fallback=
+    for interface in /sys/class/net/*; do
+        [ -d "$interface/phy80211" ] || continue
+        name=${interface##*/}
+        [ "$name" != galdrunscan0 ] || continue
+        if [ -n "$WIFI_RADIO" ] && [ "$(cat "$interface/address" 2>/dev/null)" = "$WIFI_RADIO" ]; then
+            printf '%s\n' "$name"; return
+        fi
+        if [ -z "$fallback" ] || [ "$name" = "$WIFI_INTERFACE" ]; then fallback=$name; fi
+    done
+    printf '%s\n' "$fallback"
+}
+refresh_wifi() {
+    selected=$(select_wifi)
+    if [ "$selected" != "$wifi" ]; then
+        if [ -n "$scan_pid" ]; then kill "$scan_pid" 2>/dev/null || :; wait "$scan_pid" 2>/dev/null || :; scan_pid=; fi
+        stop_ap; stop_station
+        wifi=$selected
+        waited=0
+        printf '%s\n' "$wifi" > "$state/interface"
+        rm -f "$state/ap-supported"
+        if [ -n "$wifi" ]; then
+            phy=$(cat "/sys/class/net/$wifi/phy80211/name" 2>/dev/null || :)
+            if [ -n "$phy" ] && iw phy "$phy" info | grep -q '^[[:space:]]*\* AP$'; then
+                echo 1 > "$state/ap-supported"
+            elif [ -n "$phy" ]; then
+                echo 0 > "$state/ap-supported"
+            fi
+            log "Selected Wi-Fi radio $wifi"
+        fi
+    fi
 }
 set_static() {
     interface=$1; static_ip=$2; mask=$3; gateway=$4; dns=$5
@@ -154,6 +188,9 @@ start_station() {
 }
 start_ap() {
     choose_wifi || { log 'Wi-Fi interface not ready; retrying'; return 1; }
+    if [ "$(cat "$state/ap-supported" 2>/dev/null)" = 0 ]; then
+        log 'Selected Wi-Fi radio is station-only; Ethernet setup remains available'; return 1
+    fi
     iw reg set "$WIFI_COUNTRY" || return 1
     ip link set "$wifi" down || return 1
     iw dev "$wifi" set type __ap || { log 'Driver cannot enter AP mode'; return 1; }
@@ -209,6 +246,7 @@ checksum=$(settings_checksum)
 ip link set "$ETH_INTERFACE" up
 apply_eth_speed
 while :; do
+    refresh_wifi
     if [ -n "$scan_pid" ] && ! kill -0 "$scan_pid" 2>/dev/null; then wait "$scan_pid" 2>/dev/null || :; scan_pid=; fi
     if [ -f "$state/scan.request" ] && [ -z "$scan_pid" ]; then
         /usr/sbin/raumfeld-wifi-scan &
@@ -227,6 +265,7 @@ while :; do
         ip -4 route flush dev "$ETH_INTERFACE"
         : > /etc/resolv.conf
         load_settings
+        refresh_wifi
         apply_device_name
         apply_eth_speed
         checksum=$latest
@@ -286,6 +325,9 @@ while :; do
             if [ "$ap_seconds" -ge 120 ]; then stop_ap; waited=0; fi
         fi
         if [ "$ap_running" = 0 ]; then
+            if [ "$station_running" = 1 ] && [ "$WIFI_IP_MODE" = dhcp ] && {
+                [ -z "$wifi_dhcp_pid" ] || ! kill -0 "$wifi_dhcp_pid" 2>/dev/null
+            }; then stop_station; fi
             if [ "$station_running" = 1 ] && {
                 [ ! -s "$state/wpa.pid" ] || ! kill -0 "$(cat "$state/wpa.pid" 2>/dev/null)" 2>/dev/null
             }; then stop_station; fi
@@ -308,7 +350,8 @@ while :; do
             fi
         done
     fi
-    if [ "$waited" -ge "$DHCP_GRACE_SECONDS" ] && [ "$ap_running" = 0 ]; then
+    if [ "$waited" -ge "$DHCP_GRACE_SECONDS" ] && [ "$ap_running" = 0 ] &&
+       [ "$(cat "$state/ap-supported" 2>/dev/null)" != 0 ]; then
         stop_station
         start_ap || :
     fi

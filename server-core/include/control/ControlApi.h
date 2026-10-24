@@ -69,9 +69,9 @@
 //
 // **Threading.** `handleLine` runs on the control listener's thread, one
 // request at a time. `sessionHooks()` runs on the MATP listener's. The two
-// meet only in thread-safe classes -- the directory, the zone manager and the
-// zones -- and the resampler is the one thing here that is not: it is
-// replaced only while no zone exists, which is when nothing reads it.
+// meet only in thread-safe classes -- the directory, the zone manager, the
+// zones and the shared planner, which `resampler.configure` replaces while
+// zones plan from snapshots of it.
 
 #include "client/ClientSession.h"
 #include "config/ServerConfig.h"
@@ -98,7 +98,7 @@ class ControlApi
 public:
     // Everything here outlives the API. `planner` is the one every zone plans
     // with, held by reference by the zone manager as well -- which is why
-    // `resampler.configure` assigns into it rather than replacing it.
+    // `resampler.configure` swaps what it holds rather than replacing it.
     // `discovered` is what the beacons said, read by `discovery.clients`
     // (phase 33). `sendToRoom` is where a re-negotiation goes: the MATP listener's
     // mailbox, as for a zone's messages. `media` is the one origin
@@ -106,7 +106,7 @@ public:
     // the room events this API notices go, one whole line at a time: the
     // control listener's `publish`, which never waits (phase 24).
     ControlApi(ZoneManager& zones, RoomDirectory& rooms, const DiscoveredClients& discovered,
-               OutputPlanner& planner,
+               SharedPlanner& planner,
                const ResamplerRegistry& registry, const IClock& clock, MediaOrigin media,
                std::function<bool(const RoomCommand&)> sendToRoom,
                std::function<void(const std::string&)> publishEvent);
@@ -236,7 +236,7 @@ private:
     RoomDirectory& rooms_;
     const DiscoveredClients& discovered_;
     std::atomic<uint16_t> roomPort_{0};
-    OutputPlanner& planner_;
+    SharedPlanner& planner_;
     const ResamplerRegistry& registry_;
     const IClock& clock_;
     const MediaOrigin media_;

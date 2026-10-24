@@ -18,6 +18,7 @@ let backend = null;
 let saved = {}; // what settings() returned when last loaded or saved
 let savedClientId = '';
 let ready = false, saving = false, scanning = false, restarting = false;
+let lastUptime = 0;
 let scanned = [], storedSsid = '', savedBssid = '', connectedBssid = '';
 
 // ---------------------------------------------------------------------------
@@ -65,6 +66,7 @@ $('hardwareInputs').addEventListener('bindingschange', updateSave);
 
 // The running client's status, which both backends pass through unchanged.
 function showStatus(s) {
+  lastUptime = s.uptimeSeconds;
   const a = s.audio;
   $('headerDevice').textContent = s.name || s.clientId;
   $('connection').textContent = s.server.state;
@@ -82,6 +84,48 @@ function statusUnavailable() {
   $('connection').textContent = 'Unavailable';
   $('connection').classList.remove('online');
 }
+
+async function showRestart(message) {
+  const previousUptime = lastUptime;
+  restarting = true;
+  $('restart').disabled = true;
+  document.querySelector('main').inert = true;
+  updateSave();
+  msg(message + ' Waiting for the device to reconnect...');
+  let offline = false;
+  for (let attempt = 0; attempt < 120; ++attempt) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const board = backend === boardBackend;
+      const response = await fetch(board ? (setup ? '/api/settings' : '/api/status') : '/api', {
+        method: board ? 'GET' : 'POST', cache: 'no-store', signal: AbortSignal.timeout(3000),
+        ...(!board && {headers: {'Content-Type': 'application/json'}, body: JSON.stringify({command: 'status'})})});
+      const result = await response.json();
+      if (!response.ok || (!setup && !result.status)) throw new Error('Device unavailable');
+      if (offline || result.status?.uptimeSeconds < previousUptime) {
+        // The listener can return before every startup request is ready.
+        sessionStorage.setItem('galdrunRestartUntil', String(Date.now() + 60000));
+        location.reload();
+        return;
+      }
+    } catch { offline = true; }
+  }
+  document.querySelector('main').inert = false;
+  restarting = false;
+  $('restart').disabled = false;
+  updateSave();
+  msg('The device has not reconnected. Check its power and network address, then refresh this page.', true);
+}
+$('restart').onclick = async () => {
+  if (saving || scanning || restarting || !confirm('Restart this device? Playback will stop and unsaved settings will be lost.')) return;
+  $('restart').disabled = true;
+  try {
+    if (backend === boardBackend)
+      await boardJson(await fetch('/api/restart', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}));
+    else await api('restart');
+    void showRestart('Restarting the device.');
+  } catch (e) { $('restart').disabled = false; msg(e.message, true); }
+};
 
 async function refreshInputs(initial = false) {
   try {
@@ -221,7 +265,7 @@ async function api(command, params) {
 
 let networkEnabled = false, cpuEnabled = false, ledsEnabled = false, powerEnabled = false, driftEnabled = false;
 let sshEnabled = false, ssh = null;
-let dacEnabled = false, dacControls = [], dacRoomVolume = false, audioDevices = [], selectedAudioId = '';
+let dacEnabled = false, dacControls = [], dacRoomVolume = false, audioDevices = [], selectedAudioId = '', explicitAudioDevice = false;
 
 // SSH has its own buttons, not the Save bar: its passwords are never kept as "saved" state.
 async function loadSsh() {
@@ -275,8 +319,14 @@ async function loadCpu() {
     const values = r.cpu.frequenciesMhz;
     $('cpuMhz').replaceChildren(...values.slice().reverse().map(v =>
       new Option(v + ' MHz' + (v === r.cpu.defaultMhz ? ' (default)' : ''), v)));
-    $('cpuMhz').value = r.cpu.mhz;
-    $('cpuNow').textContent = 'Now running at ' + r.cpu.currentMhz + ' MHz.';
+    if (r.cpu.configured === false) {
+      const automatic = new Option('Firmware policy (' + r.cpu.governor + ')', 'auto');
+      automatic.disabled = true;
+      $('cpuMhz').prepend(automatic);
+    }
+    $('cpuMhz').value = r.cpu.configured === false ? 'auto' : r.cpu.mhz;
+    $('cpuNow').textContent = 'Now running at ' + r.cpu.currentMhz + ' MHz. ' +
+      (r.cpu.configured === false ? 'The firmware controls frequency until you save a MHz value.' : 'Requested: ' + r.cpu.mhz + ' MHz.');
   }
   saved.cpu = cpuEnabled ? $('cpuMhz').value : '';
 }
@@ -302,6 +352,7 @@ function renderPower(r) {
 }
 async function loadPower() {
   const r = await api('getPower');
+  show('restart', r.restart === true);
   powerEnabled = r.supported;
   deepSleepEnabled = powerEnabled && r.deepSleep === true;
   show('powerBox', powerEnabled);
@@ -363,7 +414,9 @@ const dacHints = {
   'Left Output Source': 'Choose what the left analog output plays.',
   'Right Output Source': 'Choose what the right analog output plays.',
   'Link Playback Volume Switch': 'Make both analog outputs use the left volume. The stored right attenuation applies again when unlinked.'};
-const dacRoomControls = ['Master Playback Volume', 'Master Playback Switch'];
+let dacRoomControls = ['Master Playback Volume', 'Master Playback Switch'];
+let dacResetSource = 'firmware defaults';
+let dacCard = '';
 
 function dacRoomOwned(control) {
   return dacRoomVolume && dacRoomControls.includes(control.name);
@@ -376,7 +429,11 @@ function dacSettings() {
 
 function renderDac(r) {
   const dac = r.dac;
+  dacCard = dac.card || '';
   dacRoomVolume = !!r.roomVolume;
+  dacRoomControls = r.roomVolumeControls || ['Master Playback Volume', 'Master Playback Switch'];
+  dacResetSource = dac.resetSource || 'firmware defaults';
+  $('dacReset').textContent = dacResetSource === 'initial card settings' ? 'Restore initial card settings' : 'Reset Default DAC settings';
   dacControls = dac.controls;
   $('dacName').textContent = dac.codec + ' DAC settings';
   $('dacControls').replaceChildren();
@@ -412,6 +469,39 @@ function renderDac(r) {
   saved.dac = JSON.stringify(dacSettings());
 }
 
+let audioProfiles = [];
+function audioProfileHint() {
+  const p = audioProfiles.find(p => p.id === $('audioProfile').value);
+  $('audioProfileHint').textContent = p ? [p.pins, p.clock, p.notes].filter(Boolean).join('. ') : '';
+}
+async function loadAudioProfile() {
+  const r = await api('getAudioProfile');
+  show('audioProfileBox', r.supported);
+  if (!r.supported) return;
+  audioProfiles = r.profiles.slice().sort((a, b) =>
+    Number(b.id === 'usb') - Number(a.id === 'usb') || a.name.localeCompare(b.name, 'en', {sensitivity: 'base'}));
+  $('audioProfile').replaceChildren(...audioProfiles.map(p => new Option(p.name, p.id)));
+  $('audioProfile').value = r.profile;
+  audioProfileHint();
+  if (r.rebootRequired) $('audioProfileHint').textContent += ' Reboot required.';
+}
+$('audioProfile').onchange = audioProfileHint;
+for (const [button, profile] of [['audioProfileApply', null], ['audioProfileRollback', 'rollback']]) {
+  $(button).onclick = async () => {
+    if (saving || scanning || restarting || !confirm('Apply this audio boot profile? Check the card wiring first. A changed profile restarts the device automatically; unsaved settings will be lost.')) return;
+    $(button).disabled = true;
+    try {
+      const result = await api('setAudioProfile', {profile: profile || $('audioProfile').value});
+      if (result.restarting) void showRestart('Audio profile saved. Restarting and scanning audio outputs.');
+      else {
+        await loadAudioProfile();
+        msg('Audio profile saved. The active profile is unchanged.');
+      }
+    } catch (e) { msg(e.message, true); }
+    finally { $(button).disabled = false; }
+  };
+}
+
 async function loadDac() {
   const r = await api('getDac');
   dacEnabled = r.supported;
@@ -429,14 +519,13 @@ $('dacReload').onclick = async () => {
   }
 };
 $('dacReset').onclick = async () => {
-  if (saving || !confirm(dacRoomVolume
-    ? 'Reset the DAC controls to firmware defaults now? This restores output routing; the level and mute stay with the room volume.'
-    : 'Reset all DAC controls to firmware defaults now? This restores output routing, enables playback and sets DAC volume to 0 dB.'))
+  if (saving || !confirm('Restore ' + dacResetSource + ' now? Routing or mute may change.' +
+    (dacRoomVolume ? ' The level and mute stay with the room volume.' : '')))
     return;
   const button = $('dacReset');
   button.disabled = true;
   try {
-    renderDac(await api('resetDac'));
+    renderDac(await api('resetDac', dacCard ? {card: dacCard} : {}));
     updateSave();
     msg('Default DAC settings restored and saved.');
   } catch (e) {
@@ -452,6 +541,7 @@ function renderFormats() {
   const want = $('device').value;
   let d = (want && (audioDevices.find(x => x.id === want) || audioDevices.find(x => x.id === selectedAudioId)))
     || audioDevices.find(x => x.isDefault) || audioDevices[0];
+  if (explicitAudioDevice) d = want ? audioDevices.find(x => x.id === want) : null;
   // ALSA's "default" plugin can convert formats. Use the actual hardware list for DAC capabilities.
   if (d?.id === 'default') d = audioDevices.find(x => x.id.startsWith('hw:')) || d;
   $('formatDevice').textContent = d ? d.name + ' \u00b7 direct hardware formats' : 'No output device found.';
@@ -465,15 +555,22 @@ function renderFormats() {
   const names = {int16: '16-bit', int24: '24-bit packed', int24in32: '24-bit in 32-bit', int32: '32-bit', float32: '32-bit float'};
   list($('audioFormats'), [...groups.values()].sort((a, b) => a.rate - b.rate || a.channels - b.channels)
     .map(g => [(g.rate / 1000) + ' kHz \u00b7 ' + g.channels + ' ch', g.types.map(t => names[t] || t).join(', ')]));
-  if (!formats.length)
-    $('audioFormats').textContent = 'No direct hardware formats are cached. Stop playback before rescanning a busy device.';
+  show('audioFormats', formats.length > 0);
+  show('audioFormatsEmpty', !formats.length);
 }
-$('device').addEventListener('change', () => { if (backend === controlBackend) renderFormats(); });
+$('device').addEventListener('change', () => {
+  if (backend === controlBackend) {
+    renderFormats();
+    show('dacBox', dacEnabled && $('device').value === saved.device);
+  }
+});
 
 async function loadDevices() {
   const j = await api('audioDevices'), want = j.configuredDeviceId || '';
-  const options = [new Option('Automatic (the default device)', ''),
-    ...j.cache.devices.map(d => new Option(d.name + (d.isDefault ? ' (default)' : ''), d.id))];
+  explicitAudioDevice = !!j.requiresConfiguredDevice;
+  const options = [new Option(explicitAudioDevice ? 'Select output (silent until selected)' : 'Automatic (the default device)', ''),
+    ...j.cache.devices.filter(d => !explicitAudioDevice || d.id.startsWith('hw:CARD='))
+      .map(d => new Option(d.name + (d.isDefault ? ' (default)' : ''), d.id))];
   if (want && !j.cache.devices.some(d => d.id === want)) options.push(new Option(want + ' (not found)', want));
   $('device').replaceChildren(...options);
   $('device').value = want;
@@ -506,13 +603,14 @@ function networkSettings() {
   return {
     device: {name: $('deviceName').value.trim()},
     ethernet: {...address('eth'), speedMbps: $('ethSpeed').value},
-    wifi: {...address('wifi'), ssid: $('wifiSsid').value, bssid: $('wifiAp').value, password: $('wifiPassword').value,
+    wifi: {...address('wifi'), radio: $('wifiRadio').value, ssid: $('wifiSsid').value, bssid: $('wifiAp').value, password: $('wifiPassword').value,
       clearPassword: $('wifiClearPassword').checked, country: $('wifiCountry').value.trim()}};
 }
 
 async function loadNetwork() {
   const n = await api('getNetwork');
   networkEnabled = n.supported;
+  show('wifiRadioBox', networkEnabled);
   for (const id of ['networkBox', 'ethAddressBox', 'wifiAddressBox', 'deviceNameBox']) {
     show(id, networkEnabled);
     setEnabled(id, networkEnabled);
@@ -526,6 +624,15 @@ async function loadNetwork() {
       $(p + 'Now').textContent = (g.currentIp ? 'Now on ' + g.currentIp + '. ' : '') + 'A wrong static address leaves the board unreachable.';
     }
     const w = n.network.wifi;
+    $('wifiRadio').replaceChildren(new Option('Automatic', ''));
+    for (const radio of w.radios || [])
+      $('wifiRadio').add(new Option(radio.interface + ' (' + radio.id + ')', radio.id));
+    if (w.radio && !(w.radios || []).some(r => r.id === w.radio))
+      $('wifiRadio').add(new Option(w.radio + ' (unplugged; using fallback)', w.radio));
+    $('wifiRadio').value = w.radio || '';
+    $('wifiRadioHint').textContent = (w.activeInterface ? 'Active: ' + w.activeInterface + '. ' : '') +
+      (w.apSupported === false ? 'This radio supports station mode only. Use Ethernet for setup.' :
+        'If the selected radio is unplugged, another available radio is used.');
     $('wifiSsid').value = storedSsid = w.ssid;
     $('wifiCountry').value = w.country;
     $('wifiPassword').value = '';
@@ -603,13 +710,14 @@ async function controlLoad() {
   $('room').value = saved.room;
   $('clientId').value = saved.clientId;
   $('server').value = saved.server;
-  await Promise.all([loadDevices(), loadNetwork(), loadCpu(), loadDac(), loadLeds(), loadPower(), loadSsh()]);
+  await Promise.all([loadDevices(), loadNetwork(), loadCpu(), loadDac(), loadLeds(), loadPower(), loadSsh(), loadAudioProfile()]);
   ready = true;
   updateSave();
 }
 
 async function controlSave() {
   const {drift, room, clientId, server, device, network, cpu, dac, leds, power} = controlSettings();
+  const deviceChanged = device !== saved.device;
   const networkChanged = network !== saved.network;
   if (room !== saved.room) { await api('setName', {name: room}); saved.room = room; }
   if (clientId !== saved.clientId) { await api('setClientId', {clientId}); saved.clientId = savedClientId = clientId; }
@@ -622,18 +730,18 @@ async function controlSave() {
     const r = await api('setLeds', {off: leds === 'true'});
     saved.leds = String(r.off);
   }
-  if (device !== saved.device) { await api('setAudioDevice', {deviceId: device}); saved.device = device; }
+  if (deviceChanged) { await api('setAudioDevice', {deviceId: device}); saved.device = device; await loadDac(); }
   if (drift !== saved.drift) { await api('setDriftCorrection', {driftCorrection: drift}); saved.drift = drift; }
   if (cpu !== saved.cpu) {
     const r = await api('setCpu', {mhz: Number(cpu)});
     saved.cpu = String(r.cpu.mhz);
     $('cpuNow').textContent = 'Now running at ' + r.cpu.currentMhz + ' MHz.';
   }
-  if (dac !== saved.dac) {
+  if (!deviceChanged && dac !== saved.dac) {
     const before = JSON.parse(saved.dac), after = JSON.parse(dac);
     const changes = Object.fromEntries(Object.entries(after).filter(([name, values]) =>
       JSON.stringify(values) !== JSON.stringify(before[name])));
-    renderDac(await api('setDac', changes));
+    renderDac(await api('setDac', dacCard ? {card: dacCard, controls: changes} : changes));
   }
   if (networkChanged) {
     const n = await api('setNetwork', JSON.parse(network));
@@ -667,7 +775,7 @@ const controlBackend = {
   async start() {
     await Promise.all([controlLoad(), controlRefresh(true)]);
     await $('hardwareInputs').inputUsageReady;
-    setInterval(() => { if (!document.hidden) controlRefresh(); }, 2000);
+    setInterval(() => { if (!document.hidden && !restarting) controlRefresh(); }, 2000);
   }};
 
 // ---------------------------------------------------------------------------
@@ -744,6 +852,7 @@ async function boardRefresh(initial = false) {
 async function boardLoad(response) {
   const s = await boardJson(response);
   setup = s.setupMode;
+  show('restart', true);
   for (const id of ['networkBox', 'wifiAddressBox', 'deviceNameBox', 'i2sClockBox', 'i2sAudioBox', 'hardwareBox']) show(id, true);
   $('wifiSsid').required = true;
   $('deviceName').disabled = false;
@@ -821,13 +930,17 @@ const boardBackend = {
     await Promise.all([refreshInputs(true), setup ? Promise.resolve() : boardRefresh(true)]);
     if (setup) return;
     await $('hardwareInputs').inputUsageReady;
-    setInterval(() => { if (!document.hidden) { boardRefresh(); refreshInputs(); } }, 2000);
+    setInterval(() => { if (!document.hidden && !restarting) { boardRefresh(); refreshInputs(); } }, 2000);
   }};
 
 // ---------------------------------------------------------------------------
 
+const restartLoadRetry = Number(sessionStorage.getItem('galdrunRestartUntil')) > Date.now()
+  ? setTimeout(() => location.reload(), 10000) : null;
 finishPageLoading((async () => {
   const response = await fetch('/api/settings');
   backend = response.status === 404 ? controlBackend : boardBackend;
   await backend.start(response);
+  clearTimeout(restartLoadRetry);
+  sessionStorage.removeItem('galdrunRestartUntil');
 })());

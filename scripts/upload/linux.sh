@@ -47,8 +47,8 @@ ssh_options=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
 [[ -z $identity ]] || ssh_options+=(-i "$identity")
 
 echo 'SSH will prompt for your password when needed; it is not stored.'
-mapfile -t hardware < <(ssh "${ssh_options[@]}" "$target" 'uname -m; getconf LONG_BIT')
-(( ${#hardware[@]} == 2 )) || { echo 'Could not detect the remote architecture.' >&2; exit 1; }
+mapfile -t hardware < <(ssh "${ssh_options[@]}" "$target" 'uname -m; if [ -x /etc/init.d/S95galdrun-client ]; then echo 32; echo buildroot; else getconf LONG_BIT; echo generic; fi')
+(( ${#hardware[@]} == 3 )) || { echo 'Could not detect the remote architecture.' >&2; exit 1; }
 machine=${hardware[0]} bits=${hardware[1]}
 case $machine in
     aarch64) if [[ $bits == 64 ]]; then platform=linux-armv8; else platform=linux-armv7; fi ;;
@@ -65,10 +65,16 @@ echo "Uploading $platform to $target"
 server_args=''
 [[ -z $server ]] || server_args="--server $server "
 remote=$(sed -e "s|@SERVER_ARGS@|$server_args|" -e "s|@USER@|$user|" "$here/linux-remote.sh")
+remote_shell=bash remote_args=
+if [[ ${hardware[2]} == buildroot ]]; then
+    [[ -z $server ]] || { echo 'Set the Buildroot server in the device web GUI before updating.' >&2; exit 2; }
+    remote=$(cat "$here/connector2-remote.sh")
+    remote_shell=sh remote_args=--stdin
+fi
 encoded=$(printf '%s\n' "$remote" | base64 -w0)
 remote_script=".galdrun-client-$$.sh"
 # The script travels in the command; stdin carries the release archive.
-command="umask 077; printf %s $encoded | base64 -d > $remote_script; bash $remote_script 2>&1; result=\$?; rm -f $remote_script; exit \$result"
+command="umask 077; printf %s $encoded | base64 -d > $remote_script; $remote_shell $remote_script $remote_args 2>&1; result=\$?; rm -f $remote_script; exit \$result"
 mkdir -p "$root/scripts/.run"
 log="$root/scripts/.run/upload-client-$ip.log"
 tar --format ustar -czf - -C "$release" . | ssh "${ssh_options[@]}" "$target" "$command" | tee "$log"

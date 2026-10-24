@@ -37,8 +37,11 @@
 #include "client/OutputPlan.h"
 #include "resampler/ResamplerRegistry.h"
 
+#include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace multiroom {
 
@@ -117,6 +120,40 @@ private:
                                                               DriftDisabledReason driftDisabledBy) const;
 
     ResamplerCapabilities capabilities_;
+};
+
+// The server's one planner, replaceable by `resampler.configure` while zones
+// plan their rooms on other threads. A caller takes one snapshot per planning
+// decision, so a plan is never made by two planners; a plan made just before
+// a swap is the old filter's, which is why the swap re-negotiates the rooms
+// it could have reached.
+class SharedPlanner
+{
+public:
+    explicit SharedPlanner(OutputPlanner planner)
+        : planner_(std::make_shared<const OutputPlanner>(std::move(planner)))
+    {
+    }
+
+    SharedPlanner(const SharedPlanner&) = delete;
+    SharedPlanner& operator=(const SharedPlanner&) = delete;
+
+    [[nodiscard]] std::shared_ptr<const OutputPlanner> get() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return planner_;
+    }
+
+    void set(OutputPlanner planner)
+    {
+        auto replacement = std::make_shared<const OutputPlanner>(std::move(planner));
+        std::lock_guard<std::mutex> lock(mutex_);
+        planner_ = std::move(replacement);
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::shared_ptr<const OutputPlanner> planner_; // guarded by mutex_
 };
 
 } // namespace multiroom

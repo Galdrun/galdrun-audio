@@ -444,7 +444,7 @@ public:
     // the store, the segment table, the decoder and its members -- is created
     // here, and creating it allocates nothing (phase 42).
     [[nodiscard]] static Result<std::unique_ptr<Zone>, ZoneError>
-    create(ZoneId id, AudioMemory& memory, const OutputPlanner& planner,
+    create(ZoneId id, AudioMemory& memory, const SharedPlanner& planner,
            const ResamplerRegistry& registry, IDecoderFactory& decoders, const IClock& clock,
            ZoneSettings settings = {});
 
@@ -758,6 +758,13 @@ public:
     // boundary it was to be switched at, if it has not reached it yet.
     [[nodiscard]] Replan replanInPlace(const ClientId& client);
 
+    // Whether the server's planner now gives this member another plan than
+    // the one it streams, planned as replanInPlace() would: what
+    // resampler.configure re-negotiates. A room held at a format boundary is,
+    // because the plan its device reopens for may be the old planner's. Not a
+    // member: false.
+    [[nodiscard]] bool planOutdated(const ClientId& client) const;
+
     // This room was left alone in its zone: it is to have the plan it would
     // have had if nobody had joined it, planned from its whole capability list
     // rather than the one format its stream is in. Never in the middle of a
@@ -878,7 +885,7 @@ public:
                           const ClientClockModel& clock);
 
 private:
-    Zone(ZoneId id, AudioMemory& memory, const OutputPlanner& planner,
+    Zone(ZoneId id, AudioMemory& memory, const SharedPlanner& planner,
          const ResamplerRegistry& registry, IDecoderFactory& decoders, const IClock& clock,
          ZoneSettings settings, uint64_t lookaheadNs,
          uint64_t lateJoinLeadNs, std::unique_ptr<NativePcmStore> store);
@@ -1197,7 +1204,7 @@ private:
 
     ZoneId id_;
     AudioMemory& memory_;
-    const OutputPlanner& planner_;
+    const SharedPlanner& planner_; // one snapshot per planning decision
     const ResamplerRegistry& registry_;
     IDecoderFactory& decoders_;
     const IClock& clock_;

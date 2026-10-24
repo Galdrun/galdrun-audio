@@ -72,4 +72,11 @@ p.write_text(''.join(('root:$6$salt$'+hashlib.sha256(pw.encode()).hexdigest()+':
     assert hashlib.sha256(b"second secret").hexdigest() in shadow.read_text()
     run(0, current="second secret")
     assert conf.read_text() == "SSH_ENABLED=0\n"
+    for locked in ("*", "!"):
+        shadow.write_text(f"root:{locked}:::::::\nsshd:*:::::::\n")
+        run(1, fails="choose a password")
+        assert conf.read_text() == "SSH_ENABLED=0\n"
+        run(1, new="fresh Pi password")
+        assert hashlib.sha256(b"fresh Pi password").hexdigest() in shadow.read_text()
+        run(0, current="fresh Pi password")
     print("PASS: SSH needs a password to turn on, every change needs the current one, short/wrong input changes nothing")

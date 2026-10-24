@@ -1,5 +1,10 @@
 # Raumfeld Connector 2 firmware
 
+This external tree also builds **`rpi1`** and **`rpi3`** SD images. Their build,
+installation, supported driver catalogue and hardware qualification limits are
+in [the Raspberry Pi guide](board/rpi/README.md). The instructions below describe
+the Connector 2 NAND/USB firmware.
+
 Buildroot external tree that turns a Teufel Raumfeld **Connector 2** into a Galdrun
 client. Board target: **`connector2`**. The build produces a modern Linux firmware
 with the Galdrun client preinstalled and a USB stick image that installs it through
@@ -51,6 +56,7 @@ Results are exported to `output/connector2/`, logs to `logs/`.
   with `flock`.
 - Linux is rebuilt when its config, driver/DTS/firmware sources, the defconfig or
   `external.mk` change; OpenSSH and BusyBox when their patches/config change.
+  Host/target kmod is rebuilt when its compression/package options change.
   Overlays and post-build/image hooks are reapplied on every build. For broader
   package or toolchain changes use a fresh work directory.
 - Ubuntu's uutils `install` is incompatible with Buildroot; `PrepareHost.sh` puts a

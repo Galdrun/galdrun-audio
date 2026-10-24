@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
+#include <cctype>
+#include <climits>
 
 namespace multiroom::dac_settings {
 namespace {
@@ -22,6 +24,29 @@ const struct { const char* name; long value; } kControls[] = {
     {"Soft Volume Ramp-Up Switch", 0}, {"Zero Cross Switch", 0},
     {"Left Output Source", 2}, {"Right Output Source", 1}, {"Link Playback Volume Switch", 0}
 };
+
+// The client owner thread selects one concrete ALSA card. Unselected Pi images
+// expose no DAC controls and never touch another card during restore.
+std::string selectedCard;
+std::string roomVolumeElement;
+bool genericAvailable = false;
+
+bool generic() { return board_config::enabled(board_config::current(), "selectedCardDacControls"); }
+
+std::string settingsPath(const std::string& path)
+{
+    return generic() ? path + "." + selectedCard : path;
+}
+
+bool clockControl(const std::string& name)
+{
+    std::string lower = name;
+    for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return lower.find("clock") != std::string::npos || lower.find("drift") != std::string::npos ||
+           lower.find("ppm") != std::string::npos || lower.find("pll") != std::string::npos ||
+           lower.find("rate") != std::string::npos || lower.find("frequency") != std::string::npos ||
+           lower.find("sync") != std::string::npos || lower.find("trim") != std::string::npos;
+}
 
 struct Control {
     unsigned int id = 0;
@@ -47,16 +72,42 @@ bool failed(int result, std::string& error)
 
 bool readControls(Card& card, std::vector<Control>& controls, std::string& error)
 {
-    if (failed(snd_ctl_open(&card.handle, "hw:Connector2", SND_CTL_NONBLOCK), error)) return false;
+    const std::string device = generic() ? "hw:CARD=" + selectedCard : "hw:Connector2";
+    if (generic() && selectedCard.empty()) { error = "Select an ALSA output first"; return false; }
+    if (failed(snd_ctl_open(&card.handle, device.c_str(), SND_CTL_NONBLOCK), error)) return false;
+    std::vector<std::pair<std::string, long>> definitions;
+    if (generic())
+    {
+        snd_ctl_elem_list_t* list;
+        snd_ctl_elem_list_alloca(&list);
+        if (failed(snd_ctl_elem_list(card.handle, list), error)) return false;
+        const unsigned count = snd_ctl_elem_list_get_count(list);
+        if (count > 512) { error = "Too many ALSA controls"; return false; }
+        if (failed(snd_ctl_elem_list_alloc_space(list, count), error)) return false;
+        const int result = snd_ctl_elem_list(card.handle, list);
+        if (result >= 0)
+            for (unsigned i = 0; i < snd_ctl_elem_list_get_used(list); ++i)
+            {
+                const std::string name = snd_ctl_elem_list_get_name(list, i);
+                if (snd_ctl_elem_list_get_interface(list, i) == SND_CTL_ELEM_IFACE_MIXER &&
+                    snd_ctl_elem_list_get_index(list, i) == 0 &&
+                    snd_ctl_elem_list_get_device(list, i) == 0 &&
+                    snd_ctl_elem_list_get_subdevice(list, i) == 0 && !clockControl(name))
+                    definitions.emplace_back(name, 0);
+            }
+        snd_ctl_elem_list_free_space(list);
+        if (failed(result, error)) return false;
+    }
+    else for (const auto& initial : kControls) definitions.emplace_back(initial.name, initial.value);
     snd_ctl_elem_id_t* id;
     snd_ctl_elem_info_t* info;
     snd_ctl_elem_value_t* value;
     snd_ctl_elem_id_alloca(&id);
     snd_ctl_elem_info_alloca(&info);
     snd_ctl_elem_value_alloca(&value);
-    for (const auto& initial : kControls)
+    for (const auto& initial : definitions)
     {
-        const char* name = initial.name;
+        const char* name = initial.first.c_str();
         snd_ctl_elem_id_clear(id);
         snd_ctl_elem_id_set_interface(id, SND_CTL_ELEM_IFACE_MIXER);
         snd_ctl_elem_id_set_name(id, name);
@@ -65,24 +116,35 @@ bool readControls(Card& card, std::vector<Control>& controls, std::string& error
         const int result = snd_ctl_elem_info(card.handle, info);
         if (result == -ENOENT) continue; // Older firmware lacks the output-source controls.
         if (failed(result, error)) return false;
-        if (!snd_ctl_elem_info_is_readable(info) || !snd_ctl_elem_info_is_writable(info)) continue;
+        if (!snd_ctl_elem_info_is_readable(info) || !snd_ctl_elem_info_is_writable(info) ||
+            (generic() && (snd_ctl_elem_info_is_volatile(info) || snd_ctl_elem_info_is_inactive(info)))) continue;
         Control control;
         control.id = snd_ctl_elem_info_get_numid(info);
         control.name = name;
-        control.defaultValue = initial.value;
+        control.defaultValue = initial.second;
         control.type = snd_ctl_elem_info_get_type(info);
         const unsigned int count = snd_ctl_elem_info_get_count(info);
-        if (count == 0 || count > 2) { error = "unsupported DAC control channel count"; return false; }
+        if (count == 0 || count > (generic() ? 32u : 2u)) continue;
         if (control.type == SND_CTL_ELEM_TYPE_INTEGER)
         {
             control.minimum = snd_ctl_elem_info_get_min(info);
             control.maximum = snd_ctl_elem_info_get_max(info);
             control.step = std::max(1L, snd_ctl_elem_info_get_step(info));
+            if (generic() && control.name.find("Volume") != std::string::npos)
+            {
+                // Drivers provide card-specific scaling. Never expose a gain
+                // boost through DAC settings, or guess the scale of a raw control.
+                long zeroDb = 0;
+                if (snd_ctl_convert_from_dB(card.handle, id, 0, &zeroDb, -1) < 0) continue;
+                control.maximum = std::min(control.maximum, zeroDb);
+            }
+            if (control.minimum < INT32_MIN || control.maximum > INT32_MAX ||
+                control.minimum > control.maximum || control.step > INT32_MAX) continue;
         }
         else if (control.type == SND_CTL_ELEM_TYPE_ENUMERATED)
         {
             const unsigned int items = snd_ctl_elem_info_get_items(info);
-            if (items == 0 || items > 32) { error = "unsupported DAC choices"; return false; }
+            if (items == 0 || items > 128) continue;
             control.maximum = items - 1;
             for (unsigned int item = 0; item < items; ++item)
             {
@@ -92,7 +154,7 @@ bool readControls(Card& card, std::vector<Control>& controls, std::string& error
             }
         }
         else if (control.type != SND_CTL_ELEM_TYPE_BOOLEAN)
-        { error = "unsupported DAC control type"; return false; }
+            continue;
         snd_ctl_elem_value_clear(value);
         snd_ctl_elem_value_set_numid(value, control.id);
         if (failed(snd_ctl_elem_read(card.handle, value), error)) return false;
@@ -176,7 +238,7 @@ bool apply(const json::Value& changes, const std::string* path, std::string& err
             const double value = entry.asDouble();
             if (!entry.isNumber() || !std::isfinite(value) || std::floor(value) != value ||
                 value < found->minimum || value > found->maximum ||
-                (static_cast<long>(value) - found->minimum) % found->step != 0)
+                (static_cast<int64_t>(value) - found->minimum) % found->step != 0)
             { error = "invalid DAC value: " + member.first; return false; }
             values.push_back(static_cast<long>(value));
         }
@@ -210,7 +272,7 @@ bool apply(const json::Value& changes, const std::string* path, std::string& err
 
 bool supported()
 {
-    return board_config::enabled(board_config::current(), "dacControls");
+    return board_config::enabled(board_config::current(), "dacControls") && (!generic() || genericAvailable);
 }
 
 bool supported(const std::string& boardPath)
@@ -224,7 +286,9 @@ bool load(json::Value& settings, std::string& error)
     std::vector<Control> controls;
     if (!readControls(card, controls, error)) return false;
     settings = json::Value::makeObject();
-    settings["codec"] = json::Value("CS4271");
+    settings["codec"] = json::Value(generic() ? selectedCard : "CS4271");
+    if (generic()) settings["card"] = json::Value(selectedCard);
+    settings["resetSource"] = json::Value(generic() ? "initial card settings" : "firmware defaults");
     settings["controls"] = json::Value::makeArray();
     for (const auto& control : controls)
     {
@@ -246,18 +310,22 @@ bool load(json::Value& settings, std::string& error)
 bool save(const json::Value& changes, json::Value& settings, std::string& error, const std::string& path)
 {
     error.clear();
-    return apply(changes, &path, error) && load(settings, error);
+    const std::string selectedPath = settingsPath(path);
+    return apply(changes, &selectedPath, error) && load(settings, error);
 }
 
 bool restore(std::string& error, const std::string& path)
 {
-    if (!fileutil::exists(path)) return true;
+    const std::string selectedPath = settingsPath(path);
+    if (!fileutil::exists(selectedPath)) return true;
     json::Value saved;
-    return readSaved(path, saved, error) && apply(saved, nullptr, error);
+    return readSaved(selectedPath, saved, error) && apply(saved, nullptr, error);
 }
 
 bool isRoomVolumeControl(const std::string& name)
 {
+    if (generic()) return !roomVolumeElement.empty() &&
+        (name == roomVolumeElement + " Playback Volume" || name == roomVolumeElement + " Playback Switch");
     return name == "Master Playback Volume" || name == "Master Playback Switch";
 }
 
@@ -268,9 +336,55 @@ bool reset(json::Value& settings, std::string& error, bool keepRoomVolume, const
     std::vector<Control> controls;
     if (!readControls(card, controls, error)) return false;
     auto defaults = json::Value::makeObject();
+    const std::string selectedPath = settingsPath(path);
+    json::Value baseline;
+    if (generic() && !readSaved(selectedPath + ".defaults", baseline, error)) return false;
     for (const auto& control : controls)
         if (!keepRoomVolume || !isRoomVolumeControl(control.name))
-            defaults[control.name] = valuesJson(std::vector<long>(control.values.size(), control.defaultValue));
-    return apply(defaults, &path, error, true) && load(settings, error);
+        {
+            if (generic())
+            {
+                const auto* initial = baseline.find(control.name);
+                if (initial != nullptr) defaults[control.name] = *initial;
+            }
+            else defaults[control.name] = valuesJson(std::vector<long>(control.values.size(), control.defaultValue));
+        }
+    return apply(defaults, &selectedPath, error, true) && load(settings, error);
+}
+bool selectDevice(const std::string& deviceId, const std::string& volumeElement, std::string& error)
+{
+    if (!generic()) return true;
+    roomVolumeElement = volumeElement;
+    const std::string prefix = "hw:CARD=";
+    std::string card;
+    if (deviceId.compare(0, prefix.size(), prefix) == 0)
+        card = deviceId.substr(prefix.size(), deviceId.find(',') - prefix.size());
+    if (card.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos)
+        card.clear();
+    if (card == selectedCard && (card.empty() || genericAvailable)) return true;
+    selectedCard = card;
+    genericAvailable = false;
+    if (card.empty()) return true;
+    Card handle;
+    std::vector<Control> controls;
+    if (!readControls(handle, controls, error)) return true; // Fixed-output cards have no mixer settings.
+    genericAvailable = true;
+    const std::string baselinePath = settingsPath("/etc/" MULTIROOM_BRAND_SLUG "-dac.json") + ".defaults";
+    if (!fileutil::exists(baselinePath))
+    {
+        auto baseline = json::Value::makeObject();
+        for (const auto& control : controls)
+        {
+            auto values = control.values;
+            for (auto& value : values) value = std::max(control.minimum, std::min(control.maximum, value));
+            baseline[control.name] = valuesJson(values);
+        }
+        if (!fileutil::writeTextFileAtomic(baselinePath, json::serialize(baseline) + "\n", error))
+        {
+            genericAvailable = false;
+            return false;
+        }
+    }
+    return restore(error);
 }
 } // namespace multiroom::dac_settings

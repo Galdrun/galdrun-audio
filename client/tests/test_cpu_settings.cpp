@@ -35,6 +35,10 @@ MULTIROOM_TEST(cpu_settings_opt_in_validate_persist_and_restore)
     CHECK(settings.find("mhz")->asDouble() == 300);
     CHECK(settings.find("defaultMhz")->asDouble() == 300);
     CHECK(settings.find("frequenciesMhz")->size() == 3);
+    CHECK(!settings.find("configured")->asBool());
+    CHECK(cpu_settings::restore(error, policy, config));
+    CHECK(get("scaling_min_freq") == "300000\n");
+    CHECK(get("scaling_max_freq") == "720000\n");
     for (double invalid : {0., 600.5, 721., 1e20})
     {
         change["mhz"] = json::Value(invalid);
@@ -45,6 +49,7 @@ MULTIROOM_TEST(cpu_settings_opt_in_validate_persist_and_restore)
     change["mhz"] = json::Value(600);
     CHECK(cpu_settings::save(change, settings, error, policy, config));
     CHECK(settings.find("mhz")->asDouble() == 600);
+    CHECK(settings.find("configured")->asBool());
     CHECK(get("scaling_min_freq") == "600000\n");
     CHECK(get("scaling_max_freq") == "600000\n");
     put("scaling_min_freq", "300000\n");

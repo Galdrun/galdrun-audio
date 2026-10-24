@@ -25,6 +25,7 @@ with tempfile.TemporaryDirectory(prefix="galdrun-build-cache-") as temp:
                  output / "build/openssh-test", work / "buildroot-2025.02.18"):
         path.mkdir(parents=True, exist_ok=True)
     (source / "configs/raumfeld_connector2_defconfig").write_text("BR2_PACKAGE_OPENSSH=y\n")
+    (output / ".config").write_text("BR2_PACKAGE_OPENSSH=y\n")
     (source / "external.mk").write_text("")
     (source / "downloads/linux/linux-6.12.112.tar.xz").write_text("mock archive\n")
     (source / "scripts/build-usb-installer.py").write_text("# Packaging is outside this regression.\n")
@@ -66,6 +67,7 @@ elif not any(target in sys.argv for target in ("raumfeld_connector2_defconfig","
         assert sum("openssh-dirclean" in call for call in calls) == clean_count, calls
         if not fail:
             assert stamp.is_file() and len(stamp.read_text().strip()) == 64
+        return calls
 
     run(1)  # Existing untracked package needs rebuilding once.
     run(0)  # Identical patch inputs reuse the cache.
@@ -97,4 +99,22 @@ elif not any(target in sys.argv for target in ("raumfeld_connector2_defconfig","
     shutil.rmtree(output / "build/openssh-test")
     stamp.unlink()
     run(0)  # No existing package means no unnecessary dirclean.
+    # Custom-named Pi kernel trees and shared fragments must invalidate too.
+    (output / "build/linux-custom").mkdir()
+    assert not any("linux-dirclean" in call for call in run(0))
+    fragment = source / "board/common/audio.fragment"
+    fragment.write_text("CONFIG_SND_USB_AUDIO=m\n")
+    assert sum("linux-dirclean" in call for call in run(0)) == 1
+    assert not any("linux-dirclean" in call for call in run(0))
+    fragment.write_text("CONFIG_SND_USB_AUDIO=y\n")
+    assert sum("linux-dirclean" in call for call in run(0)) == 1
+    fragment.unlink()
+    assert sum("linux-dirclean" in call for call in run(0)) == 1
+    (output / "build/host-kmod-test").mkdir()
+    (output / ".raumfeld-kmod-inputs").unlink()
+    assert sum("host-kmod-dirclean" in call for call in run(0)) == 1
+    assert not any("host-kmod-dirclean" in call for call in run(0))
+    (output / ".config").write_text("BR2_PACKAGE_OPENSSH=y\nBR2_PACKAGE_XZ=y\nBR2_PACKAGE_HOST_KMOD_XZ=y\n")
+    assert sum("host-kmod-dirclean" in call for call in run(0)) == 1
+    assert not any("host-kmod-dirclean" in call for call in run(0))
     print("PASS: real build driver invalidates changed/added/renamed/deleted OpenSSH patches, reuses unchanged inputs and retries failures")

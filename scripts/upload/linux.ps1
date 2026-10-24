@@ -51,8 +51,8 @@ $remoteScript = '.' + [System.IO.Path]::GetFileName($archive).Replace('.tar.gz',
 $process = $null
 try {
     Write-Host 'SSH will prompt for your password when needed; it is not stored.'
-    $hardware = @(& $ssh @sshOptions $target 'uname -m; getconf LONG_BIT')
-    if ($LASTEXITCODE -ne 0 -or $hardware.Count -ne 2) { throw 'Could not detect the remote architecture.' }
+    $hardware = @(& $ssh @sshOptions $target 'uname -m; if [ -x /etc/init.d/S95galdrun-client ]; then echo 32; echo buildroot; else getconf LONG_BIT; echo generic; fi')
+    if ($LASTEXITCODE -ne 0 -or $hardware.Count -ne 3) { throw 'Could not detect the remote architecture.' }
     $machine = $hardware[0].Trim()
     $bits = $hardware[1].Trim()
     switch -Regex ($machine) {
@@ -72,9 +72,17 @@ try {
     $serverArgs = if ($Server) { "--server $Server " } else { '' }
     $remote = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'linux-remote.sh'))
     $remote = $remote.Replace('@SERVER_ARGS@', $serverArgs).Replace('@USER@', $User).Replace("`r`n", "`n")
+    $remoteShell = 'bash'
+    $remoteArgs = ''
+    if ($hardware[2].Trim() -eq 'buildroot') {
+        if ($Server) { throw 'Set the Buildroot server in the device web GUI before updating.' }
+        $remote = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'connector2-remote.sh')).Replace("`r`n", "`n")
+        $remoteShell = 'sh'
+        $remoteArgs = ' --stdin'
+    }
     $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remote))
     # The script travels in the command; stdin carries the binary archive unchanged.
-    $command = 'umask 077; printf %s ' + $encoded + ' | base64 -d > ' + $remoteScript + '; bash ' + $remoteScript + ' 2>&1; result=$?; rm -f ' + $remoteScript + '; exit $result'
+    $command = 'umask 077; printf %s ' + $encoded + ' | base64 -d > ' + $remoteScript + '; ' + $remoteShell + ' ' + $remoteScript + $remoteArgs + ' 2>&1; result=$?; rm -f ' + $remoteScript + '; exit $result'
     $info = New-Object System.Diagnostics.ProcessStartInfo
     $info.FileName = $ssh
     # Every variable here is validated IPv4/username, base64 or a generated filename.

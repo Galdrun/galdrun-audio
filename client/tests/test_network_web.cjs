@@ -17,7 +17,9 @@ const browser=launchEdge(9336,path.resolve('client/build/web-preview/edge-networ
    assert(await evaluate("!document.getElementById('networkBox').classList.contains('hidden')&&!document.getElementById('wifiScan').disabled"),'Firmware capability did not enable controls');
    assert(await evaluate("document.getElementById('save').disabled"),'Initial form should be clean');
    assert(await evaluate("!document.getElementById('deviceNameBox').classList.contains('hidden')&&!document.getElementById('deviceName').disabled"),'Device name missing on firmware');
-   assert.deepEqual(await evaluate("[...document.getElementById('room').closest('section').querySelectorAll('label')].map(x=>x.htmlFor)"),['room','clientId','deviceName','server','device'],'Client fields must follow the ESP order');
+   const clientFields=['room','clientId','deviceName','server','device'];
+   if(await evaluate("!document.getElementById('audioProfileBox').classList.contains('hidden')"))clientFields.splice(4,0,'audioProfile');
+   assert.deepEqual(await evaluate("[...document.getElementById('room').closest('section').querySelectorAll('label')].filter(x=>x.getClientRects().length).map(x=>x.htmlFor)"),clientFields,'Visible client fields must keep Audio board before Output');
    const initialDeviceName=await evaluate("document.getElementById('deviceName').value");
    await evaluate("document.getElementById('deviceName').value='bad name'");
    assert(await evaluate("!document.getElementById('deviceName').checkValidity()"),'Invalid hostname accepted');

@@ -110,7 +110,7 @@ const char* zoneStateName(ZoneState state)
 
 // ---------------------------------------------------------------------------
 
-Zone::Zone(ZoneId id, AudioMemory& memory, const OutputPlanner& planner,
+Zone::Zone(ZoneId id, AudioMemory& memory, const SharedPlanner& planner,
            const ResamplerRegistry& registry, IDecoderFactory& decoders, const IClock& clock,
            ZoneSettings settings, uint64_t lookaheadNs, uint64_t lateJoinLeadNs,
            std::unique_ptr<NativePcmStore> store)
@@ -128,7 +128,7 @@ Zone::~Zone()
 }
 
 Result<std::unique_ptr<Zone>, ZoneError> Zone::create(ZoneId id, AudioMemory& memory,
-                                                      const OutputPlanner& planner,
+                                                      const SharedPlanner& planner,
                                                       const ResamplerRegistry& registry,
                                                       IDecoderFactory& decoders,
                                                       const IClock& clock, ZoneSettings settings)
@@ -1494,11 +1494,12 @@ std::optional<std::string> Zone::unplayable(const AudioFormat& format) const
 
     // Outside the lock, as in beginTransition: the room's preference belongs
     // to another module.
+    const std::shared_ptr<const OutputPlanner> planner = planner_.get();
     std::string why;
     for (const auto& [client, capabilities] : rooms)
     {
         const Result<OutputPlan, PlanError> plan =
-            planner_.plan(format, settingsFor(client), capabilities);
+            planner->plan(format, settingsFor(client), capabilities);
         if (plan)
             return std::nullopt;
         why += (why.empty() ? "" : "; ") + client.str() + ": " + describe(plan.error());
@@ -1643,7 +1644,7 @@ Result<OutputPlan, ZoneError> Zone::planFor(const ClientId& client,
         return fail(ZoneError::NotPlaying, "zone " + id_.str() + " has no source yet");
 
     const Result<OutputPlan, PlanError> planned =
-        planner_.plan(source, settingsFor(client), capabilities);
+        planner_.get()->plan(source, settingsFor(client), capabilities);
     if (!planned)
         return fail(ZoneError::PlanFailed, describe(planned.error()));
 
@@ -1686,8 +1687,8 @@ Status<ZoneError> Zone::admit(const SessionId& session, const ClientId& client,
     if (grantedFormat.isValid())
     {
         const Result<OutputPlan, PlanError> granted =
-            planner_.replanForGrantedFormat(*requested, settingsFor(client), grantedFormat,
-                                            capabilities);
+            planner_.get()->replanForGrantedFormat(*requested, settingsFor(client),
+                                                   grantedFormat, capabilities);
         if (!granted)
             return fail(ZoneError::PlanFailed, describe(granted.error()));
         plan = *granted;
@@ -2046,7 +2047,7 @@ Replan Zone::replanInPlace(const ClientId& client)
     // the widest one a renegotiated plan would choose, which is the price of
     // not reopening its device.
     const OutputPlan current = output->plan();
-    const Result<OutputPlan, PlanError> fresh = planner_.plan(
+    const Result<OutputPlan, PlanError> fresh = planner_.get()->plan(
         current.sourceFormat, settingsFor(client), keepingFormat(capabilities, current.outputFormat));
     if (!fresh)
         return Replan::Renegotiate;
@@ -2078,6 +2079,27 @@ Replan Zone::replanInPlace(const ClientId& client)
              describePlan(*fresh));
     alignLineToLoneRoom("it was replanned");
     return Replan::InPlace;
+}
+
+bool Zone::planOutdated(const ClientId& client) const
+{
+    std::shared_ptr<ClientOutput> output;
+    ClientCapabilities capabilities;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto found = members_.find(client);
+        if (found == members_.end())
+            return false;
+        if (found->second.transitionAt != TimelineNs{})
+            return true;
+        output = found->second.output;
+        capabilities = found->second.capabilities;
+    }
+
+    const OutputPlan current = output->plan();
+    const Result<OutputPlan, PlanError> fresh = planner_.get()->plan(
+        current.sourceFormat, settingsFor(client), keepingFormat(capabilities, current.outputFormat));
+    return !fresh || !samePlan(*fresh, current);
 }
 
 Replan Zone::replanAlone(const ClientId& client)
@@ -2197,9 +2219,10 @@ Replan Zone::planAlone(const ClientId& client, const AudioFormat& format,
                        std::optional<OutputPlan>& inPlace) const
 {
     const RoomAudioSettings settings = settingsFor(client);
+    const std::shared_ptr<const OutputPlanner> planner = planner_.get();
     const Result<OutputPlan, PlanError> kept =
-        planner_.plan(format, settings, keepingFormat(capabilities, current.outputFormat));
-    const Result<OutputPlan, PlanError> whole = planner_.plan(format, settings, capabilities);
+        planner->plan(format, settings, keepingFormat(capabilities, current.outputFormat));
+    const Result<OutputPlan, PlanError> whole = planner->plan(format, settings, capabilities);
 
     // The join reopened its device in a format that is not the source's: only
     // another one makes it bitperfect again. Any other difference the whole
@@ -2597,7 +2620,8 @@ void Zone::beginTransition(TimelineNs at, const AudioFormat& format, const Clien
 
     // Outside the lock: the planner and the room's preference belong to other
     // modules, and building a converter is not work to do while the two
-    // listeners wait.
+    // listeners wait. One planner for every room of the boundary.
+    const std::shared_ptr<const OutputPlanner> planner = planner_.get();
     std::vector<std::pair<ClientId, TimelineNs>> held;
     for (const Room& room : rooms)
     {
@@ -2622,7 +2646,7 @@ void Zone::beginTransition(TimelineNs at, const AudioFormat& format, const Clien
         // room whose device would have to change is paused for it.
         const RoomAudioSettings settings = settingsFor(room.client);
         const Result<OutputPlan, PlanError> fresh =
-            planner_.plan(format, settings, room.capabilities);
+            planner->plan(format, settings, room.capabilities);
         if (fresh && fresh->outputFormat == room.output->plan().outputFormat)
         {
             Result<std::unique_ptr<IClientAudioProcessor>, ProcessorError> processor =
@@ -2782,9 +2806,10 @@ bool Zone::completeTransition(const ClientId& client, const AudioFormat& granted
     // that is now the only format this room can be sent -- exactly as admit()
     // does for a room arriving.
     const RoomAudioSettings settings = settingsFor(client);
-    Result<OutputPlan, PlanError> plan = planner_.plan(format, settings, capabilities);
+    const std::shared_ptr<const OutputPlanner> planner = planner_.get();
+    Result<OutputPlan, PlanError> plan = planner->plan(format, settings, capabilities);
     if (plan && granted.isValid())
-        plan = planner_.replanForGrantedFormat(*plan, settings, granted, capabilities);
+        plan = planner->replanForGrantedFormat(*plan, settings, granted, capabilities);
     if (!plan)
         return unserved(describe(plan.error()));
 
@@ -3214,6 +3239,7 @@ void Zone::onStreamReady(const ClientId& client, bool ready, const AudioFormat& 
     // be started at a position it does not hold -- outside the lock, because a
     // move stops that room's thread.
     const RoomAudioSettings settings = settingsFor(client);
+    const std::shared_ptr<const OutputPlanner> planner = planner_.get();
     if (!granted.isValid() || granted == current.outputFormat)
     {
         // The same format: moved on the plan it has -- unless the device now
@@ -3221,7 +3247,7 @@ void Zone::onStreamReady(const ClientId& client, bool ready, const AudioFormat& 
         // which changes the actuator and with it the converter's ratio mode,
         // and is replanned below like a changed format.
         const Result<OutputPlan, PlanError> again =
-            planner_.plan(current.sourceFormat, settings, capabilities);
+            planner->plan(current.sourceFormat, settings, capabilities);
         if (!again || again->driftActuator == current.driftActuator)
         {
             rejoinOrWarn(client, RejoinTrigger::DeviceRecovery);
@@ -3238,9 +3264,9 @@ void Zone::onStreamReady(const ClientId& client, bool ready, const AudioFormat& 
     // plays now when a format boundary has been opened.
     const PlanForSource replan = [&](const AudioFormat& source)
         -> Result<std::unique_ptr<IClientAudioProcessor>, ZoneError> {
-        Result<OutputPlan, PlanError> plan = planner_.plan(source, settings, capabilities);
+        Result<OutputPlan, PlanError> plan = planner->plan(source, settings, capabilities);
         if (plan)
-            plan = planner_.replanForGrantedFormat(*plan, settings, opened, capabilities);
+            plan = planner->replanForGrantedFormat(*plan, settings, opened, capabilities);
         if (!plan)
             return fail(ZoneError::PlanFailed, describe(plan.error()));
         Result<std::unique_ptr<IClientAudioProcessor>, ProcessorError> made =

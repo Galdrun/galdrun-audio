@@ -146,7 +146,11 @@ public sealed record ClientForgotten(string Client, string? Zone = null);
 public sealed record InputBindingsSet(string Client, string InputId,
     IReadOnlyDictionary<string, CoreInputBinding> Bindings, bool Changed);
 
-public sealed record ResamplerConfigured(string Resampler, bool VariableRatio, bool Changed);
+// The core keeps the resampler for its next start and switches live: Renegotiated
+// names the zoned rooms it asked to re-negotiate onto the new filter. A
+// fixed-ratio resampler (VariableRatio false, r8brain) corrects no drift.
+public sealed record ResamplerConfigured(string Resampler, bool VariableRatio, bool Changed,
+    IReadOnlyList<string>? Renegotiated = null);
 
 public sealed record Subscription(bool Subscribed, bool Changed);
 

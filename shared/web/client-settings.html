@@ -31,6 +31,7 @@
 <section id="networkBox" class="settings-card hidden" aria-labelledby="card-wi-fi">
   <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8 16a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r="1"/></svg></div><div><h2 id="card-wi-fi" tabindex="-1">Wi-Fi</h2><p>Connect to your wireless network or use a fixed access point.</p></div></div>
   <div class="card-content fields">
+    <div id="wifiRadioBox" class="field-group hidden"><label for="wifiRadio">Wi-Fi radio</label><select id="wifiRadio"><option value="">Automatic</option></select><p id="wifiRadioHint" class="hint"></p></div>
     <label for="wifiSsid">Network</label>
     <div class="row"><input id="wifiSsid" maxlength="32" autocomplete="off"><button type="button" id="wifiScan">Scan</button></div>
     <div id="wifiNetworks" class="nets"></div>
@@ -96,6 +97,12 @@
     <label for="server">Server (host:port)</label>
     <input id="server" placeholder="192.168.1.10:4711" autocomplete="off" aria-describedby="serverHint">
     <p class="hint" id="serverHint">Address of your audio server. Leave empty to wait to be discovered.</p>
+    <div id="audioProfileBox" class="field-group hidden">
+      <label for="audioProfile">Audio board</label><select id="audioProfile" aria-describedby="audioProfileHint audioProfileHelp"></select>
+      <p id="audioProfileHint" class="hint"></p>
+      <p id="audioProfileHelp" class="hint">Applying a changed boot profile restarts the device and scans its audio outputs automatically. Select the output after restart. I2S profiles require the listed wiring and a compatible header.</p>
+      <div class="row full-width" style="flex-wrap:wrap;justify-content:flex-end"><button type="button" id="audioProfileApply">Apply profile</button><button type="button" id="audioProfileRollback">Restore previous profile</button></div>
+    </div>
     <label for="device">Output</label>
     <div class="row"><select id="device"></select><button type="button" id="rescan" class="hidden">Rescan</button></div>
     <div id="i2sClockBox" class="field-group hidden">
@@ -122,6 +129,7 @@
     </div>
     <div id="formatsBox" class="hidden">
       <h3>Available output formats</h3><p class="hint" id="formatDevice" style="margin-bottom:16px"></p><dl id="audioFormats"></dl>
+      <p id="audioFormatsEmpty" class="hidden">No direct hardware formats are cached. Stop playback before rescanning a busy device.</p>
     </div>
     <div id="driftBox" class="hidden"><h3>Clock synchronization</h3><div class="fields"><label for="driftCorrection">Drift correction</label><select id="driftCorrection" aria-describedby="driftHint driftNow"><option value="auto">Automatic</option><option value="resampling">Server resampling</option><option value="hardwareClock">Hardware clock</option></select><p class="hint" id="driftHint">How this room is kept in time with the others. Hardware clock: the server fine-tunes this board's DAC clock, and the audio stays bit-perfect. Server resampling: the server adjusts the audio stream instead. Automatic uses the hardware clock where this board has one. Saving restarts playback briefly.</p><p class="hint" id="driftNow"></p></div></div>
     <div id="dacBox" class="hidden"><h3 id="dacName">DAC settings</h3><p class="hint">Save applies changed controls immediately and restores them on startup. Changing routing, mute or loopback can interrupt or replace the sound. Room volume commands can update DAC volume and mute.</p><div id="dacControls" class="fields"></div><div class="row" style="margin-top:20px"><button type="button" id="dacReload">Reload current DAC settings</button><button type="button" id="dacReset">Reset Default DAC settings</button></div></div>
@@ -130,7 +138,7 @@
 
 <section id="cpuBox" class="settings-card hidden" aria-labelledby="card-cpu">
   <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4"/></svg></div><div><h2 id="card-cpu" tabindex="-1">CPU</h2><p>Choose the processor speed for this device.</p></div></div>
-  <div class="card-content fields"><label for="cpuMhz">Frequency</label><select id="cpuMhz" disabled></select><p class="hint" id="cpuNow"></p><p class="hint">300 MHz is the firmware default. Select 600 or 720 MHz if your workload needs more processing capacity.</p></div>
+  <div class="card-content fields"><label for="cpuMhz">Frequency</label><select id="cpuMhz" disabled></select><p class="hint" id="cpuNow"></p><p class="hint">Available frequencies depend on this device. Higher frequencies provide more processing capacity and may increase power use and heat.</p></div>
 </section>
 
 <section id="ledBox" class="settings-card hidden" aria-labelledby="card-leds">
@@ -162,7 +170,7 @@
 </section>
 </main>
 
-<div class="form-actions save-bar"><div id="msg" class="message" role="status"></div><button id="save" class="primary" type="submit" form="form" formnovalidate disabled>Save</button></div>
+<div class="form-actions save-bar"><div id="msg" class="message" role="status"></div><button id="restart" class="hidden" type="button">Restart</button><button id="save" class="primary" type="submit" form="form" formnovalidate disabled>Save</button></div>
 <footer class="footer"><div class="footer-inner"><strong>@MULTIROOM_BRAND_NAME@</strong><span>Multiroom audio for a more connected home</span></div></footer>
 <script>
 @INCLUDE MultiroomWebInputs.inc@

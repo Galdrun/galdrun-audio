@@ -74,7 +74,8 @@ enum class ControlCommand
     StandbyOff,
     StandbyOn,
     ToggleStandby,
-    DeepSleep
+    DeepSleep,
+    Restart
 };
 
 const char* controlCommandName(ControlCommand command);

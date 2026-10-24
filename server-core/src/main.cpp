@@ -253,9 +253,9 @@ int runServer(const CommandLineOptions& options, bool asService)
     }
 
     // One planner for the whole server, and the line it logs about the
-    // resampler is phase 6's startup line.
+    // resampler is phase 6's startup line. resampler.configure swaps it.
     const std::string resamplerId = resolveResamplerId(resamplers, config.audio.resampler);
-    std::optional<OutputPlanner> planner;
+    std::optional<SharedPlanner> planner;
     if (resamplerId.empty())
     {
         // A build with both resampler options off. Not a broken server: it
@@ -391,6 +391,7 @@ int runServer(const CommandLineOptions& options, bool asService)
         onDisk.audio.seekFlushLeadMs = audio.seekFlushLeadMs;
         onDisk.audio.seekFillLeadMs = audio.seekFillLeadMs;
         onDisk.audio.memoryLimitMb = audio.memoryLimitMb;
+        onDisk.audio.resampler = audio.resampler;
         if (auto valid = server_config::validate(onDisk); !valid)
         {
             error = describe(valid.error());

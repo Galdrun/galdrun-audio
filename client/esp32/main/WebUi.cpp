@@ -331,6 +331,20 @@ bool readJsonBody(httpd_req_t* request, json::Value& root, esp_err_t& result)
 }
 
 
+esp_err_t handleRestart(httpd_req_t* request)
+{
+    json::Value root;
+    esp_err_t result = ESP_OK;
+    if (!readJsonBody(request, root, result)) return result;
+    if (!root.members().empty())
+        return sendError(request, "400 Bad Request", "restart takes no parameters");
+    json::Value body = json::Value::makeObject();
+    body["ok"] = json::Value(true);
+    result = sendJson(request, "200 OK", body);
+    restartSoon();
+    return result;
+}
+
 esp_err_t handlePostSettings(httpd_req_t* request)
 {
     json::Value root;
@@ -672,6 +686,7 @@ bool start()
         {"/", HTTP_GET, handlePage},
         {"/api/settings", HTTP_GET, handleGetSettings},
         {"/api/settings", HTTP_POST, handlePostSettings},
+        {"/api/restart", HTTP_POST, handleRestart},
         {"/api/networks", HTTP_GET, handleNetworks},
         {"/api/status", HTTP_GET, handleStatus},
         {"/api/inputs", HTTP_GET, handleInputs},

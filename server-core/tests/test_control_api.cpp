@@ -132,6 +132,27 @@ public:
     }
 };
 
+// The fake converter under another id, taking its ratio once as r8brain does:
+// a second resampler to switch to, one that corrects no room.
+class FixedRatioFakeFactory final : public IResamplerFactory
+{
+public:
+    FixedRatioFakeFactory() : caps_(FakeResampler::staticCapabilities())
+    {
+        caps_.id = "fixed";
+        caps_.variableRatio = false;
+    }
+
+    const ResamplerCapabilities& capabilities() const noexcept override { return caps_; }
+    std::unique_ptr<IAudioResampler> create() const override
+    {
+        return std::make_unique<FakeResampler>();
+    }
+
+private:
+    ResamplerCapabilities caps_;
+};
+
 // --- what the API and the zones asked the rooms for -------------------------
 
 struct CommandLog
@@ -408,7 +429,7 @@ struct ApiRig
     multiroomtest::ManualClock clock{1000000000ULL};
     AudioMemory memory{blockBytesFor(192000, 2, 20), 256ULL * 1024 * 1024};
     ResamplerRegistry resamplers;
-    std::optional<OutputPlanner> planner;
+    std::optional<SharedPlanner> planner;
     CommandLog log;
     RoomDirectory rooms{RoomAudioSettings{}};
     DiscoveredClients discovered;
@@ -1017,36 +1038,143 @@ MULTIROOM_TEST(control_api_stores_a_room_s_settings_and_reports_why)
              std::string(driftDisabledText(DriftDisabledReason::BitperfectForced)));
 }
 
-MULTIROOM_TEST(control_api_changes_the_resampler_only_while_no_zone_exists)
+MULTIROOM_TEST(control_api_changes_the_resampler_and_keeps_it)
 {
     ApiRig rig;
+    CHECK_OK(rig.resamplers.add(std::make_unique<FixedRatioFakeFactory>()));
     LineClient caller(rig.listener->port());
+
+    std::vector<std::string> saved;
+    bool refuse = false;
+    rig.api->setAudioConfig(AudioConfig{}, [&](const AudioConfig& audio, std::string& error) {
+        if (refuse)
+        {
+            error = "the config file cannot be written";
+            return false;
+        }
+        saved.push_back(audio.resampler);
+        return true;
+    });
 
     json::Value status = caller.request(R"({"command":"status"})");
     CHECK(status.find("server")->find("resampler") == nullptr); // none, not ""
 
-    CHECK(isOk(caller.request(R"({"command":"zone.create","params":{"zone":"living"}})")));
-    CHECK_EQ(errorOf(caller.request(
-                 R"({"command":"resampler.configure","params":{"resampler":"fake"}})")),
-             std::string("unavailable"));
-    CHECK(isOk(caller.request(R"({"command":"zone.delete","params":{"zone":"living"}})")));
-
+    // An id this build does not have: refused, naming the ids it has, and
+    // neither used nor kept.
     const json::Value unknown =
         caller.request(R"({"command":"resampler.configure","params":{"resampler":"sox"}})");
     CHECK_EQ(errorOf(unknown), std::string("invalidArgument"));
-    CHECK(text(unknown, "message").find("fake") != std::string::npos); // the ids that exist
+    CHECK(text(unknown, "message").find("fake") != std::string::npos);
+    CHECK(saved.empty());
 
+    // A zone is no obstacle: with no room in it nothing is re-negotiated.
+    CHECK(isOk(caller.request(R"({"command":"zone.create","params":{"zone":"living"}})")));
     json::Value configured =
         caller.request(R"({"command":"resampler.configure","params":{"resampler":"fake"}})");
     CHECK(isOk(configured));
     CHECK(flag(configured, "changed"));
-    CHECK_EQ(rig.planner->resamplerId(), std::string("fake"));
+    CHECK(flag(configured, "variableRatio"));
+    CHECK(strings(configured, "renegotiated").empty());
+    CHECK_EQ(rig.planner->get()->resamplerId(), std::string("fake"));
+    CHECK(saved == std::vector<std::string>({"fake"}));
+
+    // Replayed: unchanged, and not written again.
     configured =
         caller.request(R"({"command":"resampler.configure","params":{"resampler":"fake"}})");
     CHECK(!flag(configured, "changed"));
+    CHECK_EQ(saved.size(), size_t(1));
+
+    // The fixed-ratio one is taken, and says it corrects nothing.
+    configured =
+        caller.request(R"({"command":"resampler.configure","params":{"resampler":"fixed"}})");
+    CHECK(flag(configured, "changed"));
+    CHECK(!flag(configured, "variableRatio"));
+    CHECK(saved == std::vector<std::string>({"fake", "fixed"}));
+
+    // Not kept is not used: a change gone at the next start is refused now.
+    refuse = true;
+    CHECK_EQ(errorOf(caller.request(
+                 R"({"command":"resampler.configure","params":{"resampler":"fake"}})")),
+             std::string("invalidArgument"));
+    CHECK_EQ(rig.planner->get()->resamplerId(), std::string("fixed"));
 
     status = caller.request(R"({"command":"status"})");
-    CHECK_EQ(text(*status.find("server"), "resampler"), std::string("fake"));
+    CHECK_EQ(text(*status.find("server"), "resampler"), std::string("fixed"));
+    const json::Value settings = caller.request(R"({"command":"audio.settings"})");
+    CHECK_EQ(text(*settings.find("audio"), "resampler"), std::string("fixed"));
+}
+
+MULTIROOM_TEST(control_api_switches_the_resampler_while_a_zone_plays)
+{
+    ApiRig rig;
+    CHECK_OK(rig.resamplers.add(std::make_unique<FixedRatioFakeFactory>()));
+    LineClient caller(rig.listener->port());
+    size_t handled = 0;
+
+    // Rooms A and C play the source exactly, room B only converted. A is
+    // grouped, so the variable-ratio fake resamples it to correct it.
+    Room roomA(rig, "roomA", {formatOf(kRate)}, 1);
+    Room roomB(rig, "roomB", {formatOf(48000, AudioFormat::SampleType::Int32)}, 2);
+    Room roomC(rig, "roomC", {formatOf(kRate)}, 3);
+    const std::map<std::string, Room*> rooms{
+        {"roomA", &roomA}, {"roomB", &roomB}, {"roomC", &roomC}};
+    roomA.connect();
+    roomB.connect();
+    roomC.connect();
+
+    CHECK(isOk(caller.request(R"({"command":"resampler.configure","params":{"resampler":"fake"}})")));
+    CHECK(isOk(caller.request(
+        R"({"command":"client.setGrouped","params":{"client":"roomA","grouped":true}})")));
+    CHECK(isOk(caller.request(R"({"command":"zone.create","params":{"zone":"living"}})")));
+    CHECK(isOk(caller.request(
+        R"({"command":"source.stage","params":{"zone":"living","sourceId":"s1","mediaUri":"http://127.0.0.1:4714/one.flac"}})")));
+    CHECK(isOk(caller.request(R"({"command":"zone.play","params":{"zone":"living"}})")));
+    CHECK(isOk(caller.request(
+        R"({"command":"zone.setClients","params":{"zone":"living","clients":["roomA","roomB","roomC"]}})")));
+    answerRenegotiations(rig, handled, rooms);
+
+    const std::shared_ptr<Zone> living = rig.zones->find(ZoneId("living"));
+    CHECK_EQ(living->memberCount(), size_t(3));
+    CHECK(living->member(ClientId("roomA"))->plan().driftCorrected());
+    CHECK_EQ(living->member(ClientId("roomB"))->plan().resamplerId, std::string("fake"));
+    CHECK(living->member(ClientId("roomC"))->plan().mode == OutputMode::BitPerfect);
+
+    // Every room the old filter reaches is re-negotiated -- the corrected one
+    // too, because the new converter cannot correct it. C never met one and
+    // keeps playing on the stream it has.
+    const std::shared_ptr<ClientOutput> untouched = living->member(ClientId("roomC"));
+    const size_t askedC = rig.log.count(RoomCommandKind::Renegotiate, "roomC");
+    const json::Value switched =
+        caller.request(R"({"command":"resampler.configure","params":{"resampler":"fixed"}})");
+    CHECK(isOk(switched));
+    CHECK(flag(switched, "changed"));
+    CHECK(!flag(switched, "variableRatio"));
+    std::vector<std::string> renegotiated = strings(switched, "renegotiated");
+    std::sort(renegotiated.begin(), renegotiated.end());
+    CHECK(renegotiated == std::vector<std::string>({"roomA", "roomB"}));
+    CHECK(living->member(ClientId("roomA")) == nullptr);
+    CHECK(living->member(ClientId("roomB")) == nullptr);
+    CHECK(living->member(ClientId("roomC")) == untouched);
+    CHECK_EQ(rig.log.count(RoomCommandKind::Renegotiate, "roomC"), askedC);
+
+    // Back in, each on the new planner: no mix of filters, and drift
+    // correction off for the grouped room, with status saying why.
+    answerRenegotiations(rig, handled, rooms);
+    CHECK_EQ(living->memberCount(), size_t(3));
+    const OutputPlan a = living->member(ClientId("roomA"))->plan();
+    CHECK(a.mode == OutputMode::BitPerfect);
+    CHECK(!a.driftCorrected());
+    CHECK(a.driftDisabledBy == DriftDisabledReason::FixedRatioResampler);
+    CHECK_EQ(living->member(ClientId("roomB"))->plan().resamplerId, std::string("fixed"));
+
+    const json::Value clients = caller.request(R"({"command":"clients"})");
+    const json::Value* drift = entry(clients, "clients", "clientId", "roomA")->find("driftCorrection");
+    CHECK(flag(*drift, "requested"));
+    CHECK(!flag(*drift, "active"));
+    CHECK_EQ(text(*drift, "disabledBy"),
+             std::string(driftDisabledText(DriftDisabledReason::FixedRatioResampler)));
+    CHECK_EQ(text(*entry(clients, "clients", "clientId", "roomB")->find("output"), "resampler"),
+             std::string("fixed"));
 }
 
 MULTIROOM_TEST(control_api_reconciles_a_zone_s_whole_membership)

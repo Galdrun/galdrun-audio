@@ -56,6 +56,13 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
   against the format the client actually opened. Room incompatibility fails
   that room, not the whole zone. Inspect the implementation when changing the
   policy: older header/design tables omit later EQ/hardware-clock cases.
+- One planner (one resampler) serves the whole server, held in a
+  `SharedPlanner` (`include/client/OutputPlanner.h`). Zones take one
+  snapshot per planning decision. `resampler.configure` persists
+  `audio.resampler`, swaps the planner while zones play, and re-negotiates
+  every zoned room whose plan changes (`Zone::planOutdated`); untouched
+  bitperfect rooms keep playing. A fixed-ratio resampler (`r8brain`) corrects
+  no drift except through a client's own clock trim.
 - BitPerfect forbids sample-changing conversion. Verified client clock trim
   can preserve samples while correcting a grouped room; otherwise correction
   uses a resampled path where permitted. EQ runs on the resampled path.

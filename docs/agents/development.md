@@ -9,7 +9,7 @@ for the source directory, generator and options.
 
 | Script (relative to repository root) | Purpose / when to use |
 | --- | --- |
-| `scripts/build-client.ps1`, `scripts/build-client.sh` | Build desktop/Linux clients, ESP32 boards or Connector 2 firmware; bootstrap missing tools; export to `releases/client/` |
+| `scripts/build-client.ps1`, `scripts/build-client.sh` | Build desktop/Linux clients, ESP32, Connector 2 firmware or `rpi1`/`rpi3` SD images; bootstrap tools; export to `releases/client/` |
 | `scripts/build-server-core.ps1`, `scripts/build-server-core.sh` | Build/export the C++ audio engine and its runtime libraries to `releases/server-core/` |
 | `scripts/build-server.ps1`, `scripts/build-server.sh` | Publish self-contained .NET server releases, including the browser GUI, to `releases/server/` |
 | `scripts/copy-server-gui.ps1` | Copy `server-gui/www/` and shared web assets into an existing server release's `gui/`; defaults to `windows-x64`, accepts `-Target <target>` |
@@ -18,7 +18,7 @@ for the source directory, generator and options.
 | `scripts/start-local.ps1` | Start core, server and one client from Windows x64 releases with isolated configs/logs under `scripts/.run/` |
 | `scripts/stop-local.ps1` | Graceful stop, then timeout/kill, for this checkout's running release processes |
 | `scripts/restart-local.ps1` | Stop then start the local stack; does not rebuild |
-| `scripts/upload/linux.ps1`, `scripts/upload/linux.sh` | Detect a Linux device's architecture over SSH, upload the matching client release, install/start its service, preserve config |
+| `scripts/upload/linux.ps1`, `scripts/upload/linux.sh` | Detect architecture and Galdrun BusyBox/systemd images over SSH; update the matching client and preserve config |
 | `scripts/upload/connector2.ps1`, `scripts/upload/connector2.sh` | SSH client-only update for existing Connector 2 firmware; test the binary first, preserve settings/identity, retain the previous binary |
 | `scripts/upload/esp32.ps1`, `scripts/upload/esp32.sh` | Flash an already-built board release over USB serial with esptool; preserve the storage partition |
 | `scripts/upload/linux-remote.sh`, `scripts/upload/connector2-remote.sh` | Device-side installers invoked by the corresponding upload script |
@@ -168,6 +168,15 @@ reuse installed state. Useful observations: core JSON `status`, REST
 component logs. GUI and client both default to `4720` outside the local scripts.
 
 ## Pick verification by changed surface
+
+Pi image builds are `scripts/build-client.sh rpi1 rpi3` (Windows: the equivalent
+PowerShell targets). See [the Pi guide](../../hardware/buildroot/board/rpi/README.md).
+Firmware host checks live in `hardware/buildroot/scripts/test-*.py`; in particular
+run network/init/scan, client-image, SSH, build-cache, `test-rpi-profile.py` and
+`test-appliance-update.py` for shared-service changes. `verify-rpi-images.py` is
+invoked by each image build. `test-appliance.py http://DEVICE:4720` exercises a
+running appliance using reads and rejected invalid writes. It requires an
+explicit test device; it does not flash an SD card.
 
 | Change | Relevant checks |
 | --- | --- |

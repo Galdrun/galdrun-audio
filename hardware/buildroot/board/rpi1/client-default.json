@@ -1,0 +1,14 @@
+{
+  "server": "",
+  "clientId": "",
+  "name": "Raspberry Pi 1",
+  "audioDeviceId": "",
+  "audioAccessMode": "exclusive-only",
+  "preferredSampleRate": 48000,
+  "bufferMs": 2500,
+  "standbyAfterSeconds": 600,
+  "deepSleepAfterSeconds": 0,
+  "controlPort": 4720,
+  "controlBindAddress": "0.0.0.0",
+  "inputs": []
+}
