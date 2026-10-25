@@ -54,7 +54,7 @@ public sealed record AutoFillResult(string Zone, DateTimeOffset At, int Added, A
 
 // A zone's AutoFill as a caller sees it: its settings, whether a fill is
 // running, why it waits (repeatAll: a repeat-all queue never fills;
-// nothingAdded: the last fill added nothing, and the next waits until the
+// shuffle: neither does a shuffled one; nothingAdded: the last fill added nothing, and the next waits until the
 // queue is changed by other hands), and the last fill.
 public sealed record AutoFillView(
     bool Enabled,
@@ -84,7 +84,8 @@ public interface IAutoFillChooser
 // The trigger (phase 26): normal server logic on QueueEngine.QueueChanged, no
 // MCP. The chooser only chooses; the tracks go in through the queue engine
 // here. At most one fill per zone at a time; a fill that added nothing is not
-// repeated until the queue's items change; a repeat-all queue never fills.
+// repeated until the queue's items change; a repeat-all or shuffled queue
+// never fills.
 // "Left" counts the items after the current one in queue order.
 //
 // QueueChanged is raised under the zone's gate, so the handler only notes
@@ -139,6 +140,8 @@ public sealed partial class AutoFill : BackgroundService
         {
             if (queue.Value.Repeat == RepeatMode.All)
                 waiting = "repeatAll";
+            else if (queue.Value.Shuffle)
+                waiting = "shuffle";
             else if (fill?.BlockedAt is { } blocked && blocked.SequenceEqual(queue.Value.Items.Select(i => i.Id)))
                 waiting = "nothingAdded";
         }
@@ -230,7 +233,7 @@ public sealed partial class AutoFill : BackgroundService
             if (fill.Settings is not { Enabled: true } enabled || fill.Filling)
                 return;
             settings = enabled;
-            if (queue.Transport is not (QueueTransport.Playing or QueueTransport.Starting) || queue.Repeat == RepeatMode.All)
+            if (queue.Transport is not (QueueTransport.Playing or QueueTransport.Starting) || queue.Repeat == RepeatMode.All || queue.Shuffle)
                 return;
             if (fill.BlockedAt is { } blocked)
             {

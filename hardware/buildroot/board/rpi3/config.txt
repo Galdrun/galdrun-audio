@@ -6,4 +6,8 @@ enable_uart=1
 dtoverlay=
 dtparam=audio=on
 include galdrun-audio.txt
+[pi3]
 dtoverlay=disable-bt
+[pi02]
+dtoverlay=disable-bt
+[all]

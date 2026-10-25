@@ -7,6 +7,26 @@
 
 using namespace multiroom;
 
+MULTIROOM_TEST(config_rpi_board_wiring_uses_valid_client_inputs_and_bindings)
+{
+    const std::string source = __FILE__;
+    const std::string path = source.substr(0, source.find_last_of("/\\") + 1) +
+                             "../../hardware/buildroot/board/rpi/inputs.json";
+    ClientConfig config;
+    std::string error;
+    CHECK(client_config::load(path, config, error) == client_config::LoadResult::Ok);
+    CHECK_EQ(config.inputs.size(), size_t(8));
+    CHECK_EQ(config.inputGpioChip, std::string("/dev/gpiochip0"));
+    CHECK_EQ(config.inputs[0].pinA, 7);
+    CHECK_EQ(config.inputs[0].pinB, 8);
+    CHECK(config.inputs[1].control.kind == matp::InputKind::Encoder);
+    CHECK(config.inputs.back().control.bindings[static_cast<size_t>(matp::InputGesture::Click)].action ==
+          matp::InputAction::ToggleStandby);
+    ClientConfig restored;
+    CHECK(client_config::deserialize(client_config::serialize(config), restored, error));
+    CHECK_EQ(restored.inputs.size(), config.inputs.size());
+}
+
 MULTIROOM_TEST(config_standby_timeout_is_optional_bounded_and_persists)
 {
     ClientConfig config;

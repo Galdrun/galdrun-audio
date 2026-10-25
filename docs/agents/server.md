@@ -85,7 +85,10 @@ Keep ownership straight when changing settings:
   run `powershell -ExecutionPolicy Bypass -File scripts/copy-server-gui.ps1`
   from the repo root to update the existing Windows x64 release (or pass
   `-Target <target>`). Refresh the browser; no rebuild/restart is needed.
-  `Web/Gui/GuiEndpoint.cs` serves it and proxies API/device requests.
+  `Web/Gui/GuiEndpoint.cs` serves it and proxies API/device requests. Its own
+  text is by key through `tt()`/`data-i18n`, with English in
+  `server-gui/www/app.en.js` and German in `app.de.js` (`shared/web/STYLE.md`,
+  Languages); add the key to both when adding text.
 - Provider work starts with `Abstractions/Providers.cs` and the nearest
   existing provider; register in `ServerHost.cs`. Library schema changes add
   the next numbered `Library/Migrations/*.sql`, embedded by the library

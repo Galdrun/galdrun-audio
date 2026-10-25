@@ -1,0 +1,14 @@
+# Native ARM64 userspace; 4 KiB pages match Buildroot's Pi 5 baseline.
+CONFIG_ARM64_4K_PAGES=y
+CONFIG_GPIO_SYSFS=y
+# HDMI audio through KMS; no desktop is installed.
+CONFIG_DRM=y
+CONFIG_DRM_VC4=m
+CONFIG_SND_SOC_HDMI_CODEC=m
+# Header I2S on Pi 5 is provided by RP1's DesignWare controllers.
+CONFIG_SND_DESIGNWARE_I2S=m
+CONFIG_PINCTRL_RP1=y
+CONFIG_MFD_RP1=y
+CONFIG_COMMON_CLK_RP1=y
+CONFIG_MACB=y
+CONFIG_BCMGENET=y

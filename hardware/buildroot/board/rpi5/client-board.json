@@ -1,0 +1,13 @@
+{
+  "board": "raspberrypi-rpi5",
+  "networkSettings": true,
+  "audioProfiles": true,
+  "sshSettings": true,
+  "statusLeds": false,
+  "cpuFrequency": true,
+  "dacControls": true,
+  "selectedCardDacControls": true,
+  "resetHardwareVolume": false,
+  "requireConfiguredAudioDevice": true,
+  "inputGpioChip": "/dev/galdrun-gpio"
+}

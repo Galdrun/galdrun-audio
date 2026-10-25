@@ -9,7 +9,7 @@ for the source directory, generator and options.
 
 | Script (relative to repository root) | Purpose / when to use |
 | --- | --- |
-| `scripts/build-client.ps1`, `scripts/build-client.sh` | Build desktop/Linux clients, ESP32, Connector 2 firmware or `rpi1`/`rpi3` SD images; bootstrap tools; export to `releases/client/` |
+| `scripts/build-client.ps1`, `scripts/build-client.sh` | Build desktop/Linux clients, ESP32, Connector 2 firmware or `rpi1`/`rpi3`/`rpi4`/`rpi5` SD images; bootstrap tools; export to `releases/client/` |
 | `scripts/build-server-core.ps1`, `scripts/build-server-core.sh` | Build/export the C++ audio engine and its runtime libraries to `releases/server-core/` |
 | `scripts/build-server.ps1`, `scripts/build-server.sh` | Publish self-contained .NET server releases, including the browser GUI, to `releases/server/` |
 | `scripts/copy-server-gui.ps1` | Copy `server-gui/www/` and shared web assets into an existing server release's `gui/`; defaults to `windows-x64`, accepts `-Target <target>` |
@@ -169,10 +169,11 @@ component logs. GUI and client both default to `4720` outside the local scripts.
 
 ## Pick verification by changed surface
 
-Pi image builds are `scripts/build-client.sh rpi1 rpi3` (Windows: the equivalent
+Pi image builds are `scripts/build-client.sh rpi1 rpi3 rpi4 rpi5` (Windows: the equivalent
 PowerShell targets). See [the Pi guide](../../hardware/buildroot/board/rpi/README.md).
 Firmware host checks live in `hardware/buildroot/scripts/test-*.py`; in particular
-run network/init/scan, client-image, SSH, build-cache, `test-rpi-profile.py` and
+run network/init/scan, client-image, SSH, build-cache, `test-rpi-profile.py`,
+`test-rpi-inputs.py` and
 `test-appliance-update.py` for shared-service changes. `verify-rpi-images.py` is
 invoked by each image build. `test-appliance.py http://DEVICE:4720` exercises a
 running appliance using reads and rejected invalid writes. It requires an

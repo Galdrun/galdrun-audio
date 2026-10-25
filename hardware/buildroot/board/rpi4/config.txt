@@ -1,0 +1,11 @@
+kernel=Image
+arm_64bit=1
+start_file=start4.elf
+fixup_file=fixup4.dat
+gpu_mem=32
+enable_uart=1
+dtoverlay=
+dtparam=audio=on
+include galdrun-audio.txt
+dtoverlay=disable-bt
+dtoverlay=vc4-kms-v3d-pi4,cma-64

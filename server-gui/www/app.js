@@ -1,9 +1,15 @@
 'use strict';
 // Galdrun ServerGui: a kitchen sink over /api/v1 (see ../docs/Roadmap.md).
 // Plain DOM, no build step. Everything the server says is rendered as text.
+// The page's own text is by key, put through tt() (../../shared/web/i18n.js;
+// English in app.en.js, German in app.de.js); what the server says is shown as it says it.
 
 const $ = (s) => document.querySelector(s);
 const enc = encodeURIComponent;
+
+// The page's own markup in the chosen language, before anything reads it.
+i18n.translate();
+i18n.bind($('#language'));
 
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -145,6 +151,7 @@ const ICONS = {
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
   zones: '<rect x="3" y="3" width="10" height="18" rx="2"/><circle cx="8" cy="14" r="3"/><circle cx="8" cy="7.5" r="1"/><path d="M17 7v10M21 9v6"/>',
   rooms: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
+  people: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.5a6.5 6.5 0 0 1 3 5.5"/>',
   library: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
   playlists: '<path d="M3 6h13M3 12h13M3 18h8M18 15v6M15 18h6"/>',
   home: '<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h5v-6h3v6h5V10"/>',
@@ -229,8 +236,9 @@ for (const el of document.querySelectorAll('i[data-icon]')) el.replaceWith(icon(
 
 const flashEl = $('#toast');
 let flashTimer;
+// A message key is shown translated (act's done texts come here); a server's message as it is.
 function flash(message, bad = false) {
-  flashEl.textContent = message;
+  flashEl.textContent = tt(message);
   flashEl.className = 'toast ' + (bad ? 'bad' : 'good');
   flashEl.hidden = false;
   clearTimeout(flashTimer);
@@ -378,7 +386,7 @@ async function act(fn, done) {
 // else the first).
 function needTarget() {
   const zone = playerZone()?.zone;
-  if (!zone) throw new Error('no zone yet: a zone appears for every room that connects');
+  if (!zone) throw new Error(tt('api.noZoneYet'));
   return enc(zone);
 }
 
@@ -472,7 +480,7 @@ const media = (entry, kind) => (entry?.item?.kind === kind ? entry.item : undefi
 function itemLabel(x) {
   if (x?.kind === 'group') {
     return ['📖 ', x.title, x.artist && ` — ${x.artist}`,
-      h('span', { class: 'muted' }, ` · ${x.parts.length ? `${x.parts.length} parts` : 'a book'} · ${x.type}`, x.source && ` [${x.source}]`)];
+      h('span', { class: 'muted' }, ` · ${x.parts.length ? tt('common.parts', { n: x.parts.length }) : tt('common.book')} · ${x.type}`, x.source && ` [${x.source}]`)];
   }
   if (x?.kind === 'track') {
     return [typeMark(x), x.title, x.artist && ` — ${x.artist}`, x.album && ` · ${x.album}`, h('span', { class: 'muted' }, x.format && ` · ${fmtAudio(x.format)}`, ` [${x.providerId}]`)];
@@ -489,7 +497,7 @@ const typeMark = (t) => (t?.mediaType && t.mediaType !== 'music'
 // A book is a favourite by the node it came from ("local:book:3").
 function addBookFavorite(source) {
   const at = source?.indexOf(':') ?? -1;
-  if (at < 0) throw new Error('this book names no node it came from');
+  if (at < 0) throw new Error(tt('common.thisBookNames'));
   return api('POST', 'favorites', { node: { provider: source.slice(0, at), id: source.slice(at + 1) }, ...ownerOf() });
 }
 
@@ -541,7 +549,7 @@ function setTarget(zone) {
 }
 
 function renderZones() {
-  render('zones', $('#zones'), () => (S.zones.length ? S.zones.map(zoneCard) : [h('p', { class: 'muted' }, 'No zones yet: a zone appears for every room that connects.')]));
+  render('zones', $('#zones'), () => (S.zones.length ? S.zones.map(zoneCard) : [h('p', { class: 'muted' }, tt('zones.noZonesYet'))]));
   renderZoneTabs();
   followCurrentItem();
   renderZoneStatus();
@@ -667,7 +675,7 @@ let librarySliding = null;
 function showLibrary(open, slide = true) {
   const toggle = $('#libraryToggle');
   toggle.setAttribute('aria-expanded', String(open));
-  toggle.title = open ? 'Hide the library' : 'Show the library';
+  toggle.title = tt(open ? 'zones.hideLibrary' : 'zones.showLibrary');
   store.set('vx.library', open ? 'open' : 'closed');
   for (const p of document.querySelectorAll('.page-app')) p.classList.toggle('library-closed', !open);
   // The track keeps the zone in view while it changes width: its scroll is
@@ -725,7 +733,7 @@ function roomTile(client, extra) {
   const room = S.rooms.find((r) => r.client === client);
   const online = Boolean(room?.actual?.connected);
   return h('div', {
-    class: 'room-tile' + (online ? '' : ' offline'), draggable: 'true', title: `${roomName(client)} (${client})${online ? '' : ', not connected'}: open its settings`,
+    class: 'room-tile' + (online ? '' : ' offline'), draggable: 'true', title: tt(online ? 'zones.openItsSettings' : 'zones.notConnectedOpen', { name: roomName(client), client }),
     role: 'link', tabindex: '0',
     // A click opens its settings page; its own buttons (take out) do not.
     onclick(e) { if (!e.target.closest('button')) openRoom(client); },
@@ -742,11 +750,11 @@ function roomTile(client, extra) {
 function roomAddTile(zone, others) {
   return h('span', { class: 'room-add-pop' },
     h('button', {
-      type: 'button', class: 'room-tile room-add', title: 'Add a room', 'aria-label': 'Add a room', 'aria-haspopup': 'dialog',
+      type: 'button', class: 'room-tile room-add', title: tt('zones.addRoom'), 'aria-label': tt('zones.addRoom'), 'aria-haspopup': 'dialog',
       onclick: (e) => e.currentTarget.nextElementSibling.togglePopover(),
     }, icon('plus')),
     h('div', {
-      class: 'room-add-popover', popover: 'auto', role: 'dialog', 'aria-label': 'Add a room',
+      class: 'room-add-popover', popover: 'auto', role: 'dialog', 'aria-label': tt('zones.addRoom'),
       ontoggle(e) { if (e.newState === 'open') placeUnderButton(this); },
     }, others.length
       ? others.map((c) => {
@@ -758,7 +766,7 @@ function roomAddTile(zone, others) {
         // The zone it leaves, where that is more than the room on its own.
         from && from !== roomName(c) && h('span', { class: 'muted small' }, from));
       })
-      : h('p', { class: 'muted small' }, 'Every room is in this zone.')));
+      : h('p', { class: 'muted small' }, tt('zones.everyRoomIs'))));
 }
 
 // --- multi-select ----------------------------------------------------------------
@@ -851,11 +859,11 @@ function dragItem(body) {
       if (SEL.items.has(key) && SEL.items.size > 1) {
         const shown = [...new Set([...document.querySelectorAll('[data-drag][data-selected]')].map((el) => el.dataset.drag))];
         bodies = [...shown, ...[...SEL.items.keys()].filter((k) => !shown.includes(k))].map((k) => SEL.items.get(k));
-        dragBadge(e, `${bodies.length} items`);
+        dragBadge(e, tt('drag.items', { n: bodies.length }));
       }
       e.dataTransfer.setData(ITEM_TYPE, JSON.stringify(bodies));
       e.dataTransfer.effectAllowed = 'copy';
-      itemDragging = { label: bodies.length > 1 ? `${bodies.length} items` : this.innerText.trim().split('\n')[0].slice(0, 120) };
+      itemDragging = { label: bodies.length > 1 ? tt('drag.items', { n: bodies.length }) : this.innerText.trim().split('\n')[0].slice(0, 120) };
       S.dragging = true;
     },
     ondragend() {
@@ -925,7 +933,7 @@ let rowDragging = null; // {list, row, group, rows, ids, carried, dropped}
 // that have bodies.
 function rowHandle(list, label, items) {
   return h('td', {
-    class: 'drag-handle', draggable: 'true', title: 'drag to move', 'aria-label': 'Drag to move',
+    class: 'drag-handle', draggable: 'true', title: tt('drag.dragToMoveTitle'), 'aria-label': tt('drag.dragToMove'),
     ondragstart(e) {
       const row = this.closest('tr');
       const rows = [...row.parentNode.querySelectorAll(':scope > tr[data-index]')];
@@ -935,7 +943,7 @@ function rowHandle(list, label, items) {
       const carried = items ? group.map((r) => [r.dataset.id, items(r.dataset.id)]).filter(([, b]) => b.length) : [];
       if (items) e.dataTransfer.setData(ITEM_TYPE, JSON.stringify(carried.flatMap(([, b]) => b)));
       e.dataTransfer.effectAllowed = 'move';
-      if (group.length > 1) dragBadge(e, `${group.length} items`); else e.dataTransfer.setDragImage(row, 12, 12);
+      if (group.length > 1) dragBadge(e, tt('drag.items', { n: group.length })); else e.dataTransfer.setDragImage(row, 12, 12);
       rowDragging = { list, row, group, rows, ids: rows.map((r) => r.dataset.id), carried: carried.map(([id]) => id) };
       S.dragging = true;
       // After the drag image is taken, so it is not faded.
@@ -1038,7 +1046,7 @@ function listDrop(list, onRows, onItem) {
   };
   // Library items are shown as one placeholder row where they would land.
   const ghostOf = (box) => box.querySelector('tr.drop-ghost')
-    ?? h('tr', { class: 'drop-ghost' }, h('td', { colspan: '99' }, itemDragging?.label ?? 'drop here'));
+    ?? h('tr', { class: 'drop-ghost' }, h('td', { colspan: '99' }, itemDragging?.label ?? tt('drag.dropHere')));
   return {
     ondragover(e) {
       if (takesRow(e)) {
@@ -1120,17 +1128,17 @@ const queueDrop = (zone) => listDrop(`queue:${zone}`, (moves) => act(async () =>
   } finally {
     refreshSoon();
   }
-}, 'moved'), (items, index) => dropQueued(zone, items, index));
+}, 'common.moved'), (items, index) => dropQueued(zone, items, index));
 
 // Library items dropped on a playlist, as on a queue. A playlist keeps tracks
 // and nodes (POST playlists/{id}/entries); stations, playlists and
 // favourites are left out, and said so.
 async function dropOnPlaylist(id, items, index = null) {
   const kept = items.filter((b) => b.tracks || b.node);
-  if (!kept.length) throw new Error('a playlist takes tracks, albums and other library nodes only');
+  if (!kept.length) throw new Error(tt('drag.playlistTakesTracks'));
   await postBodies(`playlists/${id}/entries`, mergeTracks(kept), index);
   const left = items.length - kept.length;
-  flash(`added to playlist${left ? ` · ${left} left out (stations, playlists and favourites cannot go in a playlist)` : ''}`, left > 0);
+  flash(tt('drag.addedToPlaylist') + (left ? ` · ${tt('drag.leftOutStations', { n: left })}` : ''), left > 0);
 }
 
 // A transport command sent and not answered yet, by zone: the button asked
@@ -1166,11 +1174,11 @@ function transportControls(z) {
   const q = z.queue, path = `zones/${enc(z.zone)}`;
   return [
     shuffleButton(Boolean(q?.shuffle), !q, (shuffle) => act(() => api('PATCH', `${path}/queue`, { shuffle }))),
-    transportButton('prev', 'Previous', () => transport(z.zone, 'prev', 'previous'), 'icon-only', z.zone),
+    transportButton('prev', tt('player.previous'), () => transport(z.zone, 'prev', 'previous'), 'icon-only', z.zone),
     q?.transport === 'playing'
-      ? transportButton('pause', 'Pause', () => transport(z.zone, 'play', 'pause'), 'primary play', z.zone, 'play')
-      : transportButton('play', 'Play', () => transport(z.zone, 'play', 'play'), 'primary play', z.zone),
-    transportButton('next', 'Next', () => transport(z.zone, 'next', 'next'), 'icon-only', z.zone),
+      ? transportButton('pause', tt('common.pause'), () => transport(z.zone, 'play', 'pause'), 'primary play', z.zone, 'play')
+      : transportButton('play', tt('player.play'), () => transport(z.zone, 'play', 'play'), 'primary play', z.zone),
+    transportButton('next', tt('player.next'), () => transport(z.zone, 'next', 'next'), 'icon-only', z.zone),
     repeatButton(q?.repeat ?? 'off', !q, (repeat) => act(() => api('PATCH', `${path}/queue`, { repeat }))),
   ];
 }
@@ -1179,16 +1187,16 @@ function transportControls(z) {
 const REPEAT = { off: ['repeatOff', 'all'], all: ['repeat', 'one'], one: ['repeatOne', 'off'] };
 function repeatButton(mode, disabled, set) {
   const [name, next] = REPEAT[mode] ?? REPEAT.off;
-  const title = `Repeat ${mode} (click: ${next})`;
+  const title = tt('player.repeatClick', { mode: tv('player.repeat', mode), next: tv('player.repeat', next) });
   return h('button', {
     class: 'icon-only mode' + (mode !== 'off' ? ' on' : ''), title, 'aria-label': title, disabled, onclick: () => set(next),
   }, icon(name));
 }
 
 function shuffleButton(on, disabled, set) {
-  const title = on ? 'Shuffle on (click: off)' : 'Shuffle off (click: on)';
+  const title = tt(on ? 'player.shuffleOnClick' : 'player.shuffleOffClick');
   return h('button', {
-    class: 'icon-only mode' + (on ? ' on' : ''), title, 'aria-label': 'Shuffle', 'aria-pressed': on ? 'true' : 'false',
+    class: 'icon-only mode' + (on ? ' on' : ''), title, 'aria-label': tt('player.shuffle'), 'aria-pressed': on ? 'true' : 'false',
     disabled, onclick: () => set(!on),
   }, icon(on ? 'shuffle' : 'shuffleOff'));
 }
@@ -1200,9 +1208,9 @@ function playing(z) {
   const q = z.queue, a = z.actual;
   const item = q?.items.find((i) => i.id === q.current);
   const t = media(item, 'track'), s = media(item, 'station'), g = media(item, 'group');
-  const title = t?.title ?? g?.title ?? s?.name ?? a?.source?.title ?? 'Nothing playing';
+  const title = t?.title ?? g?.title ?? s?.name ?? a?.source?.title ?? tt('player.nothingPlaying');
   const sub = t ? [t.artist, t.album].filter(Boolean).join(' · ')
-    : g ? [g.artist, q.part && `chapter ${q.part.index + 1} of ${q.part.count}: ${q.part.title}`].filter(Boolean).join(' · ')
+    : g ? [g.artist, q.part && tt('player.chapterOf', { n: q.part.index + 1, count: q.part.count, title: q.part.title })].filter(Boolean).join(' · ')
       : s ? z.streamTitle ?? s.genre ?? '' : '';
   const cover = () => art(item?.item.artworkId) ?? icon(s ? 'radio' : 'library');
   // On a station the heart is the song it announces, liked by its title,
@@ -1222,7 +1230,7 @@ function nowPlaying(z, ...lead) {
   const artwork = p.item?.item.artworkId;
   return h('div', { class: 'now' },
     artwork
-      ? h('button', { type: 'button', class: 'cover-art', title: 'Show the artwork', 'aria-label': 'Show the artwork', onclick: () => openArtwork(artwork) }, p.cover())
+      ? h('button', { type: 'button', class: 'cover-art', title: tt('player.showArtwork'), 'aria-label': tt('player.showArtwork'), onclick: () => openArtwork(artwork) }, p.cover())
       : h('div', { class: 'cover-art' }, p.cover()),
     h('div', { class: 'now-text' },
       lead,
@@ -1235,7 +1243,7 @@ function nowPlaying(z, ...lead) {
 // closes it (the browser's popover).
 function openArtwork(id) {
   const view = h('div', {
-    class: 'art-view', popover: 'auto', role: 'dialog', 'aria-label': 'Artwork',
+    class: 'art-view', popover: 'auto', role: 'dialog', 'aria-label': tt('player.artwork'),
     onclick() { this.hidePopover(); },
     ontoggle(e) { if (e.newState === 'closed') this.remove(); },
   }, h('img', { src: `/api/v1/artwork/${enc(id)}`, alt: '' }));
@@ -1267,7 +1275,7 @@ function showPlayerProgress() {
   if (ms && !received.has(q)) received.set(q, performance.now());
   const at = ms ? seeking.get(line.dataset.zone) ?? positionNow(q, ms) : 0;
   line.firstChild.style.width = ms ? `${(at / ms) * 100}%` : '0';
-  line.title = ms ? `${fmtMs(at)} / ${fmtMs(ms)} (click to seek)` : 'nothing to seek in';
+  line.title = ms ? tt('player.clickToSeek', { at: fmtMs(at), length: fmtMs(ms) }) : tt('player.nothingToSeek');
 }
 
 // The bar's zone, and a popup of every zone to pick another: the pick is the
@@ -1275,11 +1283,11 @@ function showPlayerProgress() {
 function zonePicker(z) {
   return h('span', { class: 'zone-pick' },
     h('button', {
-      class: 'player-zone', title: `${zoneName(z.zone)}: change the zone`, 'aria-label': `Zone ${zoneName(z.zone)}, change`, 'aria-haspopup': 'dialog',
+      class: 'player-zone', title: tt('player.changeZone', { zone: zoneName(z.zone) }), 'aria-label': tt('player.zoneChange', { zone: zoneName(z.zone) }), 'aria-haspopup': 'dialog',
       onclick: (e) => e.currentTarget.nextElementSibling.togglePopover(),
     }, icon('zones'), h('span', {}, zoneName(z.zone))),
     h('div', {
-      class: 'volume-popover zone-popover', popover: 'auto', role: 'dialog', 'aria-label': 'Zones',
+      class: 'volume-popover zone-popover', popover: 'auto', role: 'dialog', 'aria-label': tt('common.zones'),
       ontoggle(e) {
         if (e.newState !== 'open') return;
         // Above the button: the bar is at the foot of the window.
@@ -1292,7 +1300,7 @@ function zonePicker(z) {
       class: 'zone-choice' + (x.zone === z.zone ? ' on' : ''), 'aria-current': x.zone === z.zone ? 'true' : null,
       onclick() { this.closest('[popover]').hidePopover(); setTarget(x.zone); },
     }, h('span', { class: 'grow' }, zoneName(x.zone)),
-    h('span', { class: 'small muted' }, x.queue?.transport === 'playing' ? 'playing' : x.actual?.transport ?? '')))));
+    h('span', { class: 'small muted' }, (x.queue?.transport === 'playing' ? tt('player.playing') : tv('state', x.actual?.transport)))))));
 }
 
 function renderPlayer() {
@@ -1328,7 +1336,7 @@ function renderPlayer() {
       zonePicker(z),
       z.autoFill && autoFillButton(z),
       // The Zones page opens on the picked zone (onShow).
-      transportButton('queue', 'Show the queue', () => { location.hash = '#/zones'; }),
+      transportButton('queue', tt('player.showQueue'), () => { location.hash = '#/zones'; }),
       // The zone's own volume and mute, over its rooms' own (server phase 15).
       z.desired && volumeRow(z.desired.volume, z.desired.muted,
         (volume) => act(() => api('PATCH', path, { volume })),
@@ -1352,8 +1360,8 @@ const radioSong = (l) => likedKind(l) === 'track' && l.item.providerId === 'radi
 const foundTrack = (l) => (radioSong(l) ? l.found?.track ?? null : null);
 // Where a found radio song came from, before its title.
 const radioMark = (found) => h('span', {
-  class: 'pill small radio-mark', title: `Liked off the radio, found on ${found.track.providerId}${found.close ? ' (a close match)' : ''}`,
-}, found.close ? 'radio ≈' : 'radio');
+  class: 'pill small radio-mark', title: tt(found.close ? 'likes.likedOffRadio' : 'likes.likedOffRadioFound', { provider: found.track.providerId }),
+}, found.close ? `${tt('likes.radio')} ≈` : tt('likes.radio'));
 
 // A liked book (server phase 37) is its node, "provider:node" in `reference`;
 // the node itself may hold colons.
@@ -1383,7 +1391,7 @@ function forgetLike(id) {
 
 const scopeQuery = (sep = '?') => (S.user ? `${sep}user=${enc(S.user)}` : '');
 const ownerOf = () => (S.user && S.user !== '*' ? { user: S.user } : {});
-const userPill = (user) => (user ? h('span', { class: 'pill small', title: 'whose' }, `👤 ${user}`) : null);
+const userPill = (user) => (user ? h('span', { class: 'pill small', title: tt('listeners.whose') }, `👤 ${user}`) : null);
 
 async function loadUsers() {
   S.users = await api('GET', 'users', undefined, { quiet: true });
@@ -1392,32 +1400,41 @@ async function loadUsers() {
 }
 
 function renderUsers() {
-  const sel = $('#listener');
-  if (document.activeElement !== sel) {
-    patch(sel, h('option', { value: '' }, 'household'), S.users.map((u) => h('option', { value: u.name }, u.name)),
-      h('option', { value: '*' }, 'everyone (*)'));
-    sel.value = S.user;
-  }
+  renderHeaderListener();
   renderZones(); // the zone cards' listener selects, and the Listeners page
 }
+
+// The header's listener: a people button, the one shown beneath it, and a
+// click lists the household, the users and everyone to pick from.
+function renderHeaderListener() {
+  const name = (u) => (u === '' ? tt('common.household') : u === '*' ? tt('listeners.everyone') : u);
+  $('#listenerName').textContent = name(S.user);
+  $('#listener').setAttribute('aria-label', `${tt('header.listener')}: ${name(S.user)}`);
+  patch($('#listenerPick'), ['', ...S.users.map((u) => u.name), '*'].map((u) => h('button', {
+    type: 'button', 'aria-pressed': u === S.user ? 'true' : 'false',
+    onclick: () => { $('#listenerPick').hidePopover(); if (u !== S.user) setListener(u); },
+  }, h('span', { class: 'room-name' }, name(u)))));
+}
+$('#listener').addEventListener('click', () => $('#listenerPick').togglePopover());
+$('#listenerPick').addEventListener('toggle', (e) => { if (e.newState === 'open') placeUnderButton(e.target); });
 
 // The Listeners page: each one, the zones they listen in, and the header's choice.
 function renderUsersTable() {
   patch($('#users'), S.users.length
     ? h('table', { class: 'small' },
-      h('tr', {}, h('th', {}, 'name'), h('th', {}, 'listening in'), h('th', {}, 'added'), h('th', {})),
+      h('tr', {}, h('th', {}, tt('listeners.name')), h('th', {}, tt('listeners.listeningIn')), h('th', {}, tt('listeners.added')), h('th', {})),
       S.users.map((u) => h('tr', {},
-        h('td', {}, u.name, S.user === u.name && h('span', { class: 'pill good small' }, ' shown')),
+        h('td', {}, u.name, S.user === u.name && h('span', { class: 'pill good small' }, ` ${tt('listeners.shown')}`)),
         h('td', {}, S.zones.filter((z) => z.user === u.name).map((z) => z.name ?? z.zone).join(', ') || h('span', { class: 'muted' }, '—')),
         h('td', { class: 'muted' }, new Date(u.added).toLocaleString()),
         h('td', {},
-          h('button', { title: 'show their likes, favourites, plays and proposals (with the household\'s)', disabled: S.user === u.name, onclick: () => setListener(u.name) }, 'Show as listener'),
+          h('button', { title: tt('listeners.showTheirLikes'), disabled: S.user === u.name, onclick: () => setListener(u.name) }, tt('listeners.showAsListener')),
           h('button', {
             class: 'danger', title: `DELETE users/${u.name}`,
-            onclick: () => confirm(`Remove ${u.name}? Their likes, favourites and plays move to the household; their proposals go.`)
-              && act(() => api('DELETE', `users/${enc(u.name)}`), 'listener removed').then(() => act(loadUsers)),
+            onclick: () => confirm(tt('listeners.removeTheirLikes', { name: u.name }))
+              && act(() => api('DELETE', `users/${enc(u.name)}`), 'listeners.listenerRemoved').then(() => act(loadUsers)),
           }, '✕')))))
-    : h('p', { class: 'muted' }, 'No listeners yet: every like, favourite and play is the household\'s.'));
+    : h('p', { class: 'muted' }, tt('listeners.noListenersYet')));
 }
 
 // Each zone and who listens there, set from here as from the zone card.
@@ -1427,28 +1444,27 @@ function renderZoneListeners() {
     ? h('table', { class: 'small' }, S.zones.filter((z) => 'user' in z).map((z) => h('tr', {},
       h('td', {}, z.name ?? z.zone),
       h('td', {}, h('select', {
-        value: z.user, 'aria-label': `Listener in ${z.name ?? z.zone}`,
-        onchange: (e) => act(() => api('PATCH', `zones/${enc(z.zone)}`, { user: e.target.value }), 'listener set'),
-      }, h('option', { value: '' }, 'household'),
+        value: z.user, 'aria-label': tt('listeners.listenerIn', { zone: z.name ?? z.zone }),
+        onchange: (e) => act(() => api('PATCH', `zones/${enc(z.zone)}`, { user: e.target.value }), 'listeners.listenerSet'),
+      }, h('option', { value: '' }, tt('common.household')),
       [...new Set([...S.users.map((u) => u.name), z.user].filter(Boolean))].map((n) => h('option', { value: n }, n)))))))
-    : h('p', { class: 'muted' }, 'No zones yet: a zone appears for every room that connects.'));
+    : h('p', { class: 'muted' }, tt('listeners.noZonesYet')));
 }
 
 function setListener(user) {
   S.user = user;
   store.set('vx.user', user);
-  $('#listener').value = user;
+  renderHeaderListener();
   loadLikes().catch(() => {});
   act(loadFavorites);
   if (MB.places[MB.at]?.provider === PROPOSALS) mbLoad();
   if (page === 'aiStatus') act(loadProposals);
   renderZones();
 }
-$('#listener').addEventListener('change', (e) => setListener(e.target.value));
 $('#userForm').addEventListener('submit', (e) => {
   e.preventDefault();
   // Sent as typed: the server trims it and refuses what it cannot take.
-  act(() => api('POST', 'users', { name: e.target.name.value }), (u) => `user ${u.name} added`)
+  act(() => api('POST', 'users', { name: e.target.name.value }), (u) => tt('listeners.userAdded', { name: u.name }))
     .then((u) => { if (u) e.target.reset(); act(loadUsers); });
 });
 
@@ -1476,7 +1492,7 @@ function likesChanged() {
 function showLike(b) {
   const on = likes.has(b.dataset.like);
   b.classList.toggle('on', on);
-  b.title = on ? 'Unlike' : 'I like it';
+  b.title = tt(on ? 'likes.unlike' : 'likes.iLikeIt');
   b.setAttribute('aria-label', b.title);
   b.setAttribute('aria-pressed', String(on));
   b.replaceChildren(icon(on ? 'heartOn' : 'heart'));
@@ -1535,7 +1551,7 @@ function favoriteButton(key, add, book = false) {
 function showFavorite(b) {
   const on = favorites.has(b.dataset.fav);
   b.classList.toggle('on', on);
-  b.title = on ? 'Remove from favourites' : b.dataset.book ? 'Save this book as a favourite' : 'Save as a favourite';
+  b.title = tt(on ? 'likes.removeFromFavourites' : b.dataset.book ? 'likes.saveThisBook' : 'likes.saveAsFavourite');
   b.setAttribute('aria-label', b.title);
   b.setAttribute('aria-pressed', String(on));
   b.replaceChildren(icon(on ? 'starOn' : 'star'));
@@ -1551,7 +1567,7 @@ function likedRow(l) {
   const x = l.item, book = likedKind(l) === 'audiobook';
   const node = book ? bookRef(x.reference) : null;
   const ref = node && { node: { provider: node.providerId, id: node.providerItemId } };
-  const sub = book ? [x.author, x.reference] : [x.artist, x.album, 'heard on the radio'];
+  const sub = book ? [x.author, x.reference] : [x.artist, x.album, tt('likes.heardOnRadio')];
   // A radio song cannot be dragged: its grip only keeps the rows in line.
   const grip = dragGrip('td');
   if (!ref) grip.style.visibility = 'hidden';
@@ -1560,7 +1576,7 @@ function likedRow(l) {
     h('td', {}, artSlot(x.artworkId, book ? 'library' : 'radio')),
     h('td', { class: 'row-text' }, h('div', { class: 'track-lines', title: book ? `${x.title} [${x.reference}]` : x.title },
       h('div', { class: 'line' }, book && '📖 ', x.title),
-      h('div', { class: 'muted line' }, [...sub, `liked ${new Date(l.added).toLocaleString()}`].filter(Boolean).join(' · '), ' ', userPill(l.user)))),
+      h('div', { class: 'muted line' }, [...sub, tt('likes.liked', { when: new Date(l.added).toLocaleString() })].filter(Boolean).join(' · '), ' ', userPill(l.user)))),
     h('td', { class: 'queue-actions' }, h('div', { class: 'row-end' },
       h('span', { class: 'num' }, book && x.durationMs != null ? fmtMs(x.durationMs) : ''),
       h('span', { class: 'row-tools' }, ref && refButtons(ref, 'row-play'), likeButton(book ? 'audiobook' : 'track', node ?? x)))));
@@ -1570,11 +1586,11 @@ function volumeRow(volume, muted, setVolume, setMuted, { disabled = false, title
   const pct = (v) => `${Math.round(Number(v) * 100)} %`;
   return h('div', { class: 'volume-row' },
     h('button', {
-      class: 'icon-only' + (muted ? ' danger' : ''), title: muted ? 'unmute' : 'mute', 'aria-label': muted ? 'Unmute' : 'Mute',
+      class: 'icon-only' + (muted ? ' danger' : ''), title: tt(muted ? 'zones.unmuteTitle' : 'zones.muteTitle'), 'aria-label': tt(muted ? 'zones.unmute' : 'zones.mute'),
       'aria-pressed': muted ? 'true' : 'false', onclick: () => setMuted(!muted),
     }, icon(muted ? 'mute' : 'volume')),
     h('input', {
-      type: 'range', min: 0, max: 1, step: 0.01, value: String(volume ?? 1), disabled, title, 'aria-label': 'Volume',
+      type: 'range', min: 0, max: 1, step: 0.01, value: String(volume ?? 1), disabled, title, 'aria-label': tt('zones.volume'),
       oninput: (e) => { e.target.nextElementSibling.textContent = pct(e.target.value); },
       onchange: (e) => setVolume(Number(e.target.value)),
     }),
@@ -1586,11 +1602,11 @@ function volumeRow(volume, muted, setVolume, setMuted, { disabled = false, title
 function failureBadge(failure) {
   return h('span', { class: 'failure-pop' },
     h('button', {
-      class: 'failure-button', title: failure, 'aria-label': 'Playback failed, show error', 'aria-haspopup': 'dialog',
+      class: 'failure-button', title: failure, 'aria-label': tt('zones.playbackFailedShow'), 'aria-haspopup': 'dialog',
       onclick: (e) => e.currentTarget.nextElementSibling.togglePopover(),
     }, icon('alert')),
     h('div', {
-      class: 'failure-popover', popover: 'auto', role: 'dialog', 'aria-label': 'Playback error',
+      class: 'failure-popover', popover: 'auto', role: 'dialog', 'aria-label': tt('zones.playbackError'),
       ontoggle(e) { if (e.newState === 'open') placeUnderButton(this); },
     }, failure));
 }
@@ -1635,35 +1651,35 @@ function zoneCard(z) {
     h('div', { class: 'zone-top' },
       nowPlaying(z,
         h('div', { class: 'zone-pills' },
-          a ? h('span', { class: 'pill ' + (a.state === 'failed' ? 'bad' : a.transport === 'playing' ? 'good' : ''), title: `core ${a.state}/${a.transport}` }, a.state === 'failed' ? 'failed' : a.transport)
-            : h('span', { class: 'pill warn' }, 'not in core'),
+          a ? h('span', { class: 'pill ' + (a.state === 'failed' ? 'bad' : a.transport === 'playing' ? 'good' : ''), title: `core ${a.state}/${a.transport}` }, (a.state === 'failed' ? tt('zones.failed') : tv('state', a.transport)))
+            : h('span', { class: 'pill warn' }, tt('zones.notInCore')),
           unwell.length > 0 && h('span', { class: 'pill ' + (unstable.length ? 'bad' : 'warn'), title: unwell.map(([c, hl]) => `${roomName(c)}: ${healthText(hl)}`).join('\n') },
-            `⚠ ${unwell.map(([c, hl]) => `${roomName(c)} ${hl.state}`).join(', ')}`)),
+            `⚠ ${unwell.map(([c, hl]) => `${roomName(c)} ${tv('state', hl.state)}`).join(', ')}`)),
         h('h2', { class: 'zone-name' }, z.name ?? z.zone))),
 
-    h('div', { class: 'zone-rooms', role: 'group', 'aria-label': 'Rooms' },
+    h('div', { class: 'zone-rooms', role: 'group', 'aria-label': tt('zones.rooms') },
       // One line of fixed tiles, scrolled sideways when they do not fit.
       h('div', { class: 'room-strip' },
         roomAddTile(z.zone, others),
         desired.map((c) => roomTile(c,
           // A room alone in its zone has nowhere to leave to.
-          desired.length > 1 && h('button', { class: 'room-out', title: 'take out into a zone of its own', 'aria-label': `Take ${roomName(c)} out`, onclick: () => moveRoom(c, null) }, icon('close'))))),
+          desired.length > 1 && h('button', { class: 'room-out', title: tt('zones.takeOutInto'), 'aria-label': tt('zones.takeOut', { name: roomName(c) }), onclick: () => moveRoom(c, null) }, icon('close'))))),
       // Who listens here (server phase 36), right of the rooms.
       'user' in z && h('div', { class: 'zone-status' }, listenerButton(z)))),
     // The queue: always shown, filling the zone's height, scrolled within, and
     // where library items are dropped.
     h('div', { class: 'queue', 'aria-busy': dropping.has(z.zone) ? 'true' : null },
-      h('div', { class: 'queue-head' }, h('span', { class: 'queue-count' }, icon('queue'), `Tracks: ${shownCount}`),
+      h('div', { class: 'queue-head' }, h('span', { class: 'queue-count' }, icon('queue'), tt('zones.tracks', { n: shownCount })),
         h('span', { class: 'player-transport queue-transport' }, transportControls(z)),
         h('span', { class: 'tools' },
         z.autoFill && autoFillButton(z),
-        h('button', { class: 'icon-only', disabled: !shownCount, title: 'Save as playlist (POST queue/save: the queue as a stored playlist)', 'aria-label': 'Save as playlist', onclick: () => saveQueue(z.zone) }, icon('playlists')),
-        transportButton('setup', 'Zone setup', () => openZoneSetup(z.zone)))),
+        h('button', { class: 'icon-only', disabled: !shownCount, title: tt('zones.saveAsPlaylistTitle'), 'aria-label': tt('zones.saveAsPlaylist'), onclick: () => saveQueue(z.zone) }, icon('playlists')),
+        transportButton('setup', tt('zones.zoneSetup'), () => openZoneSetup(z.zone)))),
       h('div', { class: 'table-wrap plain queue-list', ...queueDrop(z.zone) },
-        q ? queueTable(z.zone, q) : h('p', { class: 'muted small' }, 'No queue.'),
-        h('p', { class: 'muted small drop-hint' }, 'Drag tracks, albums, playlists or stations here.')),
+        q ? queueTable(z.zone, q) : h('p', { class: 'muted small' }, tt('zones.noQueue')),
+        h('p', { class: 'muted small drop-hint' }, tt('zones.dragTracksAlbums'))),
       dropping.has(z.zone) && h('div', { class: 'queue-busy', role: 'status' },
-        h('span', { class: 'spinner', 'aria-hidden': 'true' }), 'Adding to the queue…'),
+        h('span', { class: 'spinner', 'aria-hidden': 'true' }), tt('zones.addingToQueue')),
       // Its setup, over the queue while open.
       S.setupZone === z.zone && zoneSetup(z)),
   ]);
@@ -1673,38 +1689,40 @@ function zoneCard(z) {
 // Who listens here (server phase 36): a click lists the household and the
 // users in a popover, and the one picked is set (PATCH zones/{zone} {user}).
 function listenerButton(z) {
-  const label = z.user || 'household';
+  const label = z.user || tt('common.household');
   const names = [...new Set([...S.users.map((u) => u.name), z.user].filter(Boolean))];
   return h('span', { class: 'listener-pop' },
     h('button', {
-      type: 'button', class: 'zone-listener', title: `Listener: ${label} (whose plays, likes and favourites these are)`,
-      'aria-label': `Listener ${label}, change`, 'aria-haspopup': 'dialog',
+      type: 'button', class: 'zone-listener', title: tt('zones.listenerWhosePlays', { name: label }),
+      'aria-label': tt('zones.listenerChange', { name: label }), 'aria-haspopup': 'dialog',
       onclick: (e) => e.currentTarget.nextElementSibling.togglePopover(),
     }, label, icon('rooms')),
     h('div', {
-      class: 'pick-popover', popover: 'auto', role: 'dialog', 'aria-label': `Listener in ${z.name ?? z.zone}`,
+      class: 'pick-popover', popover: 'auto', role: 'dialog', 'aria-label': tt('zones.listenerIn', { zone: z.name ?? z.zone }),
       ontoggle(e) { if (e.newState === 'open') placeUnderButton(this); },
     }, ['', ...names].map((n) => h('button', {
       type: 'button', 'aria-pressed': n === (z.user ?? '') ? 'true' : 'false',
       onclick: (e) => {
         e.currentTarget.closest('[popover]').hidePopover();
-        if (n !== (z.user ?? '')) act(() => api('PATCH', `zones/${enc(z.zone)}`, { user: n }), 'listener set');
+        if (n !== (z.user ?? '')) act(() => api('PATCH', `zones/${enc(z.zone)}`, { user: n }), 'zones.listenerSet');
       },
-    }, h('span', { class: 'room-name' }, n || 'household')))));
+    }, h('span', { class: 'room-name' }, n || tt('common.household'))))));
 }
 
 // AutoFill on or off, beside shuffle; its settings are in the zone's setup.
 function autoFillButton(z) {
   const f = z.autoFill, on = f.enabled;
   // On but held back by the server: dimmed, with a pause mark and why. Repeat
-  // all is read off the queue, which follows a toggle at once; the server's
-  // waiting comes only with the zone's AutoFill view.
-  const waiting = z.queue?.repeat === 'all' ? 'repeatAll' : f.waiting === 'repeatAll' ? null : f.waiting;
-  const paused = on && !f.filling && { repeatAll: 'paused while repeat all is on', nothingAdded: 'paused: the last fill added nothing; it waits for the queue to change' }[waiting];
-  const title = `AutoFill ${on ? 'on' : 'off'}${f.filling ? ', filling…' : ''}${paused ? `, ${paused}` : ''} (click: ${on ? 'off' : 'on'})`;
+  // all and shuffle are read off the queue, which follows a toggle at once;
+  // the server's waiting comes only with the zone's AutoFill view.
+  const waiting = z.queue?.repeat === 'all' ? 'repeatAll' : z.queue?.shuffle ? 'shuffle'
+    : f.waiting === 'repeatAll' || f.waiting === 'shuffle' ? null : f.waiting;
+  const paused = on && !f.filling && { repeatAll: 'zones.pausedRepeatAll', shuffle: 'zones.pausedShuffle', nothingAdded: 'zones.pausedNothingAdded' }[waiting];
+  const title = tt(on ? 'zones.autofillOn' : 'zones.autofillOff') + (f.filling ? `, ${tt('zones.filling')}` : '') + (paused ? `, ${tt(paused)}` : '')
+    + ` (${tt(on ? 'zones.clickOff' : 'zones.clickOn')})`;
   return h('button', {
     class: 'icon-only mode' + (on ? ' on' : '') + (f.filling ? ' busy' : '') + (paused ? ' paused' : ''), title, 'aria-label': 'AutoFill', 'aria-pressed': on ? 'true' : 'false',
-    onclick: () => act(() => api('PATCH', `zones/${enc(z.zone)}`, { autoFill: { enabled: !on } }), `AutoFill ${on ? 'off' : 'on'}`),
+    onclick: () => act(() => api('PATCH', `zones/${enc(z.zone)}`, { autoFill: { enabled: !on } }), on ? 'zones.autofillOff' : 'zones.autofillOn'),
   }, icon('sparkle'));
 }
 
@@ -1721,7 +1739,7 @@ function closeZoneSetup() {
   // A render waits while an input has focus (render): Escape from one closes at once.
   if (card?.contains(document.activeElement)) document.activeElement.blur();
   renderZones();
-  card?.querySelector('button[aria-label="Zone setup"]')?.focus();
+  card?.querySelector(`button[aria-label="${tt('zones.zoneSetup')}"]`)?.focus();
 }
 
 // --- general settings --------------------------------------------------------------
@@ -1752,7 +1770,7 @@ $('#zoneBackground').addEventListener('change', (e) => act(async () => {
   if (!r.ok) throw new Error(answer.message ?? `/gui/settings: HTTP ${r.status}`);
   guiSettings = { ...GUI_DEFAULTS, ...answer };
   renderZones();
-}, 'saved').finally(renderGeneral));
+}, 'settings.saved').finally(renderGeneral));
 
 // Behind a zone's header: its first room's picture, or the artwork of what
 // plays (the General page's zoneBackground). The room's lie under the artwork,
@@ -1767,14 +1785,14 @@ function zoneBackdrop(z, room) {
 }
 
 function zoneSetup(z) {
-  return h('section', { class: 'zone-setup', 'aria-label': 'Zone setup', onkeydown: (e) => { if (e.key === 'Escape') closeZoneSetup(); } },
+  return h('section', { class: 'zone-setup', 'aria-label': tt('zones.zoneSetup'), onkeydown: (e) => { if (e.key === 'Escape') closeZoneSetup(); } },
     h('div', { class: 'pane-bar' },
-      h('span', { class: 'setup-title' }, 'Setup · ', z.name ?? z.zone),
-      transportButton('close', 'Close setup', closeZoneSetup)),
+      h('span', { class: 'setup-title' }, `${tt('zones.setup')} · `, z.name ?? z.zone),
+      transportButton('close', tt('zones.closeSetup'), closeZoneSetup)),
     h('div', { class: 'setup-body' },
       z.autoFill && h('section', {},
         h('h3', {}, 'AutoFill'),
-        h('p', { class: 'help' }, 'Adds songs when the queue runs low: from the AI, or from recommendations.'),
+        h('p', { class: 'help' }, tt('zones.addsSongsWhen')),
         autoFillRow(z.zone, z.autoFill))));
 }
 
@@ -1787,35 +1805,35 @@ function zoneStatus(z) {
     ? a.timelineNs - np.timelineNs + np.startOffsetNs : null;
   return h('div', { class: 'card' },
     h('h3', {}, z.name ?? z.zone,
-      a ? h('span', { class: 'pill ' + (a.state === 'failed' ? 'bad' : a.transport === 'playing' ? 'good' : ''), title: `core ${a.state}/${a.transport}` }, a.state === 'failed' ? 'failed' : a.transport)
-        : h('span', { class: 'pill warn' }, 'not in core')),
+      a ? h('span', { class: 'pill ' + (a.state === 'failed' ? 'bad' : a.transport === 'playing' ? 'good' : ''), title: `core ${a.state}/${a.transport}` }, (a.state === 'failed' ? tt('zones.failed') : tv('state', a.transport)))
+        : h('span', { class: 'pill warn' }, tt('zones.notInCore'))),
       h('div', { class: 'kv' },
-        kv('zone id', z.zone),
-        kv('core', a ? `${a.state}/${a.transport}` : 'not in core'),
-        kv('queue', q ? q.transport : '—'),
-        a && kv('core members', a.members.join(', ') || '—'),
-        a && kv('core clients', a.clients.join(', ') || '—'),
-        kv('timeline', fmtNs(a?.timelineNs)),
-        kv('position ≈', position == null ? '—' : fmtNs(position), 'zone timeline − now-playing timeline + start offset'),
-        kv('source', a?.source ? `${a.source.title ?? ''} (${a.source.sourceId}${a.source.ended ? ', ended' : ''})` : '—'),
-        kv('source format', fmtFmt(a?.sourceFormat)),
-        kv('staged', a?.staged?.map((s) => `${s.sourceId} ${s.title ?? ''}${s.startOffsetNs ? ` @${fmtNs(s.startOffsetNs)}` : ''}`).join(' | ') || '—'),
-        kv('failed sources', a?.failedSources?.map((f) => `${f.sourceId}: ${f.reason}`).join(' | ') || '—'),
-        kv('starts sent / rejoins', a ? `${a.startsSent} / ${a.rejoins}` : '—'),
-        a?.lastError && kv('last error', h('span', { class: 'bad' }, a.lastError)),
-        z.streamTitle && kv('stream title', z.streamTitle),
-        np && kv('now playing', `item ${np.item} · ${np.sourceId} · tl ${fmtNs(np.timelineNs)} · offset ${fmtNs(np.startOffsetNs)}`)),
+        kv('zones.zoneId', z.zone),
+        kv('zones.core', a ? `${a.state}/${a.transport}` : tt('zones.notInCore')),
+        kv('zones.queue', q ? q.transport : '—'),
+        a && kv('zones.coreMembers', a.members.join(', ') || '—'),
+        a && kv('zones.coreClients', a.clients.join(', ') || '—'),
+        kv('zones.timeline', fmtNs(a?.timelineNs)),
+        kv('zones.position', position == null ? '—' : fmtNs(position), 'zones.zoneTimelineNow'),
+        kv('zones.source', a?.source ? `${a.source.title ?? ''} (${a.source.sourceId}${a.source.ended ? ', ended' : ''})` : '—'),
+        kv('zones.sourceFormat', fmtFmt(a?.sourceFormat)),
+        kv('zones.staged', a?.staged?.map((s) => `${s.sourceId} ${s.title ?? ''}${s.startOffsetNs ? ` @${fmtNs(s.startOffsetNs)}` : ''}`).join(' | ') || '—'),
+        kv('zones.failedSources', a?.failedSources?.map((f) => `${f.sourceId}: ${f.reason}`).join(' | ') || '—'),
+        kv('zones.startsSentRejoins', a ? `${a.startsSent} / ${a.rejoins}` : '—'),
+        a?.lastError && kv('zones.lastError', h('span', { class: 'bad' }, a.lastError)),
+        z.streamTitle && kv('zones.streamTitle', z.streamTitle),
+        np && kv('zones.nowPlaying', `item ${np.item} · ${np.sourceId} · tl ${fmtNs(np.timelineNs)} · offset ${fmtNs(np.startOffsetNs)}`)),
       h('form', { class: 'row', onsubmit(e) {
         e.preventDefault();
         const seconds = Number(e.target.pos.value);
         act(() => api('POST', `${path}/seek`, { item: q?.current, positionMs: Math.round(seconds * 1000) }));
-      } }, h('input', { name: 'pos', type: 'number', step: '0.1', min: 0, placeholder: 'seconds', class: 'w-sm', 'aria-label': 'Seek to seconds' }), h('button', {}, 'Seek current item')),
-      h('div', { class: 'row' }, h('button', { class: 'danger', onclick: () => confirm(`Delete zone ${z.name ?? z.zone}? Its queue goes, and each of its rooms gets a zone of its own.`) && act(() => api('DELETE', path), 'zone deleted') }, 'Delete zone')));
+      } }, h('input', { name: 'pos', type: 'number', step: '0.1', min: 0, placeholder: tt('zones.seconds'), class: 'w-sm', 'aria-label': tt('zones.seekToSeconds') }), h('button', {}, tt('zones.seekCurrentItem'))),
+      h('div', { class: 'row' }, h('button', { class: 'danger', onclick: () => confirm(tt('zones.deleteZoneIts', { zone: z.name ?? z.zone })) && act(() => api('DELETE', path), 'zones.zoneDeleted') }, tt('zones.deleteZone'))));
 }
 
 function renderZoneStatus() {
   if (page !== 'status') return;
-  render('zoneStatus', $('#zoneStatus'), () => (S.zones.length ? S.zones.map(zoneStatus) : [h('p', { class: 'muted' }, 'no zones')]));
+  render('zoneStatus', $('#zoneStatus'), () => (S.zones.length ? S.zones.map(zoneStatus) : [h('p', { class: 'muted' }, tt('zones.noZones'))]));
 }
 
 // AutoFill (server phase 26): the zone's settings as one PATCH, how it stands,
@@ -1830,36 +1848,37 @@ function autoFillRow(zone, f) {
     act(() => api('PATCH', `zones/${enc(zone)}`, { autoFill: {
       enabled: F.enabled.checked, threshold: Number(F.threshold.value), count: Number(F.count.value), source: F.source.value,
       request: F.request.value, fallback: F.fallback.checked, avoidRecent: Number(F.avoidRecent.value),
-    } }), 'AutoFill saved').then(() => document.activeElement?.blur());
+    } }), 'zones.autofillSaved').then(() => document.activeElement?.blur());
   } },
     h('label', {}, h('input', { type: 'checkbox', name: 'enabled', checked: f.enabled }), ' AutoFill'),
-    h('label', { title: 'items left after the current one that start a fill' }, 'at ≤ ',
+    h('label', { title: tt('zones.itemsLeftAfter') }, `${tt('zones.at')} ≤ `,
       h('input', { name: 'threshold', type: 'number', min: 0, max: 20, value: String(f.threshold), style: 'width:3.5em' })),
-    h('label', {}, 'add ', h('input', { name: 'count', type: 'number', min: 1, max: 50, value: String(f.count), style: 'width:3.5em' })),
+    h('label', {}, `${tt('zones.add')} `, h('input', { name: 'count', type: 'number', min: 1, max: 50, value: String(f.count), style: 'width:3.5em' })),
     h('select', { name: 'source', value: f.source },
-      h('option', { value: 'ai', disabled: !ai.ok && f.source !== 'ai', title: ai.why }, ai.ok ? 'ai' : `ai (${ai.why})`),
-      h('option', { value: 'recommendations' }, 'recommendations')),
-    h('input', { name: 'request', value: f.request, size: 22, title: 'what the AI is asked for' }),
-    h('label', { title: 'fill from recommendations when the AI fails' }, h('input', { type: 'checkbox', name: 'fallback', checked: f.fallback }), ' fallback'),
-    h('label', { title: 'songs among the house\'s last this many plays are not chosen (0: none)' }, 'avoid last ',
+      h('option', { value: 'ai', disabled: !ai.ok && f.source !== 'ai', title: ai.why }, ai.ok ? tt('zones.ai') : `${tt('zones.ai')} (${ai.why})`),
+      h('option', { value: 'recommendations' }, tt('zones.recommendations'))),
+    h('input', { name: 'request', value: f.request, size: 22, title: tt('zones.whatAiIs') }),
+    h('label', { title: tt('zones.fillFromRecommendations') }, h('input', { type: 'checkbox', name: 'fallback', checked: f.fallback }), ` ${tt('zones.fallback')}`),
+    h('label', { title: tt('zones.songsAmongHouses') }, `${tt('zones.avoidLast')} `,
       h('input', { name: 'avoidRecent', type: 'number', min: 0, max: 10000, value: String(f.avoidRecent), style: 'width:5em' })),
-    h('button', {}, 'save'),
-    f.filling && h('span', { class: 'pill warn' }, 'filling…'),
-    f.waiting === 'repeatAll' && h('span', { class: 'pill muted' }, 'AutoFill paused (repeat all)'),
-    f.waiting === 'nothingAdded' && h('span', { class: 'pill muted', title: 'the next fill waits until the queue is changed by other hands' }, 'waiting: last fill added nothing'),
+    h('button', {}, tt('zones.save')),
+    f.filling && h('span', { class: 'pill warn' }, tt('zones.filling')),
+    f.waiting === 'repeatAll' && h('span', { class: 'pill muted' }, tt('zones.autofillPausedRepeat')),
+    f.waiting === 'shuffle' && h('span', { class: 'pill muted' }, tt('zones.autofillPausedShuffle')),
+    f.waiting === 'nothingAdded' && h('span', { class: 'pill muted', title: tt('zones.nextFillWaits') }, tt('zones.waitingLastFill')),
     fill ? h('span', { class: 'pill ' + (fill.added ? 'good' : 'bad'), title: fill.at }, autoFillText(fill))
-      : f.last && h('span', { class: 'pill muted', title: f.last.at }, `last: ${autoFillText(f.last)}`));
+      : f.last && h('span', { class: 'pill muted', title: f.last.at }, tt('zones.last', { fill: autoFillText(f.last) })));
 }
 
 // "+5 from ai", "+0 from ai (timeout: …)", "+5 from recommendations (ai failed: …)".
-const autoFillText = (r) => `+${r.added} from ${r.source}${r.reason ? ` (${r.reason})` : ''}`;
+const autoFillText = (r) => tt('zones.from', { n: r.added, source: tv('zones.source', r.source) }) + (r.reason ? ` (${r.reason})` : '');
 
 function aiUsable() {
   if (!AI.settings) return { ok: true, why: '' }; // not read yet: the server says it on the first fill
   const p = AI.providers.find((x) => x.id === AI.settings.defaultProvider);
-  if (!p) return { ok: false, why: 'no default AI provider' };
-  if (!p.enabled) return { ok: false, why: `${p.id} is switched off` };
-  if (!p.configured) return { ok: false, why: `${p.id} is not configured` };
+  if (!p) return { ok: false, why: tt('zones.noDefaultAi') };
+  if (!p.enabled) return { ok: false, why: tt('zones.isSwitchedOff', { id: p.id }) };
+  if (!p.configured) return { ok: false, why: tt('zones.isNotConfigured', { id: p.id }) };
   return { ok: true, why: '' };
 }
 
@@ -1912,8 +1931,9 @@ function fmtMs(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+// The label and its title are keys, translated here.
 function kv(k, v, title) {
-  return [h('span', { class: 'k', title }, k), h('span', {}, v), h('span', {})];
+  return [h('span', { class: 'k', title: title && tt(title) }, tt(k)), h('span', {}, v), h('span', {})];
 }
 
 // The queue: a row's number (bars on the one playing, the grip to drag it
@@ -1938,7 +1958,7 @@ function removeQueueItems(path, ids) {
       left.delete(id);
     }
     return true;
-  }, ids.length > 1 && `${ids.length} items removed`).then((answer) => {
+  }, ids.length > 1 && tt('queue.itemsRemoved', { n: ids.length })).then((answer) => {
     if (answer !== undefined) return;
     for (const id of left) removing.delete(id);
     refreshSoon();
@@ -1951,14 +1971,14 @@ function queueSelection(zone, q, id) {
 
 function queueTable(zone, q) {
   const path = `zones/${enc(zone)}/queue/items`;
-  if (!q.items.some((i) => !removing.has(i.id))) return h('p', { class: 'muted small' }, 'queue empty');
+  if (!q.items.some((i) => !removing.has(i.id))) return h('p', { class: 'muted small' }, tt('queue.queueEmpty'));
   const marks = S.autoMarks[zone]?.key === q.items.map((i) => i.id).join(',') ? S.autoMarks[zone].ids : null;
   return h('table', { class: 'small' },
-    h('tr', {}, h('th', {}, '#'), h('th', {}, 'Track'), h('th', { class: 'queue-actions' }, 'Duration')),
+    h('tr', {}, h('th', {}, '#'), h('th', {}, tt('common.track')), h('th', { class: 'queue-actions' }, tt('queue.duration'))),
     q.items.map((item, i) => h('tr', { 'data-index': String(i), class: [item.id === q.current && 'current', marks?.has(item.id) && 'autofilled'].filter(Boolean).join(' '),
       'data-list': `queue:${zone}`, 'data-id': String(item.id), 'data-selected': rowSelected(`queue:${zone}`, item.id),
       hidden: removing.has(item.id),
-      title: marks?.has(item.id) ? 'added by AutoFill' : null },
+      title: marks?.has(item.id) ? tt('queue.addedByAutofill') : null },
       rowHandle(`queue:${zone}`, item.id === q.current ? icon('bars') : i + 1),
       h('td', {}, h('div', { class: 'with-art' },
         infoArt(item.item, artSlot(item.item.artworkId, media(item, 'station') ? 'radio' : 'library')),
@@ -1971,7 +1991,7 @@ function queueTable(zone, q) {
         h('span', { class: 'num' }, fmtDur(item.item.duration)),
         h('span', { class: 'row-tools' },
           h('button', {
-            class: 'row-play', title: 'play this item', 'aria-label': 'Play this item',
+            class: 'row-play', title: tt('queue.playThisItemTitle'), 'aria-label': tt('queue.playThisItem'),
             'aria-busy': transporting.get(zone) === `item:${item.id}` ? 'true' : null, disabled: transporting.has(zone),
             onclick: () => transport(zone, `item:${item.id}`, 'play', { item: item.id }),
           }, transporting.get(zone) === `item:${item.id}` ? h('span', { class: 'spinner' }) : icon('play')),
@@ -1979,7 +1999,7 @@ function queueTable(zone, q) {
           favoriteButton(media(item, 'group') ? `book|${item.item.source}` : likeKey(item.item.kind, item.item),
             () => (media(item, 'group') ? addBookFavorite(item.item.source) : addFavorite(media(item, 'track'), media(item, 'station'))),
             Boolean(media(item, 'group'))),
-          h('button', { class: 'danger', title: 'remove from the queue (with the rows selected, all of them)', 'aria-label': 'Remove from the queue', onclick: () => removeQueueItems(path, queueSelection(zone, q, item.id)) }, icon('trash'))))))));
+          h('button', { class: 'danger', title: tt('queue.removeFromQueueTitle'), 'aria-label': tt('queue.removeFromQueue'), onclick: () => removeQueueItems(path, queueSelection(zone, q, item.id)) }, icon('trash'))))))));
 }
 
 // A queue item as two lines: what it is, and who and where from.
@@ -1987,8 +2007,8 @@ function queueLines(x) {
   if (x.kind === 'track') return trackLines(x);
   const title = x.kind === 'group' ? x.title : x.name;
   const sub = x.kind === 'group'
-    ? [x.artist, x.parts.length ? `${x.parts.length} parts` : 'a book', x.type].filter(Boolean).join(' · ')
-    : [x.genre, 'radio'].filter(Boolean).join(' · ');
+    ? [x.artist, x.parts.length ? tt('common.parts', { n: x.parts.length }) : tt('queue.book'), x.type].filter(Boolean).join(' · ')
+    : [x.genre, tt('queue.radio')].filter(Boolean).join(' · ');
   return h('div', { class: 'track-lines', title: `${title} [${x.providerId ?? x.source ?? ''}]` },
     h('div', { class: 'line' }, x.kind === 'group' ? '📖 ' : '', title),
     h('div', { class: 'muted line' }, sub));
@@ -2009,13 +2029,13 @@ function partsList(zone, q, item) {
       h('td', {}, p.track.title, p.failure && h('div', { class: 'bad' }, p.failure)),
       h('td', { class: 'num' }, fmtDur(p.track.duration)),
       h('td', {}, h('button', {
-        title: at == null ? 'an earlier part\'s length is unknown' : 'play from this part',
+        title: tt(at == null ? 'queue.earlierPartsLength' : 'queue.playFromThis'),
         disabled: at == null,
         onclick: () => act(() => api('POST', `zones/${enc(zone)}/seek`, { item: item.id, positionMs: at })),
       }, '▶')));
   });
   return h('details', { 'data-key': `parts:${zone}:${item.id}`, class: 'small' },
-    h('summary', {}, playing != null ? `chapter ${playing + 1} of ${parts.length}` : `${parts.length} parts`),
+    h('summary', {}, playing != null ? tt('queue.chapterOf', { n: playing + 1, count: parts.length }) : tt('common.parts', { n: parts.length })),
     h('table', { class: 'small' }, rows));
 }
 
@@ -2031,19 +2051,19 @@ async function saveQueue(zone) {
   if (folder != null && !byId(folder)) folder = null;
   const open = new Set();
   for (let at = byId(byId(folder)?.parent); at; at = byId(at.parent)) open.add(at.id);
-  const folderName = () => byId(folder)?.name ?? 'the top level';
+  const folderName = () => byId(folder)?.name ?? tt('queue.theTopLevel');
   const taken = (name) => S.playlists.some((p) => (p.folder ?? null) === folder && p.name.trim().toLowerCase() === name.toLowerCase());
 
-  const input = h('input', { id: 'saveName', autocomplete: 'off', spellcheck: 'false', maxlength: 200, placeholder: 'Playlist name', required: true, oninput: check });
-  const tree = h('ul', { class: 'save-tree', role: 'tree', 'aria-label': 'Folder' });
+  const input = h('input', { id: 'saveName', autocomplete: 'off', spellcheck: 'false', maxlength: 200, placeholder: tt('queue.playlistName'), required: true, oninput: check });
+  const tree = h('ul', { class: 'save-tree', role: 'tree', 'aria-label': tt('queue.folder') });
   const error = h('p', { class: 'save-error', role: 'alert', hidden: true });
-  const ok = h('button', { type: 'submit', class: 'primary', value: 'save' }, icon('playlists'), 'Save');
+  const ok = h('button', { type: 'submit', class: 'primary', value: 'save' }, icon('playlists'), tt('common.save'));
   const row = (id, name, depth, kids) => {
     const isOpen = open.has(id);
     return h('li', { role: 'treeitem', 'aria-selected': String(id === folder), ...(kids.length ? { 'aria-expanded': String(isOpen) } : {}) },
       h('div', { class: 'save-row' + (id === folder ? ' current' : ''), style: `padding-left:${depth * 16}px` },
         kids.length
-          ? h('button', { type: 'button', class: 'save-fold', 'aria-label': `${isOpen ? 'Close' : 'Open'} ${name}`, onclick() { if (isOpen) open.delete(id); else open.add(id); draw(); } },
+          ? h('button', { type: 'button', class: 'save-fold', 'aria-label': tt(isOpen ? 'queue.close' : 'queue.open', { name }), onclick() { if (isOpen) open.delete(id); else open.add(id); draw(); } },
             h('span', { class: 'tree-chevron' }, icon('forward')))
           : h('span', { class: 'save-fold' }),
         h('button', { type: 'button', class: 'save-pick', title: name, onclick() { folder = id; draw(); check(); input.focus(); } },
@@ -2052,17 +2072,17 @@ async function saveQueue(zone) {
   };
   const branch = (parent, depth) => folders.filter((f) => (f.parent ?? null) === parent)
     .sort((a, b) => a.name.localeCompare(b.name)).map((f) => row(f.id, f.name, depth, branch(f.id, depth + 1)));
-  const draw = () => tree.replaceChildren(row(null, 'Top level', 0, []), ...branch(null, 1));
+  const draw = () => tree.replaceChildren(row(null, tt('queue.topLevel'), 0, []), ...branch(null, 1));
   let replace = false;
   function check() {
     const name = input.value.trim();
     replace = false;
     error.hidden = !name || !taken(name);
     ok.disabled = !name || !error.hidden;
-    if (!error.hidden) error.replaceChildren(`A playlist named “${name}” already exists in ${folderName()}. `,
-      h('button', { type: 'button', class: 'link', onclick() { replace = true; dialog.querySelector('form').requestSubmit(); } }, 'Replace it'));
+    if (!error.hidden) error.replaceChildren(`${tt('queue.playlistNamedAlready', { name, folder: folderName() })} `,
+      h('button', { type: 'button', class: 'link', onclick() { replace = true; dialog.querySelector('form').requestSubmit(); } }, tt('queue.replaceIt')));
   }
-  const dialog = h('dialog', { class: 'confirm-dialog save-dialog', 'aria-label': 'Save as playlist', onclose() { this.remove(); } },
+  const dialog = h('dialog', { class: 'confirm-dialog save-dialog', 'aria-label': tt('queue.saveAsPlaylist'), onclose() { this.remove(); } },
     h('form', { method: 'dialog', async onsubmit(e) {
       e.preventDefault();
       const name = input.value.trim();
@@ -2072,7 +2092,8 @@ async function saveQueue(zone) {
         const r = await api('POST', `zones/${enc(zone)}/queue/save`, { name, folder, overwrite: replace });
         store.set('vx.saveFolder', folder == null ? '' : String(folder));
         dialog.close();
-        flash(`saved as ${r.playlist.name} in ${folderName()} (${r.playlist.count} entries${r.skipped ? `, ${r.skipped} station(s) left out` : ''})`);
+        flash(tt(r.skipped ? 'queue.savedAsIn' : 'queue.savedAsInEntries',
+          { name: r.playlist.name, folder: folderName(), n: r.playlist.count, skipped: r.skipped }));
         act(loadPlaylists);
       } catch (err) {
         // Taken meanwhile, or refused (an empty queue): said here, the dialog stays.
@@ -2080,12 +2101,12 @@ async function saveQueue(zone) {
         error.hidden = false; error.replaceChildren(err.message); ok.disabled = false;
       }
     } },
-      h('div', { class: 'confirm-head' }, h('span', { class: 'confirm-icon move-icon' }, icon('playlists')), h('h2', {}, 'Save as playlist')),
-      h('label', { class: 'save-label', for: 'saveName' }, 'Name'), input,
-      h('span', { class: 'save-label' }, 'Folder'), tree,
+      h('div', { class: 'confirm-head' }, h('span', { class: 'confirm-icon move-icon' }, icon('playlists')), h('h2', {}, tt('queue.saveAsPlaylist'))),
+      h('label', { class: 'save-label', for: 'saveName' }, tt('queue.name')), input,
+      h('span', { class: 'save-label' }, tt('queue.folder')), tree,
       error,
       h('div', { class: 'confirm-buttons' },
-        h('button', { type: 'button', onclick: () => dialog.close() }, 'Cancel'), ok)));
+        h('button', { type: 'button', onclick: () => dialog.close() }, tt('common.cancel')), ok)));
   draw(); check();
   document.body.append(dialog);
   dialog.showModal();
@@ -2103,7 +2124,7 @@ async function moveRoom(client, zone) {
   const current = S.zones.find((z) => z.zone === target)?.desired?.clients ?? [];
   const clients = zone == null ? current.filter((c) => c !== client) : [...current, client];
   await act(() => api('PUT', `zones/${enc(target)}/clients`, { clients }),
-    zone == null ? `${client} has a zone of its own` : `${client} → ${zoneName(zone)}`);
+    zone == null ? tt('queue.hasZoneOf', { name: client }) : `${client} → ${zoneName(zone)}`);
 }
 
 
@@ -2119,7 +2140,7 @@ function renderRooms() {
   renderClients();
   if (page !== 'client') return;
   const r = S.rooms.find((x) => x.client === roomOpen);
-  render('rooms', $('#rooms'), () => [r ? roomSettings(r) : h('p', { class: 'muted' }, `no room ${roomOpen ?? ''} known`)]);
+  render('rooms', $('#rooms'), () => [r ? roomSettings(r) : h('p', { class: 'muted' }, tt('clients.noRoomKnown', { name: roomOpen ?? '' }))]);
 }
 
 const openRoom = (client) => { location.hash = `#/client/${encodeURIComponent(client)}`; };
@@ -2131,13 +2152,13 @@ function renderClients() {
   const label = ({ c, r }) => r?.name ?? c?.name ?? (c ?? r).client;
   rows.sort((x, y) => label(x).localeCompare(label(y)));
   $('#clientsNote').textContent = discovered
-    ? `${heard.length} heard${discovered.forgotten ? ` · ${discovered.forgotten} forgotten` : ''} · ${S.rooms.length} rooms`
-    : discoveredError && `discovery unavailable: ${discoveredError}`;
+    ? [tt('clients.heard', { n: heard.length }), discovered.forgotten && tt('clients.forgotten', { n: discovered.forgotten }), tt('clients.rooms', { n: S.rooms.length })].filter(Boolean).join(' · ')
+    : discoveredError && tt('clients.discoveryUnavailable', { error: discoveredError });
   // Through render, as the zones' sliders: a card's volume being dragged is
   // not redrawn under the pointer by the next discovery tick.
   render('clients', $('#clients'), () => [rows.length
     ? h('div', { class: 'client-cards' }, rows.map(clientCard))
-    : h('p', { class: 'muted' }, 'no client heard, no room known')]);
+    : h('p', { class: 'muted' }, tt('clients.noClientHeard'))]);
 }
 
 // Whether the room plays the source's own samples: the core sends them
@@ -2151,9 +2172,9 @@ function bitPerfectOf(a) {
   return {
     value: plan ? plan.bitPerfect && !scaling && !shared : null,
     reason: [
-      plan?.bitPerfect === false && (plan.reason || 'The server is resampling the audio'),
-      scaling && 'Software volume or mute changes the samples',
-      shared && 'Shared audio output allows the system mixer to change the samples',
+      plan?.bitPerfect === false && (plan.reason || tt('clients.serverIsResampling')),
+      scaling && tt('clients.softwareVolumeOr'),
+      shared && tt('clients.sharedAudioOutput'),
     ].filter(Boolean).join('; '),
   };
 }
@@ -2163,7 +2184,7 @@ function bitPerfectOf(a) {
 // not hear says only whether it is connected.
 function clientCard({ c, r }) {
   const a = r?.actual, id = (c ?? r).client;
-  const [state, cls, text] = c ? attachment(c) : a?.connected ? ['here', 'good', 'attached here'] : ['unknown', 'muted', 'not heard'];
+  const [state, cls, text] = c ? attachment(c) : a?.connected ? ['here', 'good', tt('clients.attachedHere')] : ['unknown', 'muted', tt('clients.notHeard')];
   const attached = state === 'here' || state === 'pending';
   // The link the client reaches the server by, as it reports it (MATP section 55).
   const m = S.system?.rooms.find((x) => x.client === id)?.metrics;
@@ -2173,17 +2194,17 @@ function clientCard({ c, r }) {
   if (link) store.set(`vx.link:${id}`, m.networkLink);
   const stale = !link && store.get(`vx.link:${id}`, null);
   if (stale) link = stale === 'wifi' ? ['wifi3', 'WLAN'] : ['ethernet', 'ETH'];
-  link ??= ['linkUnknown', 'network link unknown'];
+  link ??= ['linkUnknown', tt('clients.networkLinkUnknown')];
   const eq = r && (r.desired?.equalizer ?? a?.settings?.equalizer);
-  // A key and its value, a row of the card's list.
-  const info = (key, value, vc = '', title = '') => [h('dt', {}, key), h('dd', { class: vc, title }, value)];
+  // A key and its value, a row of the card's list; the key is translated here.
+  const info = (key, value, vc = '', title = '') => [h('dt', {}, tt(key)), h('dd', { class: vc, title }, value)];
   const { value: bitPerfect, reason: bitPerfectReason } = bitPerfectOf(a);
   // What the equalizer does, as eqBadge says it on the room's page.
-  const core = a?.plan?.equalizer, clipped = core?.clippedSamples > 0 ? `, ${core.clippedSamples} samples clipped` : '';
-  const eqInfo = !r ? ['—'] : !eq?.enabled ? ['off', 'muted']
-    : core?.active ? [`active${clipped}`, clipped ? 'bad' : 'good']
-      : a?.plan?.bitPerfect ? ['on, not applied (bitperfect)', 'warn']
-        : [`on, not active${clipped}`, a?.plan ? 'warn' : 'muted', a?.plan ? '' : 'the room is not playing in a zone'];
+  const core = a?.plan?.equalizer, clipped = core?.clippedSamples > 0 ? `, ${tt('clients.samplesClipped', { n: core.clippedSamples })}` : '';
+  const eqInfo = !r ? ['—'] : !eq?.enabled ? [tt('common.off'), 'muted']
+    : core?.active ? [tt('clients.active') + clipped, clipped ? 'bad' : 'good']
+      : a?.plan?.bitPerfect ? [tt('clients.onNotApplied'), 'warn']
+        : [tt('clients.onNotActive') + clipped, a?.plan ? 'warn' : 'muted', a?.plan ? '' : tt('clients.roomIsNot')];
   // The device: its own name from its beacon, else what its machine says it is
   // (GET system) or its platform.
   const device = c?.host ?? m?.machineModel ?? c?.platform;
@@ -2198,20 +2219,20 @@ function clientCard({ c, r }) {
       h('div', { class: 'client-card-name' }, r?.name ?? c?.name ?? '—'),
       h('div', { class: 'client-card-id muted mono' }, id)),
     unwell && h('span', { class: 'client-card-health ' + (unwell.state === 'unstable' ? 'bad' : 'warn'), title: healthText(unwell),
-      'aria-label': `${unwell.state}: ${healthText(unwell)}`, role: 'img' }, icon('alert')),
-    h('span', { class: 'client-card-link' + (stale ? ' stale' : '') + (link[0] === 'linkUnknown' ? ' unknown' : ''), title: stale ? `${link[1]} (last link; not heard)` : link[1],
-      'aria-label': stale ? `${link[1]}, last link, not heard` : link[1], role: 'img' }, icon(link[0])),
+      'aria-label': `${tv('state', unwell.state)}: ${healthText(unwell)}`, role: 'img' }, icon('alert')),
+    h('span', { class: 'client-card-link' + (stale ? ' stale' : '') + (link[0] === 'linkUnknown' ? ' unknown' : ''), title: stale ? tt('clients.lastLinkNot', { link: link[1] }) : link[1],
+      'aria-label': stale ? tt('clients.lastLinkNotHeard', { link: link[1] }) : link[1], role: 'img' }, icon(link[0])),
     h('dl', { class: 'client-card-info' },
-      info('State', text, cls),
+      info('clients.state', text, cls),
       // A room that announced deep sleep keeps saying so while it is away.
-      info('Power', a?.powerState ? powerLabel(a.powerState) : '—', a?.powerState ? (a.powerState === 'on' ? 'good' : 'warn') : 'muted',
-        a?.connected || a?.powerState ? '' : 'reported while connected'),
-      info('Bitperfect', bitPerfect == null ? 'Unknown' : bitPerfect ? 'Yes' : 'No', bitPerfect == null ? 'muted' : bitPerfect ? 'good' : 'warn'),
-      bitPerfect === false && info('Reason', bitPerfectReason, 'client-card-reason', bitPerfectReason),
-      info('EQ', ...eqInfo),
-      info('IP', c?.address ?? a?.address ?? '—'),
-      info('Version', c?.clientVersion ?? '—'),
-      info('Seen', c ? (c.present ? `${fmtNum(c.lastSeenMsAgo / 1000, 1)} s ago` : 'gone') : '—', c && !c.present ? 'bad' : '')),
+      info('clients.power', a?.powerState ? powerLabel(a.powerState) : '—', a?.powerState ? (a.powerState === 'on' ? 'good' : 'warn') : 'muted',
+        a?.connected || a?.powerState ? '' : tt('clients.reportedWhileConnected')),
+      info('clients.bitperfect', tt(bitPerfect == null ? 'clients.unknown' : bitPerfect ? 'clients.yes' : 'clients.no'), bitPerfect == null ? 'muted' : bitPerfect ? 'good' : 'warn'),
+      bitPerfect === false && info('clients.reason', bitPerfectReason, 'client-card-reason', bitPerfectReason),
+      info('clients.eq', ...eqInfo),
+      info('clients.ip', c?.address ?? a?.address ?? '—'),
+      info('clients.version', c?.clientVersion ?? '—'),
+      info('clients.seen', c ? (c.present ? tt('clients.sAgo', { n: fmtNum(c.lastSeenMsAgo / 1000, 1) }) : tt('clients.gone')) : '—', c && !c.present ? 'bad' : '')),
     // Every card has every button, in the same place; one that does not apply is disabled.
     h('div', { class: 'client-tools' },
       // The room's own volume and mute, as on its page; none without a room.
@@ -2221,15 +2242,15 @@ function clientCard({ c, r }) {
         class: 'attach', disabled: pointing.has(id) || !(c || attached) || Boolean(c && !c.present),
         'aria-busy': pointing.has(id) ? 'true' : null,
         onclick: () => (attached ? detachClient(id) : attachClient(id, state)),
-      }, pointing.has(id) ? h('span', { class: 'spinner', 'aria-hidden': 'true' }) : attached ? 'detach' : 'attach'),
+      }, pointing.has(id) ? h('span', { class: 'spinner', 'aria-hidden': 'true' }) : tt(attached ? 'clients.detach' : 'clients.attach')),
       h('button', {
         class: 'icon-only danger', disabled: !r || Boolean(a?.connected),
-        title: !r ? 'no room to forget' : a?.connected ? 'a connected room is not forgotten' : 'Forget room',
-        'aria-label': `Forget ${r?.name ?? id}`, onclick: () => forgetRoom(r),
+        title: tt(!r ? 'clients.noRoomTo' : a?.connected ? 'clients.connectedRoomIs' : 'clients.forgetRoom'),
+        'aria-label': tt('clients.forgetName', { name: r?.name ?? id }), onclick: () => forgetRoom(r),
       }, icon('trash')),
       h('button', {
-        class: 'icon-only', disabled: !r, title: r ? 'Room settings' : 'no room yet',
-        'aria-label': `Settings of ${r?.name ?? id}`, onclick: () => openRoom(id),
+        class: 'icon-only', disabled: !r, title: tt(r ? 'clients.roomSettings' : 'clients.noRoomYet'),
+        'aria-label': tt('clients.settingsOf', { name: r?.name ?? id }), onclick: () => openRoom(id),
       }, icon('setup'))));
 }
 
@@ -2239,15 +2260,15 @@ function roomVolumeRow(r) {
   const patch = (body) => act(() => api('PATCH', `rooms/${enc(r.client)}`, body));
   const noVolume = a?.volumeControl?.effective === 'disabled';
   return volumeRow(d.volume ?? s?.volume ?? 1, Boolean(d.muted ?? s?.muted), (volume) => patch({ volume }), (muted) => patch({ muted }),
-    { disabled: noVolume, title: noVolume ? `volume control is disabled${a.volumeControl.reason ? `: ${a.volumeControl.reason}` : ''}` : '' });
+    { disabled: noVolume, title: noVolume ? tt('clients.volumeControlIs') + (a.volumeControl.reason ? `: ${a.volumeControl.reason}` : '') : '' });
 }
 
 // DELETE rooms/{client} (server phase 39), for a room that is not connected.
 async function forgetRoom(r) {
   // By its id too: two rooms can carry one name (a client that got a new id).
-  if (await confirmDelete({ title: 'Forget room', what: r.name && r.name !== r.client ? `${r.name} (${r.client})` : r.client, action: 'Forget',
-    text: 'Its zone, volume, settings and image go. If it connects again it is a new room.' })) {
-    act(() => api('DELETE', `rooms/${enc(r.client)}`), 'room forgotten');
+  if (await confirmDelete({ title: tt('clients.forgetRoom'), what: r.name && r.name !== r.client ? `${r.name} (${r.client})` : r.client, action: tt('clients.forget'),
+    text: tt('clients.itsZoneVolume') })) {
+    act(() => api('DELETE', `rooms/${enc(r.client)}`), 'clients.roomForgotten');
   }
 }
 
@@ -2298,15 +2319,15 @@ function onRoomsSync(data) {
   if (healthMoved) renderZones();
 }
 
-const POWER_LABELS = { standbyManual: 'standby (manual)', sleep: 'deep sleep', sleepButtonOnly: 'deep sleep, press POWER' };
-const powerLabel = (state) => POWER_LABELS[state] ?? state;
+// A room's power state by its key (power.standbyManual), else as the server names it.
+const powerLabel = (state) => tv('power', state);
 
 // A room's health as the server answers it (server phase 34), verbatim.
 function healthText(hl) {
-  return [hl.state, hl.state === 'unstable' && `${hl.rejoins} rejoins this episode`,
-    hl.recentUnderruns > 0 && `${hl.recentUnderruns} underruns in the last 30 s`,
-    hl.since && `since ${new Date(hl.since).toLocaleTimeString(undefined, { hour12: false })}`,
-    hl.backoffMs != null && `back-off ${hl.backoffMs} ms`, hl.trigger && `trigger ${hl.trigger}`, hl.detail,
+  return [tv('state', hl.state), hl.state === 'unstable' && tt('clients.rejoinsThisEpisode', { n: hl.rejoins }),
+    hl.recentUnderruns > 0 && tt('clients.underrunsInLast', { n: hl.recentUnderruns }),
+    hl.since && tt('clients.since', { time: new Date(hl.since).toLocaleTimeString(undefined, { hour12: false }) }),
+    hl.backoffMs != null && tt('clients.backOffMs', { n: hl.backoffMs }), hl.trigger && tt('clients.trigger', { name: hl.trigger }), hl.detail,
     hl.wifiRssiDbm != null && `Wi-Fi ${wifiSignal(hl.wifiRssiDbm)}`].filter(Boolean).join(' · ');
 }
 
@@ -2320,8 +2341,9 @@ function roomArt(client) {
 }
 const roomImageUrl = (client) => `/api/v1/rooms/${enc(client)}/image?v=${roomImageVersion.get(client) ?? 0}`;
 
-// A setting in a row of the client's settings page: its label, its controls.
-const roomField = (label, ...control) => h('div', { class: 'room-field' }, h('span', { class: 'room-field-label' }, label), h('div', { class: 'room-field-control' }, ...control));
+// A setting in a row of the client's settings page: its label (translated
+// here), its controls.
+const roomField = (label, ...control) => h('div', { class: 'room-field' }, h('span', { class: 'room-field-label' }, tt(label)), h('div', { class: 'room-field-control' }, ...control));
 
 // One client's settings page (#/client/<id>): a header with the room's
 // picture, state, name, zone and volume and its actions; under it one card,
@@ -2341,7 +2363,7 @@ function roomSettings(r) {
   // A control the device answers is shown while it is offline too, disabled,
   // with why; one it has not reported yet stands as an empty select.
   const offline = !a?.connected;
-  const why = a ? `${name} is not connected` : `${name} has never reported`;
+  const why = tt(a ? 'room.isNotConnected' : 'room.hasNeverReported', { name });
   const live = (...controls) => (offline ? h('fieldset', { class: 'room-offline', disabled: true, title: why }, ...controls) : controls);
   const unknown = () => h('select', { disabled: true, title: why, 'aria-label': why }, h('option', {}, '—'));
 
@@ -2354,7 +2376,7 @@ function roomSettings(r) {
   // The name, renamed in place: a connected room only (server phase 39).
   const title = h('h1', { class: 'room-hero-name' }, h('span', {}, name),
     h('button', {
-      type: 'button', class: 'icon-only', disabled: offline, title: offline ? `Rename: ${why}` : 'Rename', 'aria-label': `Rename ${name}`,
+      type: 'button', class: 'icon-only', disabled: offline, title: offline ? `${tt('common.rename')}: ${why}` : tt('common.rename'), 'aria-label': tt('room.rename', { name }),
       onclick(e) {
         const head = e.currentTarget.closest('h1');
         head.replaceChildren(h('form', {
@@ -2362,24 +2384,24 @@ function roomSettings(r) {
           onsubmit(ev) {
             ev.preventDefault();
             const value = ev.target.elements.name.value.trim();
-            if (value && value !== name) act(() => api('PATCH', path, { name: value }), 'renamed');
+            if (value && value !== name) act(() => api('PATCH', path, { name: value }), 'room.renamed');
             document.activeElement?.blur();
             renderRooms();
           },
-        }, h('input', { name: 'name', value: name, maxlength: 64, 'aria-label': 'Room name', onkeydown(ev) { if (ev.key === 'Escape') { ev.target.blur(); renderRooms(); } } }),
-        h('button', { class: 'primary' }, 'Save')));
+        }, h('input', { name: 'name', value: name, maxlength: 64, 'aria-label': tt('room.roomName'), onkeydown(ev) { if (ev.key === 'Escape') { ev.target.blur(); renderRooms(); } } }),
+        h('button', { class: 'primary' }, tt('common.save'))));
         head.querySelector('input').select();
       },
     }, icon('edit')));
 
   // The zone it is in, picked here too: another zone, or one of its own.
   const zoneSelect = h('select', {
-    class: 'pill-select', value: d.zone ?? '', 'aria-label': `Zone of ${name}`, title: 'Move to another zone',
+    class: 'pill-select', value: d.zone ?? '', 'aria-label': tt('room.zoneOf', { name }), title: tt('room.moveToAnother'),
     onchange: (e) => (e.target.value === '+own' ? moveRoom(r.client, null) : moveRoom(r.client, e.target.value)),
   },
-  d.zone ? null : h('option', { value: '' }, 'Zone: —'),
-  S.zones.map((z) => h('option', { value: z.zone }, `Zone: ${z.name ?? z.zone}`)),
-  !alone && h('option', { value: '+own' }, 'A zone of its own'));
+  d.zone ? null : h('option', { value: '' }, tt('room.zone', { name: '—' })),
+  S.zones.map((z) => h('option', { value: z.zone }, tt('room.zone', { name: z.name ?? z.zone }))),
+  !alone && h('option', { value: '+own' }, tt('room.zoneOfIts')));
 
   const health = a?.health && a.health.state !== 'ok';
   const backdrop = h('div', { class: 'room-backdrop', style: `--room-art: url("${own ?? art}"), url("${art}")`, 'aria-hidden': 'true' });
@@ -2387,85 +2409,85 @@ function roomSettings(r) {
     picture,
     h('div', { class: 'room-hero-main' },
       h('div', { class: 'room-pills' },
-        pill(a?.connected ? 'good' : 'bad', a ? (a.connected ? 'Connected' : 'Disconnected') : 'Never reported'),
-        zone?.queue?.transport === 'playing' && pill('good', 'Playing'),
-        health && pill(a.health.state === 'unstable' ? 'bad' : 'warn', `⚠ ${a.health.state}`, healthText(a.health)),
-        a?.powerState && a.powerState !== 'on' && pill('warn', `Power: ${powerLabel(a.powerState)}`)),
+        pill(a?.connected ? 'good' : 'bad', tt(a ? (a.connected ? 'room.connected' : 'room.disconnected') : 'room.neverReported')),
+        zone?.queue?.transport === 'playing' && pill('good', tt('room.playing')),
+        health && pill(a.health.state === 'unstable' ? 'bad' : 'warn', `⚠ ${tv('state', a.health.state)}`, healthText(a.health)),
+        a?.powerState && a.powerState !== 'on' && pill('warn', tt('room.powerState', { state: powerLabel(a.powerState) }))),
       title,
       zone && h('div', { class: 'room-hero-zone muted' }, zone.name ?? zone.zone),
       h('div', { class: 'room-pills' },
-        zone && 'user' in zone && pill('', zone.user || 'Household', 'listener of its zone'),
+        zone && 'user' in zone && pill('', zone.user || tt('room.household'), tt('room.listenerOfIts')),
         zoneSelect,
         a?.address && pill('', `IP ${a.address}`),
-        h('span', { class: 'pill mono', title: 'client id' }, r.client)),
+        h('span', { class: 'pill mono', title: tt('room.clientId') }, r.client)),
       roomVolumeRow(r)),
     h('div', { class: 'room-hero-actions' },
-      h('button', { type: 'button', disabled: offline, title: offline ? why : '', onclick: () => act(() => api('POST', `${path}/rejoin`), 'rejoin sent') }, icon('refresh'), 'Rejoin'),
+      h('button', { type: 'button', disabled: offline, title: offline ? why : '', onclick: () => act(() => api('POST', `${path}/rejoin`), 'room.rejoinSent') }, icon('refresh'), tt('room.rejoin')),
       // Asleep on Ethernet: a Wake-on-LAN magic packet ends it; playing its zone does too.
-      a?.powerState === 'sleep' && h('button', { type: 'button', title: `Wake-on-LAN to ${a.wakeOnLan ?? 'its wired address'}`, onclick: () => act(() => api('POST', `${path}/wake`), 'wake sent') }, icon('power'), 'Wake'),
-      h('button', { type: 'button', onclick: (e) => e.currentTarget.nextElementSibling.click() }, icon('image'), 'Set image'),
+      a?.powerState === 'sleep' && h('button', { type: 'button', title: tt('room.wakeOnLan', { address: a.wakeOnLan ?? tt('room.itsWiredAddress') }), onclick: () => act(() => api('POST', `${path}/wake`), 'room.wakeSent') }, icon('power'), tt('room.wake')),
+      h('button', { type: 'button', onclick: (e) => e.currentTarget.nextElementSibling.click() }, icon('image'), tt('room.setImage')),
       h('input', {
-        type: 'file', hidden: true, accept: 'image/jpeg,image/png,image/gif,image/webp', 'aria-label': `Image of ${name}`,
+        type: 'file', hidden: true, accept: 'image/jpeg,image/png,image/gif,image/webp', 'aria-label': tt('room.imageOf', { name }),
         onchange(e) {
           const file = e.target.files[0];
           e.target.value = '';
-          if (file) act(() => api('PUT', `${path}/image`, file), 'image set');
+          if (file) act(() => api('PUT', `${path}/image`, file), 'room.imageSet');
         },
       }),
       h('span', { class: 'room-more' },
-        h('button', { type: 'button', class: 'icon-only', title: 'More', 'aria-label': 'More', 'aria-haspopup': 'menu', onclick: (e) => e.currentTarget.nextElementSibling.togglePopover() }, icon('more')),
+        h('button', { type: 'button', class: 'icon-only', title: tt('common.more'), 'aria-label': tt('common.more'), 'aria-haspopup': 'menu', onclick: (e) => e.currentTarget.nextElementSibling.togglePopover() }, icon('more')),
         h('div', { class: 'pick-popover', popover: 'auto', role: 'menu', ontoggle(e) { if (e.newState === 'open') placeUnderButton(this); } },
-          h('button', { type: 'button', disabled: !own, onclick: () => act(() => api('DELETE', `${path}/image`), 'image removed') }, icon('trash'), 'Remove image'),
-          d.zone && !alone && h('button', { type: 'button', onclick: () => moveRoom(r.client, null) }, icon('zones'), 'Take out of the zone'),
-          h('button', { type: 'button', class: 'danger', disabled: Boolean(a?.connected), title: a?.connected ? 'a connected room is not forgotten' : '', onclick: () => forgetRoom(r) }, icon('trash'), 'Forget room')))));
+          h('button', { type: 'button', disabled: !own, onclick: () => act(() => api('DELETE', `${path}/image`), 'room.imageRemoved') }, icon('trash'), tt('room.removeImage')),
+          d.zone && !alone && h('button', { type: 'button', onclick: () => moveRoom(r.client, null) }, icon('zones'), tt('room.takeOutOf')),
+          h('button', { type: 'button', class: 'danger', disabled: Boolean(a?.connected), title: a?.connected ? tt('room.connectedRoomIs') : '', onclick: () => forgetRoom(r) }, icon('trash'), tt('room.forgetRoom'))))));
 
   // A row: what it is on the left, its controls on the right.
   const row = (iconName, heading, about, ...content) => h('section', { class: 'room-row' },
     h('div', { class: 'room-row-intro' }, h('span', { class: 'card-icon' }, icon(iconName)),
-      h('div', {}, h('h2', {}, heading), h('p', {}, about))),
+      h('div', {}, h('h2', {}, tt(heading)), h('p', {}, tt(about)))),
     h('div', { class: 'room-row-content' }, ...content));
   const field = roomField;
 
-  const audio = row('volume', 'Audio device', 'The output device, its buffer and how the volume is played.',
-    (a?.audioDevices || offline) && field('Output', live(a?.audioDevices ? audioDevicePicker(a.audioDevices, patch, path) : unknown())),
-    (a?.bufferMs != null || offline) && field('Buffer size (ms)', live(a?.bufferMs != null ? bufferEditor(a.bufferMs, path) : unknown())),
-    (a?.volumeControl || offline) && field('Volume control', live(a?.volumeControl
+  const audio = row('volume', 'room.audioDevice', 'room.outputDeviceIts',
+    (a?.audioDevices || offline) && field('room.output', live(a?.audioDevices ? audioDevicePicker(a.audioDevices, patch, path) : unknown())),
+    (a?.bufferMs != null || offline) && field('room.bufferSizeMs', live(a?.bufferMs != null ? bufferEditor(a.bufferMs, path) : unknown())),
+    (a?.volumeControl || offline) && field('room.volumeControl', live(a?.volumeControl
       ? volumeControlEditor(a.volumeControl, d.audioControl ?? s?.audioControl, a.capabilities?.hardwareVolume, path) : unknown())),
-    (a?.driftCorrection?.mode || offline) && field('Drift correction', live(a?.driftCorrection?.mode ? driftCorrectionEditor(a.driftCorrection, path) : unknown())),
-    field('Audio control',
-      h('select', { value: d.audioControl ?? s?.audioControl ?? 'auto', 'aria-label': 'Audio control', onchange: (e) => patch({ audioControl: e.target.value }) },
-        AUDIO_CONTROLS.map(([m, label, about]) => h('option', { value: m, title: about }, label))),
+    (a?.driftCorrection?.mode || offline) && field('room.driftCorrection', live(a?.driftCorrection?.mode ? driftCorrectionEditor(a.driftCorrection, path) : unknown())),
+    field('room.audioControl',
+      h('select', { value: d.audioControl ?? s?.audioControl ?? 'auto', 'aria-label': tt('room.audioControl'), onchange: (e) => patch({ audioControl: e.target.value }) },
+        AUDIO_CONTROLS.map(([m, label, about]) => h('option', { value: m, title: tt(about) }, tt(label)))),
       plan && h('span', { class: 'pill badge ' + (bitPerfect.value ? 'good' : s?.audioControl === 'bitPerfect' ? 'bad' : plan.bitPerfect ? 'warn' : 'muted'),
         title: bitPerfect.value ? plan.reason : bitPerfect.reason },
-        bitPerfect.value ? (plan.driftActuator === 'hardwareClock' ? '● bitperfect · hardware clock synchronized' : '● bitperfect')
-          : s?.audioControl === 'bitPerfect' ? '○ Force Bit-Perfect set, not reached'
-            : plan.bitPerfect ? '○ not bitperfect at the device' : '○ resampled'),
-      plan?.replanPending && h('span', { class: 'pill badge muted', title: 'Left alone in its zone while it plays: this plan is kept to the end of the track, and the next one plays as the room did alone.' },
-        'alone from next track')),
-    offline && h('p', { class: 'muted small' }, `${why}: its output, buffer, volume control and drift correction are changed while it is connected.`));
+        tt(bitPerfect.value ? (plan.driftActuator === 'hardwareClock' ? 'room.bitperfectHardwareClock' : 'room.bitperfect')
+          : s?.audioControl === 'bitPerfect' ? 'room.forceBitPerfect'
+            : plan.bitPerfect ? 'room.notBitperfectAt' : 'room.resampled')),
+      plan?.replanPending && h('span', { class: 'pill badge muted', title: tt('room.leftAloneIn') },
+        tt('room.aloneFromNext'))),
+    offline && h('p', { class: 'muted small' }, `${why}: ${tt('room.itsOutputBuffer')}`));
 
-  const eq = row('wave', 'Equalizer', 'Adjust the sound for this room.', eqEditor(r.client, d.equalizer ?? s?.equalizer, plan, path));
+  const eq = row('wave', 'room.equalizer', 'room.adjustSoundFor', eqEditor(r.client, d.equalizer ?? s?.equalizer, plan, path));
 
   // Sync and buffer: the measures as tiles, each with its graph, then the room's own timing.
-  const tile = (label, value, extra, attrs = {}) => h('div', { class: 'room-stat', ...attrs }, h('span', { class: 'muted small' }, label), h('strong', {}, value), extra);
+  const tile = (label, value, extra, attrs = {}) => h('div', { class: 'room-stat', ...attrs }, h('span', { class: 'muted small' }, tt(label)), h('strong', {}, value), extra);
   const graph = (key, digits, off) => spark('', r.client, key, digits, off);
   const bufferPct = a?.bufferMs && a?.bufferedMs != null ? Math.min(100, (a.bufferedMs / a.bufferMs) * 100) : null;
   const clock = hardwareClockOf(a);
   const clockError = a?.driftCorrection?.hardwareClock?.error;
-  const syncRow = row('clock', 'Sync & buffer', 'Synchronisation and buffering for multiroom playback.',
+  const syncRow = row('clock', 'room.syncBuffer', 'room.synchronisationAndBuffering',
     a?.connected ? h('div', { class: 'room-stats' },
-      tile(plan && !plan.driftCorrected ? 'Drift (not corrected)' : 'Drift', `${fmtNum(sync?.driftPpm, 1)} ppm`, graph('driftPpm', 3)),
-      tile('Offset (target)', `${fmtNum(sync?.offsetUs, 0)} µs`, graph('offsetUs', 1)),
+      tile(plan && !plan.driftCorrected ? 'room.driftNotCorrected' : 'room.drift', `${fmtNum(sync?.driftPpm, 1)} ppm`, graph('driftPpm', 3)),
+      tile('room.offsetTarget', `${fmtNum(sync?.offsetUs, 0)} µs`, graph('offsetUs', 1)),
       // Through the hardware clock the applied correction is what the clock is set to.
-      clock ? tile('Hardware clock', `${clock.ppm > 0 ? '+' : ''}${clock.ppm} ppm`, graph('clockPpm', 0), {
-        title: `positive slows the clock${a.driftCorrection?.hardwareClock?.saturated ? "; at the device's limit" : ''}${clockError ? `; error: ${clockError}` : ''}`,
-      }) : tile(plan && !plan.driftCorrected ? 'Applied (not corrected)' : 'Applied correction', `${fmtNum(sync?.appliedPpm, 1)} ppm`,
+      clock ? tile('room.hardwareClock', `${clock.ppm > 0 ? '+' : ''}${clock.ppm} ppm`, graph('clockPpm', 0), {
+        title: tt('room.positiveSlowsClock') + (a.driftCorrection?.hardwareClock?.saturated ? `; ${tt('room.atDevicesLimit')}` : '') + (clockError ? `; ${tt('room.error', { error: clockError })}` : ''),
+      }) : tile(plan && !plan.driftCorrected ? 'room.appliedNotCorrected' : 'room.appliedCorrection', `${fmtNum(sync?.appliedPpm, 1)} ppm`,
         graph('appliedPpm', 3, plan && !plan.driftCorrected)),
-      clock && tile('Clock target (core)', `${fmtNum(clock.targetPpm, 1)} ppm`, graph('clockTargetPpm', 1)),
-      clock?.hz != null && tile('Sample clock', `${fmtNum(clock.hz, 3)} Hz`, graph('clockHz', 3), { title: `nominal ${a.plan.outputFormat.sampleRate} Hz` }),
-      tile('Buffer', a.bufferedMs != null ? `${fmtNum(a.bufferedMs / 1000, 1)} s` : '—', graph('bufferedMs', 0),
-        { title: bufferPct != null ? `${Math.round(bufferPct)} % of the ${fmtNum(a.bufferMs / 1000, 1)} s buffer` : '' }),
-      tile('Underruns / rejoins', `${a.playback?.underruns ?? '—'} / ${a.rejoins ?? '—'}`)) : h('p', { class: 'muted small' }, 'Measured while the room is connected.'),
+      clock && tile('room.clockTargetCore', `${fmtNum(clock.targetPpm, 1)} ppm`, graph('clockTargetPpm', 1)),
+      clock?.hz != null && tile('room.sampleClock', `${fmtNum(clock.hz, 3)} Hz`, graph('clockHz', 3), { title: tt('room.nominalHz', { rate: a.plan.outputFormat.sampleRate }) }),
+      tile('room.buffer', a.bufferedMs != null ? `${fmtNum(a.bufferedMs / 1000, 1)} s` : '—', graph('bufferedMs', 0),
+        { title: bufferPct != null ? tt('room.ofSBuffer', { pct: Math.round(bufferPct), size: fmtNum(a.bufferMs / 1000, 1) }) : '' }),
+      tile('room.underrunsRejoins', `${a.playback?.underruns ?? '—'} / ${a.rejoins ?? '—'}`)) : h('p', { class: 'muted small' }, tt('room.measuredWhileRoom')),
     h('form', {
       class: 'room-inline-form',
       onsubmit(e) {
@@ -2476,54 +2498,54 @@ function roomSettings(r) {
         if (Object.keys(body).length) patch(body);
       },
     },
-    h('label', {}, 'Max. volume (dB)', h('input', { name: 'db', type: 'number', min: -60, max: 0, step: 1, class: 'w-num', value: String(d.maxVolumeDb ?? 0) })),
-    h('label', {}, 'Output latency (ms)', h('input', { name: 'ms', type: 'number', min: 0, class: 'w-num', value: String(d.outputLatencyMs ?? s?.outputLatencyMs ?? '') })),
-    h('button', { class: 'primary' }, 'Apply')));
+    h('label', {}, tt('room.maxVolumeDb'), h('input', { name: 'db', type: 'number', min: -60, max: 0, step: 1, class: 'w-num', value: String(d.maxVolumeDb ?? 0) })),
+    h('label', {}, tt('room.outputLatencyMs'), h('input', { name: 'ms', type: 'number', min: 0, class: 'w-num', value: String(d.outputLatencyMs ?? s?.outputLatencyMs ?? '') })),
+    h('button', { class: 'primary' }, tt('room.apply'))));
 
   // The device's own settings: its network link, LEDs and power.
-  const device = row('device', 'Device', 'Network link, LEDs and power of the device.',
-    offline ? h('p', { class: 'muted small' }, `${why}: its Ethernet speed, LEDs and power are read and changed while it is connected.`)
+  const device = row('device', 'room.device', 'room.networkLinkLeds',
+    offline ? h('p', { class: 'muted small' }, `${why}: ${tt('room.itsEthernetSpeed')}`)
       : deviceSettingsEditor(r.client, path));
 
-  const buttons = a?.inputs?.length > 0 && row('grip', 'Buttons & encoders', 'What the buttons and encoders on the device do.',
+  const buttons = a?.inputs?.length > 0 && row('grip', 'room.buttonsEncoders', 'room.whatButtonsAnd',
     S.lastInput[r.client] && lastInputLine(S.lastInput[r.client]),
     inputsEditor(r.client, a.inputs, path, a.deepSleep));
 
   const caps = a?.capabilities;
-  const capabilities = caps && row('chip', 'Capabilities', 'The formats and controls the device reports.',
-    caps.accessMode && field('Access mode', caps.accessMode),
-    caps.hardwareVolume && field('Hardware volume', fmtHardwareVolume(caps.hardwareVolume)),
-    caps.hardwareClock && field('Hardware clock', caps.hardwareClock.available
-      ? `${caps.hardwareClock.control ?? 'yes'} (${caps.hardwareClock.minPpm} … ${caps.hardwareClock.maxPpm} ppm)` : 'none'),
+  const capabilities = caps && row('chip', 'room.capabilities', 'room.formatsAndControls',
+    caps.accessMode && field('room.accessMode', caps.accessMode),
+    caps.hardwareVolume && field('room.hardwareVolume', fmtHardwareVolume(caps.hardwareVolume)),
+    caps.hardwareClock && field('room.hardwareClock', caps.hardwareClock.available
+      ? `${caps.hardwareClock.control ?? tt('room.yes')} (${caps.hardwareClock.minPpm} … ${caps.hardwareClock.maxPpm} ppm)` : tt('common.none')),
     h('details', { class: 'sub', 'data-key': `caps:${r.client}` },
-      h('summary', {}, `Formats (${caps.formats.length})`),
+      h('summary', {}, tt('room.formats', { n: caps.formats.length })),
       h('div', { class: 'small mono', style: 'white-space: pre-wrap' }, caps.formats.map(fmtFmt).join('\n'))));
 
   // The rest: the desired/effective/core table, the plan and the raw record.
   const text = (v) => (v == null ? '—' : String(v));
-  const cell = (label, want, eff, have) => h('tr', {}, h('td', {}, label), h('td', {}, text(want)),
+  const cell = (label, want, eff, have) => h('tr', {}, h('td', {}, tt(label)), h('td', {}, text(want)),
     h('td', { class: eff != null && want != null && String(eff) !== String(want) ? 'warn' : '' }, text(eff)),
     h('td', { class: eff != null && have != null && String(eff) !== String(have) ? 'diff' : '' }, text(have)));
-  const diagnostics = row('pulse', 'Diagnostics', 'The playback plan, the settings as the core has them and the raw record.',
-    a?.notReadyReason && h('p', { class: 'warn small' }, `not ready: ${a.notReadyReason}`),
+  const diagnostics = row('pulse', 'room.diagnostics', 'room.playbackPlanSettings',
+    a?.notReadyReason && h('p', { class: 'warn small' }, tt('room.notReady', { reason: a.notReadyReason })),
     health && h('p', { class: (a.health.state === 'unstable' ? 'bad' : 'warn') + ' small' }, healthText(a.health)),
     h('div', { class: 'room-pills' }, a?.volumeControl && volumeBadge(a.volumeControl, s),
       plan && h('span', { class: 'pill badge ' + (plan.driftCorrected ? 'good' : 'muted'), title: a?.driftCorrection?.disabledBy ?? plan.description ?? plan.reason },
-        plan.driftCorrected ? (plan.driftActuator === 'hardwareClock' ? '● drift corrected (hardware clock)' : '● drift corrected') : '○ no drift correction')),
-    plan && h('div', { class: 'small' }, h('span', { class: 'muted' }, 'plan: '), plan.reason,
+        tt(plan.driftCorrected ? (plan.driftActuator === 'hardwareClock' ? 'room.driftCorrectedHardware' : 'room.driftCorrected') : 'room.noDriftCorrection'))),
+    plan && h('div', { class: 'small' }, h('span', { class: 'muted' }, `${tt('room.plan')}: `), plan.reason,
       h('div', {}, `out ${fmtFmt(plan.outputFormat)} · src ${fmtFmt(plan.sourceFormat)}`),
       plan.description && h('div', { class: 'muted' }, plan.description)),
-    a?.startDetail && h('div', { class: 'small muted' }, `start: ${a.startDetail}`),
+    a?.startDetail && h('div', { class: 'small muted' }, `${tt('room.start')}: ${a.startDetail}`),
     d.grouped && h('div', { class: 'small warn' }, driftNotCorrected(a?.driftCorrection)
-      ? `In a zone with other rooms, but not drift corrected: ${driftNotCorrected(a.driftCorrection)}.`
-      : 'In a zone with other rooms this room is drift corrected; Force Bit-Perfect keeps it bitperfect and lets it drift.'),
+      ? tt('room.inZoneWith', { reason: driftNotCorrected(a.driftCorrection) })
+      : tt('room.inZoneWithOther')),
     h('div', { class: 'table-wrap plain' }, h('table', { class: 'small' },
-      h('tr', {}, h('th', {}, 'setting'), h('th', {}, 'desired'), h('th', {}, 'effective'), h('th', {}, 'core')),
-      cell('audio control', audioControlLabel(d.audioControl), audioControlLabel(d.audioControl), s && audioControlLabel(s.audioControl)),
-      cell('volume', d.volume, d.effectiveVolume, s?.volume),
-      cell('muted', d.muted, d.effectiveMuted, s?.muted),
-      cell('max volume dB', d.maxVolumeDb, d.maxVolumeDb, undefined),
-      cell('output latency ms', d.outputLatencyMs, d.outputLatencyMs, s?.outputLatencyMs))));
+      h('tr', {}, h('th', {}, tt('room.setting')), h('th', {}, tt('room.desired')), h('th', {}, tt('room.effective')), h('th', {}, tt('room.core'))),
+      cell('room.setting.audioControl', audioControlLabel(d.audioControl), audioControlLabel(d.audioControl), s && audioControlLabel(s.audioControl)),
+      cell('room.volume', d.volume, d.effectiveVolume, s?.volume),
+      cell('room.muted', d.muted, d.effectiveMuted, s?.muted),
+      cell('room.setting.maxVolumeDb', d.maxVolumeDb, d.maxVolumeDb, undefined),
+      cell('room.setting.outputLatencyMs', d.outputLatencyMs, d.outputLatencyMs, s?.outputLatencyMs))));
 
   return h('div', { class: 'room-settings' }, backdrop, hero,
     h('div', { class: 'room-rows' }, audio, eq, syncRow, device, buttons, capabilities, diagnostics));
@@ -2563,42 +2585,42 @@ function deviceSettingsEditor(client, path) {
   if (!state.loaded && !state.loading) setTimeout(reload, 0);
   const field = roomField;
   return [
-    !state.loaded && h('p', { class: 'muted small' }, 'Reading the device settings…'),
+    !state.loaded && h('p', { class: 'muted small' }, tt('room.readingDeviceSettings')),
     state.networkError && h('p', { class: 'bad small' }, state.networkError),
     state.ledsError && h('p', { class: 'bad small' }, state.ledsError),
     state.powerError && h('p', { class: 'bad small' }, state.powerError),
-    state.network?.supported && field('Ethernet speed', h('select', {
-      value: state.network.network.ethernet.speedMbps, disabled: state.loading, 'aria-label': `Ethernet link speed of ${client}`,
-      onchange: e => change('network', { speedMbps: e.target.value }, 'Ethernet speed saved; the client reconnects shortly.'),
-    }, [['auto', 'Automatic (10 / 100 Mbps)'], ['10', '10 Mbps'], ['100', '100 Mbps']].map(([value, label]) => h('option', { value }, label)))),
-    state.leds?.supported && field('LEDs', h('select', {
-      value: String(state.leds.off), disabled: state.loading, 'aria-label': `LED mode of ${client}`,
-      onchange: e => change('leds', { off: e.target.value === 'true' }, 'LED mode saved.'),
-    }, h('option', { value: 'false' }, 'On'), h('option', { value: 'true' }, 'Off')),
-    h('span', { class: 'small muted' }, 'Boot and firmware update indications stay on.')),
-    state.power?.supported && field('Power',
+    state.network?.supported && field('room.ethernetSpeed', h('select', {
+      value: state.network.network.ethernet.speedMbps, disabled: state.loading, 'aria-label': tt('room.ethernetLinkSpeed', { name: client }),
+      onchange: e => change('network', { speedMbps: e.target.value }, 'room.ethernetSpeedSaved'),
+    }, [['auto', 'room.speedAuto'], ['10', 'room.speed10'], ['100', 'room.speed100']].map(([value, label]) => h('option', { value }, tt(label))))),
+    state.leds?.supported && field('room.leds', h('select', {
+      value: String(state.leds.off), disabled: state.loading, 'aria-label': tt('room.ledModeOf', { name: client }),
+      onchange: e => change('leds', { off: e.target.value === 'true' }, 'room.ledModeSaved'),
+    }, h('option', { value: 'false' }, tt('room.on')), h('option', { value: 'true' }, tt('room.off'))),
+    h('span', { class: 'small muted' }, tt('room.bootAndFirmware'))),
+    state.power?.supported && field('room.power',
       h('span', { class: 'pill' }, powerLabel(state.power.state ?? 'unknown')),
-      h('button', { type: 'button', disabled: state.loading, onclick: () => power('standbyOn', 'standby sent') }, 'Standby'),
-      h('button', { type: 'button', disabled: state.loading, onclick: () => power('standbyOff', 'wake from standby sent') }, 'Wake'),
+      h('button', { type: 'button', disabled: state.loading, onclick: () => power('standbyOn', 'room.standbySent') }, tt('room.standby')),
+      h('button', { type: 'button', disabled: state.loading, onclick: () => power('standbyOff', 'room.wakeFromStandby') }, tt('room.wake')),
       state.power.deepSleep && h('button', { type: 'button', disabled: state.loading,
-        onclick: () => confirm(`Put ${client} into deep sleep? It leaves the network until POWER or Wake-on-LAN wakes it.`) && power('deepSleep', 'deep sleep sent') }, 'Deep sleep')),
+        onclick: () => confirm(tt('room.putIntoDeep', { name: client })) && power('deepSleep', 'room.deepSleepSent') }, tt('room.deepSleep'))),
     // Idle delays in minutes here, seconds on the client; 0 switches one off.
-    state.power?.supported && field('Idle timers', h('form', {
+    state.power?.supported && field('room.idleTimers', h('form', {
       class: 'room-inline-form',
       onsubmit(e) {
         e.preventDefault();
         const body = { standbyAfterSeconds: Number(e.target.standby.value) * 60 };
         if (state.power.deepSleep) body.deepSleepAfterSeconds = Number(e.target.deepSleep.value) * 60;
-        change('power', body, 'Power settings saved.');
+        change('power', body, 'room.powerSettingsSaved');
       },
     },
-    h('label', {}, 'Standby after (min)', h('input', { name: 'standby', type: 'number', min: 0, max: 1440, step: 1, class: 'w-num',
-      value: minutes(state.power.standbyAfterSeconds), disabled: state.loading, 'aria-label': `Automatic standby of ${client} in minutes` })),
-    state.power.deepSleep && h('label', {}, 'Deep sleep after (min)', h('input', { name: 'deepSleep', type: 'number', min: 0, max: 1440, step: 1, class: 'w-num',
-      value: minutes(state.power.deepSleepAfterSeconds), disabled: state.loading, 'aria-label': `Automatic deep sleep of ${client} in minutes` })),
-    h('button', { class: 'primary', disabled: state.loading }, 'Apply'))),
-    state.power?.supported && h('p', { class: 'small muted' }, '0 switches a timer off. Deep sleep counts from the same idle start as standby; 1 minute at least.'),
-    (state.network?.supported === false && state.leds?.supported === false) && h('p', { class: 'small muted' }, 'This firmware has no Ethernet speed or LED settings.'),
+    h('label', {}, tt('room.standbyAfterMin'), h('input', { name: 'standby', type: 'number', min: 0, max: 1440, step: 1, class: 'w-num',
+      value: minutes(state.power.standbyAfterSeconds), disabled: state.loading, 'aria-label': tt('room.automaticStandbyOf', { name: client }) })),
+    state.power.deepSleep && h('label', {}, tt('room.deepSleepAfter'), h('input', { name: 'deepSleep', type: 'number', min: 0, max: 1440, step: 1, class: 'w-num',
+      value: minutes(state.power.deepSleepAfterSeconds), disabled: state.loading, 'aria-label': tt('room.automaticDeepSleep', { name: client }) })),
+    h('button', { class: 'primary', disabled: state.loading }, tt('room.apply')))),
+    state.power?.supported && h('p', { class: 'small muted' }, tt('room.0SwitchesTimer')),
+    (state.network?.supported === false && state.leds?.supported === false) && h('p', { class: 'small muted' }, tt('room.thisFirmwareHas')),
   ];
 }
 
@@ -2608,14 +2630,14 @@ function bufferEditor(bufferMs, path) {
     onsubmit(e) {
       e.preventDefault();
       const ms = Number(e.target.ms.value);
-      act(() => api('PATCH', path, { bufferMs: ms }), `buffer ${ms} ms sent`);
+      act(() => api('PATCH', path, { bufferMs: ms }), tt('room.bufferMsSent', { n: ms }));
     },
   },
   h('input', {
-    name: 'ms', type: 'number', min: 1000, max: 11000, step: 1, class: 'w-num', value: String(bufferMs), 'aria-label': 'buffer in milliseconds',
-    title: "the size of the room's own buffer (memory); how full the core keeps it is the core's targetBufferMs. It must hold the core's minimumStartBufferMs. The client may refuse a value it cannot hold",
+    name: 'ms', type: 'number', min: 1000, max: 11000, step: 1, class: 'w-num', value: String(bufferMs), 'aria-label': tt('room.bufferInMilliseconds'),
+    title: tt('room.sizeOfRooms'),
   }),
-  h('button', {}, 'Set'));
+  h('button', {}, tt('room.set')));
 }
 
 // A room's Audio Control (MATP section 59): what the core may do to its audio,
@@ -2623,25 +2645,25 @@ function bufferEditor(bufferMs, path) {
 // setting: the core corrects every resampled room and every room sharing its
 // zone, unless it is Bit-Perfect (_docs/GroupedDriftCorrection.md).
 const AUDIO_CONTROLS = [
-  ['bitPerfect', 'Force Bit-Perfect', 'strict: never resampled or corrected, even in a zone with other rooms; no software volume'],
-  ['auto', 'Auto', 'bitperfect where possible; resampled and drift corrected where the device needs it or the zone has other rooms'],
+  ['bitPerfect', 'room.audioMode.bitPerfect', 'room.audioMode.bitPerfectHint'],
+  ['auto', 'room.audioMode.auto', 'room.audioMode.autoHint'],
 ];
-const audioControlLabel = (m) => (m == null ? null : AUDIO_CONTROLS.find(([v]) => v === m)?.[1] ?? m);
+const audioControlLabel = (m) => (m == null ? null : tt(AUDIO_CONTROLS.find(([v]) => v === m)?.[1] ?? m));
 
 // How the room's client plays its volume (MATP section 59). The client keeps
 // it and executes it; auto resolves from the Audio Control and the device.
 const VOLUME_CONTROLS = [
-  ['auto', 'Auto', 'hardware where the device has a control; otherwise software, or disabled under Force Bit-Perfect'],
-  ['hardware', 'Hardware', "the device's own volume control; the samples go out unscaled"],
-  ['software', 'Software', 'the client scales the samples: not bitperfect while the volume is below 100 % or muted'],
-  ['disabled', 'Disabled', 'the volume is not played; mute still is'],
+  ['auto', 'room.volumeMode.auto', 'room.volumeMode.autoHint'],
+  ['hardware', 'room.volumeMode.hardware', 'room.volumeMode.hardwareHint'],
+  ['software', 'room.volumeMode.software', 'room.volumeMode.softwareHint'],
+  ['disabled', 'room.volumeMode.disabled', 'room.volumeMode.disabledHint'],
 ];
-const volumeControlLabel = (m) => VOLUME_CONTROLS.find(([v]) => v === m)?.[1] ?? m;
+const volumeControlLabel = (m) => tt(VOLUME_CONTROLS.find(([v]) => v === m)?.[1] ?? m);
 
 function fmtHardwareVolume(hv) {
-  if (!hv.available) return 'none';
+  if (!hv.available) return tt('common.none');
   const range = hv.minDb != null ? `${fmtNum(hv.minDb, 1)} … ${fmtNum(hv.maxDb, 1)} dB, ` : '';
-  return `${hv.control ?? 'yes'} (${range}${hv.steps} steps${hv.hasMute ? ', mute' : ''})`;
+  return `${hv.control ?? tt('room.yes')} (${range}${tt('room.steps', { n: hv.steps })}${hv.hasMute ? `, ${tt('room.muteControl')}` : ''})`;
 }
 
 // What the room's volume actually does: bad where the client plays none,
@@ -2650,8 +2672,8 @@ function volumeBadge(vc, s) {
   const scaling = vc.effective === 'software' && ((s?.volume ?? 1) < 1 || s?.muted);
   return h('span', {
     class: 'pill badge ' + (vc.effective === 'hardware' ? 'good' : vc.effective === 'software' ? 'warn' : 'muted'),
-    title: vc.reason ?? VOLUME_CONTROLS.find(([v]) => v === vc.effective)?.[2] ?? '',
-  }, `volume: ${volumeControlLabel(vc.effective)}${scaling ? ' (scaling, not bitperfect)' : ''}`);
+    title: vc.reason ?? tt(VOLUME_CONTROLS.find(([v]) => v === vc.effective)?.[2] ?? ''),
+  }, `${tt('room.volume')}: ${volumeControlLabel(vc.effective)}${scaling ? ` ${tt('room.scalingNotBitperfect')}` : ''}`);
 }
 
 // --- a room's equalizer (../_docs/EqualizerRoadmap.md, step 3) ---------------
@@ -2718,16 +2740,16 @@ const eqHeadroom = (bands) => Math.max(-30, -Math.ceil(Math.max(0, eqPeakDb(band
 // What the equalizer does to this room, as the core says. `inSummary` keeps
 // the summary short and shows "off" there too.
 function eqBadge(eq, plan, inSummary = false) {
-  if (!eq?.enabled) return inSummary ? h('span', { class: 'pill badge muted' }, 'off') : null;
+  if (!eq?.enabled) return inSummary ? h('span', { class: 'pill badge muted' }, tt('common.off')) : null;
   const core = plan?.equalizer;
-  const clipping = core?.clippedSamples > 0 ? ` · ${core.clippedSamples} samples clipped` : '';
-  if (core?.active) return h('span', { class: 'pill badge ' + (clipping ? 'bad' : 'good') }, `● EQ active${clipping}`);
+  const clipping = core?.clippedSamples > 0 ? ` · ${tt('eq.samplesClipped', { n: core.clippedSamples })}` : '';
+  if (core?.active) return h('span', { class: 'pill badge ' + (clipping ? 'bad' : 'good') }, tt('eq.eqActive') + clipping);
   if (plan?.bitPerfect) {
-    return h('span', { class: 'pill badge warn', title: 'a bitperfect stream is sent untouched: Audio control Force Bit-Perfect keeps the room bitperfect; on Auto the room is resampled for the equalizer' },
-      '○ Not applied: the stream is bitperfect');
+    return h('span', { class: 'pill badge warn', title: tt('eq.bitperfectStreamIs') },
+      tt('eq.notAppliedStream'));
   }
-  return h('span', { class: 'pill badge ' + (plan ? 'warn' : 'muted'), title: plan ? '' : 'the room is not playing in a zone' },
-    plan ? `○ EQ on, not active${clipping}` : '○ EQ on');
+  return h('span', { class: 'pill badge ' + (plan ? 'warn' : 'muted'), title: plan ? '' : tt('eq.roomIsNot') },
+    plan ? tt('eq.eqOnNot') + clipping : tt('eq.eqOn'));
 }
 
 // A room's equalizer, in two modes (a per-viewer choice per room). Basic:
@@ -2739,8 +2761,8 @@ function eqBadge(eq, plan, inSummary = false) {
 // equalizer of another layout without editing it, so a slider cannot throw
 // away bands it does not show.
 const EQ_TYPES = [
-  ['peak', 'peak'], ['lowShelf', 'low shelf'], ['highShelf', 'high shelf'], ['highPass', 'high pass'], ['lowPass', 'low pass'],
-];
+  ['peak', 'eq.type.peak'], ['lowShelf', 'eq.type.lowShelf'], ['highShelf', 'eq.type.highShelf'], ['highPass', 'eq.type.highPass'], ['lowPass', 'eq.type.lowPass'],
+]; // labels translated where shown
 const EQ_MAX_BANDS = 20;
 const eqUsesGain = (type) => type !== 'highPass' && type !== 'lowPass';
 
@@ -2771,50 +2793,50 @@ function eqEditor(client, eq, plan, path) {
   const head = h('div', { class: 'eq-head' },
     h('label', { class: 'switch' },
       h('input', {
-        type: 'checkbox', role: 'switch', checked: Boolean(current.enabled), 'aria-label': 'Enable equalizer',
-        onchange: (e) => send({ ...current, bands, enabled: e.target.checked }, e.target.checked ? 'equalizer on' : 'equalizer off'),
-      }), h('span', { class: 'switch-track', 'aria-hidden': 'true' }), 'Enable equalizer'),
+        type: 'checkbox', role: 'switch', checked: Boolean(current.enabled), 'aria-label': tt('eq.enableEqualizer'),
+        onchange: (e) => send({ ...current, bands, enabled: e.target.checked }, e.target.checked ? 'eq.equalizerOn' : 'eq.equalizerOff'),
+      }), h('span', { class: 'switch-track', 'aria-hidden': 'true' }), tt('eq.enableEqualizer')),
     eqBadge(current, plan),
     h('select', {
-      value: '', 'aria-label': 'Apply an equalizer profile',
-      title: 'copies the profile into this room and switches the equalizer on; changing the profile later does not change the room',
+      value: '', 'aria-label': tt('eq.applyEqualizerProfile'),
+      title: tt('eq.copiesProfileInto'),
       onchange(e) {
         const profile = (S.eqProfiles ?? []).find((p) => p.name === e.target.value);
         if (!profile) return;
         eqShowNow(client, { enabled: true, preampDb: profile.preampDb, bands: profile.bands });
-        act(() => api('POST', `${path}/equalizer/profile`, { profile: profile.name }), `profile ${profile.name} applied`).then(refreshSoon);
+        act(() => api('POST', `${path}/equalizer/profile`, { profile: profile.name }), tt('eq.profileApplied', { name: profile.name })).then(refreshSoon);
       },
-    }, h('option', { value: '' }, 'Apply profile …'),
-    (S.eqProfiles ?? []).map((p) => h('option', { value: p.name, title: `${p.bands.length} bands, preamp ${eqDb(p.preampDb)} dB` },
-      p.builtIn ? p.name : `${p.name} (own)`))),
+    }, h('option', { value: '' }, tt('eq.applyProfile')),
+    (S.eqProfiles ?? []).map((p) => h('option', { value: p.name, title: tt('eq.bandsPreampDb', { n: p.bands.length, db: eqDb(p.preampDb) }) },
+      p.builtIn ? p.name : tt('eq.own', { name: p.name })))),
     // The rest: automatic preamp, REW text, deleting an own profile.
     h('span', { class: 'eq-more' },
-      h('button', { type: 'button', class: 'icon-only', title: 'More', 'aria-label': 'More equalizer options', 'aria-haspopup': 'menu', onclick: (e) => e.currentTarget.nextElementSibling.togglePopover() }, icon('more')),
+      h('button', { type: 'button', class: 'icon-only', title: tt('common.more'), 'aria-label': tt('eq.moreEqualizerOptions'), 'aria-haspopup': 'menu', onclick: (e) => e.currentTarget.nextElementSibling.togglePopover() }, icon('more')),
       h('div', { class: 'pick-popover eq-menu', popover: 'auto', role: 'menu', ontoggle(e) { if (e.newState === 'open') placeUnderButton(this); } },
-        h('label', { class: 'eq-menu-item', title: 'set the preamp so the highest boost ends at 0 dB' },
+        h('label', { class: 'eq-menu-item', title: tt('eq.setPreampSo') },
           h('input', {
             type: 'checkbox', checked: auto,
             onchange(e) {
               store.set('vx.eqAutoPreamp', e.target.checked ? '1' : '0');
-              if (e.target.checked) send(withBands(bands), 'preamp set for headroom');
+              if (e.target.checked) send(withBands(bands), 'eq.preampSetFor');
               else renderRooms();
             },
-          }), 'Automatic preamp'),
+          }), tt('eq.automaticPreamp')),
         h('button', { type: 'button', onclick(e) { (S.eqRewOpen ??= {})[client] = !rewOpen; closeMenu(e); renderRooms(); } },
-          icon('code'), rewOpen ? 'Hide REW import / export' : 'REW import / export'),
+          icon('code'), tt(rewOpen ? 'eq.hideRewImport' : 'eq.rewImportExport')),
         own.length > 0 && h('select', {
-          value: '', 'aria-label': 'Delete a profile',
+          value: '', 'aria-label': tt('eq.deleteProfile'),
           onchange(e) {
             const gone = e.target.value;
             e.target.value = '';
-            if (gone && confirm(`Delete the profile ${gone}? Rooms that use it keep their copy.`)) {
-              act(() => api('DELETE', `equalizer/profiles/${enc(gone)}`), `profile ${gone} deleted`).then(loadEqProfiles);
+            if (gone && confirm(tt('eq.deleteProfileRooms', { name: gone }))) {
+              act(() => api('DELETE', `equalizer/profiles/${enc(gone)}`), tt('eq.profileDeleted', { name: gone })).then(loadEqProfiles);
             }
           },
-        }, h('option', { value: '' }, 'Delete a profile …'), own.map((p) => h('option', { value: p.name }, p.name))))),
+        }, h('option', { value: '' }, tt('eq.deleteProfileMenu')), own.map((p) => h('option', { value: p.name }, p.name))))),
     h('span', { class: 'seg eq-mode' },
-      h('button', { type: 'button', class: advanced ? '' : 'on', 'aria-pressed': String(!advanced), onclick: mode('basic') }, 'Basic'),
-      h('button', { type: 'button', class: advanced ? 'on' : '', 'aria-pressed': String(advanced), onclick: mode('advanced') }, 'Advanced')));
+      h('button', { type: 'button', class: advanced ? '' : 'on', 'aria-pressed': String(!advanced), onclick: mode('basic') }, tt('eq.basic')),
+      h('button', { type: 'button', class: advanced ? 'on' : '', 'aria-pressed': String(advanced), onclick: mode('advanced') }, tt('eq.advanced'))));
 
   // Basic: ten slim sliders over the response, the dB scale at the left and
   // the frequencies under them. Advanced: the draggable curve and the bands.
@@ -2830,7 +2852,7 @@ function eqEditor(client, eq, plan, path) {
         eqFill(bands),
         bands.map((b, i) => h('label', { class: 'eq-slider', title: `${eqHz(b.frequencyHz)} Hz: ${eqDb(b.gainDb)} dB` },
           h('input', {
-            type: 'range', min: -12, max: 12, step: 0.5, value: String(b.gainDb), 'aria-label': `${eqHz(b.frequencyHz)} Hz gain`,
+            type: 'range', min: -12, max: 12, step: 0.5, value: String(b.gainDb), 'aria-label': tt('eq.hzGain', { hz: eqHz(b.frequencyHz) }),
             style: `--p:${((b.gainDb + 12) / 24) * 100}%`,
             oninput: (e) => { e.target.style.setProperty('--p', `${((Number(e.target.value) + 12) / 24) * 100}%`); },
             onchange: (e) => setBand(i, { gainDb: Number(e.target.value) }),
@@ -2838,28 +2860,28 @@ function eqEditor(client, eq, plan, path) {
           h('span', {}, eqHz(b.frequencyHz))))));
   } else {
     board = h('div', { class: 'eq-board eq-board-other small' },
-      h('p', { class: 'muted' }, `${bands.length} bands in another layout, edited in Advanced.`),
+      h('p', { class: 'muted' }, tt('eq.bandsInAnother', { n: bands.length })),
       h('button', {
         type: 'button',
-        onclick: () => confirm('Replace these bands with the flat Basic layout?') && send({ ...current, bands: eqFlatBands(), preampDb: 0 }, 'equalizer reset to Basic'),
-      }, 'Replace with Basic (flat)'));
+        onclick: () => confirm(tt('eq.replaceTheseBands')) && send({ ...current, bands: eqFlatBands(), preampDb: 0 }, 'eq.equalizerResetTo'),
+      }, tt('eq.replaceWithBasic')));
   }
 
   const profileName = S.eqProfileName?.[client] ?? '';
   const side = h('div', { class: 'eq-side' },
-    h('span', { class: 'eq-side-label' }, 'Preamp'),
-    h('div', { class: 'eq-preamp', title: auto ? 'set automatically for headroom (⋮ to change)' : '' },
+    h('span', { class: 'eq-side-label' }, tt('eq.preamp')),
+    h('div', { class: 'eq-preamp', title: auto ? tt('eq.setAutomaticallyFor') : '' },
       h('input', {
-        type: 'range', min: -30, max: 12, step: 0.1, value: String(current.preampDb), disabled: auto, 'aria-label': 'Preamp dB',
+        type: 'range', min: -30, max: 12, step: 0.1, value: String(current.preampDb), disabled: auto, 'aria-label': tt('eq.preampDb'),
         style: `--p:${((current.preampDb + 30) / 42) * 100}%`,
         onchange: (e) => send({ ...current, bands, preampDb: Number(e.target.value) }),
       }),
       h('span', { class: 'eq-value' }, `${fmtNum(current.preampDb, 1)} dB`)),
-    h('span', { class: 'small ' + (loudest > 0.05 ? 'warn' : 'muted'), title: 'the highest point of the bands plus the preamp; above 0 dB a full-scale signal clips' },
-      `peak ${eqDb(loudest)} dB${loudest > 0.05 ? ' (may clip)' : ''}`),
-    h('button', { type: 'button', class: 'eq-action', onclick: () => send({ ...current, bands: eqFlatBands(), preampDb: 0 }, 'equalizer reset') }, icon('refresh'), 'Reset'),
+    h('span', { class: 'small ' + (loudest > 0.05 ? 'warn' : 'muted'), title: tt('eq.highestPointOf') },
+      tt('eq.peakDb', { db: eqDb(loudest) }) + (loudest > 0.05 ? ` ${tt('eq.mayClip')}` : '')),
+    h('button', { type: 'button', class: 'eq-action', onclick: () => send({ ...current, bands: eqFlatBands(), preampDb: 0 }, 'eq.equalizerReset') }, icon('refresh'), tt('eq.reset')),
     h('span', { class: 'eq-save' },
-      h('button', { type: 'button', class: 'eq-action', 'aria-haspopup': 'dialog', onclick: (e) => e.currentTarget.nextElementSibling.togglePopover() }, icon('bookmark'), 'Save as profile'),
+      h('button', { type: 'button', class: 'eq-action', 'aria-haspopup': 'dialog', onclick: (e) => e.currentTarget.nextElementSibling.togglePopover() }, icon('bookmark'), tt('eq.saveAsProfile')),
       h('form', {
         class: 'pick-popover eq-save-form', popover: 'auto', autocomplete: 'off',
         ontoggle(e) { if (e.newState === 'open') { placeUnderButton(this); this.elements.profile.focus(); } },
@@ -2868,14 +2890,14 @@ function eqEditor(client, eq, plan, path) {
           const wanted = e.target.elements.profile.value.trim();
           if (!wanted) return;
           e.target.hidePopover();
-          act(() => api('PUT', `equalizer/profiles/${enc(wanted)}`, { preampDb: current.preampDb, bands }), `saved as ${wanted}`).then(loadEqProfiles);
+          act(() => api('PUT', `equalizer/profiles/${enc(wanted)}`, { preampDb: current.preampDb, bands }), tt('eq.savedAs', { name: wanted })).then(loadEqProfiles);
         },
       },
       h('input', {
-        name: 'profile', value: profileName, maxlength: 64, placeholder: 'Profile name', 'aria-label': 'Profile name',
+        name: 'profile', value: profileName, maxlength: 64, placeholder: tt('eq.profileName'), 'aria-label': tt('eq.profileName'),
         oninput: (e) => { (S.eqProfileName ??= {})[client] = e.target.value; },
       }),
-      h('button', { class: 'primary', title: 'keep these bands and this preamp as a profile; a profile of that name is replaced' }, 'Save'))));
+      h('button', { class: 'primary', title: tt('eq.keepTheseBands') }, tt('common.save')))));
 
   return h('div', { class: 'eq' }, head, h('div', { class: 'eq-body' }, board, side),
     rewOpen && eqRewTools(client, current, bands, send));
@@ -2934,22 +2956,22 @@ function eqBandTable(bands, setBand, setBands) {
     onchange: (e) => e.target.value !== '' && change(Number(e.target.value)), ...props,
   });
   return h('div', { class: 'table-wrap plain' }, h('table', { class: 'small eq-table' },
-    h('tr', {}, h('th', {}, '#'), h('th', {}, 'type'), h('th', {}, 'Hz'), h('th', {}, 'gain dB'), h('th', {}, 'Q'), h('th', {}, '')),
+    h('tr', {}, h('th', {}, '#'), h('th', {}, tt('eq.type')), h('th', {}, 'Hz'), h('th', {}, tt('eq.gainDb')), h('th', {}, 'Q'), h('th', {}, '')),
     bands.map((b, i) => h('tr', {},
       h('td', { class: 'muted' }, String(i + 1)),
-      h('td', {}, h('select', { value: b.type, 'aria-label': `band ${i + 1} type`, onchange: (e) => setBand(i, { type: e.target.value }) },
-        EQ_TYPES.map(([v, label]) => h('option', { value: v }, label)))),
-      h('td', {}, num(`band ${i + 1} frequency Hz`, b.frequencyHz, (v) => setBand(i, { frequencyHz: v }), { min: 10, max: 24000 })),
+      h('td', {}, h('select', { value: b.type, 'aria-label': tt('eq.bandType', { n: i + 1 }), onchange: (e) => setBand(i, { type: e.target.value }) },
+        EQ_TYPES.map(([v, label]) => h('option', { value: v }, tt(label))))),
+      h('td', {}, num(tt('eq.bandFrequencyHz', { n: i + 1 }), b.frequencyHz, (v) => setBand(i, { frequencyHz: v }), { min: 10, max: 24000 })),
       h('td', {}, eqUsesGain(b.type)
-        ? num(`band ${i + 1} gain dB`, b.gainDb ?? 0, (v) => setBand(i, { gainDb: v }), { min: -24, max: 24 })
+        ? num(tt('eq.bandGainDb', { n: i + 1 }), b.gainDb ?? 0, (v) => setBand(i, { gainDb: v }), { min: -24, max: 24 })
         : h('span', { class: 'muted' }, '—')),
-      h('td', {}, num(`band ${i + 1} Q`, b.q, (v) => setBand(i, { q: v }), { min: 0.1, max: 10 })),
-      h('td', {}, h('button', { title: 'remove this band', 'aria-label': `remove band ${i + 1}`, onclick: () => setBands(bands.filter((_, j) => j !== i)) }, '✕')))),
+      h('td', {}, num(tt('eq.bandQ', { n: i + 1 }), b.q, (v) => setBand(i, { q: v }), { min: 0.1, max: 10 })),
+      h('td', {}, h('button', { title: tt('eq.removeThisBand'), 'aria-label': tt('eq.removeBand', { n: i + 1 }), onclick: () => setBands(bands.filter((_, j) => j !== i)) }, '✕')))),
     h('tr', {}, h('td', { colspan: 6 }, h('button', {
       disabled: bands.length >= EQ_MAX_BANDS,
-      title: bands.length >= EQ_MAX_BANDS ? `at most ${EQ_MAX_BANDS} bands` : 'a 1 kHz peak at 0 dB',
+      title: bands.length >= EQ_MAX_BANDS ? tt('eq.atMostBands', { n: EQ_MAX_BANDS }) : tt('eq.1KhzPeak'),
       onclick: () => setBands([...bands, { type: 'peak', frequencyHz: 1000, q: 1, gainDb: 0 }]),
-    }, '+ band')))));
+    }, tt('eq.band'))))));
 }
 
 // The combined response, 20 Hz to 20 kHz, the preamp included, with a handle
@@ -2968,7 +2990,7 @@ function eqCurve(bands, preampDb, basic, setBands) {
   const ratio = window.devicePixelRatio || 1;
   const canvas = h('canvas', {
     width: EQ_W * ratio, height: EQ_H * ratio, class: 'eq-curve', tabindex: 0,
-    'aria-label': 'equalizer response; drag a handle to change a band, the wheel over it changes its Q',
+    'aria-label': tt('eq.equalizerResponseDrag'),
   });
   canvas._bands = bands;
   eqDraw(canvas, bands, preampDb);
@@ -3104,12 +3126,12 @@ function parseRew(text) {
     const code = filter[2].toUpperCase();
     const type = REW_TYPES[code];
     const fc = /fc\s+([\d.,]+)\s*hz/i.exec(filter[3]);
-    if (!type || !fc) { skipped.push(`${line} (${type ? 'no Fc' : `type ${filter[2]} not supported`})`); continue; }
+    if (!type || !fc) { skipped.push(`${line} (${type ? tt('eq.noFc') : tt('eq.typeNotSupported', { name: filter[2] })})`); continue; }
     const gain = /gain\s+([-+]?[\d.,]+)\s*db/i.exec(filter[3]);
     const q = /\bq\s+([\d.,]+)/i.exec(filter[3]);
     const band = { type, frequencyHz: number(fc[1]), q: q ? number(q[1]) : 0.7071, gainDb: gain ? number(gain[1]) : 0 };
     if (!eqUsesGain(type)) band.gainDb = 0;
-    if (bands.length >= EQ_MAX_BANDS) { skipped.push(`${line} (more than ${EQ_MAX_BANDS} filters)`); continue; }
+    if (bands.length >= EQ_MAX_BANDS) { skipped.push(`${line} (${tt('eq.moreThanFilters', { n: EQ_MAX_BANDS })})`); continue; }
     bands.push(band);
   }
   return { preampDb, bands, skipped };
@@ -3131,39 +3153,39 @@ function eqRewTools(client, current, bands, send) {
   const text = S.eqImport?.[client] ?? '';
   const apply = (source) => {
     const parsed = parseRew(source);
-    if (parsed.bands.length === 0) { flash('no filter found in that text', true); return; }
+    if (parsed.bands.length === 0) { flash('eq.noFilterFound', true); return; }
     const preampDb = parsed.preampDb ?? (store.get('vx.eqAutoPreamp', '1') === '1' ? eqHeadroom(parsed.bands) : current.preampDb);
     store.set(`vx.eqMode:${client}`, 'advanced');
     send({ ...current, preampDb, bands: parsed.bands },
-      `${parsed.bands.length} filters imported${parsed.skipped.length ? `, ${parsed.skipped.length} skipped: ${parsed.skipped.join('; ')}` : ''}`);
+      tt('eq.filtersImported', { n: parsed.bands.length }) + (parsed.skipped.length ? `, ${tt('eq.skipped', { n: parsed.skipped.length })}: ${parsed.skipped.join('; ')}` : ''));
     (S.eqImport ??= {})[client] = '';
   };
   const exported = rewText(current.preampDb, bands);
-  return h('details', { class: 'small', 'data-key': `eqRew:${client}` }, h('summary', {}, 'REW import / export'),
+  return h('details', { class: 'small', 'data-key': `eqRew:${client}` }, h('summary', {}, tt('eq.rewImportExport')),
     h('textarea', {
       rows: 5, class: 'mono eq-rew', value: text, placeholder: 'Filter 1: ON PK Fc 100 Hz Gain -3.0 dB Q 2.00',
-      'aria-label': 'REW filter text to import',
+      'aria-label': tt('eq.rewFilterText'),
       oninput: (e) => { (S.eqImport ??= {})[client] = e.target.value; },
     }),
     h('div', { class: 'row' },
-      h('button', { onclick: () => apply(S.eqImport?.[client] ?? '') }, 'Import text'),
-      h('button', { onclick: (e) => e.currentTarget.nextElementSibling.click() }, 'Import file…'),
+      h('button', { onclick: () => apply(S.eqImport?.[client] ?? '') }, tt('eq.importText')),
+      h('button', { onclick: (e) => e.currentTarget.nextElementSibling.click() }, tt('eq.importFile')),
       h('input', {
-        type: 'file', hidden: true, accept: '.txt,text/plain', 'aria-label': 'REW filter file',
+        type: 'file', hidden: true, accept: '.txt,text/plain', 'aria-label': tt('eq.rewFilterFile'),
         async onchange(e) {
           const file = e.target.files[0];
           e.target.value = '';
           if (file) apply(await file.text());
         },
       }),
-      h('button', { onclick: () => navigator.clipboard.writeText(exported).then(() => flash('REW text copied'), () => flash('copy refused', true)) }, 'Copy as REW'),
+      h('button', { onclick: () => navigator.clipboard.writeText(exported).then(() => flash('eq.rewTextCopied'), () => flash('eq.copyRefused', true)) }, tt('eq.copyAsRew')),
       h('button', {
         onclick() {
           const link = h('a', { href: URL.createObjectURL(new Blob([exported], { type: 'text/plain' })), download: `${client}-eq.txt` });
           link.click();
           URL.revokeObjectURL(link.href);
         },
-      }, 'Download')),
+      }, tt('eq.download'))),
     h('pre', { class: 'json' }, exported));
 }
 
@@ -3184,16 +3206,16 @@ async function loadEqProfiles() {
 function volumeControlEditor(vc, audioControl, hardwareVolume, path) {
   const strict = audioControl === 'bitPerfect';
   const noHardware = hardwareVolume && !hardwareVolume.available;
-  return h('div', { class: 'room-controls', title: 'how the client plays this room\'s volume; the core only sends the level' },
+  return h('div', { class: 'room-controls', title: tt('room.howClientPlays') },
     h('select', {
       value: vc.configured,
-      'aria-label': 'volume control',
-      onchange: (e) => act(() => api('PATCH', path, { volumeControl: e.target.value }), `volume control ${e.target.value} sent`),
+      'aria-label': tt('room.volumeControlField'),
+      onchange: (e) => act(() => api('PATCH', path, { volumeControl: e.target.value }), tt('room.volumeControlSent', { mode: e.target.value })),
     }, VOLUME_CONTROLS.map(([m, label, title]) => h('option', {
       value: m,
       disabled: (m === 'software' && strict) || (m === 'hardware' && noHardware && vc.configured !== 'hardware'),
-      title: m === 'software' && strict ? 'not available under Force Bit-Perfect' : m === 'hardware' && noHardware ? 'this device has no hardware volume' : title,
-    }, label))),
+      title: tt(m === 'software' && strict ? 'room.notAvailableUnder' : m === 'hardware' && noHardware ? 'room.thisDeviceHas' : title),
+    }, tt(label)))),
     h('span', { class: 'small ' + (vc.effective === 'disabled' && vc.configured !== 'disabled' ? 'warn' : 'muted') },
       `→ ${volumeControlLabel(vc.effective)}`, vc.reason && ` (${vc.reason})`));
 }
@@ -3204,21 +3226,21 @@ function volumeControlEditor(vc, audioControl, hardwareVolume, path) {
 // device has a verified trim; whether the room is corrected at all still
 // follows from its Audio Control and its zone.
 const DRIFT_CORRECTIONS = [
-  ['auto', 'Auto', 'the hardware clock where the device has a verified one; resampling otherwise'],
-  ['resampling', 'Resampling', 'the core resamples the stream to keep this room in step'],
-  ['hardwareClock', 'Hardware clock', "the client trims its DAC clock on the core's command; the samples stay bitperfect"],
+  ['auto', 'room.driftMode.auto', 'room.driftMode.autoHint'],
+  ['resampling', 'room.driftMode.resampling', 'room.driftMode.resamplingHint'],
+  ['hardwareClock', 'room.driftMode.hardwareClock', 'room.driftMode.hardwareClockHint'],
 ];
 
 // Why a room that asks for drift correction does not get it, with what to
 // change, or null. The texts are the core's (driftDisabledText).
 const DRIFT_FIXES = {
-  "the configured resampler cannot vary a ratio": 'choose soxr under Settings → Resampler, or a device with a hardware clock',
-  "the room's Audio Control is bitPerfect": 'set Audio control to Auto',
+  "the configured resampler cannot vary a ratio": 'room.driftFix.resampler',
+  "the room's Audio Control is bitPerfect": 'room.driftFix.audioControl',
 };
 function driftNotCorrected(dc) {
   if (!dc?.requested || dc.active || !dc.disabledBy) return null;
   const fix = DRIFT_FIXES[dc.disabledBy];
-  return fix ? `${dc.disabledBy}: ${fix}` : dc.disabledBy;
+  return fix ? `${dc.disabledBy}: ${tt(fix)}` : dc.disabledBy;
 }
 
 function driftCorrectionEditor(dc, path) {
@@ -3226,17 +3248,17 @@ function driftCorrectionEditor(dc, path) {
   const clock = dc.hardwareClock;
   const why = driftNotCorrected(dc);
   // What corrects it, not by how much: the Sync & buffer tiles show the ppm.
-  const now = dc.actuator === 'hardwareClock' ? 'hardware clock' : dc.actuator === 'resampling' ? 'resampling' : 'not corrected';
-  return h('div', { class: 'room-controls', title: "how this room is kept in step when it is corrected; the client keeps the setting" },
+  const now = tt(dc.actuator === 'hardwareClock' ? 'room.nowHardwareClock' : dc.actuator === 'resampling' ? 'room.resampling' : 'room.notCorrected');
+  return h('div', { class: 'room-controls', title: tt('room.howThisRoom') },
     h('select', {
       value: dc.mode,
-      'aria-label': 'drift correction',
-      onchange: (e) => act(() => api('PATCH', path, { driftCorrection: e.target.value }), `drift correction ${e.target.value} sent`),
+      'aria-label': tt('room.driftCorrectionField'),
+      onchange: (e) => act(() => api('PATCH', path, { driftCorrection: e.target.value }), tt('room.driftCorrectionSent', { mode: e.target.value })),
     }, DRIFT_CORRECTIONS.map(([m, label, title]) => h('option', {
       value: m,
       disabled: m === 'hardwareClock' && noClock && dc.mode !== 'hardwareClock',
-      title: m === 'hardwareClock' && noClock ? 'this device has no verified hardware clock' : title,
-    }, label))),
+      title: tt(m === 'hardwareClock' && noClock ? 'room.thisDeviceHasNo' : title),
+    }, tt(label)))),
     h('span', { class: 'small ' + (why || clock?.error || (dc.mode === 'hardwareClock' && dc.actuator === 'resampling') ? 'warn' : 'muted') },
       `→ ${now}`, why && `: ${why}`, clock?.error && ` (${clock.error})`));
 }
@@ -3252,15 +3274,15 @@ function audioDevicePicker(ad, patch, path) {
   const name = (id) => ad.devices.find((x) => x.id === id)?.name ?? id;
   const fellBack = ad.configured !== '' && ad.selected !== ad.configured;
   return h('div', { class: 'room-controls' },
-    h('select', { class: 'grow', value: ad.configured, 'aria-label': 'Output device', onchange: (e) => patch({ audioDeviceId: e.target.value }) },
-      h('option', { value: '' }, `system default${ad.configured === '' && ad.selected ? ` (${name(ad.selected)})` : ''}`),
-      ad.devices.map((x) => h('option', { value: x.id, title: x.id }, `${x.name || x.id}${x.isDefault ? ' (system default)' : ''}`))),
+    h('select', { class: 'grow', value: ad.configured, 'aria-label': tt('room.outputDevice'), onchange: (e) => patch({ audioDeviceId: e.target.value }) },
+      h('option', { value: '' }, tt('room.systemDefault') + (ad.configured === '' && ad.selected ? ` (${name(ad.selected)})` : '')),
+      ad.devices.map((x) => h('option', { value: x.id, title: x.id }, `${x.name || x.id}${x.isDefault ? ` (${tt('room.systemDefault')})` : ''}`))),
     h('button', {
-      title: 'scan the client\'s sound cards again, e.g. after plugging one in',
-      onclick: () => act(() => api('POST', `${path}/rescan`), 'rescan sent'),
-    }, 'Rescan'),
-    fellBack && h('span', { class: 'warn small' }, `configured card missing, playing on ${ad.selected ? name(ad.selected) : 'nothing'}`),
-    !ad.selected && !fellBack && h('span', { class: 'bad small' }, 'no usable device'));
+      title: tt('room.scanClientsSound'),
+      onclick: () => act(() => api('POST', `${path}/rescan`), 'room.rescanSent'),
+    }, tt('room.rescan')),
+    fellBack && h('span', { class: 'warn small' }, tt('room.configuredCardMissing', { name: ad.selected ? name(ad.selected) : tt('room.nothing') })),
+    !ad.selected && !fellBack && h('span', { class: 'bad small' }, tt('room.noUsableDevice')));
 }
 
 // A room's buttons and encoders as its client reported them (MATP section 57,
@@ -3283,7 +3305,7 @@ function inputsEditor(client, inputs, path, deepSleep) {
     for (const [gesture, b] of Object.entries(input.bindings)) {
       const step = h('input', { name: 'step', type: 'number', min: 0.001, max: 1, step: 0.001, style: 'width:5em', value: String(b.step ?? 0.05) });
       const value = h('input', { name: 'value', type: 'number', min: 0, max: 1, step: 0.01, style: 'width:5em', value: String(b.value ?? 0.5) });
-      const scope = h('select', { name: 'scope', value: b.scope ?? 'room' }, h('option', { value: 'room' }, 'room'), h('option', { value: 'zone' }, 'zone'));
+      const scope = h('select', { name: 'scope', value: b.scope ?? 'room' }, h('option', { value: 'room' }, tt('room.room')), h('option', { value: 'zone' }, tt('room.scopeZone')));
       // Through the form's elements: a re-render keeps the nodes on the page.
       const enable = (F, action) => {
         F.step.disabled = !takesStep(action);
@@ -3304,9 +3326,9 @@ function inputsEditor(client, inputs, path, deepSleep) {
           if (takesValue(binding.action)) binding.value = Number(F.value.value);
           if (takesScope(binding.action)) binding.scope = F.scope.value;
           act(() => api('PATCH', `${path}/inputs/${enc(input.id)}`, { [gesture]: binding }),
-            (r) => `${client} ${input.id} ${gesture}: ${binding.action}${r.changed ? '' : ' (unchanged)'}`);
+            (r) => `${client} ${input.id} ${gesture}: ${binding.action}${r.changed ? '' : ` ${tt('room.unchanged')}`}`);
         },
-      }, action, h('span', { class: 'muted' }, 'step'), step, h('span', { class: 'muted' }, 'value'), value, scope, h('button', {}, 'set'));
+      }, action, h('span', { class: 'muted' }, tt('room.step')), step, h('span', { class: 'muted' }, tt('room.value')), value, scope, h('button', {}, tt('common.set')));
       enable(form.elements, b.action);
       const last = S.lastInput[client];
       rows.push(h('tr', { class: last?.inputId === input.id && last?.gesture === gesture ? 'current' : '' },
@@ -3316,13 +3338,13 @@ function inputsEditor(client, inputs, path, deepSleep) {
     }
   }
   return h('div', { class: 'table-wrap plain' }, h('table', { class: 'small' },
-    h('tr', {}, h('th', {}, 'input'), h('th', {}, 'gesture'), h('th', {}, 'bound to')),
+    h('tr', {}, h('th', {}, tt('room.input')), h('th', {}, tt('room.gesture')), h('th', {}, tt('room.boundTo'))),
     rows));
 }
 
 function lastInputLine(e) {
   const param = e.step != null ? ` ${e.step} × ${e.count}` : e.value != null ? ` ${e.value}` : e.count > 1 ? ` × ${e.count}` : '';
-  return h('div', { class: 'small' }, h('span', { class: 'muted' }, `last input ${e.at}: `),
+  return h('div', { class: 'small' }, h('span', { class: 'muted' }, `${tt('room.lastInput', { at: e.at })}: `),
     `${e.inputId} ${e.gesture} → ${e.action}${param}${e.scope ? ` (${e.scope})` : ''}`);
 }
 
@@ -3352,14 +3374,14 @@ function spark(label, client, key, digits, off = false, history = S.history) {
     ctx.beginPath();
     points.forEach((p, i) => (i ? ctx.lineTo(x(p.t), y(p[key])) : ctx.moveTo(x(p.t), y(p[key]))));
     ctx.stroke();
-    caption.title = `min ${fmtNum(min, digits)} · max ${fmtNum(max, digits)} over ${Math.round((t1 - t0) / 1000)} s`;
+    caption.title = tt('room.minMaxOver', { min: fmtNum(min, digits), max: fmtNum(max, digits), n: Math.round((t1 - t0) / 1000) });
     canvas.addEventListener('mousemove', (e) => {
       const t = t0 + ((e.offsetX / canvas.clientWidth) * 300 - 4) / 292 * (t1 - t0);
       const near = points.reduce((b, p) => (Math.abs(p.t - t) < Math.abs(b.t - t) ? p : b));
       canvas.title = `${new Date(near.t).toLocaleTimeString()}  ${fmtNum(near[key], digits)}`;
     });
   }
-  if (off) caption.append(' (not applied)');
+  if (off) caption.append(` ${tt('room.notApplied')}`);
   return h('div', { class: 'spark' + (off ? ' off' : '') }, caption, canvas);
 }
 
@@ -3386,13 +3408,13 @@ function stationTable(stations) {
       h('div', { class: 'line' }, s.name),
       h('div', { class: 'muted line' }, [s.genre, s.homepage].filter(Boolean).join(' · ')))),
     h('td', { class: 'queue-actions' }, h('div', { class: 'row-end' },
-      h('span', { class: 'muted' }, 'Live'),
+      h('span', { class: 'muted' }, tt('library.live')),
       h('span', { class: 'row-tools' }, refButtons({ station: s }, 'row-play'),
         favoriteButton(likeKey('station', s), () => addFavorite(null, s)),
         // Removed, its row goes at once: the library's page is not read again.
-        s.providerId === 'webradio' && h('button', { class: 'danger', title: 'Remove the station', 'aria-label': 'Remove the station', onclick(e) {
+        s.providerId === 'webradio' && h('button', { class: 'danger', title: tt('library.removeStation'), 'aria-label': tt('library.removeStation'), onclick(e) {
           const row = e.currentTarget.closest('tr');
-          if (confirm(`Remove station ${s.name}?`)) act(async () => { await api('DELETE', `stations/${enc(s.providerItemId)}`); row.remove(); }, 'station removed').then(() => act(loadStations));
+          if (confirm(tt('library.removeStationConfirm', { name: s.name }))) act(async () => { await api('DELETE', `stations/${enc(s.providerItemId)}`); row.remove(); }, 'library.stationRemoved').then(() => act(loadStations));
         } }, icon('trash'))))))));
 }
 
@@ -3406,7 +3428,9 @@ function stationTable(stations) {
 // covers.
 const HOME_SHELF = 14;
 document.addEventListener('scroll', () => document.body.classList.toggle('scrolled', scrollY > 400), { passive: true });
-const HOME_VIEWS = { foryou: ['For you', 'Proposed by the AI'], favorites: ['Favourites', 'Your ★'], liked: ['Liked', 'Your ♥'], recent: ['Jump back in', 'Played lately'] };
+// [title, about] keys, translated when the page starts (i18n.js before this script).
+const HOME_VIEWS = Object.fromEntries(Object.entries({ foryou: ['home.view.forYou', 'home.view.forYouAbout'], favorites: ['home.view.favorites', 'home.view.favoritesAbout'], liked: ['home.view.liked', 'home.view.likedAbout'], recent: ['home.view.recent', 'home.view.recentAbout'] })
+  .map(([k, texts]) => [k, texts.map((t) => tt(t))]));
 let homeView = null; // one of HOME_VIEWS, or null for Home itself
 // An album or artist opened from a cover, #/home/open/<provider>/<node>:
 // { provider, node, key, back (opened from within the app), r (its browse page), error }.
@@ -3463,19 +3487,19 @@ function homeAll(view) {
       // The title picks among the views: a menu under it.
       h('h2', {},
         h('span', { class: 'home-view-pick' },
-          h('button', { type: 'button', class: 'home-view-button', 'aria-haspopup': 'menu', title: 'Show another', onclick: (e) => e.currentTarget.nextElementSibling.togglePopover() },
+          h('button', { type: 'button', class: 'home-view-button', 'aria-haspopup': 'menu', title: tt('home.showAnother'), onclick: (e) => e.currentTarget.nextElementSibling.togglePopover() },
             title, icon('forward')),
-          h('div', { class: 'pick-popover', popover: 'auto', role: 'menu', 'aria-label': 'Show', ontoggle(e) { if (e.newState === 'open') this.style.cssText = `left: ${this.previousElementSibling.getBoundingClientRect().left}px; top: ${this.previousElementSibling.getBoundingClientRect().bottom + 8}px`; } },
+          h('div', { class: 'pick-popover', popover: 'auto', role: 'menu', 'aria-label': tt('common.show'), ontoggle(e) { if (e.newState === 'open') this.style.cssText = `left: ${this.previousElementSibling.getBoundingClientRect().left}px; top: ${this.previousElementSibling.getBoundingClientRect().bottom + 8}px`; } },
             Object.entries(HOME_VIEWS).map(([v, [name]]) => h('button', {
               type: 'button', role: 'menuitemradio', 'aria-pressed': String(v === view), 'aria-checked': String(v === view),
               onclick(e) { e.currentTarget.closest('[popover]').hidePopover(); location.hash = `#/home/${v}`; },
             }, icon({ foryou: 'sparkle', favorites: 'star', liked: 'heart', recent: 'clock' }[v]), name)))),
         h('span', { class: 'muted' }, about)), f?.tabs,
-      h('a', { class: 'home-back', href: '#/home' }, icon('back'), 'Home')),
+      h('a', { class: 'home-back', href: '#/home' }, icon('back'), tt('home.home'))),
     f ? [h('div', { class: 'home-grid' }, freshPicksTile(), tiles), !tiles.length && h('p', { class: 'muted home-empty' }, f.empty)]
-      : tiles.length ? h('div', { class: 'home-grid' }, tiles) : h('p', { class: 'muted home-empty' }, 'Nothing here yet.')),
+      : tiles.length ? h('div', { class: 'home-grid' }, tiles) : h('p', { class: 'muted home-empty' }, tt('home.nothingHereYet'))),
     // Back to the top, shown once the list is scrolled down (body.scrolled).
-    h('button', { type: 'button', class: 'to-top', title: 'Back to the top', 'aria-label': 'Back to the top',
+    h('button', { type: 'button', class: 'to-top', title: tt('home.backToTop'), 'aria-label': tt('home.backToTop'),
       onclick: () => scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }) }, icon('back'))];
 }
 
@@ -3484,10 +3508,10 @@ function homeAll(view) {
 // goes to where it was opened from; the library has the rest of a long list.
 function homeDetailView(d) {
   const r = d.r, n = r?.node ?? { providerId: d.provider, nodeId: d.node, title: '', kind: '' };
-  const back = h('a', { class: 'home-back', href: '#/home', onclick(e) { if (d.back) { e.preventDefault(); history.back(); } } }, icon('back'), 'Back');
+  const back = h('a', { class: 'home-back', href: '#/home', onclick(e) { if (d.back) { e.preventDefault(); history.back(); } } }, icon('back'), tt('home.back'));
   if (!r) {
     return [h('section', { class: 'home-section home-detail' }, h('div', { class: 'home-detail-bar' }, back),
-      d.error ? h('p', { class: 'bad' }, d.error) : h('span', { class: 'spinner', role: 'status', 'aria-label': 'Loading' }))];
+      d.error ? h('p', { class: 'bad' }, d.error) : h('span', { class: 'spinner', role: 'status', 'aria-label': tt('home.loading') }))];
   }
   const node = { provider: n.providerId, id: n.nodeId };
   const entries = (nodes, items) => [
@@ -3503,50 +3527,50 @@ function homeDetailView(d) {
     h('div', { class: 'home-detail-head', ...dragNode(n) },
       h('span', { class: 'cover-art' }, icon('library'), art(n.artworkId)),
       h('div', { class: 'home-detail-text' },
-        n.kind && h('div', { class: 'home-detail-kind' }, n.kind),
+        n.kind && h('div', { class: 'home-detail-kind' }, tv('kind', n.kind)),
         h('h2', {}, n.title),
         n.subtitle && h('div', { class: 'muted' }, n.subtitle),
         h('div', { class: 'row' },
           n.playable && refActions({ node }),
           nodeLike(n),
-          h('button', { type: 'button', onclick: library }, icon('library'), 'Open in library')))),
+          h('button', { type: 'button', onclick: library }, icon('library'), tt('home.openInLibrary'))))),
     r.sections ? r.sections.map((s) => [
       h('h3', { class: 'home-detail-section' }, s.title, s.total != null && h('span', { class: 'muted' }, ` ${s.total}`),
-        s.more && h('a', { href: '#', onclick(e) { e.preventDefault(); openHomeDetail(s.more.providerId, s.more.nodeId); } }, 'Show all ›')),
+        s.more && h('a', { href: '#', onclick(e) { e.preventDefault(); openHomeDetail(s.more.providerId, s.more.nodeId); } }, tt('home.showAll'))),
       ...entries(s.nodes, s.items)]) : entries(r.nodes, r.items),
-    !count && !r.sections?.length && h('p', { class: 'muted home-empty' }, 'Nothing here.'),
+    !count && !r.sections?.length && h('p', { class: 'muted home-empty' }, tt('home.nothingHere')),
     !r.sections && (r.total != null ? r.total > count : count >= MB_LIMIT) && h('p', { class: 'muted small' },
-      `The first ${count}${r.total != null ? ` of ${r.total}` : ''}; `, h('a', { href: '#', onclick(e) { e.preventDefault(); library(); } }, 'the rest in the library'), '.'))];
+      `${r.total != null ? tt('home.firstOf', { n: count, total: r.total }) : tt('home.first', { n: count })}; `, h('a', { href: '#', onclick(e) { e.preventDefault(); library(); } }, tt('home.restInLibrary')), '.'))];
 }
 
 function homeHello() {
   const hour = new Date().getHours();
-  const hello = hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const hello = tt(hour < 5 ? 'home.goodNight' : hour < 12 ? 'home.goodMorning' : hour < 18 ? 'home.goodAfternoon' : 'home.goodEvening');
   const who = S.user && S.user !== '*' ? `, ${S.user}` : '';
   const on = S.zones.filter((z) => z.queue?.transport === 'playing').length;
   return h('header', { class: 'home-hello' },
     h('h1', {}, hello, who),
-    h('p', {}, S.zones.length ? `${on ? `${on} of ${S.zones.length} zones playing` : `${S.zones.length} ${S.zones.length === 1 ? 'zone' : 'zones'}, all quiet`}.` : 'No zones yet: a zone appears for every room that connects.'));
+    h('p', {}, S.zones.length ? tt(on ? 'home.ofZonesPlaying' : S.zones.length === 1 ? 'home.zoneAllQuiet' : 'home.zonesAllQuiet', { on, n: S.zones.length }) : tt('home.noZonesYet')));
 }
 
 function homeZones() {
   if (!S.zones.length) return null;
-  return h('section', { class: 'home-section', 'aria-label': 'Zones' },
+  return h('section', { class: 'home-section', 'aria-label': tt('common.zones') },
     h('div', { class: 'home-zones' }, S.zones.map((z) => {
       const p = playing(z), on = z.queue?.transport === 'playing';
       const open = () => { setTarget(z.zone); location.hash = '#/zones'; };
       // A cover dropped on it goes to the end of its queue.
       return h('div', { class: 'home-zone' + (on ? ' playing' : ''), onclick: open, ...dropTarget(null, (items) => dropQueued(z.zone, items)) },
         // What plays, over its first room's picture: the room's where there is no artwork or it does not load.
-        h('span', { class: 'cover-art' }, dropping.has(z.zone) ? h('span', { class: 'spinner', role: 'status', 'aria-label': 'Adding to the queue' })
+        h('span', { class: 'cover-art' }, dropping.has(z.zone) ? h('span', { class: 'spinner', role: 'status', 'aria-label': tt('home.addingToQueue') })
           : z.desired?.clients?.[0] ? [roomImage(z.desired.clients[0]), art(p.item?.item.artworkId)] : p.cover()),
         h('div', { class: 'home-zone-text' },
           h('a', { class: 'home-zone-name', href: '#/zones', onclick(e) { e.preventDefault(); } }, on && icon('bars'), z.name ?? z.zone),
           h('div', { class: 'home-zone-title' }, p.title),
           p.sub && h('div', { class: 'home-zone-sub' }, p.sub)),
         z.queue?.items.length ? h('span', { class: 'home-zone-play', onclick: (e) => e.stopPropagation() },
-          on ? transportButton('pause', 'Pause', () => transport(z.zone, 'play', 'pause'), 'primary play', z.zone, 'play')
-            : transportButton('play', 'Play', () => transport(z.zone, 'play', 'play'), 'primary play', z.zone)) : null,
+          on ? transportButton('pause', tt('common.pause'), () => transport(z.zone, 'play', 'pause'), 'primary play', z.zone, 'play')
+            : transportButton('play', tt('home.play'), () => transport(z.zone, 'play', 'play'), 'primary play', z.zone)) : null,
         // The zone's own volume and mute, as in the player bar.
         z.desired && h('div', { class: 'home-zone-volume', onclick: (e) => e.stopPropagation() },
           volumeRow(z.desired.volume, z.desired.muted,
@@ -3562,7 +3586,7 @@ function homeShelf(view, tiles) {
   return h('section', { class: 'home-section home-shelf', 'aria-label': title },
     h('div', { class: 'home-shelf-head' },
       h('h2', {}, title, h('span', { class: 'muted' }, about)),
-      h('a', { href: `#/home/${view}` }, 'Show all ›')),
+      h('a', { href: `#/home/${view}` }, tt('home.showAll'))),
     h('div', { class: 'shelf-row' }, tiles.slice(0, HOME_SHELF)));
 }
 
@@ -3593,7 +3617,7 @@ function favoriteTile(f) {
   const x = f.item, station = media(f, 'station'), book = media(f, 'group');
   return homeTile({
     artworkId: x.artworkId, placeholder: station ? 'radio' : 'library', title: x.title ?? x.name,
-    sub: station ? 'Radio' : book ? [x.artist, 'book'].filter(Boolean).join(' · ') : x.artist,
+    sub: station ? tt('home.radio') : book ? [x.artist, tt('home.book')].filter(Boolean).join(' · ') : x.artist,
     ref: { favorite: f.id }, like: media(f, 'track') && likeButton('track', x),
     fav: favoriteButton(favoriteKey(f), () => (book ? addBookFavorite(x.source) : addFavorite(media(f, 'track'), station)), Boolean(book)) });
 }
@@ -3605,13 +3629,13 @@ function likedTile(l) {
     return homeTile({ artworkId: t.artworkId, title: t.title, sub: t.artist, ref: { tracks: [t] }, like: likeButton('track', x), fav: favoriteButton(likeKey('track', t), () => addFavorite(t)) });
   }
   if (radioSong(l)) return null;
-  if (kind === 'artist') return homeTile({ artworkId: x.artworkId, title: x.name, sub: 'Artist', ref: { node: { provider: x.providerId, id: x.providerItemId } }, like: likeButton('artist', x), open: () => openHomeDetail(x.providerId, x.providerItemId) });
-  if (kind === 'album') return homeTile({ artworkId: x.artworkId, title: x.title, sub: x.artist ?? 'Album', ref: { node: { provider: x.providerId, id: x.providerItemId } }, like: likeButton('album', x), open: () => openHomeDetail(x.providerId, x.providerItemId) });
+  if (kind === 'artist') return homeTile({ artworkId: x.artworkId, title: x.name, sub: tt('home.artist'), ref: { node: { provider: x.providerId, id: x.providerItemId } }, like: likeButton('artist', x), open: () => openHomeDetail(x.providerId, x.providerItemId) });
+  if (kind === 'album') return homeTile({ artworkId: x.artworkId, title: x.title, sub: x.artist ?? tt('home.album'), ref: { node: { provider: x.providerId, id: x.providerItemId } }, like: likeButton('album', x), open: () => openHomeDetail(x.providerId, x.providerItemId) });
   if (kind === 'audiobook') {
     const b = bookRef(x.reference);
-    return b && homeTile({ artworkId: x.artworkId, title: x.title, sub: x.author ?? 'Book', ref: { node: { provider: b.providerId, id: b.providerItemId } }, like: likeButton('audiobook', b) });
+    return b && homeTile({ artworkId: x.artworkId, title: x.title, sub: x.author ?? tt('home.bookLabel'), ref: { node: { provider: b.providerId, id: b.providerItemId } }, like: likeButton('audiobook', b) });
   }
-  if (kind === 'station') return homeTile({ artworkId: x.artworkId, placeholder: 'radio', title: x.name, sub: 'Radio', ref: { station: x }, like: likeButton('station', x) });
+  if (kind === 'station') return homeTile({ artworkId: x.artworkId, placeholder: 'radio', title: x.name, sub: tt('home.radio'), ref: { station: x }, like: likeButton('station', x) });
   return homeTile({ artworkId: x.artworkId, title: x.title, sub: x.artist, ref: { tracks: [x] }, like: likeButton('track', x), fav: favoriteButton(likeKey('track', x), () => addFavorite(x)) });
 }
 
@@ -3619,7 +3643,7 @@ function likedTile(l) {
 // tabs (Tracks first, then as last picked, kept per viewer), or all of it
 // mixed -- tracks, albums, artists and books in turn; each with why. A cover's
 // second line says what it is.
-const FOR_YOU_KINDS = [['all', 'All'], ['track', 'Tracks'], ['album', 'Albums'], ['artist', 'Artists'], ['audiobook', 'Books']];
+const FOR_YOU_KINDS = [['all', 'home.kind.all'], ['track', 'home.kind.tracks'], ['album', 'common.albums'], ['artist', 'common.artists'], ['audiobook', 'home.kind.books']]; // labels translated where shown
 function forYou() {
   const v = proposals ?? {};
   const lists = [['track', v.tracks], ['album', v.albums], ['artist', v.artists], ['audiobook', v.audiobooks]].filter(([, l]) => l?.length);
@@ -3632,12 +3656,12 @@ function forYou() {
   } else {
     shown.push(...lists.find(([k]) => k === pick)[1].map((x) => [pick, x]));
   }
-  const tabs = kinds.length > 2 && h('div', { class: 'home-tabs', role: 'tablist', 'aria-label': 'Show' }, kinds.map(([k, label]) => h('button', {
+  const tabs = kinds.length > 2 && h('div', { class: 'home-tabs', role: 'tablist', 'aria-label': tt('common.show') }, kinds.map(([k, label]) => h('button', {
     type: 'button', role: 'tab', 'aria-selected': String(k === pick),
     onclick: () => { store.set('vx.homeForYou', k); renderHome(); },
-  }, label, k !== 'all' && h('span', { class: 'home-tab-count' }, lists.find(([l]) => l === k)[1].length))));
-  const empty = v.run?.state === 'running' ? 'The AI is choosing proposals for you…'
-    : v.aiAvailable ? 'No proposals yet: ask for fresh picks.' : 'No proposals: connect an AI provider first.';
+  }, tt(label), k !== 'all' && h('span', { class: 'home-tab-count' }, lists.find(([l]) => l === k)[1].length))));
+  const empty = tt(v.run?.state === 'running' ? 'home.aiIsChoosingForYou'
+    : v.aiAvailable ? 'home.noProposalsYet' : 'home.noProposalsConnect');
   return { tabs, empty, tiles: shown.map(([kind, p]) => proposalTile(kind, p)) };
 }
 
@@ -3647,26 +3671,26 @@ function forYou() {
 // the outcome (onEvent).
 function freshPicksTile() {
   const v = proposals ?? {}, running = v.run?.state === 'running', can = Boolean(v.aiAvailable);
-  const sub = running ? 'The AI is choosing…' : can ? 'Ask the AI for new ones' : 'Connect an AI provider first';
-  return h('div', { class: 'cover home-tile fresh-picks' + (running ? ' running' : ''), title: `Fresh picks\n${sub}` },
+  const sub = tt(running ? 'home.aiIsChoosing' : can ? 'home.askAiFor' : 'home.connectAiProvider');
+  return h('div', { class: 'cover home-tile fresh-picks' + (running ? ' running' : ''), title: `${tt('home.freshPicks')}\n${sub}` },
     h('button', {
-      type: 'button', class: 'pic fresh-art', disabled: running || !can, 'aria-label': running ? 'The AI is choosing fresh picks' : 'Fresh picks: ask the AI for new proposals',
-      onclick: () => act(() => api('POST', 'ai/proposals/refresh', ownerOf()), 'the AI is choosing fresh picks').then(() => act(loadProposals)),
+      type: 'button', class: 'pic fresh-art', disabled: running || !can, 'aria-label': tt(running ? 'home.aiIsChoosingFresh' : 'home.freshPicksAsk'),
+      onclick: () => act(() => api('POST', 'ai/proposals/refresh', ownerOf()), 'home.aiIsChoosingFreshPicks').then(() => act(loadProposals)),
     },
     h('span', { class: 'fresh-glow', 'aria-hidden': 'true' }),
-    running && h('span', { class: 'fresh-ring', role: 'status', 'aria-label': 'The AI is choosing' }),
+    running && h('span', { class: 'fresh-ring', role: 'status', 'aria-label': tt('home.aiIsChoosingNow') }),
     icon('sparkle'),
-    h('span', { class: 'cover-name' }, 'Fresh picks')),
+    h('span', { class: 'cover-name' }, tt('home.freshPicks'))),
     h('div', { class: 'small muted title' }, sub));
 }
 
 function proposalTile(kind, p) {
   const x = p.item;
-  if (kind === 'track') return homeTile({ artworkId: x.artworkId, title: x.title, sub: ['Track', x.artist].filter(Boolean).join(' · '), why: p.reason, ref: { tracks: [x] }, like: likeButton('track', x), fav: favoriteButton(likeKey('track', x), () => addFavorite(x)) });
-  if (kind === 'artist') return homeTile({ artworkId: x.artworkId, title: x.name, sub: 'Artist', why: p.reason, ref: { node: { provider: x.providerId, id: x.providerItemId } }, like: likeButton('artist', x), open: () => openHomeDetail(x.providerId, x.providerItemId) });
-  if (kind === 'album') return homeTile({ artworkId: x.artworkId, title: x.title, sub: ['Album', x.artist].filter(Boolean).join(' · '), why: p.reason, ref: { node: { provider: x.providerId, id: x.providerItemId } }, like: likeButton('album', x), open: () => openHomeDetail(x.providerId, x.providerItemId) });
+  if (kind === 'track') return homeTile({ artworkId: x.artworkId, title: x.title, sub: [tt('common.track'), x.artist].filter(Boolean).join(' · '), why: p.reason, ref: { tracks: [x] }, like: likeButton('track', x), fav: favoriteButton(likeKey('track', x), () => addFavorite(x)) });
+  if (kind === 'artist') return homeTile({ artworkId: x.artworkId, title: x.name, sub: tt('home.artist'), why: p.reason, ref: { node: { provider: x.providerId, id: x.providerItemId } }, like: likeButton('artist', x), open: () => openHomeDetail(x.providerId, x.providerItemId) });
+  if (kind === 'album') return homeTile({ artworkId: x.artworkId, title: x.title, sub: [tt('home.album'), x.artist].filter(Boolean).join(' · '), why: p.reason, ref: { node: { provider: x.providerId, id: x.providerItemId } }, like: likeButton('album', x), open: () => openHomeDetail(x.providerId, x.providerItemId) });
   const b = bookRef(x.reference);
-  return homeTile({ artworkId: x.artworkId, title: x.title, sub: ['Book', x.author].filter(Boolean).join(' · '), why: p.reason, ref: b && { node: { provider: b.providerId, id: b.providerItemId } }, like: b && likeButton('audiobook', b) });
+  return homeTile({ artworkId: x.artworkId, title: x.title, sub: [tt('home.bookLabel'), x.author].filter(Boolean).join(' · '), why: p.reason, ref: b && { node: { provider: b.providerId, id: b.providerItemId } }, like: b && likeButton('audiobook', b) });
 }
 
 function homeProposals() {
@@ -3676,7 +3700,7 @@ function homeProposals() {
   return h('section', { class: 'home-section home-shelf', 'aria-label': title },
     h('div', { class: 'home-shelf-head' },
       h('h2', {}, title, h('span', { class: 'muted' }, about)), f.tabs,
-      h('a', { href: '#/home/foryou' }, 'Show all ›')),
+      h('a', { href: '#/home/foryou' }, tt('home.showAll'))),
     h('div', { class: 'shelf-row' }, freshPicksTile(), f.tiles.slice(0, HOME_SHELF)),
     !f.tiles.length && h('p', { class: 'muted home-empty' }, f.empty));
 }
@@ -3742,7 +3766,7 @@ function folderTree(cfg) {
             } },
               h('span', { class: 'tree-chevron' }, icon('forward')), icon('folder'), h('span', { class: 'tree-name' }, f.name),
               !cfg.item && h('span', { class: 'tree-count' }, items.filter((x) => x.folder === f.id).length || '')),
-            treeMenu(`Folder ${f.name}`, folderMenu(f))]),
+            treeMenu(tt('tree.folder', { name: f.name }), folderMenu(f))]),
         isOpen && h('ul', { role: 'group' }, kids(f.id)));
     };
     const itemNode = (x) => h('li', { role: 'treeitem', 'aria-selected': String(cfg.item.current(x)) },
@@ -3751,14 +3775,14 @@ function folderTree(cfg) {
         editing('item', x.id) ? editRow(cfg.item.icon, x.name) : [
           h('button', { type: 'button', class: 'tree-open', title: x.name, onclick: () => cfg.item.open(x) },
             icon(cfg.item.icon), h('span', { class: 'tree-name' }, x.name), h('span', { class: 'tree-count' }, cfg.item.count(x))),
-          treeMenu(`${cfg.noun[0].toUpperCase()}${cfg.noun.slice(1)} ${x.name}`, cfg.item.menu(x))]));
-    const empty = !folders.length && !(cfg.item && items.length) && !edit && h('li', { class: 'muted small tree-empty' }, cfg.empty);
+          treeMenu(tt(`${cfg.texts}.itemMenu`, { name: x.name }), cfg.item.menu(x))]));
+    const empty = !folders.length && !(cfg.item && items.length) && !edit && h('li', { class: 'muted small tree-empty' }, tt(cfg.empty));
     const top = (b) => cfg.drop?.(null, b);
-    render(cfg.key, cfg.el, () => [h('ul', { class: 'tree', role: 'tree', 'aria-label': cfg.label, ...drop(null, cfg.drop && top) },
+    render(cfg.key, cfg.el, () => [h('ul', { class: 'tree', role: 'tree', 'aria-label': tt(cfg.label), ...drop(null, cfg.drop && top) },
       cfg.root ? h('li', { role: 'treeitem', 'aria-expanded': 'true', 'aria-selected': String(cfg.current() == null) },
         h('div', { class: 'tree-row' + (cfg.current() == null ? ' current' : ''), ...drop(null, cfg.drop && top) },
-          h('button', { type: 'button', class: 'tree-open', title: cfg.root.name, onclick: () => cfg.pick(null) },
-            icon(cfg.root.icon), h('span', { class: 'tree-name' }, cfg.root.name), h('span', { class: 'tree-count' }, cfg.root.count() || ''))),
+          h('button', { type: 'button', class: 'tree-open', title: tt(cfg.root.name), onclick: () => cfg.pick(null) },
+            icon(cfg.root.icon), h('span', { class: 'tree-name' }, tt(cfg.root.name)), h('span', { class: 'tree-count' }, cfg.root.count() || ''))),
         h('ul', { role: 'group' }, kids(null), empty)) : [kids(null), empty])]);
     const input = cfg.el.querySelector('.tree-input');
     if (input && document.activeElement !== input) { input.focus(); input.select(); }
@@ -3768,14 +3792,15 @@ function folderTree(cfg) {
   // Enter or leaving the field keeps it, Escape (or an empty name) drops it.
   let edit = null; // {kind: 'folder'|'item', id} or {kind, isNew: true, parent}
   const editing = (kind, id) => edit && !edit.isNew && edit.kind === kind && edit.id === id;
-  const nounOf = (kind) => (kind === 'folder' ? 'folder' : cfg.noun);
+  // A folder's text or an item's, by key: tree.folderNew, playlists.itemNew.
+  const textOf = (kind, what) => (kind === 'folder' ? `tree.folder${what}` : `${cfg.texts}.item${what}`);
   function editRow(iconName, value) {
     return h('div', { class: 'tree-row editing' },
       h('span', { class: 'tree-edit' }, icon(iconName),
         h('input', {
           class: 'tree-input', value, maxlength: 200,
-          'aria-label': edit.isNew ? `New ${nounOf(edit.kind)} name` : `New name for ${value}`,
-          placeholder: edit.isNew ? `New ${nounOf(edit.kind)}` : '',
+          'aria-label': edit.isNew ? tt(textOf(edit.kind, 'NewName')) : tt('tree.newNameFor', { name: value }),
+          placeholder: edit.isNew ? tt(textOf(edit.kind, 'New')) : '',
           onkeydown(e) {
             if (e.key === 'Enter') { e.preventDefault(); endEdit(this.value); }
             else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); endEdit(null); }
@@ -3801,7 +3826,7 @@ function folderTree(cfg) {
     const call = e.kind === 'folder'
       ? (e.isNew ? api('POST', cfg.path, { name, parent: e.parent ?? 0 }) : api('PATCH', `${cfg.path}/${e.id}`, { name }))
       : (e.isNew ? cfg.create(name, e.parent) : cfg.rename(e.id, name));
-    act(() => call, e.isNew ? `${nounOf(e.kind)} created` : 'renamed').then((r) => {
+    act(() => call, e.isNew ? textOf(e.kind, 'Created') : 'tree.renamed').then((r) => {
       if (r && e.isNew && e.kind === 'item') cfg.created?.(r);
       return act(cfg.reload);
     }).finally(draw);
@@ -3844,7 +3869,7 @@ function folderTree(cfg) {
     if (folder != null) openTo(folder);
     act(() => (what.folder != null
       ? api('PATCH', `${cfg.path}/${what.folder}`, { parent: folder ?? 0 })
-      : cfg.moveItem(what.item, folder)), 'moved').then(() => act(cfg.reload));
+      : cfg.moveItem(what.item, folder)), 'common.moved').then(() => act(cfg.reload));
   }
 
   // "Move to…": a dialog with every folder as its path ("Music › Rock"),
@@ -3853,26 +3878,26 @@ function folderTree(cfg) {
   function moveDialog(name, current, onMove, self = null) {
     const within = (f) => { for (let at = f; at; at = folderOf(at.parent)) if (at.id === self) return true; return false; };
     const path = (f) => pathOf(f).join(' › ');
-    const targets = [{ id: null, path: 'Top level' },
+    const targets = [{ id: null, path: tt('tree.topLevel') },
       ...cfg.folders().filter((f) => !within(f)).map((f) => ({ id: f.id, path: path(f) })).sort((a, b) => a.path.localeCompare(b.path))];
-    const list = h('div', { class: 'move-list', role: 'listbox', 'aria-label': 'Folders' });
+    const list = h('div', { class: 'move-list', role: 'listbox', 'aria-label': tt('common.folders') });
     const show = (q) => {
       const words = q.toLowerCase().split(/\s+/).filter(Boolean);
       const shown = targets.filter((t) => words.every((w) => t.path.toLowerCase().includes(w)));
       list.replaceChildren(...shown.map((t) => h('button', {
         type: 'button', role: 'option', class: t.id === current ? 'here' : '', disabled: t.id === current,
-        title: t.id === current ? 'it is here' : t.path,
+        title: t.id === current ? tt('tree.itIsHere') : t.path,
         onclick() { dialog.close(); onMove(t.id); },
       }, icon(t.id == null ? 'back' : 'folder'), h('span', {}, t.path))),
-      ...(shown.length ? [] : [h('p', { class: 'muted small' }, 'No folder of that name.')]));
+      ...(shown.length ? [] : [h('p', { class: 'muted small' }, tt('tree.noFolderOf'))]));
     };
-    const dialog = h('dialog', { class: 'confirm-dialog move-dialog', 'aria-label': `Move ${name}`, onclose() { this.remove(); } },
-      h('div', { class: 'confirm-head' }, h('span', { class: 'confirm-icon move-icon' }, icon('folder')), h('h2', {}, 'Move ', h('span', { class: 'move-name' }, name))),
-      h('input', { type: 'search', class: 'move-filter', placeholder: 'Find a folder…', 'aria-label': 'Find a folder', autocomplete: 'off',
+    const dialog = h('dialog', { class: 'confirm-dialog move-dialog', 'aria-label': tt('tree.moveName', { name }), onclose() { this.remove(); } },
+      h('div', { class: 'confirm-head' }, h('span', { class: 'confirm-icon move-icon' }, icon('folder')), h('h2', {}, `${tt('tree.move')} `, h('span', { class: 'move-name' }, name))),
+      h('input', { type: 'search', class: 'move-filter', placeholder: tt('tree.findFolderPlaceholder'), 'aria-label': tt('tree.findFolder'), autocomplete: 'off',
         oninput() { show(this.value); },
         onkeydown(e) { if (e.key === 'Enter') { e.preventDefault(); list.querySelector('button:not(:disabled)')?.click(); } } }),
       list,
-      h('div', { class: 'confirm-buttons' }, h('button', { type: 'button', onclick: () => dialog.close() }, 'Cancel')));
+      h('div', { class: 'confirm-buttons' }, h('button', { type: 'button', onclick: () => dialog.close() }, tt('common.cancel'))));
     show('');
     document.body.append(dialog);
     dialog.showModal();
@@ -3881,31 +3906,33 @@ function folderTree(cfg) {
   const newFolder = (parent = null) => startEdit({ kind: 'folder', isNew: true, parent });
   const newItem = (folder = null) => startEdit({ kind: 'item', isNew: true, parent: folder });
   const folderMenu = (f) => [
-    cfg.create && h('button', { type: 'button', onclick: () => newItem(f.id) }, icon('plus'), `New ${cfg.noun} here`),
-    h('button', { type: 'button', onclick: () => newFolder(f.id) }, icon('folder'), 'New folder here'),
-    h('button', { type: 'button', onclick: () => startEdit({ kind: 'folder', id: f.id }) }, icon('edit'), 'Rename'),
+    cfg.create && h('button', { type: 'button', onclick: () => newItem(f.id) }, icon('plus'), tt(`${cfg.texts}.itemNewHere`)),
+    h('button', { type: 'button', onclick: () => newFolder(f.id) }, icon('folder'), tt('tree.newFolderHere')),
+    h('button', { type: 'button', onclick: () => startEdit({ kind: 'folder', id: f.id }) }, icon('edit'), tt('common.rename')),
     h('button', { type: 'button', class: 'danger', async onclick() {
       // Everything within it goes too: with items among it, its name is typed again.
       const tree = [f.id];
       for (let i = 0; i < tree.length; i++) tree.push(...cfg.folders().filter((x) => x.parent === tree[i]).map((x) => x.id));
       const folders = tree.length - 1, inside = cfg.items().filter((x) => tree.includes(x.folder ?? null));
-      const n = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+      const n = (count, texts) => tt(`${texts}${count === 1 ? 'One' : 'Many'}`, { n: count });
       const text = inside.length
-        ? `${[folders && n(folders, 'folder', 'folders'), n(inside.length, cfg.noun, cfg.nouns)].filter(Boolean).join(' and ')} in it ${folders + inside.length === 1 ? 'is' : 'are'} deleted with it${cfg.contents ? `, ${cfg.contents(inside)} in all` : ''}. This cannot be undone.`
-        : folders ? `The ${n(folders, 'folder', 'folders')} in it ${folders === 1 ? 'is' : 'are'} deleted with it; there are no ${cfg.nouns} in it.` : 'It is empty.';
-      if (await confirmDelete({ title: 'Delete folder', what: f.name, text, typeName: inside.length > 0 })) {
+        ? tt(folders + inside.length === 1 ? 'tree.inItIs' : 'tree.inItAre',
+          { what: [folders && n(folders, 'tree.folders'), n(inside.length, `${cfg.texts}.items`)].filter(Boolean).join(` ${tt('tree.and')} `) })
+          + (cfg.contents ? `, ${tt('tree.inAll', { n: cfg.contents(inside) })}` : '') + `. ${tt('tree.thisCannotBe')}`
+        : folders ? tt(`${cfg.texts}.${folders === 1 ? 'folderGoes' : 'foldersGo'}`, { folders: n(folders, 'tree.folders') }) : tt('tree.itIsEmpty');
+      if (await confirmDelete({ title: tt('tree.deleteFolder'), what: f.name, text, typeName: inside.length > 0 })) {
         cfg.deleting?.(tree, inside);
-        act(() => api('DELETE', `${cfg.path}/${f.id}`), 'folder deleted').then(() => act(cfg.reload));
+        act(() => api('DELETE', `${cfg.path}/${f.id}`), 'tree.folderDeleted').then(() => act(cfg.reload));
       }
-    } }, icon('trash'), 'Delete folder'),
-    h('button', { type: 'button', onclick: () => moveDialog(f.name, f.parent ?? null, (to) => move({ folder: f.id }, to), f.id) }, icon('folder'), 'Move to…')];
+    } }, icon('trash'), tt('tree.deleteFolder')),
+    h('button', { type: 'button', onclick: () => moveDialog(f.name, f.parent ?? null, (to) => move({ folder: f.id }, to), f.id) }, icon('folder'), tt('tree.moveTo'))];
 
   return { render: draw, startEdit, newFolder, newItem, moveDialog, moveItem: (id, folder) => move({ item: id }, folder), path: (id) => pathOf(folderOf(id)) };
 }
 
 function treeMenu(label, items) {
   return h('span', { class: 'tree-more' },
-    h('button', { type: 'button', class: 'icon-only', title: 'More', 'aria-label': `${label}: more`, 'aria-haspopup': 'menu', onclick: (e) => e.currentTarget.nextElementSibling.togglePopover() }, icon('more')),
+    h('button', { type: 'button', class: 'icon-only', title: tt('common.more'), 'aria-label': tt('tree.more', { name: label }), 'aria-haspopup': 'menu', onclick: (e) => e.currentTarget.nextElementSibling.togglePopover() }, icon('more')),
     h('div', { class: 'pick-popover', popover: 'auto', role: 'menu', ontoggle(e) { if (e.newState === 'open') placeUnderButton(this); },
       onclick(e) { if (e.target.closest('button')) this.hidePopover(); } }, items));
 }
@@ -3913,7 +3940,7 @@ function treeMenu(label, items) {
 // Asks before deleting, in a dialog of the page's own; with typeName the
 // name must be typed again before the button can be pressed. `action` names
 // the button. Resolves true to delete.
-function confirmDelete({ title, what, text, typeName = false, action = 'Delete' }) {
+function confirmDelete({ title, what, text, typeName = false, action = tt('tree.delete') }) {
   return new Promise((resolve) => {
     const ok = h('button', { type: 'submit', class: 'danger-solid', value: 'delete', disabled: typeName }, icon('trash'), action);
     const dialog = h('dialog', { class: 'confirm-dialog', 'aria-label': title,
@@ -3921,21 +3948,21 @@ function confirmDelete({ title, what, text, typeName = false, action = 'Delete' 
       h('form', { method: 'dialog' },
         h('div', { class: 'confirm-head' }, h('span', { class: 'confirm-icon' }, icon('trash')), h('h2', {}, title)),
         h('p', {}, h('strong', {}, what), ': ', text),
-        typeName && h('label', { class: 'confirm-type' }, 'Type the name to confirm',
+        typeName && h('label', { class: 'confirm-type' }, tt('tree.typeNameTo'),
           h('input', { autocomplete: 'off', spellcheck: 'false', placeholder: what,
             oninput() { ok.disabled = this.value.trim() !== what.trim(); } })),
         h('div', { class: 'confirm-buttons' },
-          h('button', { type: 'submit', value: 'cancel', formnovalidate: true }, 'Cancel'), ok)));
+          h('button', { type: 'submit', value: 'cancel', formnovalidate: true }, tt('common.cancel')), ok)));
     document.body.append(dialog);
     dialog.showModal();
   });
 }
 
 // A tree page's tree slides away by its strip, as the library does. Kept per viewer.
-function treeStrip(toggle, key, name) {
+function treeStrip(toggle, key, texts) {
   const show = (open) => {
     toggle.setAttribute('aria-expanded', String(open));
-    toggle.title = open ? `Hide the ${name}` : `Show the ${name}`;
+    toggle.title = tt(open ? `${texts}.hideTree` : `${texts}.showTree`);
     store.set(key, open ? 'open' : 'closed');
     toggle.closest('.page-app').classList.toggle('tree-closed', !open);
   };
@@ -3950,7 +3977,7 @@ function pageParts(page, labelOf) {
   const menu = page.querySelector('.pl-small-bar > button'), popover = menu.nextElementSibling;
   const show = (part) => {
     page.dataset.part = part;
-    page.querySelector('.pl-part-label').textContent = labelOf(part);
+    page.querySelector('.pl-part-label').textContent = tt(labelOf(part));
     for (const b of popover.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.part === part));
   };
   menu.addEventListener('click', () => popover.togglePopover());
@@ -3969,14 +3996,14 @@ function pageParts(page, labelOf) {
 // Library items dropped on a playlist are added to it.
 
 const playlistTree = folderTree({
-  key: 'playlistTree', store: 'vx.playlistFolders', el: $('#plTree'), label: 'Playlists and folders', path: 'playlist-folders',
-  noun: 'playlist', nouns: 'playlists', empty: 'No playlists yet: + makes one.',
+  key: 'playlistTree', store: 'vx.playlistFolders', el: $('#plTree'), label: 'playlists.playlistsAndFolders', path: 'playlist-folders',
+  texts: 'playlists', empty: 'playlists.treeEmpty',
   folders: () => S.playlistFolders, items: () => S.playlists, reload: loadPlaylists,
   moveItem: (id, folder) => api('PATCH', `playlists/${id}`, { folder: folder ?? 0 }),
   create: (name, folder) => api('POST', 'playlists', { name, folder: folder ?? 0 }),
   rename: (id, name) => api('PATCH', `playlists/${id}`, { name }),
   created: (p) => { S.openPlaylist = p.id; },
-  contents: (lists) => { const sum = lists.reduce((all, p) => all + p.count, 0); return `${sum} ${sum === 1 ? 'entry' : 'entries'}`; },
+  contents: (lists) => { const sum = lists.reduce((all, p) => all + p.count, 0); return tt(sum === 1 ? 'playlists.entry' : 'playlists.entries', { n: sum }); },
   deleting: (_, lists) => { if (lists.some((p) => p.id === S.openPlaylist)) S.openPlaylist = null; },
   item: {
     icon: 'playlists', current: (p) => p.id === S.openPlaylist, open: (p) => openPlaylist(p.id), count: (p) => p.count, menu: playlistMenu,
@@ -3988,7 +4015,7 @@ const playlistTree = folderTree({
       act(async () => {
         await dropOnPlaylist(p.id, items);
         if (from) for (const e of from.ids) await api('DELETE', `playlists/${from.id}/entries/${e}`);
-      }, from && (from.ids.length > 1 ? `${from.ids.length} entries moved` : 'moved')).then(() => act(loadPlaylists));
+      }, from && (from.ids.length > 1 ? tt('playlists.entriesMoved', { n: from.ids.length }) : 'common.moved')).then(() => act(loadPlaylists));
     },
   },
 });
@@ -4004,13 +4031,13 @@ function openPlaylist(id) {
 
 function playlistMenu(p) {
   return [
-    h('button', { type: 'button', onclick: () => act(() => enqueuePlaylist(p.id, false)) }, icon('queue'), 'Add to the zone’s queue'),
-    h('button', { type: 'button', onclick: () => act(() => enqueuePlaylist(p.id, true)) }, icon('next'), 'Play next'),
-    h('button', { type: 'button', onclick: () => playlistTree.startEdit({ kind: 'item', id: p.id }) }, icon('edit'), 'Rename'),
+    h('button', { type: 'button', onclick: () => act(() => enqueuePlaylist(p.id, false)) }, icon('queue'), tt('playlists.addToZones')),
+    h('button', { type: 'button', onclick: () => act(() => enqueuePlaylist(p.id, true)) }, icon('next'), tt('playlists.playNext')),
+    h('button', { type: 'button', onclick: () => playlistTree.startEdit({ kind: 'item', id: p.id }) }, icon('edit'), tt('common.rename')),
     h('button', { type: 'button', class: 'danger', async onclick() {
-      if (await confirmDelete({ title: 'Delete playlist', what: p.name, text: `Its ${p.count} ${p.count === 1 ? 'entry goes' : 'entries go'} with it. This cannot be undone.`, typeName: true })) act(() => api('DELETE', `playlists/${p.id}`), 'playlist deleted').then(() => act(loadPlaylists));
-    } }, icon('trash'), 'Delete playlist'),
-    h('button', { type: 'button', onclick: () => playlistTree.moveDialog(p.name, p.folder ?? null, (to) => playlistTree.moveItem(p.id, to)) }, icon('folder'), 'Move to…')];
+      if (await confirmDelete({ title: tt('playlists.deletePlaylist'), what: p.name, text: tt(p.count === 1 ? 'playlists.itsEntryGoes' : 'playlists.itsEntriesGo', { n: p.count }), typeName: true })) act(() => api('DELETE', `playlists/${p.id}`), 'playlists.playlistDeleted').then(() => act(loadPlaylists));
+    } }, icon('trash'), tt('playlists.deletePlaylist')),
+    h('button', { type: 'button', onclick: () => playlistTree.moveDialog(p.name, p.folder ?? null, (to) => playlistTree.moveItem(p.id, to)) }, icon('folder'), tt('playlists.moveTo'))];
 }
 
 $('#plNew').addEventListener('click', () => playlistTree.newItem());
@@ -4018,7 +4045,7 @@ $('#plSearch').addEventListener('input', filterPlaylistEntries);
 $('#plNewFolder').addEventListener('click', () => playlistTree.newFolder());
 treeStrip($('#plTreeToggle'), 'vx.playlistTree', 'playlists');
 // The tree, the open playlist or the library.
-const PL_PARTS = { tree: 'Playlists', list: 'Playlist', library: 'Library' };
+const PL_PARTS = { tree: 'common.playlists', list: 'playlists.playlist', library: 'common.library' };
 const showPlaylistPart = pageParts($('.page[data-page="playlists"]'),
   (part) => (part === 'list' ? S.playlists.find((p) => p.id === S.openPlaylist)?.name ?? PL_PARTS.list : PL_PARTS[part]));
 
@@ -4030,7 +4057,7 @@ function removeEntries(id, list, entries, entry) {
   clearSelection();
   act(async () => {
     for (const e of ids) await api('DELETE', `playlists/${id}/entries/${e}`);
-  }, ids.length > 1 ? `${ids.length} entries removed` : 'removed').then(() => act(loadPlaylists));
+  }, ids.length > 1 ? tt('playlists.entriesRemoved', { n: ids.length }) : 'playlists.removed').then(() => act(loadPlaylists));
 }
 
 // --- the open playlist: its entries as a zone's queue shows its items --------
@@ -4039,8 +4066,8 @@ function removeEntries(id, list, entries, entry) {
 async function renderPlaylistEntries() {
   const p = S.playlists.find((x) => x.id === S.openPlaylist);
   if (!p) {
-    $('#plHead').replaceChildren(h('span', { class: 'queue-count' }, icon('playlists'), 'No playlist open'));
-    $('#entries').replaceChildren(h('p', { class: 'muted small pl-pick' }, S.playlists.length ? 'Pick a playlist on the left.' : 'Make a playlist with + on the left.'));
+    $('#plHead').replaceChildren(h('span', { class: 'queue-count' }, icon('playlists'), tt('playlists.noPlaylistOpen')));
+    $('#entries').replaceChildren(h('p', { class: 'muted small pl-pick' }, tt(S.playlists.length ? 'playlists.pickPlaylistOn' : 'playlists.makePlaylistWith')));
     return;
   }
   const id = p.id;
@@ -4050,15 +4077,15 @@ async function renderPlaylistEntries() {
   const reload = () => act(loadPlaylists);
   const move = (moves) => act(async () => {
     for (const m of moves) await api('PATCH', `playlists/${id}/entries/${m.id}`, { index: m.to });
-  }, 'moved').then(reload);
+  }, 'common.moved').then(reload);
   $('#plHead').replaceChildren(
-    h('span', { class: 'queue-count pl-title' }, icon('playlists'), h('span', { class: 'pl-name' }, p.name), h('span', { class: 'muted pl-count' }, `Tracks: ${entries.length}`)),
+    h('span', { class: 'queue-count pl-title' }, icon('playlists'), h('span', { class: 'pl-name' }, p.name), h('span', { class: 'muted pl-count' }, tt('playlists.tracks', { n: entries.length }))),
     h('span', { class: 'tools' },
-      h('button', { class: 'icon-only', title: 'Play next in the zone', 'aria-label': 'Play next in the zone', disabled: !entries.length, onclick: () => act(() => enqueuePlaylist(id, true)) }, icon('next')),
-      h('button', { class: 'icon-only', title: 'Add to the zone’s queue', 'aria-label': 'Add to the zone’s queue', disabled: !entries.length, onclick: () => act(() => enqueuePlaylist(id, false)) }, icon('queue'))));
+      h('button', { class: 'icon-only', title: tt('playlists.playNextIn'), 'aria-label': tt('playlists.playNextIn'), disabled: !entries.length, onclick: () => act(() => enqueuePlaylist(id, true)) }, icon('next')),
+      h('button', { class: 'icon-only', title: tt('playlists.addToZones'), 'aria-label': tt('playlists.addToZones'), disabled: !entries.length, onclick: () => act(() => enqueuePlaylist(id, false)) }, icon('queue'))));
   $('#entries').replaceChildren(h('div', { class: 'table-wrap plain queue-list', ...listDrop(list, move, (items, index) => act(() => dropOnPlaylist(id, items, index)).then(reload)) },
     h('table', { class: 'small' },
-      h('tr', {}, h('th', {}, '#'), h('th', {}, 'Track'), h('th', { class: 'queue-actions' }, 'Duration')),
+      h('tr', {}, h('th', {}, '#'), h('th', {}, tt('common.track')), h('th', { class: 'queue-actions' }, tt('playlists.duration'))),
       entries.map((en, i) => h('tr', { 'data-index': String(i), 'data-list': list, 'data-id': String(en.id), 'data-selected': rowSelected(list, en.id) },
         rowHandle(list, i + 1, (rowId) => entryBody(entries.find((e) => String(e.id) === rowId))),
         h('td', {}, h('div', { class: 'with-art' },
@@ -4070,10 +4097,10 @@ async function renderPlaylistEntries() {
             media(en, 'track') && likeButton('track', en.item),
             favoriteButton(media(en, 'group') ? `book|${en.item.source}` : likeKey('track', en.item),
               () => (media(en, 'group') ? addBookFavorite(en.item.source) : addFavorite(en.item)), Boolean(media(en, 'group'))),
-            h('button', { class: 'danger', title: 'remove from the playlist (with the rows selected, all of them)', 'aria-label': 'Remove from the playlist', onclick: () => removeEntries(id, list, entries, en.id) }, icon('trash')))))))),
-    !entries.length && h('p', { class: 'muted small' }, 'Empty: drag tracks, albums or books here from the library, or add them with a cover’s buttons.'),
-    h('p', { class: 'muted small pl-no-match', hidden: true }, 'No track matches.'),
-    h('p', { class: 'muted small drop-hint' }, 'Drop to add to the playlist.')));
+            h('button', { class: 'danger', title: tt('playlists.removeFromPlaylistTitle'), 'aria-label': tt('playlists.removeFromPlaylist'), onclick: () => removeEntries(id, list, entries, en.id) }, icon('trash')))))))),
+    !entries.length && h('p', { class: 'muted small' }, tt('playlists.emptyDragTracks')),
+    h('p', { class: 'muted small pl-no-match', hidden: true }, tt('playlists.noTrackMatches')),
+    h('p', { class: 'muted small drop-hint' }, tt('playlists.dropToAdd'))));
   filterPlaylistEntries();
 }
 
@@ -4097,7 +4124,7 @@ function filterPlaylistEntries() {
     if (hit) shown++;
   }
   const count = $('#plHead .pl-count'), none = $('#entries .pl-no-match');
-  if (count) count.textContent = words.length ? `Tracks: ${shown} of ${rows.length}` : `Tracks: ${rows.length}`;
+  if (count) count.textContent = words.length ? tt('playlists.tracksOf', { n: shown, total: rows.length }) : tt('playlists.tracks', { n: rows.length });
   if (none) none.hidden = !rows.length || shown > 0;
 }
 
@@ -4121,11 +4148,11 @@ async function loadStations() {
 }
 
 const stationTree = folderTree({
-  key: 'stationTree', store: 'vx.stationFolders', el: $('#stTree'), label: 'Station folders', path: 'station-folders',
-  noun: 'station', nouns: 'stations', empty: 'No folders yet.',
+  key: 'stationTree', store: 'vx.stationFolders', el: $('#stTree'), label: 'stations.stationFolders', path: 'station-folders',
+  texts: 'stations', empty: 'stations.treeEmpty',
   folders: () => S.stationFolders, items: () => S.stations, reload: loadStations,
   moveItem: (id, folder) => api('PATCH', `stations/${enc(id)}`, { folder: folder ?? 0 }),
-  root: { name: 'Radio stations', icon: 'radio', count: () => S.stations.filter((s) => s.folder == null).length },
+  root: { name: 'stations.radioStations', icon: 'radio', count: () => S.stations.filter((s) => s.folder == null).length },
   current: () => S.stationFolder,
   pick(folder) {
     S.stationFolder = folder;
@@ -4143,10 +4170,10 @@ function moveStations(ids, folder) {
   clearSelection();
   act(async () => {
     for (const id of ids) await api('PATCH', `stations/${enc(id)}`, { folder: folder ?? 0 });
-  }, ids.length > 1 ? `${ids.length} stations moved` : 'moved').then(() => act(loadStations));
+  }, ids.length > 1 ? tt('stations.stationsMoved', { n: ids.length }) : 'common.moved').then(() => act(loadStations));
 }
 
-const stationFolderName = () => (S.stationFolder == null ? 'Radio stations' : stationTree.path(S.stationFolder).join(' › '));
+const stationFolderName = () => (S.stationFolder == null ? tt('stations.radioStations') : stationTree.path(S.stationFolder).join(' › '));
 
 // Searched, the stations of every folder whose name, genre or homepage holds every word.
 function renderStations() {
@@ -4155,25 +4182,25 @@ function renderStations() {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const hit = (s) => { const text = [s.name, s.genre, s.homepage].filter(Boolean).join(' ').toLowerCase(); return words.every((w) => text.includes(w)); };
   const shown = S.stations.filter((s) => (query ? hit(s.station) : (s.folder ?? null) === folder)).map((s) => s.station);
-  const name = query ? `Search: ${query}` : stationFolderName();
+  const name = query ? tt('stations.search', { query }) : stationFolderName();
   $('#stHead').replaceChildren(
     h('span', { class: 'queue-count pl-title' }, icon(query ? 'search' : folder == null ? 'radio' : 'folder'), h('span', { class: 'pl-name', title: name }, name),
-      h('span', { class: 'muted' }, `Stations: ${shown.length}`)),
+      h('span', { class: 'muted' }, tt('stations.stationsCount', { n: shown.length }))),
     h('span', { class: 'tools' },
-      h('button', { class: 'icon-only', title: 'Import M3U or PLS', 'aria-label': 'Import M3U or PLS', onclick: () => $('#importDialog').showModal() }, icon('playlists')),
-      h('button', { class: 'icon-only', title: 'Add a station', 'aria-label': 'Add a station', onclick: () => $('#stationDialog').showModal() }, icon('plus'))));
+      h('button', { class: 'icon-only', title: tt('stations.importM3uOr'), 'aria-label': tt('stations.importM3uOr'), onclick: () => $('#importDialog').showModal() }, icon('playlists')),
+      h('button', { class: 'icon-only', title: tt('stations.addStation'), 'aria-label': tt('stations.addStation'), onclick: () => $('#stationDialog').showModal() }, icon('plus'))));
   $('#stations').replaceChildren(shown.length
     ? h('div', { class: 'table-wrap plain station-list' }, stationTable(shown))
-    : h('p', { class: 'muted small pl-pick' }, query && S.stations.length ? 'No station matches.' : folder == null && !S.stations.length
-      ? 'No stations yet: add one with +, or import an M3U or PLS file.'
-      : 'Empty: drag stations onto this folder in the tree, or add one with +.'));
+    : h('p', { class: 'muted small pl-pick' }, tt(query && S.stations.length ? 'stations.noStationMatches' : folder == null && !S.stations.length
+      ? 'stations.noStationsYet'
+      : 'stations.emptyDragStations')));
   if (smallScreen.matches && $('.page[data-page="stations"]').dataset.part === 'list') showStationPart('list');
 }
 
 $('#stNewFolder').addEventListener('click', () => stationTree.newFolder());
 $('#stSearch').addEventListener('input', renderStations);
-treeStrip($('#stTreeToggle'), 'vx.stationTree', 'folders');
-const showStationPart = pageParts($('.page[data-page="stations"]'), (part) => (part === 'list' ? stationFolderName() : 'Folders'));
+treeStrip($('#stTreeToggle'), 'vx.stationTree', 'stations');
+const showStationPart = pageParts($('.page[data-page="stations"]'), (part) => (part === 'list' ? stationFolderName() : 'common.folders'));
 
 for (const dialog of [$('#stationDialog'), $('#importDialog')]) {
   dialog.querySelector('[data-close]').addEventListener('click', () => dialog.close());
@@ -4198,12 +4225,12 @@ $('#stationForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const body = { folder: S.stationFolder ?? 0 };
   for (const [k, v] of new FormData(e.target)) if (String(v).trim()) body[k] = String(v).trim();
-  submitStations($('#stationDialog'), () => api('POST', 'stations', body), 'station added');
+  submitStations($('#stationDialog'), () => api('POST', 'stations', body), 'stations.stationAdded');
 });
 $('#importForm').addEventListener('submit', (e) => {
   e.preventDefault();
   submitStations($('#importDialog'), () => api('POST', 'stations/import', { playlist: e.target.playlist.value, folder: S.stationFolder ?? 0 }),
-    (r) => `${r.length} station(s) imported`);
+    (r) => tt('stations.stationSImported', { n: r.length }));
 });
 
 // --- index ----------------------------------------------------------------------
@@ -4216,19 +4243,19 @@ const INDEX_LOG_MAX = 500;
 
 function renderIndexer() {
   const ix = S.status?.library?.indexer;
-  if (!ix) { patch($('#indexer'), h('p', { class: 'muted' }, 'no status yet')); return; }
+  if (!ix) { patch($('#indexer'), h('p', { class: 'muted' }, tt('index.noStatusYet'))); return; }
   const local = S.status.providers.find((p) => p.id === 'local');
   patch($('#indexer'),
     h('table', { class: 'small' },
-      h('tr', {}, ['scanned', 'indexed', 'failed', 'queue', 'passes'].map((k) => h('th', {}, k))),
+      h('tr', {}, ['scanned', 'indexed', 'failed', 'queue', 'passes'].map((k) => h('th', {}, tt(`index.column.${k}`)))),
       h('tr', {},
         [ix.scanned, ix.indexed].map((v) => h('td', { class: 'num' }, v)),
         h('td', { class: 'num' + (ix.failed ? ' bad' : '') }, ix.failed),
         [ix.queueDepth, ix.passes].map((v) => h('td', { class: 'num' }, v)))),
     h('p', { class: 'small' },
-      h('span', { class: ix.queueDepth ? 'warn' : 'good' }, ix.queueDepth ? 'indexing…' : ix.passes ? 'idle' : 'no pass yet'),
-      ` · counted since the server started · schema ${S.status.library.schemaVersion}`),
-    local && h('p', { class: 'small' }, 'local: ', h('span', { class: local.state === 'ready' ? 'good' : 'warn' }, local.state), ' ', local.detail ?? ''));
+      h('span', { class: ix.queueDepth ? 'warn' : 'good' }, tt(ix.queueDepth ? 'index.indexing' : ix.passes ? 'index.idle' : 'index.noPassYet')),
+      ` · ${tt('index.countedSinceServer')} · ${tt('index.schema', { n: S.status.library.schemaVersion })}`),
+    local && h('p', { class: 'small' }, `${tt('index.local')}: `, h('span', { class: local.state === 'ready' ? 'good' : 'warn' }, tv('state', local.state)), ' ', local.detail ?? ''));
 }
 
 // Counts a browse node's entries in pages of 100, up to 1000.
@@ -4255,8 +4282,8 @@ async function loadFound() {
     countLocal('artists'), countLocal('albums'), api('GET', 'providers/local/browse?node=folders&limit=100')]);
   const link = (node, title, text = title) => h('a', { href: '#', onclick(e) { e.preventDefault(); openInLibrary(node, title); } }, text);
   $('#indexFound').replaceChildren(
-    h('p', {}, link('artists', 'Artists', `${artists} artists`), ' · ', link('albums', 'Albums', `${albums} albums`), ' · ',
-      link('folders', 'Folders', `${folders.nodes.length}${folders.nodes.length === 100 ? '+' : ''} folder(s) with files`)),
+    h('p', {}, link('artists', tt('common.artists'), tt('index.artists', { n: artists })), ' · ', link('albums', tt('common.albums'), tt('index.albums', { n: albums })), ' · ',
+      link('folders', tt('common.folders'), tt('index.folderSWith', { n: `${folders.nodes.length}${folders.nodes.length === 100 ? '+' : ''}` }))),
     h('div', { class: 'small' }, folders.nodes.map((n) => h('div', {}, link(n.nodeId, n.title)))));
 }
 
@@ -4279,9 +4306,9 @@ function noteIndexLine(line) {
 
 function renderIndexLog() {
   $('#indexPasses').replaceChildren(...(indexLog.lines.length ? indexLog.lines.map((l) => h('div', {}, l))
-    : [h('p', { class: 'muted' }, 'none — the server tails its own log file (logging.file) and those named in gui.logs')]));
+    : [h('p', { class: 'muted' }, tt('index.noneServerTails'))]));
   $('#indexFailed').replaceChildren(...(indexLog.failed.size ? [h('table', {}, [...indexLog.failed].map(([path, reason]) =>
-    h('tr', {}, h('td', {}, path), h('td', { class: 'bad' }, reason))))] : [h('p', { class: 'muted' }, 'none')]));
+    h('tr', {}, h('td', {}, path), h('td', { class: 'bad' }, reason))))] : [h('p', { class: 'muted' }, tt('common.none'))]));
 }
 
 $('#reloadIndex').addEventListener('click', () => act(loadFound));
@@ -4299,11 +4326,12 @@ async function loadFolders() {
 function renderFolderProgress() {
   const ix = S.status?.library?.indexer;
   patch($('#folderProgress'), ix ? h('span', { class: ix.queueDepth ? 'warn' : 'muted' },
-    `indexer ${ix.queueDepth ? 'indexing…' : 'idle'} · since server start: scanned ${ix.scanned} · indexed ${ix.indexed} · failed ${ix.failed} · queue ${ix.queueDepth} · passes ${ix.passes}`) : '');
+    tt('folders.indexerSinceServer',
+      { state: tt(ix.queueDepth ? 'folders.indexing' : 'folders.idle'), scanned: ix.scanned, indexed: ix.indexed, failed: ix.failed, queue: ix.queueDepth, passes: ix.passes })) : '');
 }
 
 function renderFolders() {
-  render('folders', $('#folders'), () => (S.folders.length ? S.folders.map(folderCard) : [h('p', { class: 'muted' }, 'no folders')]));
+  render('folders', $('#folders'), () => (S.folders.length ? S.folders.map(folderCard) : [h('p', { class: 'muted' }, tt('folders.noFolders'))]));
 }
 
 function folderCard(f) {
@@ -4315,35 +4343,35 @@ function folderCard(f) {
   return h('div', { class: 'card' },
     h('h3', {}, f.path,
       h('span', { class: 'pill' }, f.type),
-      h('span', { class: 'pill ' + tone }, f.state),
-      fixed ? h('span', { class: 'pill warn', title: 'from the config file: read-only here' }, 'config') : h('span', { class: 'pill' }, 'api'),
-      f.mediaType && h('span', { class: 'pill', title: 'declared: everything in it is this, whatever its tags say' }, f.mediaType === 'audiobook' ? '📖 audiobooks' : f.mediaType)),
+      h('span', { class: 'pill ' + tone }, tv('state', f.state)),
+      fixed ? h('span', { class: 'pill warn', title: tt('folders.fromConfigFile') }, 'config') : h('span', { class: 'pill' }, 'api'),
+      f.mediaType && h('span', { class: 'pill', title: tt('folders.declaredEverythingIn') }, f.mediaType === 'audiobook' ? `📖 ${tt('folders.audiobooks')}` : tv('media', f.mediaType))),
     f.detail && h('div', { class: 'small ' + tone }, f.detail),
     h('div', { class: 'kv small' },
-      kv('id', f.id),
-      kv('files', lp ? [`${lp.files} · ${lp.files - lp.unreadable} indexed · `,
-        h('span', { class: lp.unreadable ? 'bad' : '' }, `${lp.unreadable} unreadable`)] : '— (no pass yet)'),
-      kv('last pass', [f.lastPass ? new Date(f.lastPass).toLocaleString() : '—',
-        lp && h('span', { class: 'muted' }, ` · probed ${lp.probed} · moved ${lp.moved} · failed ${lp.failed} · missing ${lp.missing} · ${lp.seconds.toFixed(1)} s`)]),
-      kv('since server start', h('span', { class: 'muted' }, `scanned ${f.scanned} · indexed ${f.indexed} · failed ${f.failed}`),
-        'counted over every pass: a folder scanned twice counts its files twice'),
-      f.type === 'smb' && kv('share', `${f.host}${f.port && f.port !== 445 ? `:${f.port}` : ''} · ${f.share} · ${f.directory || '/'}`),
-      f.type === 'smb' && kv('login', `${f.user ? (f.domain ? `${f.domain}\\${f.user}` : f.user) : 'guest'} · ${f.hasPassword ? 'has a password' : 'no password'}`)),
+      kv('folders.id', f.id),
+      kv('folders.files', lp ? [`${lp.files} · ${tt('folders.indexed', { n: lp.files - lp.unreadable })} · `,
+        h('span', { class: lp.unreadable ? 'bad' : '' }, tt('folders.unreadable', { n: lp.unreadable }))] : tt('folders.noPassYet')),
+      kv('folders.lastPass', [f.lastPass ? new Date(f.lastPass).toLocaleString() : '—',
+        lp && h('span', { class: 'muted' }, ` · ${tt('folders.probedMovedFailed', lp)} · ${lp.seconds.toFixed(1)} s`)]),
+      kv('folders.sinceServerStart', h('span', { class: 'muted' }, tt('folders.scannedIndexedFailed', f)),
+        'folders.countedOverEvery'),
+      f.type === 'smb' && kv('folders.share', `${f.host}${f.port && f.port !== 445 ? `:${f.port}` : ''} · ${f.share} · ${f.directory || '/'}`),
+      f.type === 'smb' && kv('folders.login', `${f.user ? (f.domain ? `${f.domain}\\${f.user}` : f.user) : tt('folders.guest')} · ${tt(f.hasPassword ? 'folders.hasPassword' : 'folders.noPassword')}`)),
     h('div', { class: 'row' },
-      h('label', { title: fixed ? 'config folders are read-only' : '' }, h('input', {
+      h('label', { title: fixed ? tt('folders.configFoldersAre') : '' }, h('input', {
         type: 'checkbox', checked: f.enabled, disabled: fixed,
         onchange: (e) => change(() => api('PATCH', path, { enabled: e.target.checked })),
-      }), ' enabled'),
-      h('label', { title: fixed ? 'config folders are read-only' : 'PATCH {mediaType}: reclassifies its tracks without a probe' }, 'holds ', h('select', {
+      }), ` ${tt('folders.enabled')}`),
+      h('label', { title: tt(fixed ? 'folders.configFoldersAre' : 'folders.reclassifiesItsTracks') }, `${tt('folders.holds')} `, h('select', {
         value: f.mediaType ?? '', disabled: fixed,
-        onchange: (e) => change(() => api('PATCH', path, { mediaType: e.target.value }), 'declared type changed'),
-      }, h('option', { value: '' }, '(the tags decide)'), h('option', { value: 'music' }, 'music'), h('option', { value: 'audiobook' }, 'audiobooks'))),
-      h('button', { onclick: () => change(() => api('POST', `${path}/scan`), 'pass queued') }, 'scan now'),
+        onchange: (e) => change(() => api('PATCH', path, { mediaType: e.target.value }), 'folders.declaredTypeChanged'),
+      }, h('option', { value: '' }, tt('folders.tagsDecide')), h('option', { value: 'music' }, tt('folders.music')), h('option', { value: 'audiobook' }, tt('folders.audiobooks')))),
+      h('button', { onclick: () => change(() => api('POST', `${path}/scan`), 'folders.passQueued') }, tt('folders.scanNow')),
       !fixed && h('button', {
         class: 'danger',
-        onclick: () => confirm(`Remove folder ${f.path}?\nIts tracks leave the library.`) && change(() => api('DELETE', path), 'folder removed'),
-      }, 'remove')),
-    !fixed && f.type === 'smb' && h('details', { 'data-key': `login:${f.id}` }, h('summary', {}, 'edit login'),
+        onclick: () => confirm(tt('folders.removeFolderIts', { path: f.path })) && change(() => api('DELETE', path), 'folders.folderRemoved'),
+      }, tt('folders.remove'))),
+    !fixed && f.type === 'smb' && h('details', { 'data-key': `login:${f.id}` }, h('summary', {}, tt('folders.editLogin')),
       h('form', { class: 'row', autocomplete: 'off', onsubmit(e) {
         e.preventDefault();
         const F = e.target.elements, body = {};
@@ -4351,12 +4379,12 @@ function folderCard(f) {
         if (F.domain.value !== (f.domain ?? '')) body.domain = F.domain.value;
         if (F.password.value) body.password = F.password.value;
         F.password.value = '';
-        change(() => api('PATCH', path, body), 'login changed');
+        change(() => api('PATCH', path, body), 'folders.loginChanged');
       } },
-        h('input', { name: 'user', placeholder: 'user (empty = guest)', size: 12, value: f.user ?? '' }),
-        h('input', { name: 'password', type: 'password', placeholder: f.hasPassword ? 'unchanged' : 'none', size: 12, autocomplete: 'new-password' }),
-        h('input', { name: 'domain', placeholder: 'domain', size: 8, value: f.domain ?? '' }),
-        h('button', {}, 'set'))));
+        h('input', { name: 'user', placeholder: tt('folders.userEmptyGuest'), size: 12, value: f.user ?? '' }),
+        h('input', { name: 'password', type: 'password', placeholder: tt(f.hasPassword ? 'folders.unchanged' : 'common.none'), size: 12, autocomplete: 'new-password' }),
+        h('input', { name: 'domain', placeholder: tt('folders.domain'), size: 8, value: f.domain ?? '' }),
+        h('button', {}, tt('common.set')))));
 }
 
 function onFolderChanged(data) {
@@ -4380,22 +4408,22 @@ function smbLogin() {
 
 $('#listShares').addEventListener('click', () => act(async () => {
   const shares = await api('POST', 'library/smb/shares', smbLogin());
-  FF.share.replaceChildren(h('option', { value: '' }, `share… (${shares.length})`), ...shares.map((s) => h('option', { value: s }, s)));
+  FF.share.replaceChildren(h('option', { value: '' }, `${tt('folders.sharePick')} (${shares.length})`), ...shares.map((s) => h('option', { value: s }, s)));
   FF.path.value = '';
   // The shares as links too: a filled select does not open by itself. Picking
   // one lists its directories.
   const pick = (s) => (e) => { e.preventDefault(); FF.share.value = s; FF.share.dispatchEvent(new Event('change')); };
   $('#smbDirs').replaceChildren(shares.length
-    ? h('div', {}, h('div', { class: 'muted' }, 'shares:'), shares.map((s) => h('div', {}, '🗄 ', h('a', { href: '#', onclick: pick(s) }, s))))
-    : h('p', { class: 'muted' }, 'this login sees no shares'));
+    ? h('div', {}, h('div', { class: 'muted' }, `${tt('folders.shares')}:`), shares.map((s) => h('div', {}, '🗄 ', h('a', { href: '#', onclick: pick(s) }, s))))
+    : h('p', { class: 'muted' }, tt('folders.thisLoginSees')));
   return shares;
-}, (shares) => `${shares.length} share(s)`));
+}, (shares) => tt('folders.shareS', { n: shares.length })));
 
 // The directories below `path` in the picked share; a click goes down, the
 // trail goes up, and the path field follows, so what is shown is what is added.
 async function listDirs(path) {
   const share = FF.share.value;
-  if (!share) throw new Error('list shares and pick one first');
+  if (!share) throw new Error(tt('folders.listSharesAnd'));
   const body = { ...smbLogin(), share };
   if (path) body.path = path;
   const dirs = await api('POST', 'library/smb/directories', body);
@@ -4405,7 +4433,7 @@ async function listDirs(path) {
   $('#smbDirs').replaceChildren(
     h('div', {}, h('a', { href: '#', onclick: go('') }, share), parts.map((p, i) => [' / ', h('a', { href: '#', onclick: go(parts.slice(0, i + 1).join('/')) }, p)])),
     dirs.length ? h('div', {}, dirs.map((d) => h('div', {}, '📁 ', h('a', { href: '#', onclick: go(path ? `${path}/${d}` : d) }, d))))
-      : h('p', { class: 'muted' }, 'no directories below'));
+      : h('p', { class: 'muted' }, tt('folders.noDirectoriesBelow')));
 }
 $('#listDirs').addEventListener('click', () => act(() => listDirs(FF.path.value.trim().replace(/^\/+|\/+$/g, ''))));
 
@@ -4417,11 +4445,11 @@ folderForm.addEventListener('submit', (e) => {
   body.enabled = FF.enabled.checked;
   if (FF.mediaType.value) body.mediaType = FF.mediaType.value;
   FF.password.value = '';
-  act(() => api('POST', 'library/folders', body), (f) => `folder ${f.id} added (${f.state})`).then((r) => {
+  act(() => api('POST', 'library/folders', body), (f) => tt('folders.folderAdded', { id: f.id, state: tv('state', f.state) })).then((r) => {
     if (r) {
       folderForm.reset();
       $('#smbFields').hidden = true;
-      FF.share.replaceChildren(h('option', { value: '' }, 'share…'));
+      FF.share.replaceChildren(h('option', { value: '' }, tt('folders.sharePick')));
       $('#smbDirs').replaceChildren();
     }
     return act(loadFolders);
@@ -4460,17 +4488,17 @@ async function mbSearchPage(place) {
   const [tracks, albums, artists, stations, playlists] = [r.items.tracks, r.items.albums, r.items.artists, r.items.stations, r.items.playlists].map(mine);
   const sourceName = place.source && (MB.providers.find((p) => p.id === place.source)?.displayName ?? place.source);
   const node = (kind, a, title, subtitle) => ({ kind, providerId: a.providerId, nodeId: a.providerItemId, title, subtitle, artworkId: a.artworkId });
-  const section = (title, list, kids) => (list.length ? [h('h4', {}, `${title} (${list.length})`), kids] : []);
+  const section = (title, list, kids) => (list.length ? [h('h4', {}, `${tt(title)} (${list.length})`), kids] : []);
   const out = [
-    h('div', { class: 'row small' }, [`Search “${r.query}”`, place.types !== 'all' && place.types, place.mediaType, sourceName].filter(Boolean).join(' · '),
+    h('div', { class: 'row small' }, [tt('library.searchFor', { query: r.query }), place.types !== 'all' && tv('types', place.types), place.mediaType && tv('media', place.mediaType), sourceName].filter(Boolean).join(' · '),
       r.failures.filter((f) => !place.source || f.provider === place.source).map((f) => h('span', { class: 'bad' }, ` · ${f.provider}: ${f.error} (${f.message})`))),
-    ...section('Artists', artists, h('div', {}, artists.map((a) => mbRow(node('artist', a, a.name), true)))),
-    ...section('Albums', albums, h('div', {}, albums.map((a) => mbRow(node('album', a, a.title, [a.artist, a.year].filter(Boolean).join(' · ')), true)))),
-    ...section('Tracks', tracks, mbTracks(tracks)),
-    ...section('Playlists', playlists, h('div', {}, playlists.map((p) => mbRow(p, true)))),
-    ...section('Stations', stations, stationTable(stations)),
+    ...section('common.artists', artists, h('div', {}, artists.map((a) => mbRow(node('artist', a, a.name), true)))),
+    ...section('common.albums', albums, h('div', {}, albums.map((a) => mbRow(node('album', a, a.title, [a.artist, a.year].filter(Boolean).join(' · ')), true)))),
+    ...section('library.tracks', tracks, mbTracks(tracks)),
+    ...section('common.playlists', playlists, h('div', {}, playlists.map((p) => mbRow(p, true)))),
+    ...section('library.stations', stations, stationTable(stations)),
   ];
-  if (out.length === 1) out.push(h('p', { class: 'muted' }, 'nothing found'));
+  if (out.length === 1) out.push(h('p', { class: 'muted' }, tt('library.nothingFound')));
   return out;
 }
 
@@ -4478,8 +4506,8 @@ async function loadSources() {
   MB.providers = await api('GET', 'providers');
   // The search's sources: those that can search, by their names.
   const pick = $('#mbSearchSource'), was = pick.value;
-  pick.replaceChildren(h('option', { value: '' }, 'All sources'),
-    ...MB.providers.filter((p) => p.capabilities?.includes('search')).map((p) => h('option', { value: p.id }, p.displayName ?? p.id)));
+  pick.replaceChildren(h('option', { value: '' }, tt('library.allSources')),
+    ...MB.providers.filter((p) => p.capabilities?.includes('search')).map((p) => h('option', { value: p.id }, sourceLabel(p.displayName ?? p.id))));
   pick.value = [...pick.options].some((o) => o.value === was) ? was : '';
   renderSources();
 }
@@ -4500,7 +4528,7 @@ function renderSources() {
     return h('div', { class: 'source', 'aria-expanded': roots.length ? String(open) : null },
       h('div', { class: 'source-head' },
         roots.length ? h('button', {
-          type: 'button', class: 'source-fold', 'aria-label': `${open ? 'Collapse' : 'Expand'} ${name}`,
+          type: 'button', class: 'source-fold', 'aria-label': tt(open ? 'library.collapse' : 'library.expand', { name }),
           onclick() { if (open) closedSources.add(provider); else closedSources.delete(provider); keepClosed(); renderSources(); },
         }, h('span', { class: 'tree-chevron' }, icon('forward'))) : h('span', { class: 'source-fold' }),
         h('a', {
@@ -4511,21 +4539,22 @@ function renderSources() {
             mbGo({ provider, trail: [] });
           },
         }, icon(iconName), h('span', { class: 'source-name' }, name),
-        state !== 'ready' && h('span', { class: 'source-state warn', title: state, 'aria-label': state }, icon('alert')))),
+        state !== 'ready' && h('span', { class: 'source-state warn', title: tv('state', state), 'aria-label': tv('state', state) }, icon('alert')))),
       open && roots.length > 0 && h('div', { class: 'roots' }, roots));
   };
   $('#mbSources').replaceChildren(
-    ...MB.providers.map((p) => source(p.id, p.displayName ?? p.id, SOURCE_ICONS[p.id] ?? 'cloud',
-      (p.root ?? []).map((n) => h('div', {}, link(n.title, p.id, [{ node: n.nodeId, title: n.title }]))), p.state)),
+    // A provider's name and its roots are its fixed labels, translated as the page's own.
+    ...MB.providers.map((p) => source(p.id, sourceLabel(p.displayName ?? p.id), SOURCE_ICONS[p.id] ?? 'cloud',
+      (p.root ?? []).map((n) => h('div', {}, link(sourceLabel(n.title), p.id, [{ node: n.nodeId, title: sourceLabel(n.title) }]))), p.state)),
     // Each playlist takes library items dropped on it, at its end.
-    source(PLAYLISTS, 'Playlists', 'playlists', S.playlists.map((p) => h('div', {
-      class: 'playlist-drop', title: `drop tracks or albums here to add them to ${p.name}`,
+    source(PLAYLISTS, tt('common.playlists'), 'playlists', S.playlists.map((p) => h('div', {
+      class: 'playlist-drop', title: tt('library.dropTracksOr', { name: p.name }),
       ...dropTarget(null, (items) => act(() => dropOnPlaylist(p.id, items)).then(() => act(loadPlaylists))),
     }, link(p.name, PLAYLISTS, [{ node: String(p.id), title: p.name }])))),
-    source(FAVORITES, 'Favourites', 'star'),
-    source(LIKED, 'Liked', 'heart'),
-    source(HISTORY, 'Played lately', 'clock'),
-    source(PROPOSALS, 'Proposals', 'sparkle'));
+    source(FAVORITES, tt('library.favourites'), 'star'),
+    source(LIKED, tt('library.liked'), 'heart'),
+    source(HISTORY, tt('library.playedLately'), 'clock'),
+    source(PROPOSALS, tt('common.proposals'), 'sparkle'));
 }
 
 function mbGo(place) {
@@ -4581,7 +4610,7 @@ async function mbPlace(place) {
   if (place.provider === PROPOSALS) return mbProposals(place);
   const provider = MB.providers.find((p) => p.id === place.provider);
   if (provider?.state === 'authRequired') {
-    return [mbCrumbs(place), h('p', { class: 'warn' }, 'authRequired — ', linkify(provider.detail))];
+    return [mbCrumbs(place), h('p', { class: 'warn' }, `${tt('library.authrequired')} — `, linkify(provider.detail))];
   }
   // The local library's lists are whole from their start (mbLocalList).
   if (place.provider === 'local') Object.assign(place, { offset: 0, letter: null });
@@ -4708,7 +4737,7 @@ function mbVirtualCovers(place, r) {
         el = node ? mbCover(node) : h('div', { class: `cover blank${failed.has(offset) ? ' load-failed' : ''}` },
           h('div', { class: 'pic' }, failed.has(offset) && h('button', {
             onclick() { failed.delete(offset); load(offset); schedule(); },
-          }, 'Retry loading')));
+          }, tt('library.retryLoading'))));
         mounted.set(at, el);
         el.dataset.index = at;
         list.append(el);
@@ -4783,7 +4812,7 @@ const mbMoreAt = (place, r, offset, count) => {
   return (r.total != null ? next < r.total : count >= MB_LIMIT) ? mbMore(place, next) : null;
 };
 function mbMore(place, offset) {
-  const more = h('div', { class: 'mb-more' }, h('span', { class: 'spinner', role: 'status', 'aria-label': 'Loading more' }));
+  const more = h('div', { class: 'mb-more' }, h('span', { class: 'spinner', role: 'status', 'aria-label': tt('library.loadingMore') }));
   const seq = MB.loads;
   const seen = new IntersectionObserver(async ([e]) => {
     if (!e.isIntersecting) return;
@@ -4809,13 +4838,13 @@ function mbMore(place, offset) {
 }
 
 function mbCrumbs(place) {
-  const name = { [PLAYLISTS]: 'Playlists', [FAVORITES]: 'Favourites', [LIKED]: 'Liked', [HISTORY]: 'Played lately', [PROPOSALS]: 'Proposals', [SEARCH]: 'Search' }[place.provider]
-    ?? MB.providers.find((p) => p.id === place.provider)?.displayName ?? place.provider;
+  const own = { [PLAYLISTS]: 'common.playlists', [FAVORITES]: 'library.favourites', [LIKED]: 'library.liked', [HISTORY]: 'library.playedLately', [PROPOSALS]: 'common.proposals', [SEARCH]: 'library.search' }[place.provider];
+  const name = own ? tt(own) : sourceLabel(MB.providers.find((p) => p.id === place.provider)?.displayName ?? place.provider);
   const go = (i) => (e) => { e.preventDefault(); mbGo({ provider: place.provider, trail: place.trail.slice(0, i) }); };
   return h('div', { class: 'row small' },
     h('a', { href: '#', onclick: go(0) }, name),
     place.trail.map((c, i) => [' › ', h('a', { href: '#', onclick: go(i + 1) }, c.title)]),
-    h('span', { class: 'muted' }, ` · node ${place.trail.at(-1)?.node ?? '(root)'}`));
+    h('span', { class: 'muted' }, ` · ${tt('library.node')} ${place.trail.at(-1)?.node ?? tt('library.root')}`));
 }
 
 function mbPage(place, r) {
@@ -4830,20 +4859,20 @@ function mbPage(place, r) {
   if (pager) tools.append(pager);
   // The local library's lists have their letters; sort and filter are not offered there.
   if (r.sorts?.length && !local) {
-    tools.append(h('label', {}, 'sort ', h('select', {
+    tools.append(h('label', {}, `${tt('library.sort')} `, h('select', {
       value: r.sort ?? '', onchange: (e) => mbGo({ ...place, sort: e.target.value, offset: 0 }),
     }, r.sorts.map((s) => h('option', { value: s }, s)))));
   }
   if (r.filterable && !local) {
     tools.append(h('form', { onsubmit(e) { e.preventDefault(); mbGo({ ...place, filter: e.target.elements.filter.value.trim() || null, offset: 0 }); } },
-      h('input', { name: 'filter', placeholder: 'filter', size: 14, value: place.filter ?? '' }), h('button', {}, 'filter')));
+      h('input', { name: 'filter', placeholder: tt('library.filter'), size: 14, value: place.filter ?? '' }), h('button', {}, tt('library.filter'))));
   }
   out.push(tools);
   const whole = local && !r.sections && r.total != null ? mbLocalList(place, r) : null;
   if (!whole) mbList = null;
   if (r.letters?.length) {
     out.push(h('div', { class: 'letters small' }, r.letters.map((l) => h('button', {
-      title: `from ${l.offset}`,
+      title: tt('library.from', { n: l.offset }),
       onclick() {
         if (!whole) mbGo({ ...place, letter: l.letter, offset: 0 });
         else if (whole.scrollToIndex) whole.scrollToIndex(l.offset);
@@ -4855,7 +4884,7 @@ function mbPage(place, r) {
   if (r.sections) {
     for (const s of r.sections) {
       out.push(h('h4', {}, s.title, s.total != null && h('span', { class: 'muted' }, ` (${s.total})`),
-        s.more && [' ', h('a', { href: '#', onclick(e) { e.preventDefault(); mbOpen({ ...s.more, title: s.title }); } }, 'more ›')]));
+        s.more && [' ', h('a', { href: '#', onclick(e) { e.preventDefault(); mbOpen({ ...s.more, title: s.title }); } }, tt('library.more'))]));
       out.push(...mbEntries(s.nodes, s.items, s.layout));
     }
   } else if (whole) {
@@ -4863,7 +4892,7 @@ function mbPage(place, r) {
   } else {
     out.push(...mbEntries(r.nodes, r.items, r.layout));
   }
-  if (!count && !r.sections?.length) out.push(h('p', { class: 'muted' }, 'empty'));
+  if (!count && !r.sections?.length) out.push(h('p', { class: 'muted' }, tt('library.empty')));
   // Once more under a long page, so the next one is not a scroll away.
   if (pager && count > 12) out.push(h('div', { class: 'row small mb-tools' }, mbPager(place, r, offset, count)));
   if (local && !r.sections && !whole) out.push(mbMoreAt(place, r, offset, count));
@@ -4875,26 +4904,26 @@ function mbPage(place, r) {
 // total only back and forward. None for a list on one page.
 function mbPager(place, r, offset, count) {
   const last = r.total != null ? offset + count >= r.total : count < MB_LIMIT;
-  if (offset === 0 && last) return count ? h('span', { class: 'muted' }, r.total ?? count, ' entries') : null;
+  if (offset === 0 && last) return count ? h('span', { class: 'muted' }, tt('library.entries', { n: r.total ?? count })) : null;
   const go = (to) => () => mbGo({ ...place, offset: to });
   const at = Math.floor(offset / MB_LIMIT);
   const pages = r.total != null ? Math.ceil(r.total / MB_LIMIT) : null;
   const shown = pages == null ? [] : [...new Set([0, at - 1, at, at + 1, pages - 1])].filter((i) => i >= 0 && i < pages).sort((a, b) => a - b);
-  return h('nav', { class: 'mb-pager', 'aria-label': 'Pages' },
-    h('span', { class: 'muted' }, `${offset + 1}–${offset + count}`, r.total != null ? ` of ${r.total}` : ''),
-    h('button', { type: 'button', class: 'icon-only', disabled: offset === 0, title: 'Previous page', 'aria-label': 'Previous page',
+  return h('nav', { class: 'mb-pager', 'aria-label': tt('library.pages') },
+    h('span', { class: 'muted' }, `${offset + 1}–${offset + count}`, r.total != null ? ` ${tt('library.of', { n: r.total })}` : ''),
+    h('button', { type: 'button', class: 'icon-only', disabled: offset === 0, title: tt('library.previousPage'), 'aria-label': tt('library.previousPage'),
       onclick: go(Math.max(0, offset - MB_LIMIT)) }, icon('back')),
     shown.map((i, k) => [k > 0 && i > shown[k - 1] + 1 && h('span', { class: 'muted' }, '…'),
       h('button', { type: 'button', class: 'mb-page', 'aria-current': i === at ? 'page' : null, disabled: i === at,
-        'aria-label': `Page ${i + 1}`, onclick: go(i * MB_LIMIT) }, i + 1)]),
-    h('button', { type: 'button', class: 'icon-only', disabled: last, title: 'Next page', 'aria-label': 'Next page',
+        'aria-label': tt('library.page', { n: i + 1 }), onclick: go(i * MB_LIMIT) }, i + 1)]),
+    h('button', { type: 'button', class: 'icon-only', disabled: last, title: tt('library.nextPage'), 'aria-label': tt('library.nextPage'),
       onclick: go(offset + count) }, icon('forward')));
 }
 
 function mbHeader(n) {
   return h('div', { class: 'mbHead', ...dragNode(n) }, art(n.artworkId),
     h('div', {},
-      h('h3', {}, n.title, ' ', h('span', { class: 'pill' }, n.kind)),
+      h('h3', {}, n.title, ' ', h('span', { class: 'pill' }, tv('kind', n.kind))),
       n.subtitle && h('div', { class: 'muted' }, n.subtitle),
       h('div', { class: 'row' }, nodeActions(n))));
 }
@@ -4912,7 +4941,7 @@ function mbEntries(nodes, items, layout) {
 }
 
 // The grip on a library item that can be dragged, as a queue row has one.
-const dragGrip = (tag = 'span') => h(tag, { class: 'drag-grip', title: 'drag to a queue or a playlist', 'aria-hidden': 'true' }, icon('grip'));
+const dragGrip = (tag = 'span') => h(tag, { class: 'drag-grip', title: tt('library.dragToQueue'), 'aria-hidden': 'true' }, icon('grip'));
 
 // A playable node drags as a reference the server expands.
 const dragNode = (n) => (n.playable ? dragItem({ node: { provider: n.providerId, id: n.nodeId } }) : {});
@@ -4949,20 +4978,20 @@ function nodeLike(n) {
 // playlist, where "next" is after its selected rows and play is not offered
 // (app.css: .lib-play). Titles follow the page under the pointer.
 function refButtons(ref, playClass) {
-  const button = (name, titles, onclick, cls) => h('button', {
+  const button = (name, texts, onclick, cls, titles = texts.map((t) => tt(t))) => h('button', {
     class: cls, title: titles[0], 'aria-label': titles[0], onclick,
     onmouseenter() { this.title = titles[page === 'playlists' ? 1 : 0]; this.setAttribute('aria-label', this.title); },
     onfocus() { this.onmouseenter(); },
   }, icon(name));
   return [
-    button('play', ['Play now', 'Play now'], () => act(() => queueRef(ref, 'now')), `${playClass} lib-play`),
-    button('next', ['Play next', 'Add next (after the selected entry)'], () => act(() => addRef(ref, true))),
-    button('queue', ['Add to the end of the queue', 'Add to the end of the playlist'], () => act(() => addRef(ref, false)))];
+    button('play', ['library.playNow', 'library.playNow'], () => act(() => queueRef(ref, 'now')), `${playClass} lib-play`),
+    button('next', ['library.playNext', 'library.addNextAfter'], () => act(() => addRef(ref, true))),
+    button('queue', ['library.addToEnd', 'library.addToEndOf'], () => act(() => addRef(ref, false)))];
 }
 
 async function addRef(ref, next) {
   if (page !== 'playlists') return queueRef(ref, next ? 'next' : 'end');
-  if (S.openPlaylist == null) throw new Error('open a playlist first');
+  if (S.openPlaylist == null) throw new Error(tt('library.openPlaylistFirst'));
   await dropOnPlaylist(S.openPlaylist, [ref], next ? afterSelected(`playlist:${S.openPlaylist}`) : null);
   return act(loadPlaylists);
 }
@@ -4993,6 +5022,32 @@ function trackLines(t, mark = null) {
     h('div', { class: 'line' }, mark, typeMark(t), t.title),
     h('div', { class: 'muted line' }, [t.artist, t.album].filter(Boolean).join(' · ')));
 }
+
+// The providers' names and roots are fixed English labels, shown by their keys.
+const SOURCE_LABELS = {
+  'Local files': 'library.fixed.localFiles',
+  'Web radio': 'library.fixed.webRadio',
+  'Album artists': 'library.fixed.albumArtists',
+  'Artists': 'library.fixed.artists',
+  'Albums': 'library.fixed.albums',
+  'Tracks': 'library.fixed.tracks',
+  'Genres': 'library.fixed.genres',
+  'Composers': 'library.fixed.composers',
+  'Years': 'library.fixed.years',
+  'Recently added': 'library.fixed.recentlyAdded',
+  'All stations': 'library.fixed.allStations',
+  'New releases': 'library.fixed.newReleases',
+  'My collection': 'library.fixed.myCollection',
+  'Mixes': 'library.fixed.mixes',
+  'Moods': 'library.fixed.moods',
+  'Playlists': 'library.fixed.playlists',
+  'Favourites': 'library.fixed.favourites',
+  'Stations': 'library.fixed.stations',
+  'Folders': 'library.fixed.folders',
+  'Audiobooks': 'library.fixed.audiobooks',
+  'For you': 'library.fixed.forYou',
+};
+const sourceLabel = (text) => tt(SOURCE_LABELS[text] ?? text);
 
 // An item's artwork that, held under the pointer for half a second, shows
 // how it sounds (two lines) and where it comes from (its source's icon) in a
@@ -5028,13 +5083,13 @@ function showItemInfo(anchor, x) {
 // popover and beside the zone's title.
 function itemInfo(x) {
   const f = x.format;
-  const [first, second] = x.kind === 'station' ? ['Live stream', x.genre ?? '']
-    : x.kind === 'group' ? [x.parts.length ? `${x.parts.length} parts` : 'A book', x.type ?? '']
+  const [first, second] = x.kind === 'station' ? [tt('library.liveStream'), x.genre ?? '']
+    : x.kind === 'group' ? [x.parts.length ? tt('common.parts', { n: x.parts.length }) : tt('library.book'), x.type ?? '']
       : f ? [[f.codec, f.sampleRate && `${f.sampleRate / 1000} kHz`, f.bitDepth && `${f.bitDepth} bit`].filter(Boolean).join(' · '),
-        [f.channels && (f.channels === 1 ? 'mono' : f.channels === 2 ? 'stereo' : `${f.channels} channels`), f.bitrate && `${f.bitrate} kbps`].filter(Boolean).join(' · ')]
-        : ['Format unknown', ''];
+        [f.channels && (f.channels === 1 ? tt('library.mono') : f.channels === 2 ? tt('library.stereo') : tt('library.channels', { n: f.channels })), f.bitrate && `${f.bitrate} kbps`].filter(Boolean).join(' · ')]
+        : [tt('library.formatUnknown'), ''];
   const id = x.providerId ?? x.source?.split(':')[0];
-  const name = MB.providers.find((p) => p.id === id)?.displayName ?? id ?? 'unknown source';
+  const name = MB.providers.find((p) => p.id === id)?.displayName ?? id ?? tt('library.unknownSource');
   return [
     h('div', { class: 'info-lines' }, h('div', {}, first), second && h('div', { class: 'muted' }, second)),
     h('div', { class: 'info-source', title: name }, icon(SOURCE_ICONS[id] ?? 'cloud'), h('span', {}, name))];
@@ -5068,19 +5123,19 @@ function nodeActions(n) {
   const node = { provider: n.providerId, id: n.nodeId };
   return [
     refActions({ node }),
-    h('button', { title: 'add as single tracks, even a book (group: false)', onclick: () => act(() => queueRef({ node, group: false }, 'end')) }, '+Q ⇉'),
+    h('button', { title: tt('library.addAsSingle'), onclick: () => act(() => queueRef({ node, group: false }, 'end')) }, '+Q ⇉'),
     likeButton('audiobook', { providerId: n.providerId, providerItemId: n.nodeId }, false, { node }),
     favoriteButton(`book|${n.providerId}:${n.nodeId}`, () => api('POST', 'favorites', { node, ...ownerOf() }), true),
   ];
 }
 
 function refActions(ref, { shuffle = true } = {}) {
-  const go = (how, name, title) => h('button', { class: 'icon-only', title, 'aria-label': title, onclick: () => act(() => queueRef(ref, how)) }, icon(name));
+  const go = (how, name, text, title = tt(text)) => h('button', { class: 'icon-only', title, 'aria-label': title, onclick: () => act(() => queueRef(ref, how)) }, icon(name));
   return [
-    go('now', 'play', 'Play now: in place of the queue'),
-    go('next', 'next', 'Play next'),
-    go('end', 'queue', 'Add to the end of the player bar’s zone queue'),
-    shuffle && go('shuffle', 'shuffle', 'Shuffle play'),
+    go('now', 'play', 'library.playNowIn'),
+    go('next', 'next', 'library.playNext'),
+    go('end', 'queue', 'library.addToEndOfPlayer'),
+    shuffle && go('shuffle', 'shuffle', 'library.shufflePlay'),
   ];
 }
 
@@ -5100,7 +5155,7 @@ async function queueRef(ref, how) {
 // What an add to a queue answered, flashed: how many, and what was refused.
 function queuedFlash(r) {
   const refused = (r?.refused ?? []).map((x) => `${(x.track ?? x.entry?.item)?.title ?? '?'}: ${x.reason}`);
-  flash([r?.queued != null ? `${r.queued} queued` : 'queued', r?.grouped && 'as one book', r?.truncated && 'truncated', refused.length && `refused ${refused.join(' | ')}`]
+  flash([r?.queued != null ? tt('library.queued', { n: r.queued }) : tt('library.queuedDone'), r?.grouped && tt('library.asOneBook'), r?.truncated && tt('library.truncated'), refused.length && `${tt('library.refused')} ${refused.join(' | ')}`]
     .filter(Boolean).join(' · '), refused.length > 0);
   return r;
 }
@@ -5115,7 +5170,7 @@ async function mbPlaylists(place) {
       entries.length ? h('div', {},
         books.map((e) => h('div', { class: 'nodeRow' }, artSlot(e.item.artworkId), h('span', { class: 'grow' }, itemLabel(e.item)),
           h('span', { class: 'num small' }, fmtDur(e.item.duration)))),
-        tracks.length && mbTracks(tracks)) : h('p', { class: 'muted' }, 'empty')];
+        tracks.length && mbTracks(tracks)) : h('p', { class: 'muted' }, tt('library.empty'))];
   }
   const lists = await api('GET', 'playlists');
   // As the library's tracks are listed: its buttons slide out under the pointer.
@@ -5127,11 +5182,11 @@ async function mbPlaylists(place) {
       h('td', {}, artSlot(null, 'playlists')),
       h('td', { class: 'row-text' }, h('div', { class: 'track-lines', title: `${p.name} [#${p.id}]` },
         h('div', { class: 'line' }, h('a', { href: '#', onclick: (e) => e.preventDefault() }, p.name)),
-        h('div', { class: 'muted line' }, `${p.count} tracks`))),
+        h('div', { class: 'muted line' }, tt('library.tracksCount', { n: p.count })))),
       h('td', { class: 'queue-actions' }, h('div', { class: 'row-end' },
         h('span', { class: 'row-tools', onclick: (e) => e.stopPropagation() }, refButtons(ref, 'row-play'),
-          h('button', { title: 'Shuffle play', 'aria-label': 'Shuffle play', onclick: () => act(() => queueRef(ref, 'shuffle')) }, icon('shuffle'))))));
-  })) : h('p', { class: 'muted' }, 'no playlists')];
+          h('button', { title: tt('library.shufflePlay'), 'aria-label': tt('library.shufflePlay'), onclick: () => act(() => queueRef(ref, 'shuffle')) }, icon('shuffle'))))));
+  })) : h('p', { class: 'muted' }, tt('library.noPlaylists'))];
 }
 
 // Favourites as the library's tracks are listed. A track goes anywhere as
@@ -5148,7 +5203,7 @@ async function mbFavorites(place) {
         media(f, 'track') && likeButton('track', f.item),
         favoriteButton(favoriteKey(f), () => (media(f, 'group') ? addBookFavorite(f.item.source)
           : addFavorite(media(f, 'track'), media(f, 'station'))), Boolean(media(f, 'group')))))))))
-    : h('p', { class: 'muted' }, 'no favourites')];
+    : h('p', { class: 'muted' }, tt('library.noFavourites'))];
 }
 
 // The listener's likes, newest first, as the Liked page has them: tracks and
@@ -5170,32 +5225,32 @@ async function mbLiked(place) {
     kind: x.kind, providerId: x.providerId, nodeId: x.providerItemId, title: x.title ?? x.name,
     subtitle: x.artist, artworkId: x.artworkId, playable: x.kind === 'album',
   }));
-  const section = (title, n, kids) => (n ? [h('h4', {}, `${title} (${n})`), kids] : []);
+  const section = (title, n, kids) => (n ? [h('h4', {}, `${tt(title)} (${n})`), kids] : []);
   const out = [mbCrumbs(place),
     ...(rows.length ? [h('table', { class: 'small rows lib-tracks' }, rows)] : []),
-    ...section('Albums and artists', nodes.length, h('div', { class: 'covers' }, nodes.map(mbCover))),
-    ...section('Stations', kind('station').length, stationTable(kind('station')))];
-  if (out.length === 1) out.push(h('p', { class: 'muted' }, 'nothing liked yet'));
+    ...section('library.albumsAndArtists', nodes.length, h('div', { class: 'covers' }, nodes.map(mbCover))),
+    ...section('library.stations', kind('station').length, stationTable(kind('station')))];
+  if (out.length === 1) out.push(h('p', { class: 'muted' }, tt('library.nothingLikedYet')));
   return out;
 }
 
 // What the house played lately (GET history), newest first.
 async function mbHistory(place) {
   const plays = await api('GET', `history?limit=${MB_LIMIT}${scopeQuery('&')}`);
-  return [mbCrumbs(place), plays.items.length ? mbTracks(plays.items.map((p) => p.track)) : h('p', { class: 'muted' }, 'nothing played yet')];
+  return [mbCrumbs(place), plays.items.length ? mbTracks(plays.items.map((p) => p.track)) : h('p', { class: 'muted' }, tt('library.nothingPlayedYet'))];
 }
 
 // What the AI proposes for the listener (GET ai/proposals): first its kinds
 // (songs, artists, albums and books when there are any), each opening its
 // list. Tracks and books as rows with why, albums and artists as covers.
 // Fresh picks asks for a new run; ✕ is not proposed again.
-const PROPOSAL_KINDS = [['tracks', 'Songs', 'playlists'], ['artists', 'Artists', 'rooms'], ['albums', 'Albums', 'library'], ['audiobooks', 'Books', 'library']];
+const PROPOSAL_KINDS = [['tracks', 'library.proposalSongs', 'playlists'], ['artists', 'common.artists', 'rooms'], ['albums', 'common.albums', 'library'], ['audiobooks', 'library.proposalBooks', 'library']]; // titles translated where shown
 async function mbProposals(place) {
   const v = proposals = await api('GET', `ai/proposals${S.user === '*' ? '' : scopeQuery()}`);
   const run = v.run, running = run?.state === 'running';
   const dismiss = (p) => h('button', {
-    class: 'danger', title: 'Not proposed again', 'aria-label': 'Dismiss',
-    onclick: () => act(() => api('DELETE', `ai/proposals/${p.id}`), 'dismissed').then(mbLoad),
+    class: 'danger', title: tt('library.notProposedAgain'), 'aria-label': tt('library.dismiss'),
+    onclick: () => act(() => api('DELETE', `ai/proposals/${p.id}`), 'library.dismissed').then(mbLoad),
   }, icon('close'));
   // With its reason as the second line and ✕ among its buttons.
   const why = (row, p) => {
@@ -5225,27 +5280,28 @@ async function mbProposals(place) {
     const items = kind === 'tracks' ? [h('table', { class: 'small rows lib-tracks' }, list.map((p) => why(mbTrackRow(p.item), p)))]
       : kind === 'audiobooks' ? [h('table', { class: 'small rows lib-tracks' }, list.map((p) => why(book(p), p)))]
         : [h('div', { class: 'covers' }, list.map(node(kind === 'albums' ? 'album' : 'artist')).map(mbCover))];
-    return [mbCrumbs(place), ...(list.length ? items : [h('p', { class: 'muted' }, 'none proposed')])];
+    return [mbCrumbs(place), ...(list.length ? items : [h('p', { class: 'muted' }, tt('library.noneProposed'))])];
   }
   // The kinds as rows that open their list (Books only when there are some).
-  const kinds = PROPOSAL_KINDS.filter(([k]) => k !== 'audiobooks' || v.audiobooks.length).map(([k, title, iconName]) => {
+  const kinds = PROPOSAL_KINDS.filter(([k]) => k !== 'audiobooks' || v.audiobooks.length).map(([k, text, iconName]) => {
+    const title = tt(text);
     const open = () => mbGo({ provider: PROPOSALS, trail: [{ node: k, title }] });
     return h('tr', { class: 'opens', onclick: open },
       h('td', {}, artSlot(null, iconName)),
       h('td', { class: 'row-text' }, h('div', { class: 'track-lines' },
         h('div', { class: 'line' }, h('a', { href: '#', onclick: (e) => e.preventDefault() }, title)),
-        h('div', { class: 'muted line' }, `${v[k].length} proposed`))));
+        h('div', { class: 'muted line' }, tt('library.proposed', { n: v[k].length })))));
   });
   const out = [mbCrumbs(place),
     h('div', { class: 'row' },
       h('button', {
-        type: 'button', class: 'primary', disabled: running || !v.aiAvailable, title: v.aiAvailable ? 'POST ai/proposals/refresh' : `no AI: ${v.reason}`,
-        onclick: () => act(() => api('POST', 'ai/proposals/refresh', ownerOf()), 'the AI is choosing fresh picks').then(mbLoad),
-      }, icon('sparkle'), ' Fresh picks'),
+        type: 'button', class: 'primary', disabled: running || !v.aiAvailable, title: v.aiAvailable ? tt('library.askAiFor') : tt('library.noAi', { reason: v.reason }),
+        onclick: () => act(() => api('POST', 'ai/proposals/refresh', ownerOf()), 'library.aiIsChoosing').then(mbLoad),
+      }, icon('sparkle'), ` ${tt('library.freshPicks')}`),
       run?.error && h('span', { class: 'bad small' }, run.error)),
-    ...(running ? [h('div', { class: 'proposals-running', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), 'The AI is choosing proposals for you…')] : []),
+    ...(running ? [h('div', { class: 'proposals-running', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), tt('library.aiIsChoosingProposals'))] : []),
     h('table', { class: 'small rows lib-tracks' }, kinds)];
-  if (!PROPOSAL_KINDS.some(([k]) => v[k].length) && !running) out.push(h('p', { class: 'muted' }, v.aiAvailable ? 'No proposals yet: ask for fresh picks.' : 'No proposals: connect an AI provider first.'));
+  if (!PROPOSAL_KINDS.some(([k]) => v[k].length) && !running) out.push(h('p', { class: 'muted' }, tt(v.aiAvailable ? 'library.noProposalsYet' : 'library.noProposalsConnect')));
   return out;
 }
 
@@ -5255,10 +5311,6 @@ function renderStatus() {
   const st = S.status;
   if (!st) return;
   renderAiStatus(); // its counts: status ai.proposals
-  const c = st.core;
-  const pill = $('#core');
-  pill.textContent = c.connected ? `core ${c.version ?? ''} · ${c.zones} zones · ${c.rooms} rooms · ev q${c.queuedEvents}/drop ${c.droppedEvents}` : 'core not connected';
-  pill.className = 'pill ' + (c.connected ? 'good' : 'bad');
   if (page === 'services') renderTidalState(st);
   if (page === 'ai') renderAi();
   if (page === 'settings') loadCores().catch(() => {}); // a server before core discovery answers 404
@@ -5266,10 +5318,10 @@ function renderStatus() {
   const text = json(st);
   if ($('#statusJson').textContent !== text) $('#statusJson').textContent = text;
   patch($('#providers'), h('table', { class: 'small' },
-    h('tr', {}, h('th', {}, 'id'), h('th', {}, 'state'), h('th', {}, 'capabilities'), h('th', {}, 'detail')),
+    h('tr', {}, h('th', {}, 'id'), h('th', {}, tt('status.state')), h('th', {}, tt('status.capabilities')), h('th', {}, tt('status.detail'))),
     st.providers.map((p) => h('tr', {},
       h('td', {}, p.id, p.displayName && h('div', { class: 'muted' }, p.displayName)),
-      h('td', { class: p.state === 'ready' ? 'good' : 'warn' }, p.state),
+      h('td', { class: p.state === 'ready' ? 'good' : 'warn' }, tv('state', p.state)),
       h('td', {}, (p.capabilities ?? []).join(', ')),
       h('td', {}, linkify(p.detail))))),
   h('div', { class: 'small' },
@@ -5344,29 +5396,27 @@ function systemCard(title, key, m, rows, detail, extra) {
     h('h3', {}, title, detail),
     m && usageBox(key, m),
     extra,
-    m && h('details', { class: 'sub', 'data-key': `sysFigures:${key}` }, h('summary', {}, 'All figures'),
+    m && h('details', { class: 'sub', 'data-key': `sysFigures:${key}` }, h('summary', {}, tt('system.allFigures')),
       h('div', { class: 'kv' }, rows.flatMap(([k, v]) => kv(k, v)))));
 }
 
-const usedOf = (total, available) => total == null || available == null
-  ? `— used of ${fmtBytes(total)}`
-  : `${fmtBytes(total - available)} used of ${fmtBytes(total)}`;
+const usedOf = (total, available) => tt('system.usedOf', { used: total == null || available == null ? '—' : fmtBytes(total - available), total: fmtBytes(total) });
 const machineMemory = (m) => usedOf(m.systemMemoryTotalBytes, m.systemMemoryAvailableBytes);
 
 // An ESP32 splits its memory into its own RAM, which runs out first, and
 // PSRAM: those two rows then stand for the machine's one.
 const memoryRows = (m) => m.internalMemoryTotalBytes == null
-  ? [['memory (machine)', machineMemory(m)]]
+  ? [['system.row.memoryMachine', machineMemory(m)]]
   : [
-    ['internal ram', usedOf(m.internalMemoryTotalBytes, m.internalMemoryAvailableBytes)],
-    ['psram', m.psramTotalBytes == null ? 'none' : usedOf(m.psramTotalBytes, m.psramAvailableBytes)],
+    ['system.row.internalRam', usedOf(m.internalMemoryTotalBytes, m.internalMemoryAvailableBytes)],
+    ['system.row.psram', m.psramTotalBytes == null ? tt('common.none') : usedOf(m.psramTotalBytes, m.psramAvailableBytes)],
   ];
 
 // Signal strength as people read it. -67 dBm is the usual floor for a link
 // that streams without retries piling up.
 // Lit arcs of the Wi-Fi icon, on wifiSignal's bands: good or better 3, fair 2, weak 1, poor 0.
 const wifiBars = (dbm) => (dbm >= -67 ? 3 : dbm >= -75 ? 2 : dbm >= -82 ? 1 : 0);
-const wifiSignal = (dbm) => `${dbm} dBm (${dbm >= -55 ? 'excellent' : dbm >= -67 ? 'good' : dbm >= -75 ? 'fair' : dbm >= -82 ? 'weak' : 'poor'})`;
+const wifiSignal = (dbm) => `${dbm} dBm (${tt(dbm >= -55 ? 'system.excellent' : dbm >= -67 ? 'system.good' : dbm >= -75 ? 'system.fair' : dbm >= -82 ? 'system.weak' : 'system.poor')})`;
 
 const BYTES_PER_SAMPLE = { int16: 2, int24: 3, int24in32: 4, int32: 4, float32: 4 };
 const fmtMbit = (kbps) => `${(kbps / 1000).toFixed(1)} Mbit/s`;
@@ -5380,33 +5430,33 @@ function streamKbps(client) {
 }
 
 const wifiRows = (m, client) => m.wifiRssiDbm == null && m.wifiRxRateKbps == null ? [] : [
-  ['wi-fi signal', m.wifiRssiDbm == null ? '—' : wifiSignal(m.wifiRssiDbm)],
-  ['wi-fi access point', [m.wifiBssid, m.wifiChannel != null && `channel ${m.wifiChannel}`].filter(Boolean).join(' · ') || '—'],
-  ['wi-fi rx rate', m.wifiRxRateKbps == null ? '— (not reported by this platform)' : fmtMbit(m.wifiRxRateKbps)],
-  client && ['stream needs', streamKbps(client) == null ? '— (not playing)' : fmtMbit(streamKbps(client))],
+  ['system.row.wiFiSignal', m.wifiRssiDbm == null ? '—' : wifiSignal(m.wifiRssiDbm)],
+  ['system.row.wiFiAccessPoint', [m.wifiBssid, m.wifiChannel != null && tt('system.channel', { n: m.wifiChannel })].filter(Boolean).join(' · ') || '—'],
+  ['system.row.wiFiRxRate', m.wifiRxRateKbps == null ? tt('system.notReportedBy') : fmtMbit(m.wifiRxRateKbps)],
+  client && ['system.row.streamNeeds', streamKbps(client) == null ? tt('system.notPlaying') : fmtMbit(streamKbps(client))],
 ].filter(Boolean);
 
 // The same rows for the core and a room: the fields of MATP section 55.
 const matpRows = (m, client) => [
-  ['machine', m.machineModel ?? '—'],
-  ['cpu', [m.cpuModel, m.cpuArchitecture, m.cpuCores != null && `${m.cpuCores} core${m.cpuCores === 1 ? '' : 's'}`, m.cpuMhz != null && `${m.cpuMhz} MHz`].filter(Boolean).join(' · ') || '—'],
-  ['cpu (process)', `${fmtNum(m.cpuPercent, 1)} %`],
-  ['cpu (machine)', `${fmtNum(m.systemCpuPercent, 1)} %`],
-  ['memory (process)', fmtBytes(m.memoryBytes)],
-  ['private memory', fmtBytes(m.privateMemoryBytes)],
-  ['threads', m.threads ?? '—'],
-  ['handles', m.handles ?? '—'],
+  ['system.row.machine', m.machineModel ?? '—'],
+  ['system.row.cpu', [m.cpuModel, m.cpuArchitecture, m.cpuCores != null && tt(m.cpuCores === 1 ? 'system.coreCount' : 'system.cores', { n: m.cpuCores }), m.cpuMhz != null && `${m.cpuMhz} MHz`].filter(Boolean).join(' · ') || '—'],
+  ['system.row.cpuProcess', `${fmtNum(m.cpuPercent, 1)} %`],
+  ['system.row.cpuMachine', `${fmtNum(m.systemCpuPercent, 1)} %`],
+  ['system.row.memoryProcess', fmtBytes(m.memoryBytes)],
+  ['system.row.privateMemory', fmtBytes(m.privateMemoryBytes)],
+  ['system.row.threads', m.threads ?? '—'],
+  ['system.row.handles', m.handles ?? '—'],
   ...memoryRows(m),
-  ['uptime', fmtUptime(m.uptimeMs)],
-  ['system uptime', fmtUptime(m.systemUptimeMs)],
-  ['temperature', m.temperatureC == null ? '—' : `${fmtNum(m.temperatureC, 1)} °C`],
+  ['system.row.uptime', fmtUptime(m.uptimeMs)],
+  ['system.row.systemUptime', fmtUptime(m.systemUptimeMs)],
+  ['system.row.temperature', m.temperatureC == null ? '—' : `${fmtNum(m.temperatureC, 1)} °C`],
   ...wifiRows(m, client),
 ];
 
-const roomReasons = {
-  notConnected: 'not connected',
-  noReports: 'connected, but its client sends no system reports (it predates them, or has not sent one yet)',
-  coreUnavailable: 'the core did not answer',
+const roomReasons = { // translated where shown
+  notConnected: 'system.reason.notConnected',
+  noReports: 'system.reason.noReports',
+  coreUnavailable: 'system.reason.coreUnavailable',
 };
 
 // The core's audio memory (its phase 42, in GET system's coreMemory): all
@@ -5416,43 +5466,43 @@ function audioMemoryRows(mem) {
   if (!mem) return [];
   const mb = (b) => `${(b / 2 ** 20).toFixed(1)} MB`;
   return [
-    ['audio memory', `${mb(mem.usedBytes)} of ${mb(mem.limitBytes)} (${Math.round((mem.usedBytes / mem.limitBytes) * 100)} %)`],
+    ['system.row.audioMemory', `${tt('system.of', { used: mb(mem.usedBytes), limit: mb(mem.limitBytes) })} (${Math.round((mem.usedBytes / mem.limitBytes) * 100)} %)`],
     ...mem.zones.map((z) => [`· ${zoneName(z.zone)}`, h('span', { class: z.blocksRefused ? 'bad' : '' },
-      `${mb(z.bytes)}${z.blocks != null ? ` · ${z.blocks} blocks` : ''}${z.blocksRefused ? ` · ${z.blocksRefused} refused` : ''}`)]),
+      `${mb(z.bytes)}${z.blocks != null ? ` · ${tt('system.blocks', { n: z.blocks })}` : ''}${z.blocksRefused ? ` · ${tt('system.refused', { n: z.blocksRefused })}` : ''}`)]),
   ];
 }
 
 function renderSystem() {
   if (page !== 'system') return;
   const v = S.system;
-  $('#systemNote').textContent = v ? `${v.rooms.length} room(s) · updated ${new Date().toLocaleTimeString()}` : '';
+  $('#systemNote').textContent = v ? tt('system.roomSUpdated', { n: v.rooms.length, time: new Date().toLocaleTimeString() }) : '';
   render('system', $('#system'), () => {
-    if (!v) return [h('p', { class: 'muted' }, 'no figures yet')];
+    if (!v) return [h('p', { class: 'muted' }, tt('system.noFiguresYet'))];
     const s = v.server;
     return [
-      systemCard('Server', 'server', s, [
+      systemCard(tt('system.server'), 'server', s, [
         ...matpRows(s).slice(0, 2), // machine, cpu: named as the core's
-        ['cpu (process)', `${fmtNum(s.cpuPercent, 1)} %`],
-        ['cpu (machine)', `${fmtNum(s.systemCpuPercent, 1)} %`],
-        ['working set', fmtBytes(s.workingSetBytes)],
-        ['private memory', fmtBytes(s.privateMemoryBytes)],
-        ['managed heap', fmtBytes(s.managedHeapBytes)],
-        ['threads', s.threads],
-        ['handles', s.handles ?? '—'],
-        ['gc gen0 / 1 / 2', `${s.gen0Collections ?? '—'} / ${s.gen1Collections ?? '—'} / ${s.gen2Collections ?? '—'}`],
-        ['memory (machine)', machineMemory(s)],
-        ['data drive free', fmtBytes(s.dataDriveFreeBytes)],
-        ['uptime', fmtUptime(s.uptimeMs)],
-        ['system uptime', fmtUptime(s.systemUptimeMs)],
+        ['system.row.cpuProcess', `${fmtNum(s.cpuPercent, 1)} %`],
+        ['system.row.cpuMachine', `${fmtNum(s.systemCpuPercent, 1)} %`],
+        ['system.row.workingSet', fmtBytes(s.workingSetBytes)],
+        ['system.row.privateMemory', fmtBytes(s.privateMemoryBytes)],
+        ['system.row.managedHeap', fmtBytes(s.managedHeapBytes)],
+        ['system.row.threads', s.threads],
+        ['system.row.handles', s.handles ?? '—'],
+        ['system.row.gcGenerations', `${s.gen0Collections ?? '—'} / ${s.gen1Collections ?? '—'} / ${s.gen2Collections ?? '—'}`],
+        ['system.row.memoryMachine', machineMemory(s)],
+        ['system.row.dataDriveFree', fmtBytes(s.dataDriveFreeBytes)],
+        ['system.row.uptime', fmtUptime(s.uptimeMs)],
+        ['system.row.systemUptime', fmtUptime(s.systemUptimeMs)],
       ]),
       v.core
-        ? systemCard('Core', 'core', v.core, matpRows(v.core), null, v.coreMemory && h('div', { class: 'kv small', title: 'GET system: coreMemory' }, audioMemoryRows(v.coreMemory).flatMap(([k, val]) => kv(k, val))))
-        : h('div', { class: 'card' }, h('h3', {}, 'Core'), h('p', { class: 'muted' }, 'no figures: the core did not answer, or predates them')),
+        ? systemCard(tt('system.core'), 'core', v.core, matpRows(v.core), null, v.coreMemory && h('div', { class: 'kv small', title: 'GET system: coreMemory' }, audioMemoryRows(v.coreMemory).flatMap(([k, val]) => kv(k, val))))
+        : h('div', { class: 'card' }, h('h3', {}, tt('system.core')), h('p', { class: 'muted' }, tt('system.noFiguresCore'))),
       ...v.rooms.map((r) => r.metrics
-        ? systemCard(`Room ${roomName(r.client)}`, `room:${r.client}`, r.metrics, matpRows(r.metrics, r.client),
-          h('span', { class: 'muted small' }, `reported ${fmtNum((r.ageMs ?? 0) / 1000, 1)} s ago`))
-        : h('div', { class: 'card' }, h('h3', {}, `Room ${roomName(r.client)}`),
-          h('p', { class: 'muted' }, roomReasons[r.reason] ?? r.reason ?? 'no figures'))),
+        ? systemCard(tt('system.room', { name: roomName(r.client) }), `room:${r.client}`, r.metrics, matpRows(r.metrics, r.client),
+          h('span', { class: 'muted small' }, tt('system.reportedSAgo', { n: fmtNum((r.ageMs ?? 0) / 1000, 1) })))
+        : h('div', { class: 'card' }, h('h3', {}, tt('system.room', { name: roomName(r.client) })),
+          h('p', { class: 'muted' }, tt(roomReasons[r.reason] ?? r.reason ?? 'system.noFigures')))),
     ];
   });
   attachUsageCharts($('#system'));
@@ -5465,11 +5515,11 @@ $('#reloadSystem').addEventListener('click', () => act(async () => onSystem(awai
 // Where a client stands, from the core's view: a room here, pointed nowhere,
 // pointed at another core, or not saying (a client from before the field).
 function attachment(c) {
-  if (c.connected) return ['here', 'good', 'attached here'];
-  if (c.server === '') return ['none', 'warn', 'unattached'];
-  if (c.server == null) return ['unknown', 'muted', 'not said (older client)'];
-  if (c.attachedHere) return ['pending', 'warn', 'attached here, no session'];
-  return ['elsewhere', 'muted', `attached to ${c.server}`];
+  if (c.connected) return ['here', 'good', tt('clients.attachedHere')];
+  if (c.server === '') return ['none', 'warn', tt('clients.unattached')];
+  if (c.server == null) return ['unknown', 'muted', tt('clients.notSaidOlder')];
+  if (c.attachedHere) return ['pending', 'warn', tt('clients.attachedHereNo')];
+  return ['elsewhere', 'muted', tt('clients.attachedTo', { server: c.server })];
 }
 
 async function loadDiscovered() {
@@ -5510,11 +5560,11 @@ async function pointClient(client, call, done, attach) {
   }
 }
 function attachClient(client, state) {
-  if (state === 'elsewhere' && !confirm(`${client} is attached to another core. Take it over?`)) return;
-  pointClient(client, () => api('POST', `clients/${enc(client)}/attach`), (r) => `${client} pointed at ${r.server}`, true);
+  if (state === 'elsewhere' && !confirm(tt('clients.isAttachedTo', { name: client }))) return;
+  pointClient(client, () => api('POST', `clients/${enc(client)}/attach`), (r) => tt('clients.pointedAt', { name: client, server: r.server }), true);
 }
 function detachClient(client) {
-  pointClient(client, () => api('POST', `clients/${enc(client)}/detach`), `${client} detached`, false);
+  pointClient(client, () => api('POST', `clients/${enc(client)}/detach`), tt('clients.detached', { name: client }), false);
 }
 
 $('#reloadStatus').addEventListener('click',() => act(async () => { S.status = await api('GET', 'status'); renderStatus(); }));
@@ -5524,8 +5574,8 @@ let tidalLoginTimer, tidalLoginPopup;
 let tidalLoginGeneration = 0;
 function showTidalLogin(login) {
   patch($('#tidalLoginLink'),
-    h('a', { href: login.authorizeUrl, target: '_blank', rel: 'noreferrer' }, 'Open TIDAL sign-in'),
-    ' and approve code ', h('strong', {}, login.userCode), '. Waiting for approval...');
+    h('a', { href: login.authorizeUrl, target: '_blank', rel: 'noreferrer' }, tt('services.openTidalSign')),
+    ` ${tt('services.andApproveCode')} `, h('strong', {}, login.userCode), `. ${tt('services.waitingForApproval')}`);
 }
 async function pollTidalLogin(generation = tidalLoginGeneration, resuming = false) {
   try {
@@ -5536,13 +5586,13 @@ async function pollTidalLogin(generation = tidalLoginGeneration, resuming = fals
       showTidalLogin(result.login);
       tidalLoginTimer = setTimeout(() => pollTidalLogin(generation), 1500);
     } else if (!resuming) {
-      patch($('#tidalLoginLink'), result.status.state === 'ready' ? 'Account linked' : result.status.detail.split(';')[0]);
+      patch($('#tidalLoginLink'), result.status.state === 'ready' ? tt('services.accountLinked') : result.status.detail.split(';')[0]);
       if (result.status.state === 'ready') tidalLoginPopup?.close();
     }
   } catch (e) {
     if (generation !== tidalLoginGeneration) return;
     if (!resuming) {
-      patch($('#tidalLoginLink'), 'Could not check TIDAL sign-in. Retrying...');
+      patch($('#tidalLoginLink'), tt('services.couldNotCheck'));
       tidalLoginTimer = setTimeout(() => pollTidalLogin(generation), 3000);
     }
   }
@@ -5573,18 +5623,18 @@ function showArtwork(a) {
   const mb = $('#artMusicBrainz');
   const fanart = $('#artFanart');
   mb.disabled = fanart.disabled = !a;
-  if (!a) { $('#artProgress').textContent = 'not answered by this server'; $('#artStore').textContent = ''; return a; }
+  if (!a) { $('#artProgress').textContent = tt('services.notAnsweredBy'); $('#artStore').textContent = ''; return a; }
   mb.checked = a.musicBrainz.enabled;
   fanart.checked = a.fanartTv.enabled;
-  $('#artMusicBrainzOrigin').textContent = `from ${a.musicBrainz.origin}`;
+  $('#artMusicBrainzOrigin').textContent = tt('services.from', { origin: a.musicBrainz.origin });
   const f = a.fanartTv;
-  $('#artFanartState').textContent = `${f.hasKey ? `key from ${f.keyOrigin}` : 'no key'} · ${f.active ? 'asked' : 'not asked'}`;
+  $('#artFanartState').textContent = `${f.hasKey ? tt('services.keyFrom', { origin: f.keyOrigin }) : tt('services.noKey')} · ${tt(f.active ? 'services.asked' : 'services.notAsked')}`;
   $('#artFanartRemove').disabled = f.keyOrigin !== 'api';
   const p = a.progress;
-  $('#artProgress').textContent = p ? `${p.enriched} track(s) looked at · ${p.failed} failed · ${p.pending} to go` : 'unknown';
+  $('#artProgress').textContent = p ? tt('services.trackSLooked', p) : tt('services.unknown');
   // The artwork store (server phase 40): absent from a server before it.
   const s = a.store;
-  $('#artStore').textContent = s ? `${s.images} picture(s) · ${fmtBytes(s.bytes)} · ${s.pending} to look for · ${s.notFound} not found` : 'unknown';
+  $('#artStore').textContent = s ? tt('services.pictureSTo', { ...s, size: fmtBytes(s.bytes) }) : tt('services.unknown');
   return a;
 }
 async function loadArtwork() {
@@ -5608,37 +5658,37 @@ artworkForm.addEventListener('submit', (e) => {
   act(async () => showArtwork(await api('PUT', 'artwork/fanarttv/key', { key })), () => 'fanart.tv key set');
 });
 $('#artFanartRemove').addEventListener('click', () => act(async () => showArtwork(await api('DELETE', 'artwork/fanarttv/key')),
-  (a) => `fanart.tv key removed; ${a.fanartTv.hasKey ? `now the ${a.fanartTv.keyOrigin}'s` : 'none left'}`));
+  (a) => `${tt('services.fanartTvKeyRemoved')}; ${a.fanartTv.hasKey ? tt('services.nowS', { origin: a.fanartTv.keyOrigin }) : tt('services.noneLeft')}`));
 $('#artMusicBrainz').addEventListener('change', (e) => act(async () =>
   showArtwork(await api('PATCH', 'artwork', { musicBrainz: e.target.checked })),
-(a) => `MusicBrainz ${a.musicBrainz.enabled ? 'on' : 'off'}`).then((a) => { if (!a) act(loadArtwork); e.target.blur(); }));
+(a) => `MusicBrainz ${tt(a.musicBrainz.enabled ? 'services.on' : 'common.off')}`).then((a) => { if (!a) act(loadArtwork); e.target.blur(); }));
 $('#artFanart').addEventListener('change', (e) => act(async () =>
   showArtwork(await api('PATCH', 'artwork', { fanartTv: e.target.checked })),
-(a) => `fanart.tv ${a.fanartTv.enabled ? 'on' : 'off'}`).then((a) => { if (!a) act(loadArtwork); e.target.blur(); }));
+(a) => `fanart.tv ${tt(a.fanartTv.enabled ? 'services.on' : 'common.off')}`).then((a) => { if (!a) act(loadArtwork); e.target.blur(); }));
 
 // --- settings: the server core and Tidal's account link ----------------------------
 
 // The cores whose beacons the server hears, and which one it uses.
 async function loadCores() {
   const r = await api('GET', 'cores', undefined, { quiet: true });
-  $('#coreSelected').textContent = r.selected ? `selected ${r.selected}` : `configured ${r.configured}`;
+  $('#coreSelected').textContent = r.selected ? tt('settings.selected', { id: r.selected }) : tt('settings.configured', { address: r.configured });
   $('#useConfigured').disabled = r.selected == null;
-  const state = (c) => c.coreId !== r.selected ? h('button', { onclick: () => selectCore(c.coreId) }, 'use')
-    : r.connected === `${c.host}:${c.controlPort}` ? h('span', { class: 'good' }, 'in use') : h('span', { class: 'warn' }, 'connecting…');
+  const state = (c) => c.coreId !== r.selected ? h('button', { onclick: () => selectCore(c.coreId) }, tt('settings.use'))
+    : r.connected === `${c.host}:${c.controlPort}` ? h('span', { class: 'good' }, tt('settings.inUse')) : h('span', { class: 'warn' }, tt('settings.connecting'));
   patch($('#cores'),
-    h('div', { class: 'small' }, 'connected to ', r.connected ?? h('span', { class: 'bad' }, 'nothing'),
-      r.selected && !r.cores.some((c) => c.coreId === r.selected) && h('span', { class: 'warn' }, ` · ${r.selected} is not announcing itself`)),
+    h('div', { class: 'small' }, `${tt('settings.connectedTo')} `, r.connected ?? h('span', { class: 'bad' }, tt('settings.nothing')),
+      r.selected && !r.cores.some((c) => c.coreId === r.selected) && h('span', { class: 'warn' }, ` · ${tt('settings.isNotAnnouncing', { id: r.selected })}`)),
     r.cores.length
       ? h('table', { class: 'small' },
-        h('tr', {}, h('th', {}, 'core id'), h('th', {}, 'address'), h('th', {}, 'version'), h('th', {}, '')),
+        h('tr', {}, h('th', {}, tt('settings.coreId')), h('th', {}, tt('settings.address')), h('th', {}, tt('settings.version')), h('th', {}, '')),
         r.cores.map((c) => h('tr', { class: c.coreId === r.selected ? 'current' : '' },
           h('td', {}, c.coreId), h('td', {}, `${c.host}:${c.controlPort}`), h('td', {}, c.version ?? '—'), h('td', {}, state(c)))))
-      : h('p', { class: 'muted' }, 'no core beacon heard in the last 6 s'));
+      : h('p', { class: 'muted' }, tt('settings.noCoreBeacon')));
   return r;
 }
 function selectCore(coreId) {
-  if (!confirm(coreId ? `Use core ${coreId}? Every zone moves to it, and playback restarts there.` : 'Go back to the configured core address?')) return;
-  act(() => api('PUT', 'core/selection', { coreId }), coreId ? `core ${coreId} selected` : 'configured core address in use')
+  if (!confirm(coreId ? tt('settings.useCoreEvery', { id: coreId }) : tt('settings.goBackTo'))) return;
+  act(() => api('PUT', 'core/selection', { coreId }), coreId ? tt('settings.coreSelected', { id: coreId }) : 'settings.configuredCoreAddress')
     .then(() => act(loadCores));
 }
 $('#reloadCores').addEventListener('click', () => act(loadCores));
@@ -5646,20 +5696,20 @@ $('#reloadCores').addEventListener('click', () => act(loadCores));
 // The core's audio section (GET core/audio). The keys the core names `live`
 // are edited here; the rest size its memory or its resampler and are only
 // read when it starts, so they are shown and not offered.
-const CORE_AUDIO_HINTS = {
-  startDelayMs: 'how far ahead a start, pause or stop is placed, so every room acts on the same sample (20..30000)',
-  minimumStartBufferMs: 'what every room must hold before a start (one packet .. targetBufferMs)',
-  clientReadyTimeoutMs: 'how long the first start waits for a room whose device is still opening (100..60000)',
-  seekFlushLeadMs: 'how far past what is audible a seek cuts (10..5000)',
-  seekFillLeadMs: 'how long after the cut the seeked audio is heard (0..5000)',
-  memoryLimitMb: 'the ceiling over every zone\'s audio memory, in MB (the range GET memoryLimit answers)',
+const CORE_AUDIO_HINTS = { // translated where shown
+  startDelayMs: 'settings.coreHint.startDelayMs',
+  minimumStartBufferMs: 'settings.coreHint.minimumStartBufferMs',
+  clientReadyTimeoutMs: 'settings.coreHint.clientReadyTimeoutMs',
+  seekFlushLeadMs: 'settings.coreHint.seekFlushLeadMs',
+  seekFillLeadMs: 'settings.coreHint.seekFillLeadMs',
+  memoryLimitMb: 'settings.coreHint.memoryLimitMb',
 };
 async function loadCoreAudio() {
   let r;
   try {
     r = await api('GET', 'core/audio', undefined, { quiet: true });
   } catch (e) {
-    $('#coreAudioState').textContent = `unavailable: ${e.message}`;
+    $('#coreAudioState').textContent = tt('settings.unavailable', { error: e.message });
     $('#coreAudioForm').replaceChildren();
     $('#coreAudioFixed').replaceChildren();
     return;
@@ -5671,10 +5721,10 @@ async function loadCoreAudio() {
       // The range is shown, not enforced: the core checks it (server phase 35), and
       // an out-of-range value is sent so its refusal can be read.
       h('input', { id: `coreAudio-${key}`, name: key, type: 'number', step: 1, value: String(r.audio[key]), 'aria-describedby': CORE_AUDIO_HINTS[key] && `coreAudio-${key}-hint` }),
-      CORE_AUDIO_HINTS[key] && h('p', { class: 'hint', id: `coreAudio-${key}-hint` }, CORE_AUDIO_HINTS[key],
-        key === 'memoryLimitMb' && r.memoryLimit && ` — now ${r.memoryLimit.mb} MB, ${r.memoryLimit.usedMb} MB in use; the core takes ${r.memoryLimit.minMb}..${r.memoryLimit.maxMb ?? '(no upper bound known)'}`),
+      CORE_AUDIO_HINTS[key] && h('p', { class: 'hint', id: `coreAudio-${key}-hint` }, tt(CORE_AUDIO_HINTS[key]),
+        key === 'memoryLimitMb' && r.memoryLimit && ` — ${tt('settings.nowMbMb', { mb: r.memoryLimit.mb, used: r.memoryLimit.usedMb, min: r.memoryLimit.minMb, max: r.memoryLimit.maxMb ?? tt('settings.noUpperBound') })}`),
     ].filter(Boolean)),
-    h('span', {}), h('div', { class: 'form-actions start' }, h('button', { class: 'primary' }, 'Apply')));
+    h('span', {}), h('div', { class: 'form-actions start' }, h('button', { class: 'primary' }, tt('settings.apply'))));
   $('#coreAudioFixed').replaceChildren(h('table', { class: 'small' },
     Object.entries(r.audio).filter(([key]) => !r.live.includes(key))
       .map(([key, value]) => h('tr', {}, h('td', {}, key), h('td', { class: 'mono' }, String(value))))));
@@ -5685,12 +5735,12 @@ async function loadCoreAudio() {
   showResamplerHint();
 }
 // What the selected resampler means for drift correction (core: variableRatio).
-const RESAMPLER_HINTS = {
-  soxr: 'Variable ratio: corrects drift between grouped rooms in software.',
-  r8brain: 'Fixed ratio: cannot be used for software drift correction. Grouped rooms stay in step only where the client trims its own clock.',
+const RESAMPLER_HINTS = { // translated where shown
+  soxr: 'settings.resamplerHint.soxr',
+  r8brain: 'settings.resamplerHint.r8brain',
 };
 function showResamplerHint() {
-  const hint = RESAMPLER_HINTS[$('#resampler').value] ?? '';
+  const hint = tt(RESAMPLER_HINTS[$('#resampler').value] ?? '');
   $('#resamplerHint').textContent = hint;
   $('#resamplerHint').className = $('#resampler').value === 'r8brain' ? 'hint warn' : 'hint';
 }
@@ -5699,22 +5749,22 @@ $('#coreAudioForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const body = {};
   for (const input of e.target.querySelectorAll('input')) body[input.name] = Number(input.value);
-  act(() => api('PATCH', 'core/audio', body), (r) => `core audio ${r.changed ? 'changed' : 'unchanged'}`).then(() => act(loadCoreAudio));
+  act(() => api('PATCH', 'core/audio', body), (r) => tt(r.changed ? 'settings.coreAudioChanged' : 'settings.coreAudioUnchanged')).then(() => act(loadCoreAudio));
 });
 $('#useConfigured').addEventListener('click', () => selectCore(null));
 
 // Keep the account status compact; the server's full detail remains available on hover.
 function renderTidalState(st) {
   const p = st.providers.find((x) => x.id === 'tidal');
-  const label = { ready: 'Signed in', authRequired: 'Sign-in required', unavailable: 'Unavailable', disabled: 'Disabled' };
+  const label = { ready: 'services.tidal.ready', authRequired: 'services.tidal.authRequired', unavailable: 'services.tidal.unavailable', disabled: 'services.tidal.disabled' };
   patch($('#tidalState'), p
-    ? h('span', { class: p.state === 'ready' ? 'good' : 'warn', title: p.detail }, label[p.state] ?? p.state)
-    : h('span', { class: 'muted' }, 'TIDAL is not available'));
+    ? h('span', { class: p.state === 'ready' ? 'good' : 'warn', title: p.detail }, tt(label[p.state] ?? p.state))
+    : h('span', { class: 'muted' }, tt('services.tidalIsNot')));
 }
 
-$('#setResampler').addEventListener('click', () => act(() => api('PUT', 'core/resampler', { resampler: $('#resampler').value }), (r) => `resampler ${r.resampler}${r.changed ? ' (changed)' : ''}`
-  + (r.renegotiated?.length ? `; re-negotiating ${r.renegotiated.join(', ')}` : '')
-  + (r.variableRatio ? '' : '; no software drift correction')));
+$('#setResampler').addEventListener('click', () => act(() => api('PUT', 'core/resampler', { resampler: $('#resampler').value }), (r) => `${tt('services.resampler', { name: r.resampler })}${r.changed ? ` ${tt('services.changed')}` : ''}`
+  + (r.renegotiated?.length ? `; ${tt('services.reNegotiating', { rooms: r.renegotiated.join(', ') })}` : '')
+  + (r.variableRatio ? '' : `; ${tt('services.noSoftwareDrift')}`)));
 
 // --- AI: providers, keys, models and settings (server phase 21); browser login (phase 22)
 
@@ -5740,19 +5790,19 @@ const serverRedirect = () => (AI.api ? `${AI.api}/api/v1/ai/login/callback` : 't
 
 function renderAi() {
   const usage = S.status?.ai;
-  patch($('#aiUsage'), usage ? `logins in progress ${usage.pendingLogins ?? '—'}/${usage.maxPendingLogins ?? '—'} · models cached at most ${usage.maxModels}` : '');
-  render('ai', $('#aiProviders'), () => (AI.providers.length ? AI.providers.map(aiCard) : [h('p', { class: 'muted' }, 'no AI providers')]));
+  patch($('#aiUsage'), usage ? tt('ai.loginsInProgress', { n: usage.pendingLogins ?? '—', max: usage.maxPendingLogins ?? '—', models: usage.maxModels }) : '');
+  render('ai', $('#aiProviders'), () => (AI.providers.length ? AI.providers.map(aiCard) : [h('p', { class: 'muted' }, tt('ai.noAiProviders'))]));
   if (!AI.settings) return;
   const form = $('#aiSettingsForm').elements;
   if (!$('#aiSettingsForm').contains(document.activeElement)) {
-    patch(form.defaultProvider, h('option', { value: '' }, '(none)'), AI.providers.map((p) => h('option', { value: p.id }, p.id)));
+    patch(form.defaultProvider, h('option', { value: '' }, tt('ai.none')), AI.providers.map((p) => h('option', { value: p.id }, p.id)));
     form.defaultProvider.value = AI.settings.defaultProvider ?? '';
     form.defaultModel.value = AI.settings.defaultModel ?? '';
     form.reasoningAgent.value = AI.settings.reasoning?.agent ?? 'default';
     form.reasoningSuggestions.value = AI.settings.reasoning?.suggestions ?? 'default';
     form.webLookup.value = AI.settings.webLookup ?? 'off';
     const speech = AI.settings.speech ?? {};
-    patch(form.speechProvider, h('option', { value: '' }, '(none)'),
+    patch(form.speechProvider, h('option', { value: '' }, tt('ai.none')),
       AI.providers.filter((p) => p.capabilities?.includes('transcription') || p.id === speech.provider).map((p) => h('option', { value: p.id }, p.id)));
     form.speechRecognition.value = speech.recognition ?? 'browser';
     form.speechProvider.value = speech.provider ?? '';
@@ -5771,9 +5821,10 @@ const tri = (v) => h('span', { class: v == null ? 'muted' : v ? 'good' : 'bad' }
 
 // --- AI token usage per day, by what asked (GET ai/usage) ---------------------
 
-const USAGE_ORIGINS = [['proposals', 'Auto proposals', '#2a7ab0'], ['autoFill', 'Auto-fill', '#1f9e89'],
-  ['agent', 'MCP agent', '#7b4fc9'], ['manual', 'Manual', '#d0731c'], ['other', 'Other', '#8a8f98']];
-const USAGE_RANGES = [[7, '7 days'], [30, '30 days'], [90, '90 days'], [0, 'All']];
+// Labels by key, translated when the page starts (i18n.js before this script).
+const USAGE_ORIGINS = [['proposals', 'usage.origin.proposals', '#2a7ab0'], ['autoFill', 'usage.origin.autoFill', '#1f9e89'],
+  ['agent', 'usage.origin.agent', '#7b4fc9'], ['manual', 'usage.origin.manual', '#d0731c'], ['other', 'usage.origin.other', '#8a8f98']].map(([id, label, color]) => [id, tt(label), color]);
+const USAGE_RANGES = [[7, 'usage.range7Days'], [30, 'usage.range30Days'], [90, 'usage.range90Days'], [0, 'usage.rangeAll']].map(([days, label]) => [days, tt(label)]);
 const aiUsage = { days: 30, rows: [] };
 
 // yyyy-MM-dd of `from` (today) plus `offset` days, in this browser's time zone.
@@ -5822,24 +5873,24 @@ function renderAiUsage() {
   const max = Math.max(1, ...days.map(total));
 
   patch($('#aiUsageChart'), days.length ? [
-    h('div', { class: 'usage-bars', role: 'img', 'aria-label': 'Tokens per day, stacked by origin' }, days.map((d) => h('div', {
+    h('div', { class: 'usage-bars', role: 'img', 'aria-label': tt('usage.tokensPerDay') }, days.map((d) => h('div', {
       class: 'usage-day',
-      title: [d.day, ...origins.filter(([id]) => d[id]).map(([id, label]) => `${label}: ${fmt(d[id])}`), `Total: ${fmt(total(d))}`].join('\n'),
+      title: [d.day, ...origins.filter(([id]) => d[id]).map(([id, label]) => `${label}: ${fmt(d[id])}`), `${tt('usage.total')}: ${fmt(total(d))}`].join('\n'),
     }, origins.filter(([id]) => d[id]).map(([id, , color]) => h('span', { style: `height:${(d[id] / max) * 100}%;background:${color}` }))))),
-    h('div', { class: 'usage-axis small muted' }, h('span', {}, days[0].day), h('span', {}, `max ${fmt(max)} tokens a day`), h('span', {}, days.at(-1).day)),
+    h('div', { class: 'usage-axis small muted' }, h('span', {}, days[0].day), h('span', {}, tt('usage.maxTokensDay', { n: fmt(max) })), h('span', {}, days.at(-1).day)),
     h('div', { class: 'usage-legend small' }, origins.map(([, label, color]) => h('span', {}, h('i', { style: `background:${color}` }), label))),
-  ] : h('p', { class: 'muted' }, 'no AI calls yet'));
+  ] : h('p', { class: 'muted' }, tt('usage.noAiCalls')));
 
   // Newest day first, days without calls left out, the range's totals last.
   const used = days.filter((d) => d.calls).reverse();
-  const sum = { day: 'Total', calls: 0, failures: 0 };
+  const sum = { day: tt('usage.total'), calls: 0, failures: 0 };
   for (const d of used) for (const k of [...origins.map(([id]) => id), 'calls', 'failures']) sum[k] = (sum[k] ?? 0) + (d[k] ?? 0);
   const line = (d, tag = 'td') => h('tr', {}, h(tag, {}, d.day), origins.map(([id]) => h(tag, { class: 'num' }, d[id] ? fmt(d[id]) : '')),
     h(tag, { class: 'num' }, fmt(total(d))), h(tag, { class: 'num' }, fmt(d.calls)),
     h(tag, { class: d.failures ? 'num bad' : 'num' }, d.failures ? fmt(d.failures) : ''));
   patch($('#aiUsageTable'), used.length ? h('table', {},
-    h('thead', {}, h('tr', {}, h('th', {}, 'Day'), origins.map(([, label]) => h('th', { class: 'num' }, label)),
-      h('th', { class: 'num' }, 'Total'), h('th', { class: 'num' }, 'Calls'), h('th', { class: 'num' }, 'Failed'))),
+    h('thead', {}, h('tr', {}, h('th', {}, tt('usage.day')), origins.map(([, label]) => h('th', { class: 'num' }, label)),
+      h('th', { class: 'num' }, tt('usage.total')), h('th', { class: 'num' }, tt('usage.calls')), h('th', { class: 'num' }, tt('usage.failed')))),
     h('tbody', {}, used.map((d) => line(d))), h('tfoot', {}, line(sum, 'th'))) : '');
 
   const counts = ['calls', 'failures', 'inputTokens', 'outputTokens', 'reasoningTokens', 'webSearches'];
@@ -5849,12 +5900,12 @@ function renderAiUsage() {
     const m = models.get(key) ?? models.set(key, { provider: r.provider, model: r.model, ...Object.fromEntries(counts.map((k) => [k, 0])) }).get(key);
     for (const k of counts) m[k] += r[k];
   }
-  const labels = ['Calls', 'Failed', 'In', 'Out', 'Reasoning', 'Web searches'];
+  const labels = ['usage.calls', 'usage.failed', 'usage.in', 'usage.out', 'usage.reasoning', 'usage.webSearches'];
   patch($('#aiUsageModels'), models.size ? h('table', {},
-    h('thead', {}, h('tr', {}, h('th', {}, 'Provider'), h('th', {}, 'Model'), labels.map((label) => h('th', { class: 'num' }, label)))),
+    h('thead', {}, h('tr', {}, h('th', {}, tt('usage.provider')), h('th', {}, tt('usage.model')), labels.map((label) => h('th', { class: 'num' }, tt(label))))),
     h('tbody', {}, [...models.values()].sort((a, b) => tokens(b) - tokens(a)).map((m) => h('tr', {},
       h('td', {}, m.provider), h('td', { class: 'mono' }, m.model), counts.map((k) => h('td', { class: 'num' }, fmt(m[k])))))))
-    : h('p', { class: 'muted' }, 'nothing in this range'));
+    : h('p', { class: 'muted' }, tt('usage.nothingInThis')));
 }
 
 // --- proposals (server phase 38): the stored lists for the listener's scope ------
@@ -5872,25 +5923,25 @@ async function loadProposals() {
 // Diagnostics › AI: the proposals' background runs, the last run and the
 // counts since the server started; the lists are in the library.
 function renderAiStatus() {
-  $('#aiStatusScope').textContent = `· ${S.user && S.user !== '*' ? S.user : 'household'}`;
+  $('#aiStatusScope').textContent = `· ${S.user && S.user !== '*' ? S.user : tt('common.household')}`;
   if (!proposals) return;
   const v = proposals, run = v.run, stats = S.status?.ai?.proposals;
   const when = (t) => (t ? new Date(t).toLocaleString() : '—');
   patch($('#aiStatus'),
     run?.state === 'running' && h('div', { class: 'proposals-running', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }),
-      `The AI is calculating proposals (run #${run.id}, ${run.trigger}, started ${when(run.started)})…`),
+      tt('proposals.aiIsCalculating', { id: run.id, trigger: run.trigger, when: when(run.started) })),
     h('div', { class: 'row small' },
-      h('span', { class: 'pill ' + (v.background.enabled ? 'good' : 'muted') }, `background ${v.background.enabled ? `on, every ${v.background.intervalHours} h` : 'off'}`),
-      v.background.nextRunAt && h('span', { class: 'muted' }, `next ≈ ${when(v.background.nextRunAt)}`),
-      h('span', { class: 'pill ' + (v.aiAvailable ? 'good' : 'bad'), title: v.reason ?? '' }, v.aiAvailable ? 'AI available' : `no AI: ${v.reason}`)),
-    stats ? h('div', { class: 'small', title: 'GET status: ai.proposals' }, `${stats.runs} runs, ${stats.failures} failed, ${stats.notFound} not found, ${stats.tokens} tokens since the server started`)
-      : h('p', { class: 'muted small' }, 'No counts yet.'),
+      h('span', { class: 'pill ' + (v.background.enabled ? 'good' : 'muted') }, v.background.enabled ? tt('proposals.backgroundOnEvery', { n: v.background.intervalHours }) : tt('proposals.backgroundOff')),
+      v.background.nextRunAt && h('span', { class: 'muted' }, tt('proposals.next', { when: when(v.background.nextRunAt) })),
+      h('span', { class: 'pill ' + (v.aiAvailable ? 'good' : 'bad'), title: v.reason ?? '' }, v.aiAvailable ? tt('proposals.aiAvailable') : tt('proposals.noAi', { reason: v.reason }))),
+    stats ? h('div', { class: 'small', title: 'GET status: ai.proposals' }, tt('proposals.runsFailedNot', stats))
+      : h('p', { class: 'muted small' }, tt('proposals.noCountsYet')),
     run ? h('div', { class: 'small' },
-      h('span', { class: 'pill ' + ({ ok: 'good', partial: 'warn', failed: 'bad', running: 'warn' }[run.state] ?? '') }, run.state),
-      ` run #${run.id} · ${run.trigger} · started ${when(run.started)}${run.finished ? ` · finished ${when(run.finished)}` : ''} · ${run.notFound} not found`,
-      run.usage && ` · ${run.usage.inputTokens} in / ${run.usage.outputTokens} out tokens`,
+      h('span', { class: 'pill ' + ({ ok: 'good', partial: 'warn', failed: 'bad', running: 'warn' }[run.state] ?? '') }, tv('state', run.state)),
+      ` ${tt('proposals.run', { id: run.id })} · ${run.trigger} · ${tt('proposals.started', { when: when(run.started) })}${run.finished ? ` · ${tt('proposals.finished', { when: when(run.finished) })}` : ''} · ${tt('proposals.notFound', { n: run.notFound })}`,
+      run.usage && ` · ${tt('proposals.inOutTokens', { in: run.usage.inputTokens, out: run.usage.outputTokens })}`,
       run.error && h('div', { class: 'bad' }, run.error))
-      : h('p', { class: 'muted small' }, 'No run yet.'));
+      : h('p', { class: 'muted small' }, tt('proposals.noRunYet')));
 }
 $('#reloadAiStatus').addEventListener('click', () => { act(loadProposals); act(loadAiUsage); });
 
@@ -5910,7 +5961,7 @@ $('#proposalsForm').addEventListener('submit', (e) => {
   const body = { enabled: F.enabled.checked, request: F.request.value };
   // Keep only to a server that has it (it says so in its settings).
   for (const k of PROPOSAL_FIELDS) if (k !== 'keep' || 'keep' in (AI.settings?.proposals ?? {})) body[k] = Number(F[k].value);
-  act(() => api('PATCH', 'ai/settings', { proposals: body }), 'proposals saved').then(() => act(loadAi));
+  act(() => api('PATCH', 'ai/settings', { proposals: body }), 'proposals.proposalsSaved').then(() => act(loadAi));
 });
 
 function aiCard(p) {
@@ -5925,59 +5976,59 @@ function aiCard(p) {
   return h('details', { class: 'card', 'data-key': `aiProvider:${p.id}` },
     h('summary', {}, p.displayName, h('span', { class: 'muted' }, p.id),
       p.authMethods.map((m) => h('span', { class: 'pill' }, m)),
-      (p.capabilities ?? []).map((c) => h('span', { class: 'pill good', title: 'a capability: the request may ask for it' }, c)),
-      fixed && h('span', { class: 'pill warn', title: 'the key is from the config file: read-only here' }, 'config')),
+      (p.capabilities ?? []).map((c) => h('span', { class: 'pill good', title: tt('ai.capabilityRequestMay') }, c)),
+      fixed && h('span', { class: 'pill warn', title: tt('ai.keyIsFrom') }, 'config')),
     p.detail && h('div', { class: 'small ' + (p.authorised === false || p.reachable === false ? 'bad' : 'muted') }, linkify(p.detail)),
     h('div', { class: 'kv small' },
-      kv('enabled', h('label', {}, h('input', {
+      kv('ai.enabled', h('label', {}, h('input', {
         type: 'checkbox', checked: p.enabled,
         onchange: (e) => {
           const off = new Set(AI.settings?.disabledProviders ?? []);
           if (e.target.checked) off.delete(p.id); else off.add(p.id);
-          change(() => api('PATCH', 'ai/settings', { disabledProviders: [...off] }), `${p.id} ${e.target.checked ? 'enabled' : 'switched off'}`);
+          change(() => api('PATCH', 'ai/settings', { disabledProviders: [...off] }), tt(e.target.checked ? 'ai.providerEnabled' : 'ai.switchedOff', { id: p.id }));
         },
       }))),
-      kv('configured', tri(p.configured)),
-      kv('authorised · reachable', [tri(p.authorised), ' · ', tri(p.reachable)], 'what its last call said; — until one'),
-      kv('credential', [`hasKey ${p.hasKey} · origin ${p.origin}`, oauth && ` · hasToken ${p.hasToken}`,
+      kv('ai.configured', tri(p.configured)),
+      kv('ai.authorisedReachable', [tri(p.authorised), ' · ', tri(p.reachable)], 'ai.whatItsLast'),
+      kv('ai.credential', [`hasKey ${p.hasKey} · origin ${p.origin}`, oauth && ` · hasToken ${p.hasToken}`,
         'hasClient' in p && ` · hasClient ${p.hasClient}`]),
-      use && kv('usage', `calls ${use.calls} · failures ${use.failures} · timeouts ${use.timeouts} · tokens in ${use.inputTokens} / out ${use.outputTokens} (reasoning ${use.reasoningTokens ?? '—'}) · web lookups ${use.webLookups ?? '—'} (searches ${use.webSearches ?? '—'}) · models cached ${use.cachedModels}`)),
+      use && kv('ai.usage', `calls ${use.calls} · failures ${use.failures} · timeouts ${use.timeouts} · tokens in ${use.inputTokens} / out ${use.outputTokens} (reasoning ${use.reasoningTokens ?? '—'}) · web lookups ${use.webLookups ?? '—'} (searches ${use.webSearches ?? '—'}) · models cached ${use.cachedModels}`)),
     AI.refusal[p.id] && h('div', { class: 'small bad' }, AI.refusal[p.id]),
-    p.authMethods.includes('apiKey') && h('form', { class: 'row', autocomplete: 'off', title: fixed ? 'the key is from the config file; change it there' : '', onsubmit(e) {
+    p.authMethods.includes('apiKey') && h('form', { class: 'row', autocomplete: 'off', title: fixed ? tt('ai.keyIsFromConfig') : '', onsubmit(e) {
       e.preventDefault();
       const key = e.target.elements.key.value;
       e.target.elements.key.value = '';
       delete AI.models[p.id];
-      aiCall(p.id, () => api('PUT', `${path}/key`, { key }), 'key set');
+      aiCall(p.id, () => api('PUT', `${path}/key`, { key }), 'ai.keySet');
     } },
-      h('input', { name: 'key', type: 'password', placeholder: p.hasKey ? 'replace the key' : 'API key', size: 22, autocomplete: 'new-password', disabled: fixed }),
-      h('button', { disabled: fixed }, 'set key'),
-      p.hasKey && h('button', { type: 'button', class: 'danger', disabled: fixed, onclick: () => { delete AI.models[p.id]; aiCall(p.id, () => api('DELETE', `${path}/key`), 'key removed'); } }, 'remove key')),
+      h('input', { name: 'key', type: 'password', placeholder: tt(p.hasKey ? 'ai.replaceKey' : 'ai.apiKey'), size: 22, autocomplete: 'new-password', disabled: fixed }),
+      h('button', { disabled: fixed }, tt('ai.setKey')),
+      p.hasKey && h('button', { type: 'button', class: 'danger', disabled: fixed, onclick: () => { delete AI.models[p.id]; aiCall(p.id, () => api('DELETE', `${path}/key`), 'ai.keyRemoved'); } }, tt('ai.removeKey'))),
     oauth && h('div', { class: 'row' },
-      h('button', { onclick: () => aiLogin(p.id, false), title: `returns to ${guiRedirect()}` }, p.hasToken || p.hasKey ? 'log in again' : 'log in'),
-      h('button', { onclick: () => aiLogin(p.id, true), title: `returns to ${serverRedirect()}` }, 'log in on this machine'),
-      p.hasToken && h('button', { class: 'danger', onclick: () => aiCall(p.id, () => api('DELETE', `${path}/key`), 'logged out') }, 'log out'),
-      AI.waitUntil[p.id] && h('span', { class: 'muted small' }, 'waiting for the login…')),
+      h('button', { onclick: () => aiLogin(p.id, false), title: tt('ai.returnsTo', { uri: guiRedirect() }) }, tt(p.hasToken || p.hasKey ? 'ai.logInAgain' : 'ai.logIn')),
+      h('button', { onclick: () => aiLogin(p.id, true), title: tt('ai.returnsTo', { uri: serverRedirect() }) }, tt('ai.logInOn')),
+      p.hasToken && h('button', { class: 'danger', onclick: () => aiCall(p.id, () => api('DELETE', `${path}/key`), 'ai.loggedOut') }, tt('ai.logOut')),
+      AI.waitUntil[p.id] && h('span', { class: 'muted small' }, tt('ai.waitingForLogin'))),
     'hasClient' in p && h('details', { 'data-key': `aiClient:${p.id}`, open: !p.hasClient },
-      h('summary', {}, `OAuth client (${p.hasClient ? 'set' : 'needed to log in'})`),
+      h('summary', {}, `OAuth client (${tt(p.hasClient ? 'common.set' : 'ai.neededToLog')})`),
       h('form', { class: 'row', autocomplete: 'off', onsubmit(e) {
         e.preventDefault();
         const F = e.target.elements, body = { clientId: F.clientId.value.trim() };
         if (F.clientSecret.value) body.clientSecret = F.clientSecret.value;
         F.clientSecret.value = '';
-        aiCall(p.id, () => api('PUT', `${path}/client`, body), 'OAuth client set').then((r) => { if (r) F.clientId.value = ''; });
+        aiCall(p.id, () => api('PUT', `${path}/client`, body), 'ai.oauthClientSet').then((r) => { if (r) F.clientId.value = ''; });
       } },
-        h('input', { name: 'clientId', placeholder: 'client id *', size: 22 }),
-        h('input', { name: 'clientSecret', type: 'password', placeholder: 'client secret', size: 14, autocomplete: 'new-password' }),
-        h('button', {}, 'set'),
-        p.hasClient && h('button', { type: 'button', class: 'danger', onclick: () => aiCall(p.id, () => api('DELETE', `${path}/client`), 'OAuth client removed') }, 'remove')),
-      h('div', { class: 'small' }, 'Redirect URIs to register with the client:',
+        h('input', { name: 'clientId', placeholder: tt('ai.clientId'), size: 22 }),
+        h('input', { name: 'clientSecret', type: 'password', placeholder: tt('ai.clientSecret'), size: 14, autocomplete: 'new-password' }),
+        h('button', {}, tt('common.set')),
+        p.hasClient && h('button', { type: 'button', class: 'danger', onclick: () => aiCall(p.id, () => api('DELETE', `${path}/client`), 'ai.oauthClientRemoved') }, tt('ai.remove'))),
+      h('div', { class: 'small' }, tt('ai.redirectUrisTo'),
         [guiRedirect(), serverRedirect()].map((uri) => h('div', {}, h('code', {}, uri), ' ',
-          h('button', { type: 'button', onclick: () => navigator.clipboard?.writeText(uri).then(() => flash('copied')) }, 'copy'))))),
+          h('button', { type: 'button', onclick: () => navigator.clipboard?.writeText(uri).then(() => flash('ai.copied')) }, tt('ai.copy')))))),
     h('div', { class: 'row' },
-      h('button', { onclick: () => aiModels(p.id, false) }, 'list models'),
-      h('button', { onclick: () => aiModels(p.id, true) }, 'refresh'),
-      models && h('input', { placeholder: `filter ${models.length} models`, size: 18, value: AI.filter[p.id] ?? '', oninput(e) {
+      h('button', { onclick: () => aiModels(p.id, false) }, tt('ai.listModels')),
+      h('button', { onclick: () => aiModels(p.id, true) }, tt('ai.refresh')),
+      models && h('input', { placeholder: tt('ai.filterModels', { n: models.length }), size: 18, value: AI.filter[p.id] ?? '', oninput(e) {
         AI.filter[p.id] = e.target.value;
         const f = e.target.value.toLowerCase();
         for (const tr of e.target.closest('.card').querySelectorAll('tr[data-model]')) tr.hidden = !tr.dataset.model.includes(f);
@@ -6011,7 +6062,7 @@ function aiModels(id, refresh) {
   return aiCall(id, async () => {
     AI.models[id] = await api('GET', `ai/providers/${enc(id)}/models${refresh ? '?refresh=true' : ''}`);
     return AI.models[id];
-  }, `models of ${id} listed`);
+  }, tt('ai.modelsOfListed', { id }));
 }
 
 // The page is the app the server's phase 22 describes: it starts the login and
@@ -6021,10 +6072,10 @@ async function aiLogin(id, here) {
   const win = window.open('about:blank', 'vx-ai-login');
   AI.loggingIn = id;
   const answer = await aiCall(id, () => api('POST', `ai/providers/${enc(id)}/login`, here ? undefined : { redirectUri: guiRedirect() }),
-    here ? 'login started; finish it in the new window' : 'login started');
+    tt(here ? 'ai.loginStartedFinish' : 'ai.loginStarted'));
   if (!answer) { win?.close(); return; }
   if (win) win.location.href = answer.authorizeUrl;
-  else flash('the browser blocked the login window; allow pop-ups for this page', true);
+  else flash('ai.browserBlockedLogin', true);
   if (here) {
     // The server's callback answers the browser, not this page: watch the list.
     const before = AI.providers.find((p) => p.id === id);
@@ -6047,7 +6098,7 @@ if (aiChannel) {
     if (id) {
       if (e.data?.error) AI.refusal[id] = `login: ${e.data.error}: ${e.data.message ?? ''}`; else delete AI.refusal[id];
     }
-    flash(e.data?.error ? `login refused: ${e.data.error}` : `${id} logged in`, Boolean(e.data?.error));
+    flash(e.data?.error ? tt('ai.loginRefused', { error: e.data.error }) : tt('ai.loggedIn', { id }), Boolean(e.data?.error));
     act(loadAi);
   };
 }
@@ -6064,7 +6115,7 @@ $('#aiSettingsForm').addEventListener('submit', (e) => {
     // Numbers as typed; the server refuses one out of range by name.
     agent: Object.fromEntries(['timeoutSeconds', 'maxToolCalls', 'tokenBudget', 'maxConcurrent']
       .filter((k) => F[k].value !== '').map((k) => [k, Number(F[k].value)])),
-  }), 'AI settings saved')
+  }), 'ai.aiSettingsSaved')
     .then(() => { document.activeElement?.blur(); return act(loadAi); });
 });
 $('#aiSettingsForm').elements.defaultProvider.addEventListener('change', () => renderAi());
@@ -6119,19 +6170,19 @@ function renderChatList() {
   const today = day(Date.now());
   const group = (c) => {
     const days = Math.round((today - day(c.updated)) / 864e5);
-    return days < 1 ? 'Today' : days < 2 ? 'Yesterday' : days < 7 ? 'Previous 7 days' : 'Older';
+    return days < 1 ? 'chat.today' : days < 2 ? 'chat.yesterday' : days < 7 ? 'chat.previous7Days' : 'chat.older';
   };
   const filter = CHAT.filter.trim().toLowerCase();
   const shown = CHAT.list.filter((c) => !filter || c.title.toLowerCase().includes(filter));
-  const when = (c) => (group(c) === 'Today' ? new Date(c.updated).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const when = (c) => (group(c) === 'chat.today' ? new Date(c.updated).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
     : new Date(c.updated).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }));
   patch($('#chatList'), shown.length ? [...Map.groupBy(shown, group)].map(([name, chats]) => [
-    h('div', { class: 'chat-group' }, name),
+    h('div', { class: 'chat-group' }, tt(name)),
     chats.map((c) => h('button', {
       type: 'button', class: `chat-item${c.id === CHAT.id ? ' active' : ''}`, title: c.title,
       'aria-current': c.id === CHAT.id ? 'true' : false, onclick: () => act(() => openChat(c.id)),
     }, h('span', { class: 'chat-item-title' }, c.title), h('span', { class: 'chat-item-meta' }, when(c)))),
-  ]) : h('p', { class: 'muted small chat-empty' }, filter ? 'no chat matches' : 'no chats yet'));
+  ]) : h('p', { class: 'muted small chat-empty' }, tt(filter ? 'chat.noChatMatches' : 'chat.noChatsYet')));
 }
 
 // The model's answer in light Markdown: paragraphs, lists, headings, code
@@ -6173,7 +6224,7 @@ function chatMarkdown(text) {
 function chatToolCall(c, done) {
   const detail = done ? c.summary : `${c.ms} ms`;
   return h('details', { class: 'chat-tool' },
-    h('summary', {}, h('span', { class: `chat-dot ${c.ok ? 'good' : 'bad'}`, title: c.ok ? 'ok' : 'failed' }), h('span', { class: 'mono' }, c.tool),
+    h('summary', {}, h('span', { class: `chat-dot ${c.ok ? 'good' : 'bad'}`, title: tt(c.ok ? 'chat.ok' : 'chat.failed') }), h('span', { class: 'mono' }, c.tool),
       h('span', { class: 'chat-tool-summary' }, detail)),
     h('pre', {}, detail));
 }
@@ -6182,15 +6233,16 @@ const clock = (at) => new Date(at).toLocaleTimeString(undefined, { hour: '2-digi
 
 function chatTurn(t) {
   const n = (v) => (v ?? 0).toLocaleString();
-  const usage = t.usage && `${n(t.usage.inputTokens)} in · ${n(t.usage.outputTokens)} out${t.usage.reasoningTokens ? ` · ${n(t.usage.reasoningTokens)} reasoning` : ''} tokens`;
-  const meta = [[t.provider, t.model].filter(Boolean).join(' · '), t.reasoning && `reasoning ${t.reasoning}`, usage, clock(t.at)].filter(Boolean);
+  const usage = t.usage && tt(t.usage.reasoningTokens ? 'chat.inOutReasoning' : 'chat.inOutTokens',
+    { in: n(t.usage.inputTokens), out: n(t.usage.outputTokens), reasoning: n(t.usage.reasoningTokens) });
+  const meta = [[t.provider, t.model].filter(Boolean).join(' · '), t.reasoning && tt('chat.reasoningLevel', { level: t.reasoning }), usage, clock(t.at)].filter(Boolean);
   return [
     h('div', { class: 'chat-msg user' }, h('div', { class: 'chat-bubble' }, t.text)),
     h('div', { class: 'chat-msg assistant' },
       t.actions?.length > 0 && h('div', { class: 'chat-tools-used' }, t.actions.map((a) => chatToolCall(a, true))),
       t.error ? h('div', { class: 'chat-error' }, h('strong', {}, t.error), t.detail && `: ${t.detail}`)
-        : h('div', { class: 'chat-text' }, t.reply ? chatMarkdown(t.reply) : h('p', { class: 'muted' }, '(no reply)')),
-      t.stoppedBy && h('div', {}, h('span', { class: 'pill bad' }, `stopped by ${t.stoppedBy}`), t.detail && h('span', { class: 'bad small' }, ` ${t.detail}`)),
+        : h('div', { class: 'chat-text' }, t.reply ? chatMarkdown(t.reply) : h('p', { class: 'muted' }, tt('chat.noReply'))),
+      t.stoppedBy && h('div', {}, h('span', { class: 'pill bad' }, tt('chat.stoppedBy', { reason: t.stoppedBy })), t.detail && h('span', { class: 'bad small' }, ` ${t.detail}`)),
       h('div', { class: 'chat-meta' }, meta.join('  ·  '))),
   ];
 }
@@ -6199,17 +6251,17 @@ function renderChat(toEnd = false) {
   const box = $('#chatMessages');
   const atEnd = toEnd || box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   const pending = CHAT.pending?.id === CHAT.id ? CHAT.pending : null;
-  if (document.activeElement !== $('#chatTitle')) patch($('#chatTitle'), CHAT.title || 'New chat');
+  if (document.activeElement !== $('#chatTitle')) patch($('#chatTitle'), CHAT.title || tt('chat.newChat'));
   $('#chatRename').hidden = $('#chatDelete').hidden = !CHAT.id || !CHAT.turns.length;
   patch(box, !CHAT.turns.length && !pending
-    ? h('div', { class: 'chat-welcome' }, h('div', { class: 'card-icon' }, icon('chat')), h('h2', {}, 'What should the house do?'),
-      h('p', { class: 'muted' }, 'Ask in words: play something similar to the current track · set the kitchen to 30 % · put the bathroom into the living zone.'))
+    ? h('div', { class: 'chat-welcome' }, h('div', { class: 'card-icon' }, icon('chat')), h('h2', {}, tt('chat.whatShouldHouse')),
+      h('p', { class: 'muted' }, tt('chat.askInWords')))
     : [CHAT.turns.map(chatTurn),
       pending && [
         h('div', { class: 'chat-msg user' }, h('div', { class: 'chat-bubble' }, pending.text)),
         h('div', { class: 'chat-msg assistant' },
           pending.live.length > 0 && h('div', { class: 'chat-tools-used' }, pending.live.map((c) => chatToolCall(c, false))),
-          h('div', { class: 'chat-thinking', role: 'status', 'aria-label': 'working' }, h('span', {}), h('span', {}), h('span', {}))),
+          h('div', { class: 'chat-thinking', role: 'status', 'aria-label': tt('chat.working') }, h('span', {}), h('span', {}), h('span', {}))),
       ]]);
   if (atEnd) box.scrollTop = box.scrollHeight;
   $('#chatStop').hidden = !CHAT.pending;
@@ -6231,14 +6283,14 @@ async function loadChatModels() {
 
 function renderChatModels() {
   const [wantedProvider, wantedModel] = CHAT.choice.split('\n');
-  const def = AI.settings?.defaultProvider ? `${AI.settings.defaultProvider} · ${AI.settings.defaultModel ?? '?'}` : 'no default model';
+  const def = AI.settings?.defaultProvider ? `${AI.settings.defaultProvider} · ${AI.settings.defaultModel ?? '?'}` : tt('chat.noDefaultModel');
   const words = $('#chatModelSearch').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (...texts) => words.every((w) => texts.some((t) => t?.toLowerCase().includes(w)));
   const option = (value, label, detail) => h('button', {
     type: 'button', role: 'option', class: 'model-option', 'aria-selected': String(value === CHAT.choice), 'data-value': value,
     onclick: () => pickChatModel(value),
   }, h('span', { class: 'model-option-name' }, label), detail && h('span', { class: 'model-option-id' }, detail));
-  let label = `${def} (settings)`;
+  let label = `${def} (${tt('chat.settings')})`;
   const groups = AI.providers.filter((p) => p.enabled && p.configured).map((p) => {
     const models = (AI.models[p.id] ?? []).filter((m) => m.tools !== false);
     // The chat's model stays pickable before the list arrives.
@@ -6251,9 +6303,9 @@ function renderChatModels() {
       shown.map((m) => option(`${p.id}\n${m.id}`, m.name ?? m.id, m.name && m.name !== m.id ? m.id : null))];
   });
   patch($('#chatModelLabel'), label);
-  $('#chatModel').title = `Model: ${label}`;
-  patch($('#chatModelList'), matches(def, 'settings', 'default') && option('', `${def}`, 'AI settings default'), groups,
-    !groups.some(Boolean) && words.length > 0 && h('p', { class: 'muted small model-none' }, 'no model matches'));
+  $('#chatModel').title = tt('chat.model', { name: label });
+  patch($('#chatModelList'), matches(def, 'settings', 'default', tt('chat.settings')) && option('', `${def}`, tt('chat.aiSettingsDefault')), groups,
+    !groups.some(Boolean) && words.length > 0 && h('p', { class: 'muted small model-none' }, tt('chat.noModelMatches')));
   renderChatReasoning();
 }
 
@@ -6278,7 +6330,7 @@ function renderChatReasoning() {
   const takes = chatReasons();
   select.hidden = !takes;
   const agent = AI.settings?.reasoning?.agent ?? 'default';
-  select.options[0].textContent = `reasoning: ${agent} (settings)`;
+  select.options[0].textContent = tt('chat.reasoningSettingsLevel', { level: agent });
   if (!takes) CHAT.reasoning = '';
   select.value = CHAT.reasoning;
 }
@@ -6309,7 +6361,7 @@ async function sendChat(text, spoken = false) {
     const a = await api('POST', 'ai/commands', body, { signal: pending.abort.signal });
     Object.assign(turn, { reply: a.reply, actions: a.actions, usage: a.usage, stoppedBy: a.stoppedBy, detail: a.detail, provider: a.provider ?? turn.provider, model: a.model ?? turn.model });
   } catch (err) {
-    Object.assign(turn, pending.abort.signal.aborted ? { error: 'stopped', detail: 'by you; not kept in the chat' }
+    Object.assign(turn, pending.abort.signal.aborted ? { error: tt('chat.stopped'), detail: tt('chat.byYouNot') }
       : { error: err.data?.error ?? String(err.status), detail: err.data?.message ?? err.message });
   }
   CHAT.pending = null;
@@ -6364,9 +6416,9 @@ $('#chatNew').addEventListener('click', newChat);
 $('#chatSideToggle').addEventListener('click', () => showChatSide(!$('#chatSide').classList.contains('open')));
 $('#chatSearch').addEventListener('input', (e) => { CHAT.filter = e.target.value; renderChatList(); });
 $('#chatDelete').addEventListener('click', () => {
-  if (!CHAT.id || !confirm(`Delete the chat "${CHAT.title}"?`)) return;
+  if (!CHAT.id || !confirm(tt('chat.deleteChatConfirm', { title: CHAT.title }))) return;
   const id = CHAT.id;
-  act(async () => { await api('DELETE', `ai/chats/${enc(id)}`); if (CHAT.id === id) newChat(); await loadChats(); }, 'chat deleted');
+  act(async () => { await api('DELETE', `ai/chats/${enc(id)}`); if (CHAT.id === id) newChat(); await loadChats(); }, 'chat.chatDeleted');
 });
 // The title is edited in place: Enter keeps it, Escape goes back.
 $('#chatRename').addEventListener('click', () => {
@@ -6382,9 +6434,9 @@ $('#chatTitle').addEventListener('keydown', (e) => {
 $('#chatTitle').addEventListener('blur', (e) => {
   e.target.contentEditable = 'false';
   const title = e.target.textContent.trim();
-  if (!CHAT.id || !title || title === CHAT.title) { e.target.textContent = CHAT.title || 'New chat'; return; }
+  if (!CHAT.id || !title || title === CHAT.title) { e.target.textContent = CHAT.title || tt('chat.newChat'); return; }
   const id = CHAT.id;
-  act(async () => { await api('PATCH', `ai/chats/${enc(id)}`, { title }); if (CHAT.id === id) CHAT.title = title; await loadChats(); }, 'chat renamed')
+  act(async () => { await api('PATCH', `ai/chats/${enc(id)}`, { title }); if (CHAT.id === id) CHAT.title = title; await loadChats(); }, 'chat.chatRenamed')
     .then(() => renderChat());
 });
 
@@ -6410,12 +6462,12 @@ function renderMic() {
   const mic = $('#chatMic');
   mic.classList.toggle('listening', VOICE.busy);
   mic.setAttribute('aria-pressed', String(VOICE.busy));
-  mic.title = VOICE.busy ? 'Stop listening' : 'Talk to Galdrun';
+  mic.title = tt(VOICE.busy ? 'voice.stopListening' : 'voice.talkToGaldrun');
 }
 
 async function listen() {
   if (VOICE.busy) { VOICE.stop?.(); return; }
-  if (!isSecureContext) { flash('the microphone needs https, or this page opened as localhost', true); return; }
+  if (!isSecureContext) { flash('voice.microphoneNeedsHttps', true); return; }
   speechSynthesis.cancel();
   VOICE.busy = true;
   renderMic();
@@ -6436,7 +6488,7 @@ const TEXT_PLACEHOLDER = $('#promptForm').elements.text.placeholder;
 
 // The browser's recognition, its words shown as they come.
 function hearInBrowser() {
-  if (!Recognition) throw new Error('this browser has no speech recognition: set a speech provider (AI settings, Speech) or use Chrome or Edge');
+  if (!Recognition) throw new Error(tt('voice.thisBrowserHas'));
   const box = $('#promptForm').elements.text;
   return new Promise((resolve, reject) => {
     const rec = new Recognition();
@@ -6445,10 +6497,10 @@ function hearInBrowser() {
     let heard = '';
     rec.onresult = (e) => { heard = [...e.results].map((r) => r[0].transcript).join(''); box.value = heard; };
     rec.onerror = (e) => (e.error === 'no-speech' || e.error === 'aborted' ? resolve('')
-      : reject(new Error(e.error === 'not-allowed' ? 'the microphone is blocked for this page' : `speech recognition: ${e.error}`)));
+      : reject(new Error(e.error === 'not-allowed' ? tt('voice.microphoneIsBlocked') : tt('voice.speechRecognition', { error: e.error }))));
     rec.onend = () => { box.value = ''; resolve(heard); };
     VOICE.stop = () => rec.stop();
-    box.placeholder = 'Listening…';
+    box.placeholder = tt('voice.listening');
     rec.start();
   });
 }
@@ -6460,7 +6512,7 @@ function hearInBrowser() {
 async function hearOnServer() {
   const box = $('#promptForm').elements.text;
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
-    .catch(() => { throw new Error('the microphone is blocked for this page'); });
+    .catch(() => { throw new Error(tt('voice.microphoneIsBlocked')); });
   const ctx = new AudioContext();
   const source = ctx.createMediaStreamSource(stream);
   const tap = ctx.createScriptProcessor(4096, 1, 1);
@@ -6479,7 +6531,7 @@ async function hearOnServer() {
     };
     source.connect(tap);
     tap.connect(ctx.destination);
-    box.placeholder = 'Listening…';
+    box.placeholder = tt('voice.listening');
   });
   tap.disconnect();
   source.disconnect();
@@ -6487,12 +6539,12 @@ async function hearOnServer() {
   const rate = ctx.sampleRate;
   await ctx.close();
   if (!spoke) return '';
-  box.placeholder = 'Transcribing…';
+  box.placeholder = tt('voice.transcribing');
   try {
     return (await api('POST', 'ai/transcriptions', wav(chunks, rate, 16000))).text;
   } catch (e) {
     VOICE.serverFailed = true;
-    flash(`the server could not transcribe (${e.data?.message ?? e.message}); the browser listens instead: say it again`, true);
+    flash(tt('voice.serverCouldNot', { error: e.data?.message ?? e.message }), true);
     return hearInBrowser();
   }
 }
@@ -6662,7 +6714,7 @@ $('#conSend').addEventListener('click', async () => {
   try {
     const r = await api($('#conMethod').value, $('#conPath').value.replace(/^\/+/, ''), body === '' ? undefined : body);
     out.className = 'json good';
-    out.textContent = r == null ? '(no content)' : json(mask(r));
+    out.textContent = r == null ? tt('console.noContent') : json(mask(r));
   } catch (e) {
     out.className = 'json bad';
     out.textContent = `${e.status || 'unreachable'}\n${json(mask(e.data))}`;
@@ -6694,19 +6746,18 @@ function connectEvents() {
   clearTimeout(evRetry);
   es?.close();
   es = new EventSource('/api/v1/events');
-  const pill = $('#sse');
   // The page polls nothing: what it shows is read at the start and again after
   // an event. A reconnect may have missed events, so everything is read again.
   es.onopen = () => {
     clearTimeout(evRetry);
-    pill.textContent = 'events live'; pill.className = 'pill good';
+    setConn({ events: tt('events.eventsLive'), eventsOk: true });
     if (eventsOpened) refreshSoon();
     eventsOpened = true;
   };
   // The browser's own retry can sit on a dead socket for a long time, so the
   // page builds a fresh connection itself instead of waiting for it.
   es.onerror = () => {
-    pill.textContent = 'events reconnecting…'; pill.className = 'pill bad';
+    setConn({ events: tt('events.eventsReconnecting'), eventsOk: false });
     clearTimeout(evRetry);
     evRetry = setTimeout(connectEvents, 2000);
   };
@@ -6787,7 +6838,7 @@ async function connectLogs() {
   try { config = await (await fetch('/gui/config')).json(); } catch { return; }
   const logs = $('#logs');
   if (!config.logs.length) {
-    appendLine(logs, 'no log files tailed — the server has no log file (logging.file is empty) and gui.logs names none');
+    appendLine(logs, tt('logs.noLogFiles'));
     return;
   }
   const partial = {};
@@ -6806,6 +6857,17 @@ async function connectLogs() {
 
 // --- refresh ------------------------------------------------------------------------
 
+// The header's one dot: green while the server answers and its events arrive,
+// red when either fails; what each said is its tooltip.
+const conn = { api: tt('header.api'), apiOk: null, events: tt('header.events'), eventsOk: null };
+function setConn(change) {
+  Object.assign(conn, change);
+  const el = $('#conn'), text = `${conn.api} · ${conn.events}`;
+  el.className = 'conn-dot' + (conn.apiOk === false || conn.eventsOk === false ? ' bad' : conn.apiOk && conn.eventsOk ? ' good' : '');
+  el.title = text;
+  el.setAttribute('aria-label', `${tt('header.connection')}: ${text}`);
+}
+
 let refreshTimer;
 function refreshSoon() {
   clearTimeout(refreshTimer);
@@ -6815,17 +6877,14 @@ function refreshSoon() {
 async function refreshCore(quiet = true) {
   const [zones, rooms, status] = await Promise.allSettled([
     api('GET', 'zones', undefined, { quiet }), api('GET', 'rooms', undefined, { quiet }), api('GET', 'status', undefined, { quiet })]);
-  const conn = $('#conn');
   if (status.status === 'fulfilled') {
-    conn.textContent = 'API ok';
-    conn.className = 'pill good';
+    setConn({ api: tt('common.apiOk'), apiOk: true });
     S.status = status.value;
     renderStatus();
     renderIndexer();
     renderFolderProgress();
   } else {
-    conn.textContent = `API ${status.reason.status === 502 ? 'unreachable (proxy)' : status.reason.status || 'unreachable'}`;
-    conn.className = 'pill bad';
+    setConn({ api: `API ${status.reason.status === 502 ? tt('common.unreachableProxy') : status.reason.status || tt('common.unreachable')}`, apiOk: false });
   }
   // Both read before either renders: a zone card names its rooms, a room card its zone.
   if (rooms.status === 'fulfilled') { S.rooms = rooms.value; recordHistory(S.rooms); }
@@ -6881,7 +6940,7 @@ function showPage() {
   if (next === 'client' && page && page !== 'client') {
     const back = $('.room-back');
     back.href = `#/${page}`;
-    back.lastChild.textContent = document.querySelector(`main > .page[data-page="${page}"]`).dataset.title;
+    back.lastChild.textContent = tt(document.querySelector(`main > .page[data-page="${page}"]`).dataset.title);
   }
   page = next;
   roomOpen = client;
@@ -6897,7 +6956,7 @@ function showPage() {
   const section = document.querySelector(`main > .page[data-page="${page}"]`);
   // The library goes with the Zones and the Playlists page, as it was left.
   if ((page === 'zones' || page === 'playlists') && $('#browserPanel').parentElement !== section) section.append($('#libraryToggle'), $('#browserPanel'));
-  document.title = `${section.dataset.title} · Galdrun Server`;
+  document.title = `${tt(section.dataset.title)} · Galdrun Server`;
   setNav(false);
   if (!changed) return;
   // Its device settings are read again each time a client's page opens.
@@ -6911,7 +6970,7 @@ window.addEventListener('hashchange', () => { showPage(); $('#main').focus({ pre
 function setNav(open) {
   document.body.classList.toggle('nav-open', open);
   $('#menuToggle').setAttribute('aria-expanded', String(open));
-  $('#menuToggle').setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  $('#menuToggle').setAttribute('aria-label', tt(open ? 'nav.closeMenu' : 'nav.openMenu'));
   $('#scrim').hidden = !open;
   if (open) $('#sidebar a[aria-current]')?.focus();
 }
@@ -6923,7 +6982,7 @@ function collapseNav(collapsed) {
   store.set('vx.nav', collapsed ? 'collapsed' : 'open');
   const b = $('#navCollapse');
   b.setAttribute('aria-expanded', String(!collapsed));
-  b.title = collapsed ? 'Expand menu' : 'Collapse menu';
+  b.title = tt(collapsed ? 'nav.expandMenu' : 'nav.collapseMenu');
   b.setAttribute('aria-label', b.title);
 }
 for (const a of document.querySelectorAll('#sidebar a')) a.title ||= [...a.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim();
@@ -6963,11 +7022,8 @@ for (const nav of document.querySelectorAll('nav.tabs')) {
 
 // --- start --------------------------------------------------------------------------
 
-// The header's pills shrink to dots on a phone; their text stays as a tooltip.
-for (const pill of document.querySelectorAll('.header-status .pill')) {
-  new MutationObserver(() => { pill.title = pill.textContent; }).observe(pill, { childList: true, characterData: true, subtree: true });
-}
-
+setConn({});
+renderHeaderListener();
 showPage();
 refreshCore(false);
 act(loadPlaylists);

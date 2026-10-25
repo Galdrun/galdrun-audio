@@ -19,7 +19,7 @@ $gui = Join-Path $server 'gui'
 $assets = Join-Path $gui 'assets'
 New-Item -ItemType Directory -Path $assets -Force | Out-Null
 Copy-Item -Path (Join-Path $root 'server-gui/www/*') -Destination $gui -Recurse -Force
-foreach ($name in @('theme.css', 'usage-charts.js')) {
+foreach ($name in @('theme.css', 'i18n.js', 'shared.en.js', 'shared.de.js', 'usage-charts.js')) {
     Copy-Item -LiteralPath (Join-Path $root "shared/web/$name") -Destination $assets -Force
 }
 Write-Host "Copied ServerGui to $gui. Refresh the browser to load the changes."

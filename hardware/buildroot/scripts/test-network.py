@@ -10,7 +10,9 @@ def check(scenario="baseline"):
     source = Path(__file__).resolve().parents[1] / "board/common/overlay"
     with tempfile.TemporaryDirectory(prefix="raumfeld-network-test-") as directory:
         root = Path(directory)
-        (root / "sys/eth0").mkdir(parents=True)
+        no_ethernet = scenario in ("no-ethernet-ap", "wifi-no-ethernet")
+        if not no_ethernet:
+            (root / "sys/eth0").mkdir(parents=True)
         (root / "sys/wlan0/phy80211").mkdir(parents=True)
         (root / "sys/wlan0/address").write_text("02:11:22:33:44:00\n")
         if scenario == "wifi-radio-hotplug":
@@ -18,7 +20,8 @@ def check(scenario="baseline"):
             (root / "sys/wlan1/address").write_text("02:11:22:33:44:01\n")
         if scenario == "wifi-station-only":
             (root / "sys/wlan0/phy80211/name").write_text("phy0\n")
-        (root / "sys/eth0/carrier").write_text("1\n" if scenario in ("ethernet-static", "reload", "ethernet-no-lease") else "0\n")
+        if not no_ethernet:
+            (root / "sys/eth0/carrier").write_text("1\n" if scenario in ("ethernet-static", "reload", "ethernet-no-lease") else "0\n")
         (root / "step").write_text("0")
         config = root / "network.conf"
         config.write_text((source / "etc/raumfeld-network.conf").read_text())
@@ -87,10 +90,10 @@ elif name=='ip' and 'addr' in args:
  elif 'show' in args:
   address=stored.read_text() if stored.exists() else ''
   if interface=='eth0' and ((scenario=='baseline' and step==2) or scenario=='reload'):address='10.0.0.38/24'
-  if interface=='wlan0' and scenario in ('wifi-dhcp','wifi-wpa-exit') and step>=1 and (r/'run/wpa.pid').exists():address='10.0.0.39/24'
+  if interface=='wlan0' and scenario in ('wifi-dhcp','wifi-wpa-exit','wifi-no-ethernet') and step>=1 and (r/'run/wpa.pid').exists():address='10.0.0.39/24'
   if address:print('2: '+interface+' inet '+address+' scope global '+interface)
 elif name=='iw' and 'link' in args:
- if scenario in ('wifi-static','wifi-dhcp','wifi-wpa-exit') and (r/'run/wpa.pid').exists():print('Connected to 00:11:22:33:44:55')
+ if scenario in ('wifi-static','wifi-dhcp','wifi-wpa-exit','wifi-no-ethernet') and (r/'run/wpa.pid').exists():print('Connected to 00:11:22:33:44:55')
 elif name=='wpa_passphrase':
  assert sys.stdin.read()=="=secret'$(touch BAD)=\\n", 'Password changed while reading config'
  print('psk='+'a'*64)
@@ -139,8 +142,14 @@ elif name=='sleep':
             assert all(f"-x hostname:{expected_name}" in e for e in events if e.startswith("udhcpc ")), events
             if scenario == "reload":
                 assert (root / "current-hostname").read_text() == "connector2", events
-            mask = {"ethernet-10": "0x003", "ethernet-100": "0x00c"}.get(scenario, "0x00f")
-            assert f'ethtool -s eth0 autoneg on advertise {mask}' in events, events
+            if no_ethernet:
+                assert not any(e.startswith('ethtool ') or 'eth0' in e for e in events), events
+            elif scenario in ("ethernet-10", "ethernet-100"):
+                mask = {"ethernet-10": "0x003", "ethernet-100": "0x00c"}[scenario]
+                assert f'ethtool -s eth0 autoneg on advertise {mask}' in events, events
+            else:
+                assert 'ethtool --disable-netlink -s eth0 autoneg on' in events, events
+                assert not any(e.startswith('ethtool ') and 'advertise' in e for e in events), events
             # Link up but no lease for 30 s: renegotiate once, then wait two minutes.
             renegotiations = events.count("ethtool -r eth0")
             assert renegotiations == (1 if scenario == "ethernet-no-lease" else 0), events
@@ -163,6 +172,9 @@ elif name=='sleep':
                 assert any("Applying saved network settings" in e for e in events), events
             elif scenario in ("ethernet-10", "ethernet-100"):
                 assert not any(e.startswith("wpa_supplicant ") for e in events), events
+            elif scenario == "no-ethernet-ap":
+                assert sum(e.startswith("hostapd ") for e in events) == 1, events
+                assert not any(e.startswith(("udhcpc ", "wpa_supplicant ")) for e in events), events
             else:
                 assert any(e.startswith("wpa_supplicant ") for e in events), events
                 config_text = (root / "run/wpa.conf").read_text()
@@ -173,7 +185,7 @@ elif name=='sleep':
                 if scenario == "wifi-static":
                     assert "ip addr replace 10.0.0.39/24 dev wlan0" in events, events
                     assert not any(e.startswith(("hostapd ", "udhcpc ")) for e in events), events
-                elif scenario in ("wifi-dhcp", "wifi-wpa-exit"):
+                elif scenario in ("wifi-dhcp", "wifi-wpa-exit", "wifi-no-ethernet"):
                     assert any(e.startswith("udhcpc ") and "-i wlan0 " in e for e in events), events
                     assert not any(e.startswith("hostapd ") for e in events), events
                     if scenario == "wifi-wpa-exit":
@@ -206,5 +218,6 @@ elif name=='sleep':
 
 if __name__ == "__main__":
     for scenario in ("baseline", "ethernet-static", "ethernet-10", "ethernet-100", "ethernet-no-lease", "wifi-dhcp", "wifi-static",
-                     "wifi-failed", "wifi-wpa-exit", "wifi-radio-hotplug", "wifi-station-only", "reload"):
+                     "wifi-failed", "wifi-wpa-exit", "wifi-radio-hotplug", "wifi-station-only", "reload",
+                     "no-ethernet-ap", "wifi-no-ethernet"):
         check(scenario)

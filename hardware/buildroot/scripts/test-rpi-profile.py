@@ -10,9 +10,15 @@ profiles = json.loads((project / 'board/rpi/audio-profiles.json').read_text())
 inno = next(p for p in profiles if p['id'] == 'inno-maker-hifi-dac')
 assert inno['overlay'] == 'allo-boss-dac-pcm512x-audio'
 assert inno['module'] == 'snd-soc-allo-boss-dac'
-for board in ('rpi1', 'rpi3'):
+for board in ('rpi1', 'rpi3', 'rpi4', 'rpi5'):
     config = (project / f'configs/raumfeld_{board}_defconfig').read_text()
     assert all('overlays/' + p['overlay'] in config for p in profiles if p['overlay'])
+    boot_config = (project / f'board/{board}/config.txt').read_text()
+    bt_config = ('dtoverlay=disable-bt\ndtoverlay=vc4-kms-v3d-pi4,cma-64\n' if board == 'rpi4'
+                 else 'dtoverlay=vc4-kms-v3d-pi5\n' if board == 'rpi5'
+                 else '[pi0w]\ndtoverlay=disable-bt\n[all]\n' if board == 'rpi1'
+                 else '[pi3]\ndtoverlay=disable-bt\n[pi02]\ndtoverlay=disable-bt\n[all]\n')
+    assert boot_config.endswith(bt_config)
 with tempfile.TemporaryDirectory(prefix='galdrun-pi-profile-') as temp:
     root = Path(temp)
     boot = root / 'boot'
@@ -59,10 +65,34 @@ with tempfile.TemporaryDirectory(prefix='galdrun-pi-profile-') as temp:
         assert (boot / 'galdrun-audio.previous.txt').read_bytes() == before
         assert active.read_text().count('dtoverlay=') == bool(p['overlay'])
     run('rollback')
-    model.write_bytes(b'Raspberry Pi Model B Rev 2\0')
-    before = active.read_bytes()
-    run('pcm5102a', False)
-    assert active.read_bytes() == before
+    for name in ('Raspberry Pi 2 Model B Rev 1.0',
+                 'Raspberry Pi 2 Model B Rev 1.1',
+                 'Raspberry Pi 2 Model B Rev 1.2',
+                 'Raspberry Pi 2 Model B rev 1.2',
+                 'Raspberry Pi 3 Model B Plus Rev 1.3',
+                 'Raspberry Pi 3 Model A Plus Rev 1.0',
+                 'Raspberry Pi Zero 2 W Rev 1.0',
+                 'Raspberry Pi Model B Plus Rev 1.2',
+                 'Raspberry Pi Model A Plus Rev 1.1',
+                 'Raspberry Pi Zero Rev 1.2',
+                 'Raspberry Pi Zero Rev 1.3',
+                 'Raspberry Pi Zero W Rev 1.1'):
+        model.write_bytes(name.encode() + b'\0')
+        for p in profiles:
+            run(p['id'])
+    for board, name in [('rpi4', 'Raspberry Pi 4 Model B Rev 1.4'), ('rpi5', 'Raspberry Pi 5 Model B Rev 1.0')]:
+        (boot / 'config.txt').write_text((project / f'board/{board}/config.txt').read_text())
+        model.write_bytes(name.encode() + b'\0')
+        for p in profiles:
+            run(p['id'])
+    (boot / 'config.txt').write_text((project / 'board/rpi3/config.txt').read_text())
+    print('PASS: all audio profiles accepted on supported 40-pin Pi 1/2/3/4/5/Zero models')
+    for name in ('Raspberry Pi Model A Rev 2', 'Raspberry Pi Model B Rev 2',
+                 'Unknown board'):
+        model.write_bytes(name.encode() + b'\0')
+        before = active.read_bytes()
+        run('pcm5102a', False)
+        assert active.read_bytes() == before
     run('usb')
     model.write_bytes(b'Raspberry Pi 3 Model B Rev 1.2\0')
     config = boot / 'config.txt'

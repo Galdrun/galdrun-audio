@@ -3,10 +3,12 @@ set -euo pipefail
 images=$1
 project=${RAUMFELD_PROJECT_DIR:?}
 board=${RAUMFELD_BOARD:?}
+arch=arm; image=zImage
+case "$board" in rpi4|rpi5) arch=arm64; image=Image ;; esac
 export PATH="$HOST_DIR/bin:$HOST_DIR/sbin:$PATH"
 kernel=$(find "$BUILD_DIR" -maxdepth 1 -type d -name 'linux-custom')
 [[ -n $kernel ]] || { echo 'Missing pinned Pi kernel build' >&2; exit 1; }
-[[ $(make -s -C "$kernel" ARCH=arm kernelversion) == 6.12.112 ]] || {
+[[ $(make -s -C "$kernel" ARCH="$arch" kernelversion) == 6.12.112 ]] || {
     echo 'Raspberry Pi kernel baseline must be 6.12.112' >&2; exit 1;
 }
 install -m 0644 "$kernel/.config" "$images/linux.config"
@@ -14,19 +16,24 @@ install -m 0644 "$BASE_DIR/.config" "$images/buildroot.config"
 boot="$images/rpi-boot"
 rm -rf "$boot"
 mkdir -p "$boot/overlays"
-install -m 0644 "$images/rpi-firmware/"{bootcode.bin,start.elf,fixup.dat} "$boot/"
+firmware=(bootcode.bin start.elf fixup.dat)
+case "$board" in rpi4) firmware=(start4.elf fixup4.dat) ;; rpi5) firmware=() ;; esac
+for file in "${firmware[@]}"; do install -m 0644 "$images/rpi-firmware/$file" "$boot/"; done
 install -m 0644 "$project/board/$board/config.txt" "$boot/config.txt"
-install -m 0644 "$project/board/rpi/cmdline.txt" "$boot/cmdline.txt"
-install -m 0644 "$images/zImage" "$images/"*.dtb "$boot/"
+cmdline="$project/board/$board/cmdline.txt"
+[[ -f $cmdline ]] || cmdline="$project/board/rpi/cmdline.txt"
+install -m 0644 "$cmdline" "$boot/cmdline.txt"
+install -m 0644 "$images/$image" "$images/"*.dtb "$boot/"
 install -m 0644 "$images/"*.dtbo "$boot/overlays/"
 printf '# Galdrun audio profile: usb\n' > "$boot/galdrun-audio.txt"
 # Keep the root's /boot a mountpoint; boot assets live on FAT, not in ext4.
-python3 - "$project/board/rpi/genimage.cfg" "$images/genimage.cfg" "$boot" <<'PY'
+python3 - "$project/board/rpi/genimage.cfg" "$images/genimage.cfg" "$boot" "$image" "${firmware[@]}" <<'PY'
 from pathlib import Path
 import sys
-template, output, boot = map(Path, sys.argv[1:])
+template, output, boot = map(Path, sys.argv[1:4])
 dtbs = '\n'.join(f'file {p.name} {{ image = "rpi-boot/{p.name}" }}' for p in sorted(boot.glob('*.dtb')))
-output.write_text(template.read_text().replace('#DTBS#', dtbs))
+firmware = '\n'.join(f'file {name} {{ image = "rpi-boot/{name}" }}' for name in sys.argv[5:])
+output.write_text(template.read_text().replace('#DTBS#', dtbs).replace('#KERNEL#', sys.argv[4]).replace('#FIRMWARE#', firmware))
 PY
 rootpath=$(mktemp -d)
 trap 'rm -rf "$rootpath"' EXIT

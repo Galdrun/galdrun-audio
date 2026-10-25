@@ -91,7 +91,11 @@ and `client-settings.js` (script). `EmbedStyle.cmake` turns them into
 (`multiroom_embed_text`: adjacent raw literals cut at line ends below MSVC's
 16 KiB literal limit). `ControlHttp.cpp` defines `kClientSettingsPage` from it
 and serves it at `/` on the control port; the ESP32's `WebUi.cpp` serves the
-same bytes on port 80. Two markers in the HTML are replaced:
+same bytes on port 80. The dictionaries (`shared.en.js`, `shared.de.js`,
+`client-settings.en.js`, `client-settings.de.js`) become
+`MultiroomWebSharedEnglish.inc`, `MultiroomWebSharedGerman.inc`,
+`MultiroomClientSettingsEnglish.inc` and `MultiroomClientSettingsGerman.inc` the
+same way, and `i18n.js` leads `MultiroomWebInputs.inc`. Two markers in the HTML are replaced:
 `@MULTIROOM_BRAND_NAME@` by the C macro, and `@INCLUDE <file>@` by an `#include`
 of another generated fragment (the style and the shared scripts). Keep both
 files ASCII (entities in HTML, `\u` escapes in JS) and keep `)page"` and
@@ -237,6 +241,41 @@ shows an error with a Retry button. Background refreshes do not show the loader.
 The input feed's `inputUsageReady` promise waits for a usable CPU reading or two
 samples when counters are unsupported. A live-feed error releases that optional
 wait so connection limits cannot prevent access to otherwise loaded settings.
+
+## Languages
+
+`i18n.js` gives the pages English (en-US) and German (de-AT). Every text has a
+dotted key, `area.name` (`nav.home`, `wifi.scanFailed`, `common.save`), and
+the dictionaries give each key its text: `i18n.add('en-US', {...})` in a
+`*.en.js` file and `i18n.add('de-AT', {...})` in the matching `*.de.js`. The
+English file holds the only copy of the English text; the markup and scripts
+hold keys.
+
+| Dictionaries | For |
+| --- | --- |
+| `shared.en.js`, `shared.de.js` | The shared scripts (inputs, loading, usage charts); served to the ServerGui at `/assets/` |
+| `client-settings.en.js`, `client-settings.de.js` | The client page (ASCII, `\u` escapes) |
+| `server-gui/www/app.en.js`, `app.de.js` | The ServerGui and `ai-login.html` |
+
+Load `i18n.js`, then the dictionaries, before the page's scripts. In a script,
+`tt(key, args)` answers the key's text with `{name}` filled from `args`; a key
+German lacks falls back to English, and a key English lacks is shown as it is,
+so a server's own message passes through `tt()` unchanged. A value the server
+names (a state, a kind) goes through `tv(group, value, otherwise)`: the text
+of `group.value` (`state.playing`), else `otherwise`, else the value itself.
+Keep device names and other data out of the dictionaries.
+
+In the markup, `data-i18n="key"` sets an element's text, `data-i18n-html` its
+markup (for the dictionaries' own `<em>`, `<code>` and `<a>`), and
+`data-i18n-title`, `data-i18n-aria-label` and `data-i18n-placeholder` those
+attributes. Text beside an icon or a field goes in its own
+`<span data-i18n>`, since the key replaces all of the element's text. An
+`<option>` with a key needs its own `value`. `i18n.translate()` applies them
+once, before data is put in; `i18n.bind(select)` makes a language picker. The
+choice is kept in `localStorage` (`galdrun.lang`) per browser and origin, so
+each device page remembers its own; without one, the browser's language picks.
+A change reloads the page. Add every new key to both the English and the German
+file.
 
 ## CPU and RAM charts
 

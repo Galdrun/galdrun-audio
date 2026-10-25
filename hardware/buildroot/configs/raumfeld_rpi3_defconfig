@@ -22,7 +22,8 @@ BR2_LINUX_KERNEL_DEFCONFIG="bcm2709"
 BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_RAUMFELD_PATH)/board/rpi/linux.fragment"
 BR2_LINUX_KERNEL_ZIMAGE=y
 BR2_LINUX_KERNEL_DTS_SUPPORT=y
-BR2_LINUX_KERNEL_INTREE_DTS_NAME="broadcom/bcm2710-rpi-3-b"
+# The boot firmware also selects the B+ DTB for Pi 3 A+.
+BR2_LINUX_KERNEL_INTREE_DTS_NAME="broadcom/bcm2709-rpi-2-b broadcom/bcm2710-rpi-2-b broadcom/bcm2710-rpi-3-b broadcom/bcm2710-rpi-3-b-plus broadcom/bcm2710-rpi-zero-2-w broadcom/bcm2710-rpi-zero-2"
 BR2_LINUX_KERNEL_DTB_OVERLAY_SUPPORT=y
 BR2_LINUX_KERNEL_INTREE_DTSO_NAMES="overlays/disable-bt overlays/hifiberry-dac overlays/hifiberry-dacplus overlays/hifiberry-dacplus-pro overlays/hifiberry-dacplus-std overlays/hifiberry-dacplushd overlays/hifiberry-dacplusadc overlays/hifiberry-dacplusadcpro overlays/hifiberry-dacplusdsp overlays/hifiberry-digi overlays/hifiberry-digi-pro overlays/hifiberry-amp overlays/hifiberry-amp100 overlays/hifiberry-amp4pro overlays/iqaudio-dac overlays/iqaudio-dacplus overlays/rpi-dacpro overlays/iqaudio-codec overlays/iqaudio-digi-wm8804-audio overlays/justboom-dac overlays/justboom-digi overlays/allo-boss-dac-pcm512x-audio overlays/allo-boss2-dac-audio overlays/allo-digione overlays/allo-piano-dac-pcm512x-audio overlays/allo-piano-dac-plus-pcm512x-audio overlays/allo-katana-dac-audio overlays/audioinjector-wm8731-audio overlays/audioinjector-isolated-soundcard overlays/fe-pi-audio overlays/i-sabre-q2m"
 BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y

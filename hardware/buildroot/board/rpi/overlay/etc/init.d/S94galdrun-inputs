@@ -1,0 +1,26 @@
+#!/bin/sh
+# Seed wiring once, before S95galdrun-client. Never replace room settings.
+set -eu
+umask 077
+case "${1:-}" in
+    start)
+        [ ! -f /etc/galdrun/client.json ] || exit 0
+        [ -r /proc/device-tree/model ] || exit 0
+        model=$(tr -d '\000' < /proc/device-tree/model)
+        case "$model" in
+            'Raspberry Pi 4 Model B Rev '*|'Raspberry Pi 5 Model B Rev '*|\
+            'Raspberry Pi 2 Model B Rev '*|'Raspberry Pi 2 Model B rev '*|\
+            'Raspberry Pi 3 Model B Rev '*|'Raspberry Pi 3 Model B Plus Rev '*|\
+            'Raspberry Pi 3 Model A Plus Rev '*|'Raspberry Pi Zero 2 W Rev '*|\
+            'Raspberry Pi Zero Rev '*|'Raspberry Pi Zero W Rev '*|\
+            'Raspberry Pi Model A Plus Rev '*|'Raspberry Pi Model B Plus Rev '*) header=40 ;;
+            'Raspberry Pi Model A Rev '*|'Raspberry Pi Model B Rev '*) header=26 ;;
+            *) exit 0 ;;
+        esac
+        mkdir -p /etc/galdrun
+        cp "/opt/galdrun-client/client-default-${header}pin.json" /etc/galdrun/client.json.next
+        mv /etc/galdrun/client.json.next /etc/galdrun/client.json
+        ;;
+    stop) : ;;
+    *) echo "Usage: $0 {start|stop}" >&2; exit 1 ;;
+esac

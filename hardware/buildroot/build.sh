@@ -62,7 +62,7 @@ for board in "$@"; do
         make -C "$work/buildroot-2025.02.18" O="$output" BR2_EXTERNAL="$work/external" busybox-dirclean
     fi
     kernel_dirs=("$project/board/common" "$project/board/$board")
-    if [[ $board == rpi1 || $board == rpi3 ]]; then kernel_dirs+=("$project/board/rpi"); fi
+    if [[ $board == rpi[1345] ]]; then kernel_dirs+=("$project/board/rpi"); fi
     kernel_inputs=$({ find "${kernel_dirs[@]}" -type f \( -name 'linux.config' -o -name '*.fragment' -o -name '*.c' -o -name '*.h' -o -name '*.dts' -o -name '*.dtsi' -o -name '*.patch' -o -name '*.hash' -o -name '*.elf' \) -print0; printf '%s\0' "$project/configs/raumfeld_${board}_defconfig" "$project/external.mk"; } | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
     if [[ -n $(find "$output/build" -maxdepth 1 -type d -name 'linux-*' ! -name 'linux-headers-*' ! -name 'linux-firmware-*' -print -quit 2>/dev/null) && $(cat "$output/.raumfeld-kernel-inputs" 2>/dev/null || true) != "$kernel_inputs" ]]; then
         make -C "$work/buildroot-2025.02.18" O="$output" BR2_EXTERNAL="$work/external" linux-dirclean

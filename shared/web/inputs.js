@@ -12,8 +12,12 @@ function renderHardwareInputs(data, container, saveBindings) {
     element.className = className;
     return element;
   };
-  const friendly = value => value.replace(/([a-z])([A-Z0-9])/g, '$1 $2')
-    .replace(/^./, letter => letter.toUpperCase());
+  // Identifiers by their key (inputs.name.togglePause), else as words: "togglePause" -> "Toggle Pause".
+  const friendly = value => {
+    if (/^action\d+$/.test(value)) return tt('inputs.userAction', {n: value.slice(6)});
+    const name = tv('inputs.name', value);
+    return name !== value ? name : value.replace(/([a-z])([A-Z0-9])/g, '$1 $2').replace(/^./, letter => letter.toUpperCase());
+  };
   const percent = value => Number((value * 100).toFixed(2)) + '%';
   const icons = {
     button: '<rect x="4" y="4" width="16" height="16" rx="5"/>',
@@ -49,21 +53,10 @@ function renderHardwareInputs(data, container, saveBindings) {
     svg.innerHTML = icons[name] || icons.button;
     return svg;
   };
-  const gestureHints = {click: 'Single press', doubleClick: 'Two quick presses', longPress: 'Hold for two seconds',
-    clockwise: 'Turn clockwise', counterClockwise: 'Turn counterclockwise'};
-  const actionHints = {none: 'No action assigned to this button event.', play: 'Start playback.',
-    pause: 'Pause playback.', togglePause: 'Toggle between playing and paused.', stop: 'Stop playback.',
-    next: 'Play the next track.', previous: 'Play the previous track.',
-    volumeUp: 'Increase the volume by the specified amount.', volumeDown: 'Decrease the volume by the specified amount.',
-    setVolume: 'Set the volume to the specified level.', toggleMute: 'Toggle the current mute state.',
-    standbyOff: 'Leave manual standby and restore the audio connection.',
-    standbyOn: 'Silence this device until Standby Off or Toggle Standby. Network and buttons remain available.',
-    toggleStandby: 'Switch this device between on and manual standby.',
-    deepSleep: 'Put this device into deep sleep. A long press triggers after two seconds while held. Press POWER to wake it; network control is unavailable while asleep.'};
   // User actions: the server only announces them as room.input on its event stream.
   const userActions = Array.from({length: 10}, (_, i) => 'action' + (i + 1));
-  for (const value of userActions)
-    actionHints[value] = 'Does nothing by itself; the server emits it as a room.input event for your own logic.';
+  // A gesture's or an action's hint, by key: inputs.gestureHint.click, inputs.actionHint.play.
+  const actionHint = value => /^action\d+$/.test(value) ? tt('inputs.userActionHint') : tv('inputs.actionHint', value, '');
   const normalize = binding => {
     const result = {action: binding.action};
     if (binding.action === 'volumeUp' || binding.action === 'volumeDown') result.step = binding.step ?? .05;
@@ -73,12 +66,12 @@ function renderHardwareInputs(data, container, saveBindings) {
   };
   const changed = () => container.dispatchEvent(new Event('bindingschange', {bubbles: true}));
   const content = [];
-  if (data.backend) content.push(text('p', 'Input backend: ' + data.backend, 'note'));
+  if (data.backend) content.push(text('p', tt('inputs.inputBackend', {name: data.backend}), 'note'));
   if (data.backendError) content.push(text('p', data.backendError, 'message bad'));
   if (data.setupButtonPin >= 0) content.push(text('p',
-    'Setup button: GPIO ' + data.setupButtonPin + '. Hold during reset to enter setup mode.', 'note'));
+    tt('inputs.setupButtonGpio', {pin: data.setupButtonPin}), 'note'));
   if (!data.inputs.length) content.push(text('p',
-    'No audio buttons or encoders are configured or detected.', 'note'));
+    tt('inputs.noAudioButtons'), 'note'));
   for (const input of data.inputs) {
     const item = document.createElement('article');
     item.className = 'input-info';
@@ -92,11 +85,11 @@ function renderHardwareInputs(data, container, saveBindings) {
     badge.setAttribute('role', 'img');
     const pressed = container.inputStates?.get(input.id);
     badge.classList.toggle('pressed', pressed === true);
-    badge.setAttribute('aria-label', input.id + (pressed === true ? ' pressed' :
-      pressed === false ? ' released' : ' state unavailable'));
+    badge.setAttribute('aria-label', tt(pressed === true ? 'inputs.pressed' :
+      pressed === false ? 'inputs.released' : 'inputs.stateUnavailable', {id: input.id}));
     const title = text('div', '', 'input-title');
     title.append(text('h3', input.id + ' \u00b7 ' + friendly(input.kind)),
-      text('p', input.kind === 'encoder' ? 'Rotary encoder' : 'Hardware button', 'note'));
+      text('p', tt(input.kind === 'encoder' ? 'inputs.rotaryEncoder' : 'inputs.hardwareButton'), 'note'));
     header.append(badge, title);
     const wiring = input.device
       ? input.device + ' \u00b7 ' + (input.key || input.axis)
@@ -118,35 +111,35 @@ function renderHardwareInputs(data, container, saveBindings) {
         let description = friendly(gesture) + ': ' + friendly(binding.action);
         if (binding.step !== undefined) description += ' ' + percent(binding.step);
         if (binding.value !== undefined) description += ' ' + percent(binding.value);
-        if (binding.scope) description += ' (' + binding.scope + ')';
+        if (binding.scope) description += ' (' + tv('inputs.scopes', binding.scope) + ')';
         return description;
       });
-      overview.textContent = assigned.join(' \u00b7 ') || 'No actions assigned';
+      overview.textContent = assigned.join(' \u00b7 ') || tt('inputs.noActionsAssigned');
     }
     for (const [gesture, binding] of Object.entries(input.bindings)) {
       if (saveBindings) {
-        const label = text('label', 'Action');
+        const label = text('label', tt('inputs.action'));
         const controls = document.createElement('dd');
         controls.className = 'binding-controls';
         const action = document.createElement('select');
-        action.setAttribute('aria-label', input.id + ' ' + friendly(gesture) + ' action');
+        action.setAttribute('aria-label', tt('inputs.gestureAction', {id: input.id, gesture: friendly(gesture)}));
         for (const value of ['none', 'play', 'pause', 'togglePause', 'stop', 'next', 'previous',
           'volumeUp', 'volumeDown', 'setVolume', 'toggleMute', 'standbyOn', 'standbyOff', 'toggleStandby', 'deepSleep', ...userActions])
           // Deep sleep only where the client can do it, or to show a binding it already has.
-          if (value !== 'deepSleep' || data.deepSleep || binding.action === 'deepSleep') action.add(new Option(value === 'none' ? 'Unassigned' : friendly(value), value));
+          if (value !== 'deepSleep' || data.deepSleep || binding.action === 'deepSleep') action.add(new Option(value === 'none' ? tt('inputs.unassigned') : friendly(value), value));
         action.value = binding.action;
         label.htmlFor = 'binding-' + container.id + '-' + editors.length + '-' + content.length;
         action.id = label.htmlFor;
         const amountLabel = text('label', '', 'binding-amount');
-        const amountTitle = text('span', 'Amount'); amountLabel.append(amountTitle);
+        const amountTitle = text('span', tt('inputs.amount')); amountLabel.append(amountTitle);
         const amount = document.createElement('input');
         amount.type = 'number'; amount.max = '100'; amount.step = 'any'; amount.required = true;
         amount.value = Number(((binding.step ?? binding.value ?? .05) * 100).toFixed(6));
         const unit = text('span', '', 'binding-unit'); unit.append(amount, text('span', '%'));
         amountLabel.append(unit);
-        const scopeLabel = text('label', 'Scope', 'binding-scope');
+        const scopeLabel = text('label', tt('inputs.scope'), 'binding-scope');
         const scope = document.createElement('select');
-        scope.add(new Option('Room', 'room')); scope.add(new Option('Zone', 'zone'));
+        scope.add(new Option(tt('inputs.room'), 'room')); scope.add(new Option(tt('inputs.zone'), 'zone'));
         scope.value = binding.scope || 'room';
         const scopeControl = text('span', '', 'binding-select');
         scopeControl.append(icon(scope.value, 'binding-select-icon'), scope); scopeLabel.append(scopeControl);
@@ -156,7 +149,7 @@ function renderHardwareInputs(data, container, saveBindings) {
         const hint = text('p', '', 'note binding-hint');
         function update() {
           const stepped = action.value === 'volumeUp' || action.value === 'volumeDown';
-          amountTitle.textContent = 'Amount';
+          amountTitle.textContent = tt('inputs.amount');
           amountLabel.hidden = !stepped && action.value !== 'setVolume';
           amount.disabled = amountLabel.hidden;
           amount.min = stepped ? '0.000001' : '0';
@@ -164,23 +157,23 @@ function renderHardwareInputs(data, container, saveBindings) {
           scope.disabled = scopeLabel.hidden;
           controls.classList.toggle('has-amount', !amountLabel.hidden);
           actionControl.firstChild.replaceWith(icon(action.value, 'binding-select-icon'));
-          hint.textContent = actionHints[action.value] || '';
+          hint.textContent = actionHint(action.value);
         }
         action.addEventListener('change', () => {update(); summarize(); changed()}); update();
         controls.append(label, amountLabel, scopeLabel, hint);
         const term = document.createElement('dt'); term.className = 'gesture-heading';
         const gestureIcon = text('span', '', 'gesture-icon'); gestureIcon.append(icon(gesture, ''));
         const gestureTitle = text('div', '');
-        gestureTitle.append(text('strong', friendly(gesture)), text('small', gestureHints[gesture] || 'Hardware event'));
+        gestureTitle.append(text('strong', friendly(gesture)), text('small', tv('inputs.gestureHint', gesture, tt('inputs.hardwareEvent'))));
         term.append(gestureIcon, gestureTitle);
         bindings.append(term, controls);
         editors.push({gesture, action, amount, scope});
         continue;
       }
-      let action = binding.action === 'none' ? 'Unassigned' : friendly(binding.action);
-      if (binding.step !== undefined) action += ' by ' + percent(binding.step);
-      if (binding.value !== undefined) action += ' to ' + percent(binding.value);
-      if (binding.scope) action += ' (' + binding.scope + ')';
+      let action = binding.action === 'none' ? tt('inputs.unassigned') : friendly(binding.action);
+      if (binding.step !== undefined) action += ' ' + tt('inputs.by', {amount: percent(binding.step)});
+      if (binding.value !== undefined) action += ' ' + tt('inputs.to', {amount: percent(binding.value)});
+      if (binding.scope) action += ' (' + tv('inputs.scopes', binding.scope) + ')';
       bindings.append(text('dt', friendly(gesture)), text('dd', action));
     }
     summarize(); details.append(bindings);
@@ -218,8 +211,8 @@ function renderHardwareInputs(data, container, saveBindings) {
       return true;
     },
     async save() {
-      if (this.saving) throw Error('Already saving button actions');
-      if (!this.validate()) throw Error('Check the button action values');
+      if (this.saving) throw Error(tt('inputs.alreadySavingButton'));
+      if (!this.validate()) throw Error(tt('inputs.checkButtonAction'));
       this.saving = true;
       const controls = [...container.querySelectorAll('input, select')];
       const disabled = controls.map(control => control.disabled);

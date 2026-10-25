@@ -1,179 +1,186 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>@MULTIROOM_BRAND_NAME@ client</title>
+<title data-i18n="page.title"></title>
 <style>
 @INCLUDE MultiroomWebStyle.inc@
 </style></head>
 <body class="has-save-bar page-loading" aria-busy="true">
-<div class="page-loader" id="pageLoader" role="status"><div class="page-loader-content"><span class="spin" aria-hidden="true"></span><p id="pageLoaderMessage">Loading device settings&hellip;</p><button type="button" id="pageLoaderRetry" hidden>Retry</button></div></div>
+<div class="page-loader" id="pageLoader" role="status"><div class="page-loader-content"><span class="spin" aria-hidden="true"></span><p id="pageLoaderMessage" data-i18n="loading.loadingDeviceSettings"></p><button type="button" id="pageLoaderRetry" hidden data-i18n="loading.retry"></button></div></div>
 
 <header class="topbar">
   <div class="topbar-inner">
     <div class="brand"><svg class="wordmark" viewBox="300 50 600 200" role="img" aria-label="@MULTIROOM_BRAND_NAME@"><path fill="#152B3A" d="M361.02 129.91Q353.52 129.91 347.19 127.47Q340.85 125.04 336.18 120.57Q331.51 116.1 328.92 110.06Q326.33 104.01 326.33 96.8Q326.33 89.59 328.92 83.54Q331.51 77.5 336.23 73.03Q340.94 68.56 347.29 66.13Q353.64 63.69 361.24 63.69Q369.37 63.69 375.95 66.35Q382.52 69.01 387.08 74.19L379.52 81.54Q375.76 77.72 371.38 75.93Q366.99 74.13 361.79 74.13Q356.68 74.13 352.38 75.8Q348.08 77.46 344.93 80.5Q341.79 83.54 340.08 87.68Q338.38 91.83 338.38 96.8Q338.38 101.67 340.08 105.82Q341.79 109.97 344.93 113.05Q348.08 116.13 352.33 117.8Q356.57 119.47 361.67 119.47Q366.47 119.47 370.93 117.95Q375.39 116.42 379.42 112.83L386.2 121.72Q381.19 125.76 374.53 127.84Q367.87 129.91 361.02 129.91ZM386.2 121.72 374.95 120.16V96.09H386.2ZM402.86 129 431.81 64.6H443.63L472.66 129H460.14L435.27 70.98H440.05L415.17 129ZM416.24 114.09 419.44 104.7H454.19L457.47 114.09ZM490.92 129V64.6H502.86V118.89H536.5V129ZM556.03 129V64.6H584.17Q594.61 64.6 602.52 68.63Q610.43 72.66 614.87 79.88Q619.31 87.09 619.31 96.8Q619.31 106.5 614.87 113.72Q610.43 120.94 602.52 124.97Q594.61 129 584.17 129ZM567.97 118.88H583.57Q590.81 118.88 596.1 116.13Q601.4 113.38 604.33 108.41Q607.26 103.44 607.26 96.8Q607.26 90.07 604.33 85.14Q601.4 80.22 596.1 77.47Q590.81 74.72 583.57 74.72H567.97ZM642.02 129V64.6H668.34Q681.23 64.6 688.56 70.69Q695.89 76.78 695.89 87.53Q695.89 94.58 692.58 99.68Q689.27 104.78 683.14 107.51Q677 110.24 668.46 110.24H648.63L653.96 104.85V129ZM684.1 129 667.79 105.62H680.62L697.03 129ZM653.96 106.12 648.63 100.36H667.96Q675.84 100.36 679.84 96.97Q683.84 93.59 683.84 87.53Q683.84 81.39 679.84 78.04Q675.84 74.7 667.96 74.7H648.63L653.96 68.86ZM746.89 129.91Q733.68 129.91 726.2 122.47Q718.72 115.02 718.72 100.9V64.6H730.66V100.5Q730.66 110.42 734.93 114.94Q739.2 119.47 747 119.47Q754.8 119.47 759.06 114.94Q763.33 110.42 763.33 100.5V64.6H775.06V100.9Q775.06 115.02 767.58 122.47Q760.1 129.91 746.89 129.91ZM801.86 129V64.6H811.7L852.06 114.21H847.15V64.6H859.02V129H849.18L808.82 79.39H813.73V129Z"/><g transform="translate(397 202)" stroke="#91ABB5" stroke-width="3.2" fill="none" stroke-linejoin="miter" stroke-linecap="square"><path d="M 7 6 L 37 38 M 37 6 L 7 38"/><path transform="translate(61 0)" d="M 10 38 L 10 6 M 10 10 L 38 24 M 10 22 L 38 36"/><path transform="translate(122 0)" d="M 10 6 L 10 38 M 10 6 L 36 20"/><path transform="translate(183 0)" d="M 6 6 L 6 38 M 38 6 L 38 38 M 6 6 L 38 38 M 6 38 L 38 6"/><path transform="translate(244 0)" d="M 10 38 L 10 6 L 32 6 L 39 15 L 32 24 L 10 24 M 27 24 L 39 38"/><path transform="translate(305 0)" d="M 10 6 L 10 38 L 37 38 L 37 6"/><path transform="translate(366 0)" d="M 10 38 L 10 6 M 5 29 L 39 15"/></g></svg></div>
-    <div class="device-summary"><span id="headerDevice">Audio client</span><span id="connection" class="connection" role="status">Loading</span></div>
+    <div id="language" class="language" data-i18n-aria-label="nav.language"></div>
+    <div class="device-summary"><span id="headerDevice" data-i18n="nav.audioClient"></span><span id="connection" class="connection" role="status" data-i18n="nav.loading"></span></div>
   </div>
-  <nav class="section-menu" aria-label="Settings sections"><div class="section-menu-links">
-    <a href="#card-status">Status</a><a href="#card-wi-fi">Wi-Fi</a><a href="#card-eth-address">Ethernet</a><a href="#card-wifi-address">Wi-Fi address</a><a href="#card-client">Client</a><a href="#card-audio">Audio</a><a href="#card-cpu">CPU</a><a href="#card-leds">LEDs</a><a href="#card-power">Power</a><a href="#card-ssh">SSH</a><a href="#card-hardware">Buttons</a>
+  <nav class="section-menu" data-i18n-aria-label="nav.settingsSections"><div class="section-menu-links">
+    <a href="#card-status" data-i18n="nav.status"></a><a href="#card-wi-fi" data-i18n="nav.wiFi"></a><a href="#card-eth-address" data-i18n="nav.ethernet"></a><a href="#card-wifi-address" data-i18n="nav.wiFiAddress"></a><a href="#card-client" data-i18n="common.client"></a><a href="#card-audio" data-i18n="nav.audio"></a><a href="#card-cpu" data-i18n="nav.cpu"></a><a href="#card-leds" data-i18n="nav.leds"></a><a href="#card-power" data-i18n="common.power"></a><a href="#card-ssh" data-i18n="nav.ssh"></a><a href="#card-hardware" data-i18n="nav.buttons"></a>
   </div></nav>
 </header>
 
 <main>
-<div class="page-heading"><h1>Device Settings</h1><p class="subtitle">Configure your multiroom audio client</p>
-<p class="note" id="about">Loading&hellip;</p></div>
+<div class="page-heading"><h1 data-i18n="page.deviceSettings"></h1><p class="subtitle" data-i18n="page.configureYourMultiroom"></p>
+<p class="note" id="about" data-i18n="page.loading"></p></div>
 
 <section id="statusBox" class="settings-card hidden" aria-labelledby="card-status">
-  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13h5l3-9 4 17 3-10 2 2h3"/></svg></div><div><h2 id="card-status" tabindex="-1">Status</h2><p>Current device and connection information.</p></div></div>
-  <div class="card-content"><dl id="status"></dl><div id="usageCharts" class="usage-charts" aria-label="Device CPU and RAM usage"></div></div>
+  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13h5l3-9 4 17 3-10 2 2h3"/></svg></div><div><h2 id="card-status" tabindex="-1" data-i18n="status.status"></h2><p data-i18n="status.currentDeviceAnd"></p></div></div>
+  <div class="card-content"><dl id="status"></dl><div id="usageCharts" class="usage-charts" data-i18n-aria-label="status.deviceCpuAnd"></div></div>
 </section>
 
 <form id="form">
 <section id="networkBox" class="settings-card hidden" aria-labelledby="card-wi-fi">
-  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8 16a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r="1"/></svg></div><div><h2 id="card-wi-fi" tabindex="-1">Wi-Fi</h2><p>Connect to your wireless network or use a fixed access point.</p></div></div>
+  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8 16a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r="1"/></svg></div><div><h2 id="card-wi-fi" tabindex="-1" data-i18n="wifi.wiFi"></h2><p data-i18n="wifi.connectToYour"></p></div></div>
   <div class="card-content fields">
-    <div id="wifiRadioBox" class="field-group hidden"><label for="wifiRadio">Wi-Fi radio</label><select id="wifiRadio"><option value="">Automatic</option></select><p id="wifiRadioHint" class="hint"></p></div>
-    <label for="wifiSsid">Network</label>
-    <div class="row"><input id="wifiSsid" maxlength="32" autocomplete="off"><button type="button" id="wifiScan">Scan</button></div>
+    <div id="wifiRadioBox" class="field-group hidden"><label for="wifiRadio" data-i18n="wifi.wiFiRadio"></label><select id="wifiRadio"><option value="" data-i18n="common.automatic"></option></select><p id="wifiRadioHint" class="hint"></p></div>
+    <label for="wifiSsid" data-i18n="wifi.network"></label>
+    <div class="row"><input id="wifiSsid" maxlength="32" autocomplete="off"><button type="button" id="wifiScan" data-i18n="wifi.scan"></button></div>
     <div id="wifiNetworks" class="nets"></div>
-    <label for="wifiPassword">Password</label>
-    <div class="row"><input id="wifiPassword" type="password" autocomplete="new-password"><button type="button" id="wifiEye" aria-label="Show password while held" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
-    <label for="wifiAp">Access point</label>
+    <label for="wifiPassword" data-i18n="wifi.password"></label>
+    <div class="row"><input id="wifiPassword" type="password" autocomplete="new-password"><button type="button" id="wifiEye" data-i18n-aria-label="wifi.showPasswordWhile" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+    <label for="wifiAp" data-i18n="wifi.accessPoint"></label>
     <select id="wifiAp"></select>
-    <p class="hint">Scan to list the access points of this network. A fixed one the board cannot reach brings up this setup page.</p>
-    <details id="wifiAdvanced" class="hidden" style="grid-column:1 / -1"><summary>Advanced Wi-Fi settings</summary><div class="fields">
-      <label for="wifiCountry">Country</label><input id="wifiCountry" maxlength="2" pattern="[A-Z]{2}" autocomplete="off" placeholder="AT">
-      <span class="field-label">Open network</span><label><input id="wifiClearPassword" type="checkbox"> Clear saved password</label>
-      <p class="hint">Ethernet takes precedence when connected. Leave Network empty to use Ethernet and the setup access point only.</p>
+    <p class="hint" data-i18n="wifi.scanToList"></p>
+    <details id="wifiAdvanced" class="hidden" style="grid-column:1 / -1"><summary data-i18n="wifi.advancedWiFi"></summary><div class="fields">
+      <label for="wifiCountry" data-i18n="wifi.country"></label><input id="wifiCountry" maxlength="2" pattern="[A-Z]{2}" autocomplete="off" placeholder="AT">
+      <span class="field-label" data-i18n="wifi.openNetwork"></span><label><input id="wifiClearPassword" type="checkbox"> <span data-i18n="wifi.clearSavedPassword"></span></label>
+      <p class="hint" data-i18n="wifi.ethernetTakesPrecedence"></p>
     </div></details>
-    <div id="wifiChart" class="wifi-chart" aria-label="Wi-Fi signal history"></div>
+    <div id="wifiChart" class="wifi-chart" data-i18n-aria-label="wifi.wiFiSignal"></div>
   </div>
 </section>
 
 <section id="ethAddressBox" class="settings-card hidden" aria-labelledby="card-eth-address">
-  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="6" rx="2"/><rect x="2" y="16" width="6" height="6" rx="2"/><rect x="16" y="16" width="6" height="6" rx="2"/><path d="M12 8v4M5 16v-4h14v4"/></svg></div><div><h2 id="card-eth-address" tabindex="-1">Ethernet address</h2><p>Configure the Ethernet IP address for this device.</p></div></div>
+  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="6" rx="2"/><rect x="2" y="16" width="6" height="6" rx="2"/><rect x="16" y="16" width="6" height="6" rx="2"/><path d="M12 8v4M5 16v-4h14v4"/></svg></div><div><h2 id="card-eth-address" tabindex="-1" data-i18n="ethernet.ethernetAddress"></h2><p data-i18n="ethernet.configureEthernetIp"></p></div></div>
   <div class="card-content fields">
-    <label for="ethMode">IP address</label>
-    <select id="ethMode"><option value="dhcp">Automatic (DHCP)</option><option value="static">Static</option></select>
-    <label for="ethSpeed">Link speed</label><select id="ethSpeed"><option value="auto">Automatic (10 / 100 Mbps)</option><option value="10">10 Mbps</option><option value="100">100 Mbps</option></select>
+    <label for="ethMode" data-i18n="ethernet.ipAddress"></label>
+    <select id="ethMode"><option value="dhcp" data-i18n="ethernet.automaticDhcp"></option><option value="static" data-i18n="ethernet.static"></option></select>
+    <label for="ethSpeed" data-i18n="ethernet.linkSpeed"></label><select id="ethSpeed"><option value="auto" data-i18n="ethernet.automatic10100"></option><option value="10" data-i18n="ethernet.10Mbps"></option><option value="100" data-i18n="ethernet.100Mbps"></option></select>
     <div id="ethStatic" class="field-group">
-      <label for="ethIp">Address</label><input id="ethIp" placeholder="192.168.1.50" inputmode="decimal" autocomplete="off">
-      <label for="ethMask">Subnet mask</label><input id="ethMask" placeholder="255.255.255.0" inputmode="decimal" autocomplete="off">
-      <label for="ethGateway">Gateway (empty: none)</label><input id="ethGateway" placeholder="192.168.1.1" inputmode="decimal" autocomplete="off">
-      <label for="ethDns">DNS server (empty: the gateway)</label><input id="ethDns" inputmode="decimal" autocomplete="off">
+      <label for="ethIp" data-i18n="ethernet.address"></label><input id="ethIp" placeholder="192.168.1.50" inputmode="decimal" autocomplete="off">
+      <label for="ethMask" data-i18n="ethernet.subnetMask"></label><input id="ethMask" placeholder="255.255.255.0" inputmode="decimal" autocomplete="off">
+      <label for="ethGateway" data-i18n="ethernet.gatewayEmptyNone"></label><input id="ethGateway" placeholder="192.168.1.1" inputmode="decimal" autocomplete="off">
+      <label for="ethDns" data-i18n="ethernet.dnsServerEmpty"></label><input id="ethDns" inputmode="decimal" autocomplete="off">
     </div>
     <p class="hint" id="ethNow"></p>
   </div>
 </section>
 
 <section id="wifiAddressBox" class="settings-card hidden" aria-labelledby="card-wifi-address">
-  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="6" rx="2"/><rect x="2" y="16" width="6" height="6" rx="2"/><rect x="16" y="16" width="6" height="6" rx="2"/><path d="M12 8v4M5 16v-4h14v4"/></svg></div><div><h2 id="card-wifi-address" tabindex="-1">Wi-Fi address</h2><p>Configure the Wi-Fi IP address for this device.</p></div></div>
+  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="6" rx="2"/><rect x="2" y="16" width="6" height="6" rx="2"/><rect x="16" y="16" width="6" height="6" rx="2"/><path d="M12 8v4M5 16v-4h14v4"/></svg></div><div><h2 id="card-wifi-address" tabindex="-1" data-i18n="wifiAddress.wiFiAddress"></h2><p data-i18n="wifiAddress.configureWiFi"></p></div></div>
   <div class="card-content fields">
-    <label for="wifiMode">IP address</label>
-    <select id="wifiMode"><option value="dhcp">Automatic (DHCP)</option><option value="static">Static</option></select>
+    <label for="wifiMode" data-i18n="wifiAddress.ipAddress"></label>
+    <select id="wifiMode"><option value="dhcp" data-i18n="wifiAddress.automaticDhcp"></option><option value="static" data-i18n="wifiAddress.static"></option></select>
     <div id="wifiStatic" class="field-group">
-      <label for="wifiIp">Address</label><input id="wifiIp" placeholder="192.168.1.50" inputmode="decimal" autocomplete="off">
-      <label for="wifiMask">Subnet mask</label><input id="wifiMask" placeholder="255.255.255.0" inputmode="decimal" autocomplete="off">
-      <label for="wifiGateway">Gateway (empty: none)</label><input id="wifiGateway" placeholder="192.168.1.1" inputmode="decimal" autocomplete="off">
-      <label for="wifiDns">DNS server (empty: the gateway)</label><input id="wifiDns" inputmode="decimal" autocomplete="off">
+      <label for="wifiIp" data-i18n="wifiAddress.address"></label><input id="wifiIp" placeholder="192.168.1.50" inputmode="decimal" autocomplete="off">
+      <label for="wifiMask" data-i18n="wifiAddress.subnetMask"></label><input id="wifiMask" placeholder="255.255.255.0" inputmode="decimal" autocomplete="off">
+      <label for="wifiGateway" data-i18n="wifiAddress.gatewayEmptyNone"></label><input id="wifiGateway" placeholder="192.168.1.1" inputmode="decimal" autocomplete="off">
+      <label for="wifiDns" data-i18n="wifiAddress.dnsServerEmpty"></label><input id="wifiDns" inputmode="decimal" autocomplete="off">
     </div>
     <p class="hint" id="wifiNow"></p>
   </div>
 </section>
 
 <section class="settings-card" aria-labelledby="card-client">
-  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="7" r="4"/><path d="M2 21v-3a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v3H2zM18 3a4 4 0 0 1 0 8M20 14a6 6 0 0 1 2 5"/></svg></div><div><h2 id="card-client" tabindex="-1">Client</h2><p>Set how this device appears in your multiroom audio system.</p></div></div>
+  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="7" r="4"/><path d="M2 21v-3a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v3H2zM18 3a4 4 0 0 1 0 8M20 14a6 6 0 0 1 2 5"/></svg></div><div><h2 id="card-client" tabindex="-1" data-i18n="common.client"></h2><p data-i18n="client.setHowThis"></p></div></div>
   <div class="card-content fields">
-    <label for="room">Room name</label>
+    <label for="room" data-i18n="client.roomName"></label>
     <input id="room" maxlength="64" autocomplete="off" aria-describedby="roomHint">
-    <p class="hint" id="roomHint">How the server lists this room. Renaming it keeps its zone and settings.</p>
-    <label for="clientId">Client id</label>
-    <div class="row"><input id="clientId" maxlength="64" required autocomplete="off" spellcheck="false" disabled aria-describedby="clientIdHint"><button type="button" id="editClientId" aria-controls="clientId">Edit</button></div>
-    <p class="hint" id="clientIdHint">The identity every server keeps this room under, made at random on the first start. Changing it makes this a new room: the server forgets its zone, volume and settings.</p>
+    <p class="hint" id="roomHint" data-i18n="client.howServerLists"></p>
+    <label for="clientId" data-i18n="client.clientId"></label>
+    <div class="row"><input id="clientId" maxlength="64" required autocomplete="off" spellcheck="false" disabled aria-describedby="clientIdHint"><button type="button" id="editClientId" aria-controls="clientId" data-i18n="client.edit"></button></div>
+    <p class="hint" id="clientIdHint" data-i18n="client.identityEveryServer"></p>
     <div id="deviceNameBox" class="field-group hidden">
-      <label for="deviceName">Device name</label>
+      <label for="deviceName" data-i18n="client.deviceName"></label>
       <input id="deviceName" maxlength="31" pattern="[A-Za-z0-9](?:[A-Za-z0-9\-]{0,29}[A-Za-z0-9])?" autocomplete="off" spellcheck="false" aria-describedby="deviceNameHint" disabled>
-      <p class="hint" id="deviceNameHint">Its name on the network. Leave empty for the default.</p>
+      <p class="hint" id="deviceNameHint" data-i18n="client.itsNameOn"></p>
     </div>
-    <label for="server">Server (host:port)</label>
+    <label for="server" data-i18n="client.serverHostPort"></label>
     <input id="server" placeholder="192.168.1.10:4711" autocomplete="off" aria-describedby="serverHint">
-    <p class="hint" id="serverHint">Address of your audio server. Leave empty to wait to be discovered.</p>
+    <p class="hint" id="serverHint" data-i18n="client.addressOfYour"></p>
     <div id="audioProfileBox" class="field-group hidden">
-      <label for="audioProfile">Audio board</label><select id="audioProfile" aria-describedby="audioProfileHint audioProfileHelp"></select>
+      <label for="audioProfile" data-i18n="client.audioBoard"></label><select id="audioProfile" aria-describedby="audioProfileHint audioProfileHelp"></select>
       <p id="audioProfileHint" class="hint"></p>
-      <p id="audioProfileHelp" class="hint">Applying a changed boot profile restarts the device and scans its audio outputs automatically. Select the output after restart. I2S profiles require the listed wiring and a compatible header.</p>
-      <div class="row full-width" style="flex-wrap:wrap;justify-content:flex-end"><button type="button" id="audioProfileApply">Apply profile</button><button type="button" id="audioProfileRollback">Restore previous profile</button></div>
+      <p id="audioProfileHelp" class="hint" data-i18n="client.applyingChangedBoot"></p>
+      <div class="row full-width" style="flex-wrap:wrap;justify-content:flex-end"><button type="button" id="audioProfileApply" data-i18n="client.applyProfile"></button><button type="button" id="audioProfileRollback" data-i18n="client.restorePreviousProfile"></button></div>
     </div>
-    <label for="device">Output</label>
-    <div class="row"><select id="device"></select><button type="button" id="rescan" class="hidden">Rescan</button></div>
+    <label for="device" data-i18n="client.output"></label>
+    <div class="row"><select id="device"></select><button type="button" id="rescan" class="hidden" data-i18n="client.rescan"></button></div>
     <div id="i2sClockBox" class="field-group hidden">
-      <label for="clock">I2S clock</label>
-      <select id="clock"><option value="master">Master (this board, audio PLL)</option><option value="slave">Slave (external clock)</option></select>
-      <div id="rateRow" class="field-group"><label for="rate">External clock rate</label>
+      <label for="clock" data-i18n="client.i2sClock"></label>
+      <select id="clock"><option value="master" data-i18n="client.masterThisBoard"></option><option value="slave" data-i18n="client.slaveExternalClock"></option></select>
+      <div id="rateRow" class="field-group"><label for="rate" data-i18n="client.externalClockRate"></label>
       <select id="rate"><option>44100</option><option>48000</option><option>88200</option><option>96000</option><option>176400</option><option>192000</option></select></div>
     </div>
   </div>
 </section>
 
 <section class="settings-card" aria-labelledby="card-audio">
-  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13M9 8l12-2"/><ellipse cx="6" cy="18" rx="3" ry="3"/><ellipse cx="18" cy="16" rx="3" ry="3"/></svg></div><div><h2 id="card-audio" tabindex="-1">Audio</h2><p>Output formats, buffering and hardware codec settings.</p></div></div>
+  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13M9 8l12-2"/><ellipse cx="6" cy="18" rx="3" ry="3"/><ellipse cx="18" cy="16" rx="3" ry="3"/></svg></div><div><h2 id="card-audio" tabindex="-1" data-i18n="audio.audio"></h2><p data-i18n="audio.outputFormatsBuffering"></p></div></div>
   <div class="card-content">
     <div id="i2sAudioBox" class="fields hidden">
-      <label for="buffer">Buffer time</label>
+      <label for="buffer" data-i18n="audio.bufferTime"></label>
       <div class="unit-input"><input id="buffer" type="number" min="1000" max="11000" step="1" required disabled aria-describedby="bufferHint"><span>ms</span></div>
-      <p class="hint" id="bufferHint">1000 to 11000; the server may change it.</p>
-      <div id="i2sFormatsLabel"><span class="field-label">External I2S DAC</span><p class="note">The formats it plays.</p></div>
-      <div class="table-wrap"><table aria-labelledby="i2sFormatsLabel"><thead><tr><th scope="col">Rate</th><th scope="col">16-bit</th><th scope="col">32-bit (and 24-bit)</th></tr></thead><tbody id="i2sFormats"></tbody></table></div>
-      <p class="hint">Only the formats whose buffer fits in memory at this buffer size are offered to the server; in slave mode, only those at the external clock rate.</p>
-      <span class="field-label">On-board codec (ES8388)</span>
+      <p class="hint" id="bufferHint" data-i18n="audio.1000To11000"></p>
+      <div id="i2sFormatsLabel"><span class="field-label" data-i18n="audio.externalI2sDac"></span><p class="note" data-i18n="audio.formatsItPlays"></p></div>
+      <div class="table-wrap"><table aria-labelledby="i2sFormatsLabel"><thead><tr><th scope="col" data-i18n="audio.rate"></th><th scope="col" data-i18n="audio.16Bit"></th><th scope="col" data-i18n="audio.32BitAnd"></th></tr></thead><tbody id="i2sFormats"></tbody></table></div>
+      <p class="hint" data-i18n="audio.onlyFormatsWhose"></p>
+      <span class="field-label" data-i18n="audio.onBoardCodec"></span>
       <p class="note" id="codecFormats"></p>
     </div>
     <div id="formatsBox" class="hidden">
-      <h3>Available output formats</h3><p class="hint" id="formatDevice" style="margin-bottom:16px"></p><dl id="audioFormats"></dl>
-      <p id="audioFormatsEmpty" class="hidden">No direct hardware formats are cached. Stop playback before rescanning a busy device.</p>
+      <h3 data-i18n="audio.availableOutputFormats"></h3><p class="hint" id="formatDevice" style="margin-bottom:16px"></p><dl id="audioFormats"></dl>
+      <p id="audioFormatsEmpty" class="hidden" data-i18n="audio.noDirectHardware"></p>
     </div>
-    <div id="driftBox" class="hidden"><h3>Clock synchronization</h3><div class="fields"><label for="driftCorrection">Drift correction</label><select id="driftCorrection" aria-describedby="driftHint driftNow"><option value="auto">Automatic</option><option value="resampling">Server resampling</option><option value="hardwareClock">Hardware clock</option></select><p class="hint" id="driftHint">How this room is kept in time with the others. Hardware clock: the server fine-tunes this board's DAC clock, and the audio stays bit-perfect. Server resampling: the server adjusts the audio stream instead. Automatic uses the hardware clock where this board has one. Saving restarts playback briefly.</p><p class="hint" id="driftNow"></p></div></div>
-    <div id="dacBox" class="hidden"><h3 id="dacName">DAC settings</h3><p class="hint">Save applies changed controls immediately and restores them on startup. Changing routing, mute or loopback can interrupt or replace the sound. Room volume commands can update DAC volume and mute.</p><div id="dacControls" class="fields"></div><div class="row" style="margin-top:20px"><button type="button" id="dacReload">Reload current DAC settings</button><button type="button" id="dacReset">Reset Default DAC settings</button></div></div>
+    <div id="driftBox" class="hidden"><h3 data-i18n="audio.clockSynchronization"></h3><div class="fields"><label for="driftCorrection" data-i18n="audio.driftCorrection"></label><select id="driftCorrection" aria-describedby="driftHint driftNow"><option value="auto" data-i18n="common.automatic"></option><option value="resampling" data-i18n="audio.serverResampling"></option><option value="hardwareClock" data-i18n="audio.hardwareClock"></option></select><p class="hint" id="driftHint" data-i18n="audio.howThisRoom"></p><p class="hint" id="driftNow"></p></div></div>
+    <div id="dacBox" class="hidden"><h3 id="dacName" data-i18n="audio.dacSettings"></h3><p class="hint" data-i18n="audio.saveAppliesChanged"></p><div id="dacControls" class="fields"></div><div class="row" style="margin-top:20px"><button type="button" id="dacReload" data-i18n="audio.reloadCurrentDac"></button><button type="button" id="dacReset" data-i18n="audio.resetDefaultDac"></button></div></div>
   </div>
 </section>
 
 <section id="cpuBox" class="settings-card hidden" aria-labelledby="card-cpu">
-  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4"/></svg></div><div><h2 id="card-cpu" tabindex="-1">CPU</h2><p>Choose the processor speed for this device.</p></div></div>
-  <div class="card-content fields"><label for="cpuMhz">Frequency</label><select id="cpuMhz" disabled></select><p class="hint" id="cpuNow"></p><p class="hint">Available frequencies depend on this device. Higher frequencies provide more processing capacity and may increase power use and heat.</p></div>
+  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4"/></svg></div><div><h2 id="card-cpu" tabindex="-1" data-i18n="cpu.cpu"></h2><p data-i18n="cpu.chooseProcessorSpeed"></p></div></div>
+  <div class="card-content fields"><label for="cpuMhz" data-i18n="cpu.frequency"></label><select id="cpuMhz" disabled></select><p class="hint" id="cpuNow"></p><p class="hint" data-i18n="cpu.availableFrequenciesDepend"></p></div>
 </section>
 
 <section id="ledBox" class="settings-card hidden" aria-labelledby="card-leds">
-  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 22h4M8 14a6 6 0 1 1 8 0c-1 1-1 2-1 4H9c0-2 0-3-1-4z"/></svg></div><div><h2 id="card-leds" tabindex="-1">LEDs</h2><p>Control the status lights after boot.</p></div></div>
-  <div class="card-content fields"><label for="ledOff">LED mode</label><select id="ledOff"><option value="false">ON = Lights on</option><option value="true">OFF = Lights off</option></select><p class="hint">Boot and firmware update indications remain enabled.</p></div>
+  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 22h4M8 14a6 6 0 1 1 8 0c-1 1-1 2-1 4H9c0-2 0-3-1-4z"/></svg></div><div><h2 id="card-leds" tabindex="-1" data-i18n="leds.leds"></h2><p data-i18n="leds.controlStatusLights"></p></div></div>
+  <div class="card-content fields"><label for="ledOff" data-i18n="leds.ledMode"></label><select id="ledOff"><option value="false" data-i18n="leds.onLightsOn"></option><option value="true" data-i18n="leds.offLightsOff"></option></select><p class="hint" data-i18n="leds.bootAndFirmware"></p></div>
 </section>
 
 <section id="powerBox" class="settings-card hidden" aria-labelledby="card-power">
-  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></div><div><h2 id="card-power" tabindex="-1">Power</h2><p>Save energy when this device is idle.</p></div></div>
-  <div class="card-content fields"><label for="standbyMinutes">Automatic standby after (minutes)</label><input id="standbyMinutes" type="number" min="0" max="1440" step="1" required disabled><p class="hint">0 disables automatic standby. Network control remains available; playback wakes the device.</p><div id="deepSleepFields" class="fields full-width hidden"><label for="deepSleepMinutes">Automatic deep sleep after (minutes)</label><input id="deepSleepMinutes" type="number" min="0" max="1440" step="1" required disabled><p class="hint">0 disables automatic deep sleep. Counted from the same idle start as standby. Asleep, the device is off the network: POWER wakes it, and on Ethernet so does the server.</p></div><p class="hint" id="powerNow"></p><div class="row full-width" style="justify-content:flex-end"><button type="button" id="standbyOn">Standby</button><button type="button" id="standbyOff">Wake</button><button type="button" id="deepSleepNow" class="hidden">Deep sleep</button></div><p class="hint">Standby silences only this device until you wake it again. Assign standby actions in Buttons &amp; encoders.</p></div>
+  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></div><div><h2 id="card-power" tabindex="-1" data-i18n="common.power"></h2><p data-i18n="power.saveEnergyWhen"></p></div></div>
+  <div class="card-content fields"><label for="standbyMinutes" data-i18n="power.automaticStandbyAfter"></label><input id="standbyMinutes" type="number" min="0" max="1440" step="1" required disabled><p class="hint" data-i18n="power.0DisablesAutomatic"></p><div id="deepSleepFields" class="fields full-width hidden"><label for="deepSleepMinutes" data-i18n="power.automaticDeepSleep"></label><input id="deepSleepMinutes" type="number" min="0" max="1440" step="1" required disabled><p class="hint" data-i18n="power.0DisablesAutomaticDeep"></p></div><p class="hint" id="powerNow"></p><div class="row full-width" style="justify-content:flex-end"><button type="button" id="standbyOn" data-i18n="power.standby"></button><button type="button" id="standbyOff" data-i18n="power.wake"></button><button type="button" id="deepSleepNow" class="hidden" data-i18n="power.deepSleep"></button></div><p class="hint" data-i18n="power.standbySilencesOnly"></p></div>
 </section>
 </form>
 
 <section id="sshBox" class="settings-card hidden" aria-labelledby="card-ssh">
-  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 9l3 3-3 3M12 15h5"/></svg></div><div><h2 id="card-ssh" tabindex="-1">Remote login (SSH)</h2><p>Log in to this device over the network as <code>root</code>. Off unless you turn it on.</p></div></div>
+  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 9l3 3-3 3M12 15h5"/></svg></div><div><h2 id="card-ssh" tabindex="-1" data-i18n="ssh.remoteLoginSsh"></h2><p data-i18n-html="ssh.logInTo"></p></div></div>
   <div class="card-content fields">
     <p class="hint full-width" id="sshState" role="status"></p>
-    <div id="sshCurrentField" class="fields full-width hidden"><label for="sshCurrent">Current password</label><input id="sshCurrent" type="password" autocomplete="current-password" maxlength="128"></div>
-    <label for="sshPassword" id="sshPasswordLabel">New password</label><input id="sshPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128">
-    <label for="sshRepeat">Repeat new password</label><input id="sshRepeat" type="password" autocomplete="new-password" maxlength="128">
-    <p class="hint">At least 8 characters. Once a password is set, every change here needs it. Forgot it? Install the firmware again with the USB stick.</p>
-    <div class="row full-width" style="justify-content:flex-end"><button type="button" id="sshPasswordSave" class="hidden">Change password</button><button type="button" id="sshToggle">Turn on SSH</button></div>
+    <div id="sshCurrentField" class="fields full-width hidden"><label for="sshCurrent" data-i18n="ssh.currentPassword"></label><input id="sshCurrent" type="password" autocomplete="current-password" maxlength="128"></div>
+    <label for="sshPassword" id="sshPasswordLabel" data-i18n="ssh.newPassword"></label><input id="sshPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128">
+    <label for="sshRepeat" data-i18n="ssh.repeatNewPassword"></label><input id="sshRepeat" type="password" autocomplete="new-password" maxlength="128">
+    <p class="hint" data-i18n="ssh.atLeast8"></p>
+    <div class="row full-width" style="justify-content:flex-end"><button type="button" id="sshPasswordSave" class="hidden" data-i18n="ssh.changePassword"></button><button type="button" id="sshToggle" data-i18n="ssh.turnOnSsh"></button></div>
   </div>
 </section>
 
 <section id="hardwareBox" class="settings-card hidden" aria-labelledby="card-hardware">
-  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8" cy="10" r="2"/><circle cx="16" cy="10" r="2"/><path d="M6 16h4M14 16h4"/></svg></div><div><h2 id="card-hardware" tabindex="-1">Buttons &amp; encoders</h2><p>Configure what happens when hardware buttons are pressed or encoders are turned. Each gesture can perform a different action.</p></div></div>
-  <div class="card-content" id="hardwareInputs"><p class="note">Loading hardware inputs...</p></div>
+  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8" cy="10" r="2"/><circle cx="16" cy="10" r="2"/><path d="M6 16h4M14 16h4"/></svg></div><div><h2 id="card-hardware" tabindex="-1" data-i18n="buttons.buttonsEncoders"></h2><p data-i18n="buttons.configureWhatHappens"></p></div></div>
+  <div class="card-content" id="hardwareInputs"><p class="note" data-i18n="buttons.loadingHardwareInputs"></p></div>
 </section>
 </main>
 
-<div class="form-actions save-bar"><div id="msg" class="message" role="status"></div><button id="restart" class="hidden" type="button">Restart</button><button id="save" class="primary" type="submit" form="form" formnovalidate disabled>Save</button></div>
-<footer class="footer"><div class="footer-inner"><strong>@MULTIROOM_BRAND_NAME@</strong><span>Multiroom audio for a more connected home</span></div></footer>
+<div class="form-actions save-bar"><div id="msg" class="message" role="status"></div><button id="restart" class="hidden" type="button" data-i18n="page.restart"></button><button id="save" class="primary" type="submit" form="form" formnovalidate disabled data-i18n="page.save"></button></div>
+<footer class="footer"><div class="footer-inner"><strong>@MULTIROOM_BRAND_NAME@</strong><span data-i18n="footer.multiroomAudioFor"></span></div></footer>
 <script>
 @INCLUDE MultiroomWebInputs.inc@
+</script>
+<script>
+@INCLUDE MultiroomWebSharedEnglish.inc@
+@INCLUDE MultiroomWebSharedGerman.inc@
+@INCLUDE MultiroomClientSettingsEnglish.inc@
+@INCLUDE MultiroomClientSettingsGerman.inc@
 </script>
 <script>
 @INCLUDE MultiroomWebNavigation.inc@

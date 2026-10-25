@@ -10,11 +10,11 @@
 #   scripts/build-client.sh --packages-only ...    # only install missing apt packages
 #
 # Targets:
-#   all (default)  linux, esp32, connector2, rpi1 and rpi3
+#   all (default)  linux, esp32, connector2, rpi1, rpi3, rpi4 and rpi5
 #   linux          linux-x86 linux-x64 linux-armv6 linux-armv7 linux-armv8 linux-armv9
 #   esp32          esp32-a1s esp32-s3-devkitc
 #   connector2     Raumfeld Connector 2 firmware with the linux-armv6 client
-#   rpi1 rpi3      Raspberry Pi SD images with ARMv6 / ARMv7 clients
+#   rpi1 rpi3 rpi4 rpi5  Raspberry Pi SD images (ARMv6 / ARMv7 / ARM64)
 # windows-x64 needs Windows: use scripts\build-client.ps1 there.
 #
 # Installs when missing (Ubuntu/Debian on x86-64):
@@ -38,10 +38,10 @@ if [[ ${1:-} == --packages-only ]]; then packages_only=true; shift; fi
 targets=()
 for name in "$@"; do
     case $name in
-        all) targets+=("${linux_targets[@]}" "${esp32_targets[@]}" connector2 rpi1 rpi3) ;;
+        all) targets+=("${linux_targets[@]}" "${esp32_targets[@]}" connector2 rpi1 rpi3 rpi4 rpi5) ;;
         linux) targets+=("${linux_targets[@]}") ;;
         esp32) targets+=("${esp32_targets[@]}") ;;
-        linux-x86|linux-x64|linux-armv[6-9]|esp32-a1s|esp32-s3-devkitc|connector2|rpi1|rpi3) targets+=("$name") ;;
+        linux-x86|linux-x64|linux-armv[6-9]|esp32-a1s|esp32-s3-devkitc|connector2|rpi1|rpi3|rpi4|rpi5) targets+=("$name") ;;
         windows|windows-x64) die "$name needs Windows: run scripts\build-client.ps1 there." ;;
         *) die "Unknown target: $name (see the top of $0)" ;;
     esac
@@ -116,7 +116,7 @@ build_connector2() {
 
 build_rpi() {
     local board=$1 arch=linux-armv7
-    [[ $board != rpi1 ]] || arch=linux-armv6
+    case $board in rpi1) arch=linux-armv6 ;; rpi4|rpi5) arch=linux-armv8 ;; esac
     build_linux "$arch"
     bash "$root/hardware/buildroot/build.sh" "$board"
     local source="$root/hardware/buildroot/output/$board"
@@ -134,7 +134,7 @@ for target in "${targets[@]}"; do
         linux-*) build_linux "$target" ;;
         esp32-*) build_esp32 "$target" ;;
         connector2) build_connector2 ;;
-        rpi1|rpi3) build_rpi "$target" ;;
+        rpi1|rpi3|rpi4|rpi5) build_rpi "$target" ;;
     esac
 done
 echo "Built: ${targets[*]}. Results are in $root/releases/client"

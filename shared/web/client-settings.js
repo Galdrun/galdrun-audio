@@ -12,6 +12,8 @@
 // the control port answers it with 404.
 'use strict';
 const $ = id => document.getElementById(id);
+i18n.translate();
+i18n.bind($('language'));
 createUsageCharts($('usageCharts'), $('wifiChart'));
 
 let backend = null;
@@ -57,7 +59,7 @@ function settingsChanged() {
 
 function updateSave() {
   const changed = settingsChanged();
-  $('save').textContent = restarting ? 'Restarting...' : changed && backend?.restarts ? 'Save and restart' : 'Save';
+  $('save').textContent = tt(restarting ? 'save.restarting' : changed && backend?.restarts ? 'save.saveAndRestart' : 'save.save');
   $('save').disabled = !ready || saving || scanning || restarting ||
     (!changed && !$('hardwareInputs').inputEdits?.dirty);
 }
@@ -69,19 +71,19 @@ function showStatus(s) {
   lastUptime = s.uptimeSeconds;
   const a = s.audio;
   $('headerDevice').textContent = s.name || s.clientId;
-  $('connection').textContent = s.server.state;
+  $('connection').textContent = tv('state', s.server.state);
   $('connection').classList.toggle('online', s.server.state === 'connected');
   const rows = [
-    ['Version', s.version + ' \u00b7 up ' + up(s.uptimeSeconds)], ['Room', s.name || '\u2013'], ['Client id', s.clientId],
-    ['Server', (s.server.address || 'not configured') + ' \u00b7 ' + s.server.state], ['Session', s.session.state],
-    ['Output', a.deviceSelected ? a.deviceName : 'none'], ['Format', a.format ? fmt(a.format) : 'device closed']];
-  if (s.power) rows.push(['Power', s.power.state]);
+    [tt('status.version'), s.version + ' \u00b7 ' + tt('status.up', {time: up(s.uptimeSeconds)})], [tt('status.room'), s.name || '\u2013'], [tt('status.clientId'), s.clientId],
+    [tt('status.server'), (s.server.address || tt('status.notConfigured')) + ' \u00b7 ' + tv('state', s.server.state)], [tt('status.session'), tv('state', s.session.state)],
+    [tt('status.output'), a.deviceSelected ? a.deviceName : tt('status.none')], [tt('status.format'), a.format ? fmt(a.format) : tt('status.deviceClosed')]];
+  if (s.power) rows.push([tt('common.power'), tv('state', s.power.state)]);
   list($('status'), rows);
   show('statusBox', true);
 }
 
 function statusUnavailable() {
-  $('connection').textContent = 'Unavailable';
+  $('connection').textContent = tt('status.unavailable');
   $('connection').classList.remove('online');
 }
 
@@ -91,7 +93,7 @@ async function showRestart(message) {
   $('restart').disabled = true;
   document.querySelector('main').inert = true;
   updateSave();
-  msg(message + ' Waiting for the device to reconnect...');
+  msg(message + ' ' + tt('restart.waitingForDevice'));
   let offline = false;
   for (let attempt = 0; attempt < 120; ++attempt) {
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -114,16 +116,16 @@ async function showRestart(message) {
   restarting = false;
   $('restart').disabled = false;
   updateSave();
-  msg('The device has not reconnected. Check its power and network address, then refresh this page.', true);
+  msg(tt('restart.deviceHasNot'), true);
 }
 $('restart').onclick = async () => {
-  if (saving || scanning || restarting || !confirm('Restart this device? Playback will stop and unsaved settings will be lost.')) return;
+  if (saving || scanning || restarting || !confirm(tt('restart.restartThisDevice'))) return;
   $('restart').disabled = true;
   try {
     if (backend === boardBackend)
       await boardJson(await fetch('/api/restart', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}));
     else await api('restart');
-    void showRestart('Restarting the device.');
+    void showRestart(tt('restart.restartingDevice'));
   } catch (e) { $('restart').disabled = false; msg(e.message, true); }
 };
 
@@ -133,7 +135,7 @@ async function refreshInputs(initial = false) {
   } catch (e) {
     if (initial) throw e;
     if (!$('hardwareInputs').querySelector('article'))
-      $('hardwareInputs').textContent = 'Cannot read hardware inputs: ' + e.message;
+      $('hardwareInputs').textContent = tt('buttons.cannotReadHardware', {error: e.message});
   }
 }
 
@@ -153,11 +155,11 @@ for (const p of ['eth', 'wifi']) $(p + 'Mode').addEventListener('change', addres
 function fillAps(want) {
   const ssid = $('wifiSsid').value, aps = scanned.filter(x => x.ssid === ssid);
   const label = x => x.bssid + ' \u00b7 ch ' + x.channel + ' \u00b7 ' + x.rssi + ' dBm' +
-    (x.bssid === connectedBssid ? ' \u00b7 connected now' : '');
-  const options = [new Option('Automatic (strongest signal)', ''), ...aps.map(x => new Option(label(x), x.bssid))];
+    (x.bssid === connectedBssid ? ' \u00b7 ' + tt('wifi.connectedNow') : '');
+  const options = [new Option(tt('wifi.automaticStrongestSignal'), ''), ...aps.map(x => new Option(label(x), x.bssid))];
   if (want && !aps.some(x => x.bssid === want)) {
     if (ssid === storedSsid && want === savedBssid)
-      options.push(new Option(want + (want === connectedBssid ? ' \u00b7 connected now' : ' \u00b7 not in the last scan'), want));
+      options.push(new Option(want + ' \u00b7 ' + tt(want === connectedBssid ? 'wifi.connectedNow' : 'wifi.notInLast'), want));
     else
       want = '';
   }
@@ -185,7 +187,7 @@ $('wifiScan').onclick = async () => {
   button.disabled = true;
   button.replaceChildren(Object.assign(document.createElement('span'), {className: 'spin'}));
   updateSave();
-  msg('Scanning\u2026');
+  msg(tt('wifi.scanning'));
   try {
     // Each network once, at its strongest access point; all of them go to the
     // access point list. A tappable list, not a datalist: most phone browsers
@@ -200,7 +202,7 @@ $('wifiScan').onclick = async () => {
       name.textContent = x.ssid;
       const signal = document.createElement('span');
       signal.className = 'sig';
-      signal.textContent = (x.channel > 14 ? '5' : '2.4') + ' GHz \u00b7 ' + x.rssi + ' dBm' + (x.secure ? '' : ' \u00b7 open');
+      signal.textContent = (x.channel > 14 ? '5' : '2.4') + ' GHz \u00b7 ' + x.rssi + ' dBm' + (x.secure ? '' : ' \u00b7 ' + tt('wifi.open'));
       choice.append(name, signal);
       choice.onclick = () => {
         $('wifiSsid').value = x.ssid;
@@ -209,13 +211,13 @@ $('wifiScan').onclick = async () => {
       };
       return choice;
     }));
-    msg(nets.length + ' network(s) found' + (nets.length ? '; tap one to use it.' : '.'));
+    msg(tt(nets.length ? 'wifi.networksFoundTap' : 'wifi.networksFound', {n: nets.length}));
   } catch (e) {
-    msg('Scan failed: ' + e.message, true);
+    msg(tt('wifi.scanFailed', {error: e.message}), true);
   } finally {
     scanning = false;
     button.disabled = false;
-    button.textContent = 'Scan';
+    button.textContent = tt('wifi.scan');
     updateSave();
   }
 };
@@ -233,7 +235,7 @@ $('form').onsubmit = async e => {
   const changed = settingsChanged(), edits = $('hardwareInputs').inputEdits;
   if ((changed && !$('form').reportValidity()) || (edits && !edits.validate())) return;
   if ($('clientId').value.trim() !== savedClientId &&
-      !confirm('Change the client id? The server will see this as a new room and forget its zone, volume and settings.'))
+      !confirm(tt('client.changeClientId')))
     return;
   const controls = [...$('form').querySelectorAll('input,select,button')], disabled = controls.map(c => c.disabled);
   saving = true;
@@ -277,24 +279,24 @@ async function loadSsh() {
 
 function renderSshState(s) {
   ssh = s;
-  $('sshState').textContent = !s.enabled ? 'SSH is off.' : s.running ?
-    'SSH is on: ssh root@' + location.hostname :
-    'SSH is on and starting. The first start creates its keys and takes up to a minute.';
-  $('sshToggle').textContent = s.enabled ? 'Turn off SSH' : 'Turn on SSH';
+  $('sshState').textContent = !s.enabled ? tt('ssh.sshIsOff') : s.running ?
+    tt('ssh.sshIsOnAt', {host: location.hostname}) :
+    tt('ssh.sshIsOnAnd');
+  $('sshToggle').textContent = tt(s.enabled ? 'ssh.turnOffSsh' : 'ssh.turnOnSsh');
 }
 
 function renderSsh(s) {
   renderSshState(s);
   show('sshCurrentField', s.passwordSet);
   show('sshPasswordSave', s.passwordSet);
-  $('sshPasswordLabel').textContent = s.passwordSet ? 'New password (optional)' : 'New password';
+  $('sshPasswordLabel').textContent = tt(s.passwordSet ? 'ssh.newPasswordOptional' : 'ssh.newPassword');
   for (const id of ['sshCurrent', 'sshPassword', 'sshRepeat']) $(id).value = '';
 }
 
 async function changeSsh(enabled, done) {
   const password = $('sshPassword').value;
-  if (password !== $('sshRepeat').value) return msg('The new passwords do not match.', true);
-  if (enabled && !ssh.passwordSet && !password) return msg('Choose a password to turn SSH on.', true);
+  if (password !== $('sshRepeat').value) return msg(tt('ssh.newPasswordsDo'), true);
+  if (enabled && !ssh.passwordSet && !password) return msg(tt('ssh.choosePasswordTo'), true);
   const params = {enabled};
   if (ssh.passwordSet) params.currentPassword = $('sshCurrent').value;
   if (password) params.password = password;
@@ -302,13 +304,13 @@ async function changeSsh(enabled, done) {
     renderSsh((await api('setSsh', params)).ssh);
     msg(done);
   } catch (e) {
-    msg('SSH: ' + e.message, true);
+    msg(tt('ssh.ssh', {error: e.message}), true);
   }
 }
 
-$('sshToggle').onclick = () => changeSsh(!ssh.enabled, ssh.enabled ? 'SSH is off.' : 'SSH is on.');
+$('sshToggle').onclick = () => changeSsh(!ssh.enabled, tt(ssh.enabled ? 'ssh.sshIsOff' : 'ssh.sshIsOn'));
 $('sshPasswordSave').onclick = () => $('sshPassword').value ?
-  changeSsh(ssh.enabled, 'Password changed.') : msg('Enter the new password.', true);
+  changeSsh(ssh.enabled, tt('ssh.passwordChanged')) : msg(tt('ssh.enterNewPassword'), true);
 
 async function loadCpu() {
   const r = await api('getCpu');
@@ -318,15 +320,15 @@ async function loadCpu() {
   if (cpuEnabled) {
     const values = r.cpu.frequenciesMhz;
     $('cpuMhz').replaceChildren(...values.slice().reverse().map(v =>
-      new Option(v + ' MHz' + (v === r.cpu.defaultMhz ? ' (default)' : ''), v)));
+      new Option(v + ' MHz' + (v === r.cpu.defaultMhz ? ' ' + tt('cpu.default') : ''), v)));
     if (r.cpu.configured === false) {
-      const automatic = new Option('Firmware policy (' + r.cpu.governor + ')', 'auto');
+      const automatic = new Option(tt('cpu.firmwarePolicy', {governor: r.cpu.governor}), 'auto');
       automatic.disabled = true;
       $('cpuMhz').prepend(automatic);
     }
     $('cpuMhz').value = r.cpu.configured === false ? 'auto' : r.cpu.mhz;
-    $('cpuNow').textContent = 'Now running at ' + r.cpu.currentMhz + ' MHz. ' +
-      (r.cpu.configured === false ? 'The firmware controls frequency until you save a MHz value.' : 'Requested: ' + r.cpu.mhz + ' MHz.');
+    $('cpuNow').textContent = tt('cpu.nowRunningAt', {mhz: r.cpu.currentMhz}) + ' ' +
+      (r.cpu.configured === false ? tt('cpu.firmwareControlsFrequency') : tt('cpu.requestedMhz', {mhz: r.cpu.mhz}));
   }
   saved.cpu = cpuEnabled ? $('cpuMhz').value : '';
 }
@@ -341,7 +343,7 @@ function powerSettings() {
 }
 // One button: Standby while on, Wake while parked (manual or automatic).
 function showPowerState(state) {
-  $('powerNow').textContent = 'State: ' + state;
+  $('powerNow').textContent = tt('power.state', {state: tv('state', state)});
   show('standbyOn', state === 'on');
   show('standbyOff', state !== 'on');
 }
@@ -364,10 +366,10 @@ async function loadPower() {
   saved.power = powerEnabled ? powerSettings() : '';
 }
 $('deepSleepNow').onclick = async () => {
-  if (!confirm('Put this device into deep sleep now? It leaves the network until POWER or the server wakes it.')) return;
+  if (!confirm(tt('power.putThisDevice'))) return;
   try {
     await api('deepSleep');
-    $('powerNow').textContent = 'State: going to deep sleep';
+    $('powerNow').textContent = tt('power.state', {state: tt('power.goingToDeep')});
   } catch (e) {
     msg(e.message, true);
   }
@@ -396,26 +398,27 @@ async function loadLeds() {
 }
 
 const dacHints = {
-  'Master Playback Volume': 'Left/right attenuation: 127 = 0 dB, 0 = -127 dB.',
-  'Master Playback Switch': 'Enable the left/right analog outputs.',
-  'Master Capture Switch': 'Enable the left/right analog inputs.',
-  'Digital Loopback Switch': 'Route the ADC directly to the DAC instead of server playback.',
-  'Auto-Mute Switch': 'Mute when the DAC detects digital silence.',
-  'De-emphasis Switch': 'Apply de-emphasis for pre-emphasized recordings; the driver follows the sample rate.',
-  'Dither 16-Bit Data Switch': 'Dither the ADC output for 16-bit capture.',
-  'High Pass Filter Switch': 'Remove DC from the left/right ADC inputs.',
-  'Left Channel Inversion Switch': 'Invert the left analog output polarity.',
-  'Right Channel Inversion Switch': 'Invert the right analog output polarity.',
-  'Slow Roll Off Filter Switch': 'Use the slow roll-off DAC interpolation filter.',
-  'Soft Ramp Switch': 'Ramp digital volume changes.',
-  'Soft Ramp-Down Switch': 'Ramp down on mute or power-down.',
-  'Soft Volume Ramp-Up Switch': 'Ramp up on unmute or power-up.',
-  'Zero Cross Switch': 'Apply volume changes near signal zero crossings.',
-  'Left Output Source': 'Choose what the left analog output plays.',
-  'Right Output Source': 'Choose what the right analog output plays.',
-  'Link Playback Volume Switch': 'Make both analog outputs use the left volume. The stored right attenuation applies again when unlinked.'};
+  'Master Playback Volume': 'dac.hint.masterPlaybackVolume',
+  'Master Playback Switch': 'dac.hint.masterPlaybackSwitch',
+  'Master Capture Switch': 'dac.hint.masterCaptureSwitch',
+  'Digital Loopback Switch': 'dac.hint.digitalLoopbackSwitch',
+  'Auto-Mute Switch': 'dac.hint.autoMuteSwitch',
+  'De-emphasis Switch': 'dac.hint.deEmphasisSwitch',
+  'Dither 16-Bit Data Switch': 'dac.hint.dither16BitDataSwitch',
+  'High Pass Filter Switch': 'dac.hint.highPassFilterSwitch',
+  'Left Channel Inversion Switch': 'dac.hint.leftChannelInversionSwitch',
+  'Right Channel Inversion Switch': 'dac.hint.rightChannelInversionSwitch',
+  'Slow Roll Off Filter Switch': 'dac.hint.slowRollOffFilterSwitch',
+  'Soft Ramp Switch': 'dac.hint.softRampSwitch',
+  'Soft Ramp-Down Switch': 'dac.hint.softRampDownSwitch',
+  'Soft Volume Ramp-Up Switch': 'dac.hint.softVolumeRampUpSwitch',
+  'Zero Cross Switch': 'dac.hint.zeroCrossSwitch',
+  'Left Output Source': 'dac.hint.leftOutputSource',
+  'Right Output Source': 'dac.hint.rightOutputSource',
+  'Link Playback Volume Switch': 'dac.hint.linkPlaybackVolumeSwitch'};
 let dacRoomControls = ['Master Playback Volume', 'Master Playback Switch'];
 let dacResetSource = 'firmware defaults';
+const dacResetSources = {'initial card settings': 'dac.initialCardSettings', 'firmware defaults': 'dac.firmwareDefaults'};
 let dacCard = '';
 
 function dacRoomOwned(control) {
@@ -433,19 +436,19 @@ function renderDac(r) {
   dacRoomVolume = !!r.roomVolume;
   dacRoomControls = r.roomVolumeControls || ['Master Playback Volume', 'Master Playback Switch'];
   dacResetSource = dac.resetSource || 'firmware defaults';
-  $('dacReset').textContent = dacResetSource === 'initial card settings' ? 'Restore initial card settings' : 'Reset Default DAC settings';
+  $('dacReset').textContent = tt(dacResetSource === 'initial card settings' ? 'dac.restoreInitialCard' : 'dac.resetDefaultDac');
   dacControls = dac.controls;
-  $('dacName').textContent = dac.codec + ' DAC settings';
+  $('dacName').textContent = tt('dac.dacSettings', {codec: dac.codec});
   $('dacControls').replaceChildren();
   dacControls.forEach((c, i) => {
     c.values.forEach((v, ch) => {
       const id = 'dac-' + i + '-' + ch, label = document.createElement('label');
       label.htmlFor = id;
-      label.textContent = c.name + (c.values.length === 2 ? (ch === 0 ? ' \u2014 left' : ' \u2014 right') : '');
+      label.textContent = c.name + (c.values.length === 2 ? ' \u2014 ' + tt(ch === 0 ? 'dac.left' : 'dac.right') : '');
       let input;
       if (c.type === 'boolean' || c.type === 'enum') {
         input = document.createElement('select');
-        input.replaceChildren(...(c.type === 'boolean' ? ['Off', 'On'] : c.items).map((text, n) => new Option(text, n)));
+        input.replaceChildren(...(c.type === 'boolean' ? [tt('dac.off'), tt('dac.on')] : c.items).map((text, n) => new Option(text, n)));
       } else {
         input = document.createElement('input');
         input.type = 'number';
@@ -462,8 +465,8 @@ function renderDac(r) {
     const hint = document.createElement('p');
     hint.className = 'hint';
     hint.textContent = dacRoomOwned(c)
-      ? 'Set by the room volume: follows it with hardware volume, stays at 0 dB and on otherwise.'
-      : dacHints[c.name] || '';
+      ? tt('dac.setByRoom')
+      : tt(dacHints[c.name] || '');
     $('dacControls').append(hint);
   });
   saved.dac = JSON.stringify(dacSettings());
@@ -483,19 +486,19 @@ async function loadAudioProfile() {
   $('audioProfile').replaceChildren(...audioProfiles.map(p => new Option(p.name, p.id)));
   $('audioProfile').value = r.profile;
   audioProfileHint();
-  if (r.rebootRequired) $('audioProfileHint').textContent += ' Reboot required.';
+  if (r.rebootRequired) $('audioProfileHint').textContent += ' ' + tt('audioProfile.rebootRequired');
 }
 $('audioProfile').onchange = audioProfileHint;
 for (const [button, profile] of [['audioProfileApply', null], ['audioProfileRollback', 'rollback']]) {
   $(button).onclick = async () => {
-    if (saving || scanning || restarting || !confirm('Apply this audio boot profile? Check the card wiring first. A changed profile restarts the device automatically; unsaved settings will be lost.')) return;
+    if (saving || scanning || restarting || !confirm(tt('audioProfile.applyThisAudio'))) return;
     $(button).disabled = true;
     try {
       const result = await api('setAudioProfile', {profile: profile || $('audioProfile').value});
-      if (result.restarting) void showRestart('Audio profile saved. Restarting and scanning audio outputs.');
+      if (result.restarting) void showRestart(tt('audioProfile.audioProfileSaved'));
       else {
         await loadAudioProfile();
-        msg('Audio profile saved. The active profile is unchanged.');
+        msg(tt('audioProfile.audioProfileSavedActive'));
       }
     } catch (e) { msg(e.message, true); }
     finally { $(button).disabled = false; }
@@ -513,21 +516,21 @@ $('dacReload').onclick = async () => {
   try {
     await loadDac();
     updateSave();
-    msg('Current DAC settings loaded.');
+    msg(tt('dac.currentDacSettings'));
   } catch (e) {
     msg(e.message, true);
   }
 };
 $('dacReset').onclick = async () => {
-  if (saving || !confirm('Restore ' + dacResetSource + ' now? Routing or mute may change.' +
-    (dacRoomVolume ? ' The level and mute stay with the room volume.' : '')))
+  if (saving || !confirm(tt('dac.restoreNowRouting', {source: tt(dacResetSources[dacResetSource] ?? dacResetSource)}) +
+    (dacRoomVolume ? ' ' + tt('dac.levelAndMute') : '')))
     return;
   const button = $('dacReset');
   button.disabled = true;
   try {
     renderDac(await api('resetDac', dacCard ? {card: dacCard} : {}));
     updateSave();
-    msg('Default DAC settings restored and saved.');
+    msg(tt('dac.defaultDacSettings'));
   } catch (e) {
     msg(e.message, true);
   } finally {
@@ -544,7 +547,7 @@ function renderFormats() {
   if (explicitAudioDevice) d = want ? audioDevices.find(x => x.id === want) : null;
   // ALSA's "default" plugin can convert formats. Use the actual hardware list for DAC capabilities.
   if (d?.id === 'default') d = audioDevices.find(x => x.id.startsWith('hw:')) || d;
-  $('formatDevice').textContent = d ? d.name + ' \u00b7 direct hardware formats' : 'No output device found.';
+  $('formatDevice').textContent = d ? d.name + ' \u00b7 ' + tt('audio.directHardwareFormats') : tt('audio.noOutputDevice');
   const formats = d?.exclusiveFormats || [];
   const groups = new Map();
   for (const f of formats) {
@@ -552,9 +555,8 @@ function renderFormats() {
     if (!groups.has(key)) groups.set(key, {rate: f.sampleRate, channels: f.channels, types: []});
     groups.get(key).types.push(f.sampleType);
   }
-  const names = {int16: '16-bit', int24: '24-bit packed', int24in32: '24-bit in 32-bit', int32: '32-bit', float32: '32-bit float'};
   list($('audioFormats'), [...groups.values()].sort((a, b) => a.rate - b.rate || a.channels - b.channels)
-    .map(g => [(g.rate / 1000) + ' kHz \u00b7 ' + g.channels + ' ch', g.types.map(t => names[t] || t).join(', ')]));
+    .map(g => [(g.rate / 1000) + ' kHz \u00b7 ' + g.channels + ' ch', g.types.map(t => tv('audio.format', t)).join(', ')]));
   show('audioFormats', formats.length > 0);
   show('audioFormatsEmpty', !formats.length);
 }
@@ -568,10 +570,10 @@ $('device').addEventListener('change', () => {
 async function loadDevices() {
   const j = await api('audioDevices'), want = j.configuredDeviceId || '';
   explicitAudioDevice = !!j.requiresConfiguredDevice;
-  const options = [new Option(explicitAudioDevice ? 'Select output (silent until selected)' : 'Automatic (the default device)', ''),
+  const options = [new Option(tt(explicitAudioDevice ? 'audio.selectOutputSilent' : 'audio.automaticDefaultDevice'), ''),
     ...j.cache.devices.filter(d => !explicitAudioDevice || d.id.startsWith('hw:CARD='))
-      .map(d => new Option(d.name + (d.isDefault ? ' (default)' : ''), d.id))];
-  if (want && !j.cache.devices.some(d => d.id === want)) options.push(new Option(want + ' (not found)', want));
+      .map(d => new Option(d.name + (d.isDefault ? ' ' + tt('audio.default') : ''), d.id))];
+  if (want && !j.cache.devices.some(d => d.id === want)) options.push(new Option(want + ' ' + tt('audio.notFound'), want));
   $('device').replaceChildren(...options);
   $('device').value = want;
   saved.device = want;
@@ -582,15 +584,15 @@ async function loadDevices() {
 $('rescan').onclick = async () => {
   const button = $('rescan'), keep = $('device').value;
   button.disabled = true;
-  msg('Scanning the audio devices\u2026');
+  msg(tt('audio.scanningAudioDevices'));
   try {
     const j = await api('rescanAudio');
     await loadDevices();
     if ([...$('device').options].some(o => o.value === keep)) { $('device').value = keep; renderFormats(); }
-    msg(j.deviceCount + ' device(s) found.');
+    msg(tt('audio.deviceSFound', {n: j.deviceCount}));
     controlRefresh();
   } catch (e) {
-    msg('Rescan failed: ' + e.message, true);
+    msg(tt('audio.rescanFailed', {error: e.message}), true);
   } finally {
     button.disabled = false;
     updateSave();
@@ -621,22 +623,22 @@ async function loadNetwork() {
     for (const [p, g] of [['eth', n.network.ethernet], ['wifi', n.network.wifi]]) {
       for (const [suffix, key] of [['Mode', 'ipMode'], ['Ip', 'ip'], ['Mask', 'netmask'], ['Gateway', 'gateway'], ['Dns', 'dns']])
         $(p + suffix).value = g[key] || '';
-      $(p + 'Now').textContent = (g.currentIp ? 'Now on ' + g.currentIp + '. ' : '') + 'A wrong static address leaves the board unreachable.';
+      $(p + 'Now').textContent = (g.currentIp ? tt('network.nowOn', {ip: g.currentIp}) + ' ' : '') + tt('network.wrongStaticAddress');
     }
     const w = n.network.wifi;
-    $('wifiRadio').replaceChildren(new Option('Automatic', ''));
+    $('wifiRadio').replaceChildren(new Option(tt('common.automatic'), ''));
     for (const radio of w.radios || [])
       $('wifiRadio').add(new Option(radio.interface + ' (' + radio.id + ')', radio.id));
     if (w.radio && !(w.radios || []).some(r => r.id === w.radio))
-      $('wifiRadio').add(new Option(w.radio + ' (unplugged; using fallback)', w.radio));
+      $('wifiRadio').add(new Option(w.radio + ' ' + tt('network.unpluggedUsingFallback'), w.radio));
     $('wifiRadio').value = w.radio || '';
-    $('wifiRadioHint').textContent = (w.activeInterface ? 'Active: ' + w.activeInterface + '. ' : '') +
-      (w.apSupported === false ? 'This radio supports station mode only. Use Ethernet for setup.' :
-        'If the selected radio is unplugged, another available radio is used.');
+    $('wifiRadioHint').textContent = (w.activeInterface ? tt('network.active', {name: w.activeInterface}) + ' ' : '') +
+      tt(w.apSupported === false ? 'network.thisRadioSupports' :
+        'network.ifSelectedRadio');
     $('wifiSsid').value = storedSsid = w.ssid;
     $('wifiCountry').value = w.country;
     $('wifiPassword').value = '';
-    $('wifiPassword').placeholder = w.passwordSet ? 'unchanged' : '';
+    $('wifiPassword').placeholder = w.passwordSet ? tt('common.unchanged') : '';
     $('wifiClearPassword').checked = false;
     savedBssid = w.bssid || '';
     connectedBssid = w.connectedBssid || '';
@@ -652,10 +654,10 @@ function renderDrift(d) {
   show('driftBox', driftEnabled);
   if (!driftEnabled) return;
   const c = d.hardwareClock;
-  $('driftNow').textContent = 'Now: ' +
-    (d.effective === 'hardwareClock' ? 'hardware clock, ' + c.appliedPpm + ' ppm' + (c.saturated ? ' (at its limit)' : '') : 'server resampling') +
+  $('driftNow').textContent = tt('drift.now', {mode: d.effective === 'hardwareClock'
+    ? tt('drift.hardwareClockPpm', {ppm: c.appliedPpm}) + (c.saturated ? ' ' + tt('drift.atItsLimit') : '') : tt('drift.serverResampling')}) +
     (d.reason ? ' \u00b7 ' + d.reason : '') +
-    (d.serverDriftPpm !== undefined ? ' \u00b7 measured ' + d.serverDriftPpm.toFixed(1) + ' ppm' : '');
+    (d.serverDriftPpm !== undefined ? ' \u00b7 ' + tt('drift.measuredPpm', {ppm: d.serverDriftPpm.toFixed(1)}) : '');
 }
 
 function controlSettings() {
@@ -675,12 +677,12 @@ async function controlRefresh(initial = false) {
   try {
     const s = (await api('status')).status;
     showStatus(s);
-    $('about').textContent = s.platform + ' \u00b7 version ' + s.version + ' \u00b7 up ' + up(s.uptimeSeconds);
+    $('about').textContent = s.platform + ' \u00b7 ' + tt('page.version', {version: s.version}) + ' \u00b7 ' + tt('page.up', {time: up(s.uptimeSeconds)});
     renderDrift(s.audio.driftCorrection);
     if (s.power) showPowerState(s.power.state);
     if (cpuEnabled) {
       const r = await api('getCpu');
-      $('cpuNow').textContent = 'Now running at ' + r.cpu.currentMhz + ' MHz.';
+      $('cpuNow').textContent = tt('page.nowRunningAt', {mhz: r.cpu.currentMhz});
     }
     if (sshEnabled && ssh.enabled && !ssh.running) renderSshState((await api('getSsh')).ssh);
     connectHardwareInputEvents($('hardwareInputs'), '/api/input-events');
@@ -691,7 +693,7 @@ async function controlRefresh(initial = false) {
   } catch (e) {
     if (initial) throw e;
     statusUnavailable();
-    msg('Cannot read the status: ' + e.message, true);
+    msg(tt('page.cannotReadStatus', {error: e.message}), true);
   }
 }
 
@@ -735,7 +737,7 @@ async function controlSave() {
   if (cpu !== saved.cpu) {
     const r = await api('setCpu', {mhz: Number(cpu)});
     saved.cpu = String(r.cpu.mhz);
-    $('cpuNow').textContent = 'Now running at ' + r.cpu.currentMhz + ' MHz.';
+    $('cpuNow').textContent = tt('page.nowRunningAt', {mhz: r.cpu.currentMhz});
   }
   if (!deviceChanged && dac !== saved.dac) {
     const before = JSON.parse(saved.dac), after = JSON.parse(dac);
@@ -747,12 +749,12 @@ async function controlSave() {
     const n = await api('setNetwork', JSON.parse(network));
     storedSsid = $('wifiSsid').value;
     savedBssid = $('wifiAp').value;
-    $('wifiPassword').placeholder = n.network?.wifi.passwordSet ? 'unchanged' : '';
+    $('wifiPassword').placeholder = n.network?.wifi.passwordSet ? tt('common.unchanged') : '';
     $('wifiPassword').value = '';
     $('wifiClearPassword').checked = false;
     saved.network = JSON.stringify(networkSettings());
   }
-  msg(networkChanged ? 'Saved. Network reconnects shortly; reopen this page at the configured address.' : 'Saved.');
+  msg(tt(networkChanged ? 'page.savedNetworkReconnects' : 'page.saved'));
   if (!networkChanged) controlRefresh();
 }
 
@@ -768,7 +770,7 @@ const controlBackend = {
       await new Promise(resolve => setTimeout(resolve, 1000));
       r = (await api('getNetworks')).scan;
     }
-    if (r.pending) throw new Error('scan timed out');
+    if (r.pending) throw new Error(tt('page.scanTimedOut'));
     if (r.error) throw new Error(r.error);
     return r.networks;
   },
@@ -783,7 +785,7 @@ const controlBackend = {
 
 let setup = false, codecText = '';
 const kHz = r => (r / 1000) + ' kHz';
-const bits = t => ({int16: '16-bit', int24in32: '24-bit'})[t] || '32-bit';
+const bits = t => tt('audio.bitDepth', {n: ({int16: 16, int24in32: 24})[t] || 32});
 
 async function boardJson(response) {
   const j = await response.json();
@@ -794,7 +796,7 @@ async function boardJson(response) {
 function syncRate() {
   const slave = $('clock').value === 'slave';
   show('rateRow', slave);
-  $('codecFormats').textContent = slave ? '16, 24 and 32-bit at the external clock rate, when that is 8 to 48 kHz.' : codecText;
+  $('codecFormats').textContent = slave ? tt('board.codecSlaveFormats') : codecText;
 }
 $('clock').addEventListener('change', syncRate);
 
@@ -844,7 +846,7 @@ async function boardRefresh(initial = false) {
   } catch (e) {
     if (initial) throw e;
     statusUnavailable();
-    list($('status'), [['Client', e.message]]);
+    list($('status'), [[tt('common.client'), e.message]]);
     show('statusBox', true);
   }
 }
@@ -857,17 +859,17 @@ async function boardLoad(response) {
   $('wifiSsid').required = true;
   $('deviceName').disabled = false;
   $('buffer').disabled = false;
-  $('device').replaceChildren(new Option('Automatic (on-board codec if present)', ''),
-    new Option('On-board codec (ES8388)', 'es8388'), new Option('External I2S DAC', 'i2s'));
+  $('device').replaceChildren(new Option(tt('board.automaticOnBoard'), ''),
+    new Option(tt('board.onBoardCodec'), 'es8388'), new Option(tt('board.externalI2sDac'), 'i2s'));
 
   storedSsid = s.ssid;
   $('headerDevice').textContent = s.name || s.clientId || s.board;
-  $('connection').textContent = setup ? 'Setup mode' : 'Connecting';
-  $('about').textContent = s.board + ' \u00b7 ' + (setup
-    ? 'Setup mode: this board is not on a network yet. Pick one and save.'
-    : 'Saving device settings restarts the board. Button actions apply immediately.');
+  $('connection').textContent = tt(setup ? 'board.setupMode' : 'board.connecting');
+  $('about').textContent = s.board + ' \u00b7 ' + tt(setup
+    ? 'board.setupModeThis'
+    : 'board.savingDeviceSettings');
   $('wifiSsid').value = s.ssid;
-  $('wifiPassword').placeholder = s.passwordSet ? 'unchanged' : '';
+  $('wifiPassword').placeholder = s.passwordSet ? tt('common.unchanged') : '';
   savedBssid = s.bssid || '';
   connectedBssid = s.connectedBssid || '';
   fillAps(savedBssid);
@@ -879,7 +881,7 @@ async function boardLoad(response) {
   for (const [suffix, key] of [['Ip', 'ip'], ['Mask', 'netmask'], ['Gateway', 'gateway'], ['Dns', 'dns']])
     $('wifi' + suffix).value = s[key];
   addressRows();
-  $('wifiNow').textContent = s.currentIp ? 'Now on ' + s.currentIp + '. A wrong static address leaves the board unreachable.' : '';
+  $('wifiNow').textContent = s.currentIp ? tt('board.nowOn', {ip: s.currentIp}) + ' ' + tt('board.wrongStaticAddress') : '';
   $('server').value = s.server;
   $('device').value = s.audioDeviceId;
   $('clock').value = s.i2sClockMode;
@@ -905,23 +907,23 @@ const boardBackend = {
   settings: () => ({board: JSON.stringify(boardBody())}),
   async save(changed) {
     if (!changed) {
-      msg('Saved. Button actions apply immediately.');
+      msg(tt('save.savedButtonActions'));
       return;
     }
     await boardJson(await fetch('/api/settings', {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(boardBody())}));
     restarting = true;
-    msg('Saved. The board restarts now' + (setup ? '; reconnect to your own network.' : '.'));
+    msg(tt(setup ? 'save.savedBoardRestarts' : 'save.savedBoardRestartsNow'));
   },
   inputs: async () => {
     const data = await boardJson(await fetch('/api/inputs'));
-    if (!data.ok) throw new Error(data.error || data.message || 'Inputs unavailable');
+    if (!data.ok) throw new Error(data.error || data.message || tt('save.inputsUnavailable'));
     return data;
   },
   saveBindings: async (id, bindings) => {
     const result = await boardJson(await fetch('/api/inputs', {method: 'POST',
       headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id, bindings})}));
-    if (!result.ok) throw new Error(result.message || result.error || 'Save failed');
+    if (!result.ok) throw new Error(result.message || result.error || tt('save.saveFailed'));
     return result;
   },
   scan: async () => boardJson(await fetch('/api/networks')),

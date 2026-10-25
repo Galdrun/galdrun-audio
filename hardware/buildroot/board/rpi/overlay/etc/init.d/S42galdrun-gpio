@@ -1,0 +1,35 @@
+#!/bin/sh
+# Resolve the header controller on every boot, independently of gpiochip numbering.
+set -eu
+case "${1:-}" in
+    stop) exit 0 ;;
+    start) : ;;
+    *) exit 1 ;;
+esac
+[ -r /proc/device-tree/model ] || exit 0
+model=$(tr -d '\000' < /proc/device-tree/model)
+case "$model" in
+    'Raspberry Pi 4 Model B Rev '*) label=pinctrl-bcm2711 ;;
+    'Raspberry Pi 5 Model B Rev '*) label=pinctrl-rp1 ;;
+    *) exit 0 ;;
+esac
+rm -f /dev/galdrun-gpio
+found=
+for chip in /sys/class/gpio/gpiochip*; do
+    [ -f "$chip/label" ] || continue
+    [ "$(cat "$chip/label")" = "$label" ] || continue
+    [ -z "$found" ] || { echo "Ambiguous GPIO controller: $label" >&2; exit 1; }
+    # sysfs parents both its legacy gpiochip<base> and its cdev gpiochip<id>
+    # under the hardware controller. Only the latter has a device number.
+    for device in "$chip/device"/gpiochip*; do
+        [ -f "$device/dev" ] || continue
+        [ -z "$found" ] || { echo "Ambiguous GPIO controller: $label" >&2; exit 1; }
+        found=$device
+    done
+    [ -n "$found" ] || { echo "GPIO character device missing: $label" >&2; exit 1; }
+done
+[ -n "$found" ] || { echo "GPIO controller missing: $label" >&2; exit 1; }
+node=${found##*/}
+case "$node" in gpiochip*) number=${node#gpiochip} ;; *) exit 1 ;; esac
+case "$number" in ''|*[!0-9]*) exit 1 ;; esac
+ln -s "/dev/$node" /dev/galdrun-gpio

@@ -1,0 +1,29 @@
+{
+  "inputGpioChip": "/dev/gpiochip0",
+  "reservedGpios": {
+    "hatId": [0, 1],
+    "audioI2c": [2, 3],
+    "uart": [14, 15],
+    "audioI2s": [18, 19, 20, 21],
+    "audioProfileAuxiliary": [4, 5, 6, 16, 17, 22, 25]
+  },
+  "header26InputIds": ["volume", "transport", "volume-press", "transport-press", "play-pause"],
+  "inputs": [
+    {"id": "volume", "kind": "encoder", "pinA": 7, "pinB": 8, "pull": "up", "stepsPerDetent": 4,
+     "bindings": {"clockwise": {"action": "volumeUp", "step": 0.02}, "counterClockwise": {"action": "volumeDown", "step": 0.02}}},
+    {"id": "transport", "kind": "encoder", "pinA": 9, "pinB": 10, "pull": "up", "stepsPerDetent": 4,
+     "bindings": {"clockwise": {"action": "next"}, "counterClockwise": {"action": "previous"}}},
+    {"id": "volume-press", "kind": "button", "pin": 11, "pull": "up", "activeLow": true,
+     "bindings": {"click": {"action": "toggleMute"}}},
+    {"id": "transport-press", "kind": "button", "pin": 23, "pull": "up", "activeLow": true,
+     "bindings": {"click": {"action": "togglePause"}, "longPress": {"action": "stop"}}},
+    {"id": "play-pause", "kind": "button", "pin": 24, "pull": "up", "activeLow": true,
+     "bindings": {"click": {"action": "togglePause"}}},
+    {"id": "previous", "kind": "button", "pin": 12, "pull": "up", "activeLow": true,
+     "bindings": {"click": {"action": "previous"}}},
+    {"id": "next", "kind": "button", "pin": 13, "pull": "up", "activeLow": true,
+     "bindings": {"click": {"action": "next"}}},
+    {"id": "standby", "kind": "button", "pin": 26, "pull": "up", "activeLow": true,
+     "bindings": {"click": {"action": "toggleStandby"}}}
+  ]
+}

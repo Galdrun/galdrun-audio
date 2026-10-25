@@ -45,7 +45,7 @@ device with silence; only the scheduled `START_AT` makes buffered PCM audible.
 | Device restart / profile reboot | Local `restart` command and `getPower.restart` in `ClientCommandHandler.cpp`; Buildroot `board/common/overlay/usr/sbin/galdrun-restart`; ESP32 `WebUi.cpp` `/api/restart`. Pi `S41galdrun-audio-profile` invalidates the device cache before startup when the boot profile changes. |
 | Buttons/encoders and gesture dispatch | `src/input/InputController.cpp`, platform input backends, `src/app/InputPump.cpp`, `InputSettings.cpp` |
 | Linux networking, CPU, SSH, DAC options | `src/net/NetworkSettings.cpp`, `SshSettings.cpp`, `src/config/CpuSettings.cpp`, `src/audio/linux/AlsaDacSettings.cpp` |
-| Raspberry Pi Buildroot images/profiles | Root `hardware/buildroot/board/rpi/README.md`, `board/rpi/audio-profiles.json`, `configs/raumfeld_rpi{1,3}_defconfig`; shared services in `board/common/` |
+| Raspberry Pi Buildroot images/profiles/GPIO wiring | Root `hardware/buildroot/board/rpi/README.md`, `board/rpi/audio-profiles.json`, `board/rpi/inputs.json`, `configs/raumfeld_rpi{1,3,4,5}_defconfig`; `S42galdrun-gpio` resolves the Pi 4/5 controller, `S94galdrun-inputs` seeds header-specific inputs on first boot; shared services in `board/common/` |
 | ESP32 board configuration/setup UI | `esp32/boards/`, `esp32/main/WifiSettings.cpp`, `WebUi.cpp`, `src/config/BoardConfig.cpp` |
 
 Headers in `include/` document public contracts; backend-private headers stay
@@ -102,3 +102,21 @@ manage its boot audio include; only the explicit profile selector remounts FAT.
 `DeviceSelection.cpp` binds DAC persistence to the selected ALSA card on opted-in
 Pi images; Connector 2 retains its CS4271 defaults. See the
 [Pi guide](../../hardware/buildroot/board/rpi/README.md) for capability limits.
+The `rpi3` image covers Pi 2 B (both CPU variants), Pi 3 B/B+/A+ and Zero 2 W;
+firmware also uses the B+ DTB for Pi 3 A+. `rpi1` covers Pi 1 A/B/A+/B+ and
+Zero/W/WH. Pi 1 A/A+ use the B/B+ DTBs; W and WH share their model identity.
+Zero 2 W has both DTB aliases and both pinned SDIO Wi-Fi firmware variants;
+the built-in OTG controller supports USB DACs with an OTG adapter. It uses
+the same 40-pin inputs and audio-profile selector, with no analogue headphone output.
+Network startup skips absent Ethernet devices and restores all supported link
+modes for automatic speed (including B+ Gigabit).
+Bluetooth overlays are filtered by model (`pi0w` in `rpi1`, `pi3`/`pi02` in
+`rpi3`), so Pi 2 and non-Bluetooth models retain their native PL011 setup.
+Original Zero and A/A+ need a USB network adapter; Pi 2 has Ethernet but no Wi-Fi.
+`rpi4` and `rpi5` use separate ARM64 images and the `linux-armv8` client.
+Their kernels use 4 KiB pages; Pi 5 includes RP1 GPIO/I2S/Ethernet support.
+GPIO defaults use `/dev/galdrun-gpio`, resolved from the controller label on
+every boot rather than assuming a gpiochip number. Pi 4 uses start4 firmware;
+Pi 5 boots through its existing EEPROM firmware and uses ttyAMA10 on its debug
+connector. Both include explicit KMS overlays for HDMI audio. Hardware
+qualification, including HATs and grouped playback, remains separate from builds.

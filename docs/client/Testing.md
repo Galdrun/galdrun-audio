@@ -7,9 +7,9 @@
 ## Client
 | Device               | OS          | Soundcard                      | Chip    | API     | HPP | Tested  | Notes                           
 | -------------------- | ----------- | ------------------------------ | ------- | ------- | --- | ------- | -------
-| RPI 1 Model B 1.2    | DietPi      | [USB] DAC                      | KT0210  | ALSA    | N   | Yes     | Common / Custom Firmware
+| RPI 1 Model B 1.2    | DietPi      | [USB] DAC                      | KT0210  | ALSA    | N   | Yes     | Common
 | RPI 1 Model B 1.2    | DietPi      | [I2S] InnoMaker HiFi DAC       | PCM5122 | ALSA    | N   | Yes     | Custom Firmware
-| RPI 3 Model A        | DietPi      | [PWM] Headphone Jack           | BMC2835 | ALSA    | N   | Yes     | Common / Custom Firmware
+| RPI 3 Model A        | DietPi      | [PWM] Headphone Jack           | BMC2835 | ALSA    | N   | Yes     | Custom Firmware
 | ESP32-S31 (Protoype) | freeRTOS    | [I2S] InnoMaker HiFi DAC       | PCM5122 | IDF-I2S |     |         |
 | ESP32-S31 Core Board | freeRTOS    | [I2S] InnoMaker HiFi DAC       | PCM5122 | IDF-I2S |     |         |
 | ESP32-A1S-Audio-Kit  | freeRTOS    | [I2S] DAC                      | ES8388  | IDF-I2S |     | Yes     | WLAN Bottleneck / Max. 96khz with 24bit on good conditions

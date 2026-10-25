@@ -12,8 +12,8 @@ function connectHardwareInputEvents(container, url) {
       if (item.dataset.inputId !== id) continue;
       const badge = item.querySelector('.input-badge');
       badge.classList.toggle('pressed', pressed === true);
-      badge.setAttribute('aria-label', id + (pressed === true ? ' pressed' :
-        pressed === false ? ' released' : ' state unavailable'));
+      badge.setAttribute('aria-label', tt(pressed === true ? 'inputs.pressed' :
+        pressed === false ? 'inputs.released' : 'inputs.stateUnavailable', {id}));
     }
   };
   const reset = () => {

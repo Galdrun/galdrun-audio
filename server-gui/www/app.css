@@ -23,13 +23,14 @@
 .brand svg { width: 40px; height: 40px; }
 .brand svg.wordmark { width: auto; height: 40px; }
 .header-tools { display: flex; align-items: center; gap: 18px; min-width: 0; }
-.target-zone { display: flex; align-items: center; gap: 8px; padding: 0; white-space: nowrap; }
-.target-zone select { min-height: 40px; padding: 6px 10px; width: auto; max-width: 220px; background: var(--card); }
-.header-status { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.header-status .pill { display: inline-flex; align-items: center; gap: 6px; background: var(--card); white-space: nowrap; }
-.header-status .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.header-status .pill.good::before { background: var(--good); }
-.header-status .pill.bad::before { background: var(--bad); }
+.header-listener { display: flex; }
+#listener { display: flex; flex-direction: column; align-items: center; gap: 1px; min-height: 0; padding: 4px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--fg); }
+#listener:hover { background: var(--soft); color: var(--accent); }
+#listener svg { width: 22px; height: 22px; }
+#listener small { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 500; color: var(--muted); }
+.conn-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.conn-dot.good { background: var(--good); }
+.conn-dot.bad { background: var(--bad); }
 button.menu-toggle { display: none; }
 
 .layout { display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); min-height: calc(100vh - var(--header-height) - var(--player-space));
@@ -961,7 +962,8 @@ li[aria-expanded="true"] > .save-row .tree-chevron svg { transform: rotate(90deg
   .nav-collapse { display: none; }
   .layout { grid-template-columns: minmax(0, 1fr); }
   .sidebar {
-    position: fixed; z-index: 30; top: 0; left: 0; bottom: 0; height: auto; width: min(300px, 85vw);
+    /* align-self: stretch, or the base's start sizes the drawer to its links, past the screen. */
+    position: fixed; z-index: 30; top: 0; left: 0; bottom: 0; height: auto; align-self: stretch; width: min(300px, 85vw);
     background: var(--card); box-shadow: 8px 0 32px #18233325; transform: translateX(-105%); visibility: hidden;
     padding-top: calc(16px + env(safe-area-inset-top));
   }
@@ -969,11 +971,8 @@ li[aria-expanded="true"] > .save-row .tree-chevron svg { transform: rotate(90deg
   body.nav-open .scrim { display: block; position: fixed; inset: 0; z-index: 25; background: #18233355; }
   body.nav-open { overflow: hidden; }
   main { padding: 20px 20px 40px; }
-  .header-status { flex-wrap: nowrap; gap: 4px; }
-  .header-status .pill { font-size: 0; gap: 0; padding: 5px; }
 }
 @media (max-width: 760px) {
-  .target-zone > span { display: none; }
   #mb { grid-template-columns: minmax(0, 1fr); }
   .room-main { grid-template-columns: minmax(0, 1fr); }
 }
@@ -982,7 +981,6 @@ li[aria-expanded="true"] > .save-row .tree-chevron svg { transform: rotate(90deg
   .brand svg { width: 30px; height: 30px; }
   .brand svg.wordmark { width: auto; height: 30px; }
   .header-tools { gap: 8px; }
-  .target-zone select { max-width: 40vw; }
   main { padding: 16px 12px 32px; }
   .panel { padding: 14px; }
   .card { padding: 14px; }

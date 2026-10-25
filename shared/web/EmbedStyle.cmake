@@ -2,6 +2,7 @@
 # C++ string literals for offline client pages.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_LIST_DIR}/theme.css"
+    "${CMAKE_CURRENT_LIST_DIR}/i18n.js"
     "${CMAKE_CURRENT_LIST_DIR}/inputs.js"
     "${CMAKE_CURRENT_LIST_DIR}/input-events.js"
     "${CMAKE_CURRENT_LIST_DIR}/usage-charts.js"
@@ -13,6 +14,7 @@ string(SUBSTRING "${MULTIROOM_WEB_CSS}" 12000 -1 MULTIROOM_WEB_CSS_TAIL)
 string(SUBSTRING "${MULTIROOM_WEB_CSS}" 0 12000 MULTIROOM_WEB_CSS)
 configure_file("${CMAKE_CURRENT_LIST_DIR}/MultiroomWebStyle.inc.in"
     "${CMAKE_CURRENT_BINARY_DIR}/MultiroomWebStyle.inc" @ONLY)
+file(READ "${CMAKE_CURRENT_LIST_DIR}/i18n.js" MULTIROOM_WEB_I18N)
 file(READ "${CMAKE_CURRENT_LIST_DIR}/inputs.js" MULTIROOM_WEB_INPUTS)
 file(READ "${CMAKE_CURRENT_LIST_DIR}/input-events.js" MULTIROOM_WEB_INPUT_EVENTS)
 file(READ "${CMAKE_CURRENT_LIST_DIR}/usage-charts.js" MULTIROOM_WEB_USAGE_CHARTS)
@@ -66,7 +68,20 @@ endfunction()
 # the ESP32): the markup includes the style, the shared scripts and its own.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_LIST_DIR}/client-settings.html"
-    "${CMAKE_CURRENT_LIST_DIR}/client-settings.js")
+    "${CMAKE_CURRENT_LIST_DIR}/client-settings.js"
+    "${CMAKE_CURRENT_LIST_DIR}/shared.en.js"
+    "${CMAKE_CURRENT_LIST_DIR}/shared.de.js"
+    "${CMAKE_CURRENT_LIST_DIR}/client-settings.en.js"
+    "${CMAKE_CURRENT_LIST_DIR}/client-settings.de.js")
+# The page's texts by key (i18n.js): the shared scripts' and its own.
+multiroom_embed_text("${CMAKE_CURRENT_LIST_DIR}/shared.en.js" english
+    MultiroomWebSharedEnglish.inc)
+multiroom_embed_text("${CMAKE_CURRENT_LIST_DIR}/shared.de.js" german
+    MultiroomWebSharedGerman.inc)
+multiroom_embed_text("${CMAKE_CURRENT_LIST_DIR}/client-settings.en.js" english
+    MultiroomClientSettingsEnglish.inc)
+multiroom_embed_text("${CMAKE_CURRENT_LIST_DIR}/client-settings.de.js" german
+    MultiroomClientSettingsGerman.inc)
 multiroom_embed_text("${CMAKE_CURRENT_LIST_DIR}/client-settings.js" script
     MultiroomClientSettingsScript.inc)
 multiroom_embed_text("${CMAKE_CURRENT_LIST_DIR}/client-settings.html" page

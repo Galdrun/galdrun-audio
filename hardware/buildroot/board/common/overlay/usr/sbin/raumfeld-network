@@ -48,14 +48,19 @@ apply_device_name() {
     hostname "$name" || log 'Failed to apply device name'
 }
 apply_eth_speed() {
+    # Pi 3 A+ and other Wi-Fi-only boards have no Ethernet interface.
+    [ -d "/sys/class/net/$ETH_INTERFACE" ] || return 0
     # Keep autonegotiation to agree duplex with the switch at the chosen rate.
+    # The ioctl path restores all supported modes in auto, including Gigabit,
+    # even after a previous 10/100 limit. A fixed 0x00f mask caps auto at 100.
     case "$ETH_SPEED" in
-        auto) advertise=0x00f ;;
-        10) advertise=0x003 ;;
-        100) advertise=0x00c ;;
-        *) log 'Invalid Ethernet speed; using automatic'; advertise=0x00f ;;
+        auto) set -- --disable-netlink -s "$ETH_INTERFACE" autoneg on ;;
+        10) set -- -s "$ETH_INTERFACE" autoneg on advertise 0x003 ;;
+        100) set -- -s "$ETH_INTERFACE" autoneg on advertise 0x00c ;;
+        *) log 'Invalid Ethernet speed; using automatic'
+           set -- --disable-netlink -s "$ETH_INTERFACE" autoneg on ;;
     esac
-    ethtool -s "$ETH_INTERFACE" autoneg on advertise "$advertise" || log 'Failed to apply Ethernet speed'
+    ethtool "$@" || log 'Failed to apply Ethernet speed'
 }
 settings_checksum() { cksum < /etc/galdrun-network.conf 2>/dev/null || echo missing; }
 address() { ip -4 -o addr show dev "$1" scope global 2>/dev/null; }
@@ -243,7 +248,7 @@ EOF
 load_settings
 apply_device_name
 checksum=$(settings_checksum)
-ip link set "$ETH_INTERFACE" up
+if [ -d "/sys/class/net/$ETH_INTERFACE" ]; then ip link set "$ETH_INTERFACE" up; fi
 apply_eth_speed
 while :; do
     refresh_wifi
@@ -261,8 +266,10 @@ while :; do
         if [ -n "$dhcp_pid" ]; then
             kill "$dhcp_pid" 2>/dev/null || :; wait "$dhcp_pid" 2>/dev/null || :; dhcp_pid=
         fi
-        ip -4 addr flush dev "$ETH_INTERFACE"
-        ip -4 route flush dev "$ETH_INTERFACE"
+        if [ -d "/sys/class/net/$ETH_INTERFACE" ]; then
+            ip -4 addr flush dev "$ETH_INTERFACE"
+            ip -4 route flush dev "$ETH_INTERFACE"
+        fi
         : > /etc/resolv.conf
         load_settings
         refresh_wifi

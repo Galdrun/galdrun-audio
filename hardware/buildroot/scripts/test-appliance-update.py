@@ -8,7 +8,7 @@ import tempfile
 
 repo = Path(__file__).resolve().parents[3]
 source = (repo / 'scripts/upload/connector2-remote.sh').read_text()
-for board in ('raspberrypi-rpi1', 'raspberrypi-rpi3', 'raumfeld-connector2', 'unsupported'):
+for board in ('raspberrypi-rpi1', 'raspberrypi-rpi3', 'raspberrypi-rpi4', 'raspberrypi-rpi5', 'raumfeld-connector2', 'unsupported'):
     with tempfile.TemporaryDirectory(prefix='galdrun-appliance-update-') as temp:
         root = Path(temp)
         installed = root / 'client'
@@ -28,8 +28,15 @@ for board in ('raspberrypi-rpi1', 'raspberrypi-rpi3', 'raumfeld-connector2', 'un
         script.write_text(text)
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode='w:gz') as tar:
-            for name, data in {'galdrun-client': b'#!/bin/sh\necho galdrun-test\n', 'lib/libatomic.so.1': b'library',
-                               'licenses/LICENSE': b'license', 'build-info.txt': b'test build'}.items():
+            directory = tarfile.TarInfo('lib')
+            directory.type = tarfile.DIRTYPE
+            directory.mode = 0o755
+            tar.addfile(directory)
+            files = {'galdrun-client': b'#!/bin/sh\necho galdrun-test\n',
+                     'licenses/LICENSE': b'license', 'build-info.txt': b'test build'}
+            if board not in ('raspberrypi-rpi4', 'raspberrypi-rpi5'):
+                files['lib/libatomic.so.1'] = b'library'
+            for name, data in files.items():
                 info = tarfile.TarInfo(name)
                 info.size = len(data)
                 tar.addfile(info, io.BytesIO(data))
@@ -43,4 +50,4 @@ for board in ('raspberrypi-rpi1', 'raspberrypi-rpi3', 'raumfeld-connector2', 'un
             assert (installed / 'build-info.txt').read_text() == 'test build'
             assert (root / 'service.log').read_text().splitlines() == ['stop', 'start', 'status']
         assert not archive.exists()
-print('PASS: gzip stream update for both Pi images and Connector, previous binary retained, unknown board rejected')
+print('PASS: gzip updates for all Pi images and Connector, empty ARM64 library bundle, previous binary retained, unknown board rejected')

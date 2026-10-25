@@ -121,6 +121,8 @@ public sealed partial class ApiTests
 
         await Ok(HttpMethod.Patch, "zones/living/queue", """{"repeat":"all"}""");
         Assert.Equal("repeatAll", (await AutoFillAsync())["waiting"]!.GetValue<string>());
+        await Ok(HttpMethod.Patch, "zones/living/queue", """{"repeat":"off","shuffle":true}""");
+        Assert.Equal("shuffle", (await AutoFillAsync())["waiting"]!.GetValue<string>());
 
         // Kept in playback.json, beside the queues.
         var saved = Path.Combine(_dir.Path, "data", "playback.json");

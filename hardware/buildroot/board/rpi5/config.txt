@@ -1,0 +1,7 @@
+# Boot firmware comes from the board's EEPROM; no start.elf/fixup pair.
+kernel=Image
+arm_64bit=1
+enable_uart=1
+dtoverlay=
+include galdrun-audio.txt
+dtoverlay=vc4-kms-v3d-pi5

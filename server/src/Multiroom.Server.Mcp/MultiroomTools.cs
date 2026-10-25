@@ -242,7 +242,7 @@ public sealed class MultiroomTools
             });
 
         Add(McpTier.Read, "get_autofill", "A zone's AutoFill: whether it adds songs by itself when the queue runs low, its settings, " +
-            "whether a fill is running, why it waits (repeatAll, nothingAdded) and what the last fill added.",
+            "whether a fill is running, why it waits (repeatAll, shuffle, nothingAdded) and what the last fill added.",
             ([Description(ZoneParameter)] string zone) => Ok(house.AutoFill(zone)));
 
         Add(McpTier.Read, "list_equalizer_profiles", "The house's equalizer profiles: the built-in ones, then the household's own, " +

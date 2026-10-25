@@ -13,7 +13,7 @@
 #   linux          linux-x86, linux-x64, linux-armv6, linux-armv7, linux-armv8, linux-armv9
 #   esp32          esp32-a1s, esp32-s3-devkitc
 #   connector2     Raumfeld Connector 2 firmware with the linux-armv6 client
-#   rpi1 rpi3      Raspberry Pi SD images with ARMv6 / ARMv7 clients
+#   rpi1 rpi3 rpi4 rpi5  Raspberry Pi SD images (ARMv6 / ARMv7 / ARM64)
 #
 # Installs when missing:
 #   Visual Studio 2022 Build Tools (C++)  C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools, via winget
@@ -23,7 +23,7 @@
 # Results go to releases\client\<target>, the Connector 2 USB image to
 # releases\client\raumfeld\connector2. Stops at the first failure.
 param(
-    [ValidateSet('all', 'windows', 'linux', 'esp32', 'connector2', 'rpi1', 'rpi3', 'windows-x64',
+    [ValidateSet('all', 'windows', 'linux', 'esp32', 'connector2', 'rpi1', 'rpi3', 'rpi4', 'rpi5', 'windows-x64',
         'linux-x86', 'linux-x64', 'linux-armv6', 'linux-armv7', 'linux-armv8', 'linux-armv9',
         'esp32-a1s', 'esp32-s3-devkitc')]
     [string[]] $Target = 'all'
@@ -33,7 +33,7 @@ $root = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'setup\windows.ps1')
 $windows = [bool]($Target | Where-Object { $_ -in 'all', 'windows', 'windows-x64' })
 $wslTargets = @($Target | ForEach-Object {
-        switch ($_) { 'all' { 'linux', 'esp32', 'connector2', 'rpi1', 'rpi3' } 'windows' {} 'windows-x64' {} default { $_ } }
+        switch ($_) { 'all' { 'linux', 'esp32', 'connector2', 'rpi1', 'rpi3', 'rpi4', 'rpi5' } 'windows' {} 'windows-x64' {} default { $_ } }
     })
 
 if ($windows) {

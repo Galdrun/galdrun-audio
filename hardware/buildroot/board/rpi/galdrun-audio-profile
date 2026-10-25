@@ -17,8 +17,13 @@ esac
 if [ -n "$overlay" ]; then
     model=$(tr -d '\000' < /proc/device-tree/model)
     case "$model" in
-        'Raspberry Pi 3 Model B Rev '*|'Raspberry Pi Model B Plus Rev '*) : ;;
-        *) echo 'I2S profiles require a supported 40-pin Pi; Pi 1 Model B/P5 wiring is not certified' >&2; exit 1 ;;
+        'Raspberry Pi 4 Model B Rev '*|'Raspberry Pi 5 Model B Rev '*|\
+        'Raspberry Pi 2 Model B Rev '*|'Raspberry Pi 2 Model B rev '*|\
+        'Raspberry Pi 3 Model B Rev '*|'Raspberry Pi 3 Model B Plus Rev '*|\
+        'Raspberry Pi 3 Model A Plus Rev '*|'Raspberry Pi Zero 2 W Rev '*|\
+        'Raspberry Pi Zero Rev '*|'Raspberry Pi Zero W Rev '*|\
+        'Raspberry Pi Model A Plus Rev '*|'Raspberry Pi Model B Plus Rev '*) : ;;
+        *) echo 'I2S profiles require a supported 40-pin Pi; Pi 1 Model A/B/P5 wiring is not certified' >&2; exit 1 ;;
     esac
     [ -s "$boot/overlays/$overlay.dtbo" ] || { echo 'Profile overlay is missing' >&2; exit 1; }
 fi
@@ -39,7 +44,7 @@ mount -o remount,rw "$boot"
 } > "$boot/galdrun-audio.next"
 # Refuse a second active overlay in the main file or an unknown include.
 if grep -E '^[[:space:]]*(dtoverlay=|include )' "$boot/config.txt" | \
-    grep -Ev '^(dtoverlay=|dtoverlay=disable-bt|include galdrun-audio.txt)$' >/dev/null; then
+    grep -Ev '^(dtoverlay=|dtoverlay=disable-bt|dtoverlay=vc4-kms-v3d-pi4,cma-64|dtoverlay=vc4-kms-v3d-pi5|include galdrun-audio.txt)$' >/dev/null; then
     echo 'Conflicting custom overlays/includes in config.txt; resolve them before selecting a profile' >&2; exit 1
 fi
 cp "$boot/galdrun-audio.txt" "$boot/galdrun-audio.previous.next"

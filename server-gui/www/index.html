@@ -3,58 +3,57 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Galdrun Server</title>
+<title data-i18n="page.title"></title>
 <link rel="stylesheet" href="/assets/theme.css">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header class="topbar">
   <div class="topbar-inner">
-    <button type="button" id="menuToggle" class="icon-only menu-toggle" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu"><i data-icon="menu"></i></button>
+    <button type="button" id="menuToggle" class="icon-only menu-toggle" aria-controls="sidebar" aria-expanded="false" data-i18n-aria-label="header.openMenu"><i data-icon="menu"></i></button>
     <a class="brand" href="#/home">
       <svg class="wordmark" viewBox="300 50 600 200" role="img" aria-label="Galdrun"><path fill="#152B3A" d="M361.02 129.91Q353.52 129.91 347.19 127.47Q340.85 125.04 336.18 120.57Q331.51 116.1 328.92 110.06Q326.33 104.01 326.33 96.8Q326.33 89.59 328.92 83.54Q331.51 77.5 336.23 73.03Q340.94 68.56 347.29 66.13Q353.64 63.69 361.24 63.69Q369.37 63.69 375.95 66.35Q382.52 69.01 387.08 74.19L379.52 81.54Q375.76 77.72 371.38 75.93Q366.99 74.13 361.79 74.13Q356.68 74.13 352.38 75.8Q348.08 77.46 344.93 80.5Q341.79 83.54 340.08 87.68Q338.38 91.83 338.38 96.8Q338.38 101.67 340.08 105.82Q341.79 109.97 344.93 113.05Q348.08 116.13 352.33 117.8Q356.57 119.47 361.67 119.47Q366.47 119.47 370.93 117.95Q375.39 116.42 379.42 112.83L386.2 121.72Q381.19 125.76 374.53 127.84Q367.87 129.91 361.02 129.91ZM386.2 121.72 374.95 120.16V96.09H386.2ZM402.86 129 431.81 64.6H443.63L472.66 129H460.14L435.27 70.98H440.05L415.17 129ZM416.24 114.09 419.44 104.7H454.19L457.47 114.09ZM490.92 129V64.6H502.86V118.89H536.5V129ZM556.03 129V64.6H584.17Q594.61 64.6 602.52 68.63Q610.43 72.66 614.87 79.88Q619.31 87.09 619.31 96.8Q619.31 106.5 614.87 113.72Q610.43 120.94 602.52 124.97Q594.61 129 584.17 129ZM567.97 118.88H583.57Q590.81 118.88 596.1 116.13Q601.4 113.38 604.33 108.41Q607.26 103.44 607.26 96.8Q607.26 90.07 604.33 85.14Q601.4 80.22 596.1 77.47Q590.81 74.72 583.57 74.72H567.97ZM642.02 129V64.6H668.34Q681.23 64.6 688.56 70.69Q695.89 76.78 695.89 87.53Q695.89 94.58 692.58 99.68Q689.27 104.78 683.14 107.51Q677 110.24 668.46 110.24H648.63L653.96 104.85V129ZM684.1 129 667.79 105.62H680.62L697.03 129ZM653.96 106.12 648.63 100.36H667.96Q675.84 100.36 679.84 96.97Q683.84 93.59 683.84 87.53Q683.84 81.39 679.84 78.04Q675.84 74.7 667.96 74.7H648.63L653.96 68.86ZM746.89 129.91Q733.68 129.91 726.2 122.47Q718.72 115.02 718.72 100.9V64.6H730.66V100.5Q730.66 110.42 734.93 114.94Q739.2 119.47 747 119.47Q754.8 119.47 759.06 114.94Q763.33 110.42 763.33 100.5V64.6H775.06V100.9Q775.06 115.02 767.58 122.47Q760.1 129.91 746.89 129.91ZM801.86 129V64.6H811.7L852.06 114.21H847.15V64.6H859.02V129H849.18L808.82 79.39H813.73V129Z"/><g transform="translate(397 202)" stroke="#91ABB5" stroke-width="3.2" fill="none" stroke-linejoin="miter" stroke-linecap="square"><path d="M 7 6 L 37 38 M 37 6 L 7 38"/><path transform="translate(61 0)" d="M 10 38 L 10 6 M 10 10 L 38 24 M 10 22 L 38 36"/><path transform="translate(122 0)" d="M 10 6 L 10 38 M 10 6 L 36 20"/><path transform="translate(183 0)" d="M 6 6 L 6 38 M 38 6 L 38 38 M 6 6 L 38 38 M 6 38 L 38 6"/><path transform="translate(244 0)" d="M 10 38 L 10 6 L 32 6 L 39 15 L 32 24 L 10 24 M 27 24 L 39 38"/><path transform="translate(305 0)" d="M 10 6 L 10 38 L 37 38 L 37 6"/><path transform="translate(366 0)" d="M 10 38 L 10 6 M 5 29 L 39 15"/></g></svg>
     </a>
     <div class="header-tools">
-      <label class="target-zone" title="whose likes, favourites, plays and proposals are shown, and whose a new like or favourite is (server phase 36)"><span>Listener</span> <select id="listener" aria-label="Listener"><option value="">household</option></select></label>
-      <div class="header-status" aria-label="Connection">
-        <span id="conn" class="pill">API …</span>
-        <span id="core" class="pill">core …</span>
-        <span id="sse" class="pill">events …</span>
-      </div>
+      <span class="header-listener">
+        <button type="button" id="listener" aria-haspopup="dialog" data-i18n-title="header.whoseLikesFavourites"><i data-icon="people"></i><small id="listenerName"></small></button>
+        <div id="listenerPick" class="pick-popover" popover="auto" role="dialog" data-i18n-aria-label="header.listener"></div>
+      </span>
+      <span id="conn" class="conn-dot" role="status"></span>
+      <div id="language" class="language" data-i18n-aria-label="nav.language"></div>
     </div>
   </div>
 </header>
 
 <div class="layout">
-  <nav id="sidebar" class="sidebar" aria-label="Pages">
-    <button type="button" id="navCollapse" class="nav-collapse" aria-controls="sidebar" aria-expanded="true" aria-label="Collapse menu" title="Collapse menu"><i data-icon="back"></i></button>
-    <p class="nav-group">Control</p>
-    <a href="#/home"><i data-icon="home"></i>Home</a>
-    <a href="#/zones"><i data-icon="zones"></i>Zones</a>
-    <a href="#/playlists"><i data-icon="playlists"></i>Playlists</a>
-    <a href="#/stations"><i data-icon="radio"></i>Radio stations</a>
-    <a href="#/rooms"><i data-icon="device"></i>Clients</a>
-    <a href="#/assistant"><i data-icon="chat"></i>Assistant</a>
+  <nav id="sidebar" class="sidebar" data-i18n-aria-label="nav.pages">
+    <button type="button" id="navCollapse" class="nav-collapse" aria-controls="sidebar" aria-expanded="true" data-i18n-aria-label="nav.collapseMenu" data-i18n-title="nav.collapseMenu"><i data-icon="back"></i></button>
+    <p class="nav-group" data-i18n="nav.control"></p>
+    <a href="#/home"><i data-icon="home"></i><span data-i18n="nav.home"></span></a>
+    <a href="#/zones"><i data-icon="zones"></i><span data-i18n="common.zones"></span></a>
+    <a href="#/playlists"><i data-icon="playlists"></i><span data-i18n="common.playlists"></span></a>
+    <a href="#/stations"><i data-icon="radio"></i><span data-i18n="nav.radioStations"></span></a>
+    <a href="#/rooms"><i data-icon="device"></i><span data-i18n="common.clients"></span></a>
+    <a href="#/assistant"><i data-icon="chat"></i><span data-i18n="nav.assistant"></span></a>
 
     <!-- These two groups fold up and down by their headings (kept per viewer). -->
-    <button type="button" class="nav-group nav-group-toggle" data-group="settings" data-short="S" title="Settings" aria-controls="navSettings" aria-expanded="true">Settings<i data-icon="forward"></i></button>
+    <button type="button" class="nav-group nav-group-toggle" data-group="settings" data-short="S" data-i18n-title="nav.settings" aria-controls="navSettings" aria-expanded="true"><span data-i18n="nav.settings"></span><i data-icon="forward"></i></button>
     <div id="navSettings" class="nav-links">
-      <a href="#/settings"><i data-icon="setup"></i>Settings</a>
-      <a href="#/folders"><i data-icon="folder"></i>Music library</a>
-      <a href="#/services"><i data-icon="cloud"></i>Online services</a>
-      <a href="#/ai"><i data-icon="sparkle"></i>AI providers</a>
-      <a href="#/listeners"><i data-icon="rooms"></i>Listeners</a>
+      <a href="#/settings"><i data-icon="setup"></i><span data-i18n="nav.settings"></span></a>
+      <a href="#/folders"><i data-icon="folder"></i><span data-i18n="nav.musicLibrary"></span></a>
+      <a href="#/services"><i data-icon="cloud"></i><span data-i18n="nav.onlineServices"></span></a>
+      <a href="#/ai"><i data-icon="sparkle"></i><span data-i18n="nav.aiProviders"></span></a>
+      <a href="#/listeners"><i data-icon="rooms"></i><span data-i18n="nav.listeners"></span></a>
     </div>
 
-    <button type="button" class="nav-group nav-group-toggle" data-group="diagnostics" data-short="D" title="Diagnostics" aria-controls="navDiagnostics" aria-expanded="true">Diagnostics<i data-icon="forward"></i></button>
+    <button type="button" class="nav-group nav-group-toggle" data-group="diagnostics" data-short="D" data-i18n-title="nav.diagnostics" aria-controls="navDiagnostics" aria-expanded="true"><span data-i18n="nav.diagnostics"></span><i data-icon="forward"></i></button>
     <div id="navDiagnostics" class="nav-links">
-      <a href="#/status"><i data-icon="pulse"></i>Status</a>
-      <a href="#/system"><i data-icon="gauge"></i>System</a>
-      <a href="#/aiStatus"><i data-icon="sparkle"></i>AI</a>
-      <a href="#/activity"><i data-icon="log"></i>Activity <span id="evCountNav" class="nav-count"></span></a>
-      <a href="#/console"><i data-icon="terminal"></i>API console</a>
+      <a href="#/status"><i data-icon="pulse"></i><span data-i18n="common.status"></span></a>
+      <a href="#/system"><i data-icon="gauge"></i><span data-i18n="nav.system"></span></a>
+      <a href="#/aiStatus"><i data-icon="sparkle"></i><span data-i18n="common.ai"></span></a>
+      <a href="#/activity"><i data-icon="log"></i><span data-i18n="nav.activity"></span> <span id="evCountNav" class="nav-count"></span></a>
+      <a href="#/console"><i data-icon="terminal"></i><span data-i18n="nav.apiConsole"></span></a>
     </div>
-
   </nav>
   <div class="scrim" id="scrim" hidden></div>
 
@@ -64,69 +63,69 @@
 
     <!-- The start page: the zones at a glance, what was played, the
          favourites and likes, and what the AI proposes (renderHome). -->
-    <section class="page page-wide" data-page="home" data-title="Home" hidden>
+    <section class="page page-wide" data-page="home" data-title="nav.home" hidden>
       <div id="home" class="home"></div>
     </section>
 
     <!-- A desktop-style page: the zones (swiped between) on the left, the
          library (sources tree and items) on the right, filling the window.
          Library items are dragged onto a zone's queue. -->
-    <section class="page page-app" data-page="zones" data-title="Zones">
-      <section class="pane zones-pane" aria-label="Zones">
+    <section class="page page-app" data-page="zones" data-title="common.zones">
+      <section class="pane zones-pane" data-i18n-aria-label="common.zones">
         <div class="pane-bar">
-          <button type="button" id="zonePrev" class="icon-only" aria-label="Previous zone" title="Previous zone"><i data-icon="back"></i></button>
+          <button type="button" id="zonePrev" class="icon-only" data-i18n-aria-label="zones.previousZone" data-i18n-title="zones.previousZone"><i data-icon="back"></i></button>
           <span id="zoneMarker" class="zone-marker" aria-hidden="true"></span>
           <div id="zoneTabs" class="zone-tabs"></div>
-          <button type="button" id="zoneNext" class="icon-only" aria-label="Next zone" title="Next zone"><i data-icon="forward"></i></button>
+          <button type="button" id="zoneNext" class="icon-only" data-i18n-aria-label="zones.nextZone" data-i18n-title="zones.nextZone"><i data-icon="forward"></i></button>
         </div>
         <div id="zones" class="zone-track"></div>
       </section>
 
-      <button type="button" id="libraryToggle" class="library-toggle" aria-controls="browserPanel" aria-expanded="true" title="Hide the library">
-        <i data-icon="forward"></i><span>Library</span>
+      <button type="button" id="libraryToggle" class="library-toggle" aria-controls="browserPanel" aria-expanded="true" data-i18n-title="zones.hideLibrary">
+        <i data-icon="forward"></i><span data-i18n="common.library"></span>
       </button>
 
-      <section id="browserPanel" class="pane library-pane" aria-label="Library">
+      <section id="browserPanel" class="pane library-pane" data-i18n-aria-label="common.library">
         <div class="pane-bar">
-          <button type="button" id="mbBack" class="icon-only" title="Back" aria-label="Back"><i data-icon="back"></i></button>
-          <button type="button" id="mbForward" class="icon-only" title="Forward" aria-label="Forward"><i data-icon="forward"></i></button>
+          <button type="button" id="mbBack" class="icon-only" data-i18n-title="library.back" data-i18n-aria-label="library.back"><i data-icon="back"></i></button>
+          <button type="button" id="mbForward" class="icon-only" data-i18n-title="library.forward" data-i18n-aria-label="library.forward"><i data-icon="forward"></i></button>
           <form id="mbSearch" class="mb-search">
-            <input id="mbSearchQ" type="search" placeholder="Search tracks, albums, artists, stations…" aria-label="Search the library">
-            <select id="mbSearchTypes" aria-label="Search for" title="What to search for (types=)">
-              <option value="all">All types</option>
-              <option value="tracks">Tracks</option>
-              <option value="albums">Albums</option>
-              <option value="artists">Artists</option>
-              <option value="playlists">Playlists</option>
-              <option value="stations">Stations</option>
+            <input id="mbSearchQ" type="search" data-i18n-placeholder="library.searchTracksAlbums" data-i18n-aria-label="library.searchLibrary">
+            <select id="mbSearchTypes" data-i18n-aria-label="library.searchFor" data-i18n-title="library.whatToSearch">
+              <option value="all" data-i18n="library.allTypes"></option>
+              <option value="tracks" data-i18n="library.tracks"></option>
+              <option value="albums" data-i18n="common.albums"></option>
+              <option value="artists" data-i18n="common.artists"></option>
+              <option value="playlists" data-i18n="common.playlists"></option>
+              <option value="stations" data-i18n="library.stations"></option>
             </select>
-            <select id="mbSearchSource" aria-label="Source" title="Only what this source found">
-              <option value="">All sources</option>
+            <select id="mbSearchSource" data-i18n-aria-label="library.source" data-i18n-title="library.onlyWhatThis">
+              <option value="" data-i18n="library.allSources"></option>
             </select>
-            <select id="mbSearchMedia" aria-label="Media" title="Only tracks of this media type, stations for radio (mediaType=)">
-              <option value="">Any media</option>
-              <option value="music">Music</option>
-              <option value="audiobook">Audiobooks</option>
-              <option value="radio">Radio</option>
+            <select id="mbSearchMedia" data-i18n-aria-label="library.media" data-i18n-title="library.onlyTracksOf">
+              <option value="" data-i18n="library.anyMedia"></option>
+              <option value="music" data-i18n="library.music"></option>
+              <option value="audiobook" data-i18n="library.audiobooks"></option>
+              <option value="radio" data-i18n="library.radio"></option>
             </select>
-            <button class="primary">Search</button>
+            <button class="primary" data-i18n="library.search"></button>
           </form>
         </div>
         <div id="mb">
-          <nav id="mbSources" class="small" aria-label="Sources"></nav>
-          <div id="mbView"><p class="muted">Pick a source, or search. Drag an item onto a zone's queue.</p></div>
-          <div id="mbBusy" class="mb-busy" role="status" aria-label="Loading" hidden><span class="spin"></span></div>
+          <nav id="mbSources" class="small" data-i18n-aria-label="library.sources"></nav>
+          <div id="mbView"><p class="muted" data-i18n="library.pickSourceOr"></p></div>
+          <div id="mbBusy" class="mb-busy" role="status" data-i18n-aria-label="library.loading" hidden><span class="spin"></span></div>
         </div>
       </section>
     </section>
 
     <!-- Every client the core hears and every room the server knows, one row
          each; the gear opens the room's settings page (#/client/<id>). -->
-    <section class="page" data-page="rooms" data-title="Clients" hidden>
+    <section class="page" data-page="rooms" data-title="common.clients" hidden>
       <div class="page-heading with-tools">
         <div>
-          <h1>Clients</h1>
-          <p class="subtitle">Every audio client, attached or not; the gear opens its room's volume, sound card, audio path and sync.</p>
+          <h1 data-i18n="common.clients"></h1>
+          <p class="subtitle" data-i18n="clients.everyAudioClient"></p>
         </div>
         <div class="row">
           <span id="clientsNote" class="muted small"></span>
@@ -136,8 +135,8 @@
     </section>
 
     <!-- One client's room settings, full page: #/client/<id>. -->
-    <section class="page" data-page="client" data-title="Client settings" hidden>
-      <a class="room-back" href="#/rooms"><i data-icon="back"></i>Clients</a>
+    <section class="page" data-page="client" data-title="nav.clientSettings" hidden>
+      <a class="room-back" href="#/rooms"><i data-icon="back"></i><span data-i18n="common.clients"></span></a>
       <div id="rooms"></div>
     </section>
 
@@ -145,154 +144,154 @@
     <!-- As the Zones page: the playlists and their folders as a tree (slid
          away by its strip), the open playlist's entries, and the library
          (moved here from the Zones page while shown) on the right. -->
-    <section class="page page-app" data-page="playlists" data-title="Playlists" data-part="tree" hidden>
+    <section class="page page-app" data-page="playlists" data-title="common.playlists" data-part="tree" hidden>
       <!-- On a small screen one part at a time, picked here (app.css hides it otherwise). -->
       <div class="pl-small-bar">
-        <button type="button" id="plPartMenu" class="icon-only" aria-haspopup="menu" aria-label="Switch view" title="Switch view"><i data-icon="menu"></i></button>
-        <div id="plPartPopover" class="pick-popover" popover="auto" role="menu" aria-label="Show">
-          <button type="button" data-part="tree"><i data-icon="folder"></i>Playlists</button>
-          <button type="button" data-part="list"><i data-icon="playlists"></i>Playlist</button>
-          <button type="button" data-part="library"><i data-icon="library"></i>Library</button>
+        <button type="button" id="plPartMenu" class="icon-only" aria-haspopup="menu" data-i18n-aria-label="playlists.switchView" data-i18n-title="playlists.switchView"><i data-icon="menu"></i></button>
+        <div id="plPartPopover" class="pick-popover" popover="auto" role="menu" data-i18n-aria-label="common.show">
+          <button type="button" data-part="tree"><i data-icon="folder"></i><span data-i18n="common.playlists"></span></button>
+          <button type="button" data-part="list"><i data-icon="playlists"></i><span data-i18n="playlists.playlist"></span></button>
+          <button type="button" data-part="library"><i data-icon="library"></i><span data-i18n="common.library"></span></button>
         </div>
-        <span id="plPartLabel" class="pl-part-label">Playlists</span>
+        <span id="plPartLabel" class="pl-part-label" data-i18n="common.playlists"></span>
       </div>
-      <section id="plTreePane" class="pane pl-tree-pane" aria-label="Playlists and folders">
+      <section id="plTreePane" class="pane pl-tree-pane" data-i18n-aria-label="playlists.playlistsAndFolders">
         <div class="pane-bar">
-          <span class="pane-title">Playlists</span>
-          <button type="button" id="plNewFolder" class="icon-only" title="New folder" aria-label="New folder"><i data-icon="folder"></i></button>
-          <button type="button" id="plNew" class="icon-only" title="New playlist" aria-label="New playlist"><i data-icon="plus"></i></button>
+          <span class="pane-title" data-i18n="common.playlists"></span>
+          <button type="button" id="plNewFolder" class="icon-only" data-i18n-title="playlists.newFolder" data-i18n-aria-label="playlists.newFolder"><i data-icon="folder"></i></button>
+          <button type="button" id="plNew" class="icon-only" data-i18n-title="playlists.newPlaylist" data-i18n-aria-label="playlists.newPlaylist"><i data-icon="plus"></i></button>
         </div>
         <div id="plTree" class="pl-tree"></div>
       </section>
 
-      <button type="button" id="plTreeToggle" class="library-toggle tree-toggle" aria-controls="plTreePane" aria-expanded="true" title="Hide the playlists">
-        <i data-icon="back"></i><span>Playlists</span>
+      <button type="button" id="plTreeToggle" class="library-toggle tree-toggle" aria-controls="plTreePane" aria-expanded="true" data-i18n-title="playlists.hideTree">
+        <i data-icon="back"></i><span data-i18n="common.playlists"></span>
       </button>
 
-      <section class="pane list-pane" aria-label="Playlist">
+      <section class="pane list-pane" data-i18n-aria-label="playlists.playlist">
         <div id="plHead" class="queue-head"></div>
-        <input type="search" id="plSearch" class="pane-search" placeholder="Search the playlist" aria-label="Search the playlist" autocomplete="off">
+        <input type="search" id="plSearch" class="pane-search" data-i18n-placeholder="playlists.searchPlaylist" data-i18n-aria-label="playlists.searchPlaylist" autocomplete="off">
         <div id="entries" class="pl-entries"></div>
       </section>
     </section>
 
     <!-- As the Playlists page: the folders of the stations as a tree (slid
          away by its strip) and the stations of the folder picked in it. -->
-    <section class="page page-app" data-page="stations" data-title="Radio stations" data-part="tree" hidden>
+    <section class="page page-app" data-page="stations" data-title="nav.radioStations" data-part="tree" hidden>
       <!-- On a small screen one part at a time, picked here (app.css hides it otherwise). -->
       <div class="pl-small-bar">
-        <button type="button" class="icon-only" aria-haspopup="menu" aria-label="Switch view" title="Switch view"><i data-icon="menu"></i></button>
-        <div class="pick-popover" popover="auto" role="menu" aria-label="Show">
-          <button type="button" data-part="tree"><i data-icon="folder"></i>Folders</button>
-          <button type="button" data-part="list"><i data-icon="radio"></i>Stations</button>
+        <button type="button" class="icon-only" aria-haspopup="menu" data-i18n-aria-label="stations.switchView" data-i18n-title="stations.switchView"><i data-icon="menu"></i></button>
+        <div class="pick-popover" popover="auto" role="menu" data-i18n-aria-label="common.show">
+          <button type="button" data-part="tree"><i data-icon="folder"></i><span data-i18n="common.folders"></span></button>
+          <button type="button" data-part="list"><i data-icon="radio"></i><span data-i18n="stations.stations"></span></button>
         </div>
-        <span class="pl-part-label">Folders</span>
+        <span class="pl-part-label" data-i18n="common.folders"></span>
       </div>
-      <section id="stTreePane" class="pane pl-tree-pane" aria-label="Station folders">
+      <section id="stTreePane" class="pane pl-tree-pane" data-i18n-aria-label="stations.stationFolders">
         <div class="pane-bar">
-          <span class="pane-title">Folders</span>
-          <button type="button" id="stNewFolder" class="icon-only" title="New folder" aria-label="New folder"><i data-icon="folder"></i></button>
+          <span class="pane-title" data-i18n="common.folders"></span>
+          <button type="button" id="stNewFolder" class="icon-only" data-i18n-title="stations.newFolder" data-i18n-aria-label="stations.newFolder"><i data-icon="folder"></i></button>
         </div>
         <div id="stTree" class="pl-tree"></div>
       </section>
 
-      <button type="button" id="stTreeToggle" class="library-toggle tree-toggle" aria-controls="stTreePane" aria-expanded="true" title="Hide the folders">
-        <i data-icon="back"></i><span>Folders</span>
+      <button type="button" id="stTreeToggle" class="library-toggle tree-toggle" aria-controls="stTreePane" aria-expanded="true" data-i18n-title="stations.hideTree">
+        <i data-icon="back"></i><span data-i18n="common.folders"></span>
       </button>
 
-      <section class="pane list-pane" aria-label="Stations">
+      <section class="pane list-pane" data-i18n-aria-label="stations.stations">
         <div id="stHead" class="queue-head"></div>
-        <input type="search" id="stSearch" class="pane-search" placeholder="Search all stations" aria-label="Search all stations" autocomplete="off">
+        <input type="search" id="stSearch" class="pane-search" data-i18n-placeholder="stations.searchAllStations" data-i18n-aria-label="stations.searchAllStations" autocomplete="off">
         <div id="stations" class="pl-entries"></div>
       </section>
 
-      <dialog id="stationDialog" class="confirm-dialog station-dialog" aria-label="Add a station">
-        <div class="confirm-head"><span class="confirm-icon move-icon"><i data-icon="radio"></i></span><h2>Add a station</h2></div>
+      <dialog id="stationDialog" class="confirm-dialog station-dialog" data-i18n-aria-label="stations.addStation">
+        <div class="confirm-head"><span class="confirm-icon move-icon"><i data-icon="radio"></i></span><h2 data-i18n="stations.addStation"></h2></div>
         <form id="stationForm" class="fields">
-          <label for="stName">Name *</label><input id="stName" name="name" required>
-          <label for="stUrl">Stream URL *</label><input id="stUrl" name="streamUrl" placeholder="http(s)://…" required>
-          <label for="stHome">Homepage</label><input id="stHome" name="homepage">
-          <label for="stGenre">Genre</label><input id="stGenre" name="genre">
-          <label for="stLogo">Logo URL</label><input id="stLogo" name="logo">
+          <label for="stName" data-i18n="stations.name"></label><input id="stName" name="name" required>
+          <label for="stUrl" data-i18n="stations.streamUrl"></label><input id="stUrl" name="streamUrl" placeholder="http(s)://…" required>
+          <label for="stHome" data-i18n="stations.homepage"></label><input id="stHome" name="homepage">
+          <label for="stGenre" data-i18n="stations.genre"></label><input id="stGenre" name="genre">
+          <label for="stLogo" data-i18n="stations.logoUrl"></label><input id="stLogo" name="logo">
           <p class="save-error" role="alert" hidden></p>
-          <span></span><div class="confirm-buttons"><button type="button" data-close>Cancel</button><button class="primary">Add station</button></div>
+          <span></span><div class="confirm-buttons"><button type="button" data-close data-i18n="common.cancel"></button><button class="primary" data-i18n="stations.addStationButton"></button></div>
         </form>
       </dialog>
-      <dialog id="importDialog" class="confirm-dialog station-dialog" aria-label="Import stations">
-        <div class="confirm-head"><span class="confirm-icon move-icon"><i data-icon="playlists"></i></span><h2>Import stations</h2></div>
+      <dialog id="importDialog" class="confirm-dialog station-dialog" data-i18n-aria-label="stations.importStations">
+        <div class="confirm-head"><span class="confirm-icon move-icon"><i data-icon="playlists"></i></span><h2 data-i18n="stations.importStations"></h2></div>
         <form id="importForm" class="stack">
-          <textarea name="playlist" rows="7" placeholder="Paste M3U or PLS text" aria-label="M3U or PLS text" required></textarea>
+          <textarea name="playlist" rows="7" data-i18n-placeholder="stations.pasteM3uOr" data-i18n-aria-label="stations.m3uOrPls" required></textarea>
           <p class="save-error" role="alert" hidden></p>
-          <div class="confirm-buttons"><button type="button" data-close>Cancel</button><button class="primary">Import</button></div>
+          <div class="confirm-buttons"><button type="button" data-close data-i18n="common.cancel"></button><button class="primary" data-i18n="stations.import"></button></div>
         </form>
       </dialog>
     </section>
 
-    <section class="page page-chat" data-page="assistant" data-title="Assistant" hidden>
-      <aside class="chat-side" id="chatSide" aria-label="Chats">
+    <section class="page page-chat" data-page="assistant" data-title="nav.assistant" hidden>
+      <aside class="chat-side" id="chatSide" data-i18n-aria-label="chat.chats">
         <div class="pane-bar">
-          <strong class="grow">Chats</strong>
-          <button type="button" id="chatNew" class="icon-only" title="New chat" aria-label="New chat"><i data-icon="plus"></i></button>
+          <strong class="grow" data-i18n="chat.chats"></strong>
+          <button type="button" id="chatNew" class="icon-only" data-i18n-title="chat.newChat" data-i18n-aria-label="chat.newChat"><i data-icon="plus"></i></button>
         </div>
-        <input type="search" id="chatSearch" placeholder="Search chats" aria-label="Search chats" autocomplete="off">
+        <input type="search" id="chatSearch" data-i18n-placeholder="chat.searchChats" data-i18n-aria-label="chat.searchChats" autocomplete="off">
         <nav id="chatList" class="chat-list"></nav>
       </aside>
       <div class="chat-main">
         <div class="pane-bar chat-head">
-          <button type="button" id="chatSideToggle" class="icon-only chat-side-toggle" aria-controls="chatSide" aria-expanded="false" aria-label="Show chats"><i data-icon="menu"></i></button>
-          <h1 id="chatTitle" class="grow">New chat</h1>
-          <button type="button" id="chatRename" class="icon-only" title="Rename chat" aria-label="Rename chat" hidden><i data-icon="edit"></i></button>
-          <button type="button" id="chatDelete" class="icon-only" title="Delete chat" aria-label="Delete chat" hidden><i data-icon="trash"></i></button>
+          <button type="button" id="chatSideToggle" class="icon-only chat-side-toggle" aria-controls="chatSide" aria-expanded="false" data-i18n-aria-label="chat.showChats"><i data-icon="menu"></i></button>
+          <h1 id="chatTitle" class="grow" data-i18n="chat.newChat"></h1>
+          <button type="button" id="chatRename" class="icon-only" data-i18n-title="chat.renameChat" data-i18n-aria-label="chat.renameChat" hidden><i data-icon="edit"></i></button>
+          <button type="button" id="chatDelete" class="icon-only" data-i18n-title="chat.deleteChat" data-i18n-aria-label="chat.deleteChat" hidden><i data-icon="trash"></i></button>
         </div>
         <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
         <form id="promptForm" class="chat-composer" autocomplete="off">
-          <textarea name="text" rows="1" placeholder="Tell the assistant what to do… e.g. play something similar to the current track" aria-label="Message"></textarea>
+          <textarea name="text" rows="1" data-i18n-placeholder="chat.tellAssistantWhat" data-i18n-aria-label="chat.message"></textarea>
           <div class="chat-tools">
             <button type="button" id="chatModel" class="chat-pick" aria-haspopup="dialog" aria-controls="chatModelPop"><span id="chatModelLabel"></span></button>
-            <div id="chatModelPop" class="model-popover" popover="auto" role="dialog" aria-label="Choose a model">
-              <input type="search" id="chatModelSearch" placeholder="Search models" aria-label="Search models" autocomplete="off">
-              <div id="chatModelList" class="model-list" role="listbox" aria-label="Models"></div>
+            <div id="chatModelPop" class="model-popover" popover="auto" role="dialog" data-i18n-aria-label="chat.chooseModel">
+              <input type="search" id="chatModelSearch" data-i18n-placeholder="chat.searchModels" data-i18n-aria-label="chat.searchModels" autocomplete="off">
+              <div id="chatModelList" class="model-list" role="listbox" data-i18n-aria-label="chat.models"></div>
             </div>
-            <select name="reasoning" aria-label="Reasoning" title="Reasoning"><option value="">reasoning: settings</option><option value="default">reasoning: vendor default</option><option value="off">reasoning: off</option><option value="low">reasoning: low</option><option value="medium">reasoning: medium</option><option value="high">reasoning: high</option></select>
+            <select name="reasoning" data-i18n-aria-label="chat.reasoning" data-i18n-title="chat.reasoning"><option value="" data-i18n="chat.reasoningSettings"></option><option value="default" data-i18n="chat.reasoningVendorDefault"></option><option value="off" data-i18n="chat.reasoningOff"></option><option value="low" data-i18n="chat.reasoningLow"></option><option value="medium" data-i18n="chat.reasoningMedium"></option><option value="high" data-i18n="chat.reasoningHigh"></option></select>
             <span class="grow"></span>
-            <button type="button" id="chatMic" class="icon-only chat-mic" title="Talk to Galdrun" aria-label="Talk to Galdrun" aria-pressed="false"><i data-icon="mic"></i></button>
-            <button type="button" id="chatStop" class="icon-only" title="Stop" aria-label="Stop" hidden><i data-icon="stop"></i></button>
-            <button id="chatSend" class="primary icon-only" title="Send (Enter)" aria-label="Send"><i data-icon="forward"></i></button>
+            <button type="button" id="chatMic" class="icon-only chat-mic" data-i18n-title="chat.talkToGaldrun" data-i18n-aria-label="chat.talkToGaldrun" aria-pressed="false"><i data-icon="mic"></i></button>
+            <button type="button" id="chatStop" class="icon-only" data-i18n-title="chat.stop" data-i18n-aria-label="chat.stop" hidden><i data-icon="stop"></i></button>
+            <button id="chatSend" class="primary icon-only" data-i18n-title="chat.sendEnter" data-i18n-aria-label="chat.send"><i data-icon="forward"></i></button>
           </div>
         </form>
       </div>
     </section>
 
-    <section class="page settings-page" data-page="listeners" data-title="Listeners" hidden>
+    <section class="page settings-page" data-page="listeners" data-title="nav.listeners" hidden>
       <div class="page-heading with-tools">
         <div>
-          <h1>Listeners</h1>
-          <p class="subtitle">The people of the house: a like, a favourite or a play may be one person's (no login, just a name). Without one it is the household's. The header's <em>Listener</em> picks whose marks are shown and made.</p>
+          <h1 data-i18n="listeners.listeners"></h1>
+          <p class="subtitle" data-i18n-html="listeners.peopleOfHouse"></p>
         </div>
-        <button type="button" id="reloadListeners">Reload</button>
+        <button type="button" id="reloadListeners" data-i18n="common.reload"></button>
       </div>
 
       <div class="room-rows">
       <section class="room-row">
-        <div class="room-row-intro"><div class="card-icon"><i data-icon="plus"></i></div><div><h2>Add a listener</h2><p>A name, no login.</p></div></div>
+        <div class="room-row-intro"><div class="card-icon"><i data-icon="plus"></i></div><div><h2 data-i18n="listeners.addListener"></h2><p data-i18n="listeners.nameNoLogin"></p></div></div>
         <div class="room-row-content">
         <form id="userForm" class="row" autocomplete="off">
-          <input name="name" placeholder="name (1 to 40 characters)" aria-label="New listener's name">
-          <button class="primary">Add</button>
+          <input name="name" data-i18n-placeholder="listeners.name1To" data-i18n-aria-label="listeners.newListenersName">
+          <button class="primary" data-i18n="listeners.add"></button>
         </form>
-        <p class="help">POST users <code>{name}</code>: trimmed, unique without regard to case. Removing one moves their likes, favourites and plays to the household; their proposals go.</p>
+        <p class="help" data-i18n-html="listeners.postUsersTrimmed"></p>
         </div>
       </section>
       <section class="room-row">
-        <div class="room-row-intro"><div class="card-icon"><i data-icon="rooms"></i></div><div><h2>Listeners</h2><p>Everyone a like, a favourite or a play can belong to.</p></div></div>
+        <div class="room-row-intro"><div class="card-icon"><i data-icon="rooms"></i></div><div><h2 data-i18n="listeners.listeners"></h2><p data-i18n="listeners.everyoneLikeFavourite"></p></div></div>
         <div class="room-row-content">
         <div id="users" class="table-wrap plain"></div>
         </div>
       </section>
       <section class="room-row">
-        <div class="room-row-intro"><div class="card-icon"><i data-icon="zones"></i></div><div><h2>Who listens where</h2><p>The plays in a zone are its listener's.</p></div></div>
+        <div class="room-row-intro"><div class="card-icon"><i data-icon="zones"></i></div><div><h2 data-i18n="listeners.whoListensWhere"></h2><p data-i18n="listeners.playsInZone"></p></div></div>
         <div class="room-row-content">
-        <p class="help">PATCH zones/{zone} <code>{user}</code>: the plays in a zone are its listener's.</p>
+        <p class="help" data-i18n-html="listeners.patchZonesPlays"></p>
         <div id="zoneListeners" class="table-wrap plain"></div>
         </div>
       </section>
@@ -301,10 +300,10 @@
 
 <!-- ============================== SETTINGS ============================== -->
 
-    <section class="page settings-page" data-page="folders" data-title="Music library" hidden>
+    <section class="page settings-page" data-page="folders" data-title="nav.musicLibrary" hidden>
       <div class="page-heading">
-        <h1>Music library</h1>
-        <p class="subtitle">The folders the server indexes, and what the indexer found.</p>
+        <h1 data-i18n="folders.musicLibrary"></h1>
+        <p class="subtitle" data-i18n="folders.foldersServerIndexes"></p>
       </div>
 
       <div class="room-rows">
@@ -312,10 +311,10 @@
       <section class="room-row">
         <div class="room-row-intro">
           <div class="card-icon"><i data-icon="folder"></i></div>
-          <div><h2>Folders</h2><p>Local, network and SMB folders. Folders from the config file are read-only here.</p></div>
+          <div><h2 data-i18n="common.folders"></h2><p data-i18n="folders.localNetworkAnd"></p></div>
         </div>
         <div class="room-row-content">
-          <div class="row"><button type="button" id="reloadFolders">Reload</button> <span id="folderProgress" class="small"></span></div>
+          <div class="row"><button type="button" id="reloadFolders" data-i18n="common.reload"></button> <span id="folderProgress" class="small"></span></div>
           <div id="folders" class="card-list"></div>
         </div>
       </section>
@@ -323,50 +322,50 @@
       <section class="room-row">
         <div class="room-row-intro">
           <div class="card-icon"><i data-icon="plus"></i></div>
-          <div><h2>Add a folder</h2><p>For SMB, list the shares and pick a directory; the password is only sent, never shown again.</p></div>
+          <div><h2 data-i18n="folders.addFolder"></h2><p data-i18n="folders.forSmbList"></p></div>
         </div>
         <form id="folderForm" class="room-row-content fields" autocomplete="off">
-          <label for="ffType">Type</label>
-          <select id="ffType" name="type"><option value="local">local</option><option value="network">network</option><option value="smb">smb</option></select>
+          <label for="ffType" data-i18n="folders.type"></label>
+          <select id="ffType" name="type"><option value="local" data-i18n="folders.local"></option><option value="network" data-i18n="folders.network"></option><option value="smb" data-i18n="folders.smb"></option></select>
           <fieldset id="smbFields" class="field-group" hidden>
-            <label for="ffHost">Host *</label>
-            <div class="row"><input id="ffHost" name="host"><input name="port" type="number" min="1" max="65535" placeholder="445" class="w-num" aria-label="Port"></div>
-            <label for="ffUser">Login</label>
+            <label for="ffHost" data-i18n="folders.host"></label>
+            <div class="row"><input id="ffHost" name="host"><input name="port" type="number" min="1" max="65535" placeholder="445" class="w-num" data-i18n-aria-label="folders.port"></div>
+            <label for="ffUser" data-i18n="folders.form.login"></label>
             <div class="row">
-              <input id="ffUser" name="user" placeholder="user (none = guest)">
-              <input name="password" type="password" placeholder="password" autocomplete="new-password" aria-label="Password">
-              <input name="domain" placeholder="domain" class="w-sm" aria-label="Domain">
+              <input id="ffUser" name="user" data-i18n-placeholder="folders.userNoneGuest">
+              <input name="password" type="password" data-i18n-placeholder="folders.passwordPlaceholder" autocomplete="new-password" data-i18n-aria-label="folders.password">
+              <input name="domain" data-i18n-placeholder="folders.domain" class="w-sm" data-i18n-aria-label="folders.domainLabel">
             </div>
-            <label for="ffShare">Share</label>
+            <label for="ffShare" data-i18n="folders.form.share"></label>
             <div class="row">
-              <select id="ffShare" name="share"><option value="">share…</option></select>
-              <button type="button" id="listShares">List shares</button>
-              <button type="button" id="listDirs">List directories</button>
+              <select id="ffShare" name="share"><option value="" data-i18n="folders.sharePick"></option></select>
+              <button type="button" id="listShares" data-i18n="folders.listShares"></button>
+              <button type="button" id="listDirs" data-i18n="folders.listDirectories"></button>
             </div>
             <span></span><div id="smbDirs" class="small"></div>
           </fieldset>
-          <label for="ffPath">Path</label>
-          <input id="ffPath" name="path" placeholder="full path (smb: the directory inside the share)">
-          <label for="ffMedia">Holds</label>
-          <select id="ffMedia" name="mediaType" title="what everything in the folder is; it beats every tag">
-            <option value="">(the tags decide)</option><option value="music">music</option><option value="audiobook">audiobooks</option>
+          <label for="ffPath" data-i18n="folders.path"></label>
+          <input id="ffPath" name="path" data-i18n-placeholder="folders.fullPathSmb">
+          <label for="ffMedia" data-i18n="folders.form.holds"></label>
+          <select id="ffMedia" name="mediaType" data-i18n-title="folders.whatEverythingIn">
+            <option value="" data-i18n="folders.tagsDecide"></option><option value="music" data-i18n="folders.music"></option><option value="audiobook" data-i18n="folders.audiobooks"></option>
           </select>
-          <span></span><label class="toggle"><input type="checkbox" name="enabled" checked> Enabled</label>
-          <span></span><div class="form-actions start"><button class="primary">Add folder</button></div>
+          <span></span><label class="toggle"><input type="checkbox" name="enabled" checked> <span data-i18n="folders.form.enabled"></span></label>
+          <span></span><div class="form-actions start"><button class="primary" data-i18n="folders.addFolderButton"></button></div>
         </form>
       </section>
 
       <section class="room-row">
         <div class="room-row-intro">
           <div class="card-icon"><i data-icon="search"></i></div>
-          <div><h2>Indexer</h2><p>What the indexer did since the server started, and what the local library holds now.</p></div>
+          <div><h2 data-i18n="folders.indexer"></h2><p data-i18n="folders.whatIndexerDid"></p></div>
         </div>
         <div class="room-row-content">
           <div id="indexer"></div>
-          <div class="row"><button type="button" id="reloadIndex">Count what was found</button></div>
+          <div class="row"><button type="button" id="reloadIndex" data-i18n="folders.countWhatWas"></button></div>
           <div id="indexFound"></div>
-          <details class="sub" data-key="indexPasses"><summary>Passes <span class="muted small">(from the tailed server log)</span></summary><div id="indexPasses" class="small log-box"></div></details>
-          <details class="sub" data-key="indexFailed"><summary>Not indexed <span class="muted small">(from the tailed server log)</span></summary><div id="indexFailed" class="small log-box"></div></details>
+          <details class="sub" data-key="indexPasses"><summary><span data-i18n="folders.passes"></span> <span class="muted small" data-i18n="folders.fromTailedServer"></span></summary><div id="indexPasses" class="small log-box"></div></details>
+          <details class="sub" data-key="indexFailed"><summary><span data-i18n="folders.notIndexed"></span> <span class="muted small" data-i18n="folders.fromTailedServer"></span></summary><div id="indexFailed" class="small log-box"></div></details>
         </div>
       </section>
       </div>
@@ -375,89 +374,89 @@
     <!-- The server's settings as one block of rows, like a client's page.
          The zone background is this page's own setting, the same in every
          browser: kept by the server's GUI listener (GET/PUT /gui/settings). -->
-    <section class="page settings-page" data-page="settings" data-title="Settings" hidden>
+    <section class="page settings-page" data-page="settings" data-title="nav.settings" hidden>
       <div class="page-heading">
-        <h1>Settings</h1>
-        <p class="subtitle">How this page looks, which audio core the server uses, and how it plays.</p>
+        <h1 data-i18n="settings.settings"></h1>
+        <p class="subtitle" data-i18n="settings.howThisPage"></p>
       </div>
 
       <div class="room-rows">
         <section class="room-row">
           <div class="room-row-intro"><span class="card-icon"><i data-icon="image"></i></span>
-            <div><h2>Zones</h2><p>The picture behind each zone's header, in every browser; the server keeps it in gui-settings.json.</p></div></div>
+            <div><h2 data-i18n="common.zones"></h2><p data-i18n="settings.pictureBehindEach"></p></div></div>
           <div class="room-row-content">
-            <label>Zone background image source
+            <label><span data-i18n="settings.zoneBackgroundImage"></span>
               <select id="zoneBackground" disabled>
-                <option value="media">Media art</option>
-                <option value="room">Room</option>
+                <option value="media" data-i18n="settings.mediaArt"></option>
+                <option value="room" data-i18n="settings.room"></option>
               </select>
             </label>
-            <p class="help">Room: the zone's first room's picture. Media art: the artwork of what plays, the room's while there is none.</p>
+            <p class="help" data-i18n="settings.roomZonesFirst"></p>
           </div>
         </section>
 
         <section class="room-row">
           <div class="room-row-intro"><span class="card-icon"><i data-icon="chip"></i></span>
-            <div><h2>Server core</h2><p>Every core announcing itself in the last 6 s. The choice is kept by core id; the zones move with it.</p></div></div>
+            <div><h2 data-i18n="settings.serverCore"></h2><p data-i18n="settings.everyCoreAnnouncing"></p></div></div>
           <div class="room-row-content">
             <p class="small" id="coreSelected"></p>
             <div id="cores"></div>
-            <div class="row"><button type="button" id="reloadCores">Reload</button> <button type="button" id="useConfigured">Use configured address</button></div>
+            <div class="row"><button type="button" id="reloadCores" data-i18n="common.reload"></button> <button type="button" id="useConfigured" data-i18n="settings.useConfiguredAddress"></button></div>
           </div>
         </section>
 
         <section class="room-row">
           <div class="room-row-intro"><span class="card-icon"><i data-icon="play"></i></span>
-            <div><h2>Playback</h2><p>How books go into a queue or a playlist, and what liked radio songs play as.</p></div></div>
+            <div><h2 data-i18n="settings.playback"></h2><p data-i18n="settings.howBooksGo"></p></div></div>
           <div class="room-row-content">
-            <label class="toggle" title="PATCH settings/playback {groupBooks}"><input type="checkbox" id="groupBooks" checked disabled> Group audiobooks</label>
-            <p class="help">On: a book (two or more audiobook tracks) goes in as one item with its chapters. Off: as single tracks.</p>
-            <label class="toggle" title="PATCH settings/playback {findRadioLikes}"><input type="checkbox" id="findRadioLikes" checked disabled> Find liked radio songs</label>
-            <p class="help">On: a song liked off the radio is looked for in the library first, then the streaming services, and plays as the track found. Off: not looked for; what was found stays.</p>
+            <label class="toggle" title="PATCH settings/playback {groupBooks}"><input type="checkbox" id="groupBooks" checked disabled> <span data-i18n="settings.groupAudiobooks"></span></label>
+            <p class="help" data-i18n="settings.onBookTwo"></p>
+            <label class="toggle" title="PATCH settings/playback {findRadioLikes}"><input type="checkbox" id="findRadioLikes" checked disabled> <span data-i18n="settings.findLikedRadio"></span></label>
+            <p class="help" data-i18n="settings.onSongLiked"></p>
           </div>
         </section>
 
         <section class="room-row">
           <div class="room-row-intro"><span class="card-icon"><i data-icon="wave"></i></span>
-            <div><h2>Core audio</h2><p>Timing used from the next start, pause, stop or seek. <span id="coreAudioState" class="bad"></span></p></div></div>
+            <div><h2 data-i18n="settings.coreAudio"></h2><p><span data-i18n="settings.timingUsedFrom"></span> <span id="coreAudioState" class="bad"></span></p></div></div>
           <div class="room-row-content">
             <form id="coreAudioForm" class="fields wide-labels" autocomplete="off"></form>
-            <p class="help">A shorter start delay makes transport react sooner; too short and a room on a slow link gets the message too late and has to rejoin.</p>
-            <details class="sub" data-key="coreAudioFixed"><summary>Read at the core's start only</summary><div id="coreAudioFixed" class="small table-wrap plain"></div></details>
+            <p class="help" data-i18n="settings.shorterStartDelay"></p>
+            <details class="sub" data-key="coreAudioFixed"><summary data-i18n="settings.readAtCores"></summary><div id="coreAudioFixed" class="small table-wrap plain"></div></details>
           </div>
         </section>
 
         <section class="room-row">
           <div class="room-row-intro"><span class="card-icon"><i data-icon="gauge"></i></span>
-            <div><h2>Resampler</h2><p>The core's sample-rate converter.</p></div></div>
+            <div><h2 data-i18n="settings.resampler"></h2><p data-i18n="settings.coresSampleRate"></p></div></div>
           <div class="room-row-content fields">
-            <label for="resampler">Resampler</label>
-            <div class="row"><select id="resampler" aria-describedby="resamplerHint"></select><button type="button" id="setResampler">Apply</button></div>
+            <label for="resampler" data-i18n="settings.resampler"></label>
+            <div class="row"><select id="resampler" aria-describedby="resamplerHint"></select><button type="button" id="setResampler" data-i18n="settings.apply"></button></div>
             <span></span><p class="hint" id="resamplerHint"></p>
-            <span></span><p class="hint"><em>soxr</em> varies its ratio and corrects drift between grouped rooms in software. <em>r8brain</em> converts at a fixed ratio and cannot be used for software drift correction: grouped rooms then stay in step only where the client trims its own clock, and drift apart otherwise. A change applies at once and is kept for the core's next start; rooms in a zone that the new resampler serves differently drop out briefly while they re-negotiate.</p>
+            <span></span><p class="hint" data-i18n-html="settings.soxrVariesIts"></p>
           </div>
         </section>
       </div>
     </section>
 
-    <section class="page settings-page" data-page="services" data-title="Online services" hidden>
+    <section class="page settings-page" data-page="services" data-title="nav.onlineServices" hidden>
       <div class="page-heading">
-        <h1>Online services</h1>
-        <p class="subtitle">Credentials and switches for services on the net: music providers and artwork.</p>
+        <h1 data-i18n="services.onlineServices"></h1>
+        <p class="subtitle" data-i18n="services.credentialsAndSwitches"></p>
       </div>
 
       <div class="room-rows">
       <section class="room-row">
         <div class="room-row-intro">
           <div class="card-icon"><i data-icon="cloud"></i></div>
-          <div><h2>Tidal</h2><p>Sign in once to link your account. Approve the device code in TIDAL from any browser. The server keeps your account linked automatically. The TIDAL applications are set in the server's config file.</p></div>
+          <div><h2 data-i18n="services.tidal"></h2><p data-i18n="services.signInOnce"></p></div>
         </div>
           <div class="room-row-content tidal-content">
             <div class="form-actions">
-              <button type="button" id="tidalLogin" class="primary">Sign in to TIDAL</button>
+              <button type="button" id="tidalLogin" class="primary" data-i18n="services.signInTo"></button>
             </div>
             <div class="fields">
-              <span class="field-label">Status</span><div id="tidalState" class="value" role="status" aria-live="polite"></div>
+              <span class="field-label" data-i18n="common.status"></span><div id="tidalState" class="value" role="status" aria-live="polite"></div>
             </div>
             <p id="tidalLoginLink" class="small"></p>
           </div>
@@ -465,33 +464,33 @@
       <section class="room-row">
         <div class="room-row-intro">
           <div class="card-icon"><i data-icon="library"></i></div>
-          <div><h2>Artwork</h2><p>Where the library's missing covers and artist pictures are looked for; what is found is kept on the server. A change looks again for what was not found. <code>GET artwork</code></p></div>
+          <div><h2 data-i18n="services.artwork"></h2><p data-i18n-html="services.whereLibrarysMissing"></p></div>
         </div>
         <form id="artworkForm" class="room-row-content fields" autocomplete="off">
           <span class="field-label">MusicBrainz</span>
-          <div><label class="toggle" title="PATCH artwork {musicBrainz}"><input type="checkbox" id="artMusicBrainz" disabled> Cover Art Archive and Wikidata; finds albums and artists by name</label> <span id="artMusicBrainzOrigin" class="muted small"></span></div>
+          <div><label class="toggle" title="PATCH artwork {musicBrainz}"><input type="checkbox" id="artMusicBrainz" disabled> <span data-i18n="services.coverArtArchive"></span></label> <span id="artMusicBrainzOrigin" class="muted small"></span></div>
           <span class="field-label">fanart.tv</span>
-          <div><label class="toggle" title="PATCH artwork {fanartTv}"><input type="checkbox" id="artFanart" disabled> Asked first; needs a key</label> <span id="artFanartState" class="muted small"></span></div>
-          <label for="artFanartKey">fanart.tv key</label><input id="artFanartKey" name="key" type="password" autocomplete="new-password" placeholder="project API key from fanart.tv">
-          <span class="field-label">Progress</span><p id="artProgress" class="value small"></p>
-          <span class="field-label">Store</span><p id="artStore" class="value small" title="GET artwork: every picture a list shows, kept on the server"></p>
+          <div><label class="toggle" title="PATCH artwork {fanartTv}"><input type="checkbox" id="artFanart" disabled> <span data-i18n="services.askedFirstNeeds"></span></label> <span id="artFanartState" class="muted small"></span></div>
+          <label for="artFanartKey" data-i18n="services.fanartTvKey"></label><input id="artFanartKey" name="key" type="password" autocomplete="new-password" data-i18n-placeholder="services.projectApiKey">
+          <span class="field-label" data-i18n="services.progress"></span><p id="artProgress" class="value small"></p>
+          <span class="field-label" data-i18n="services.store"></span><p id="artStore" class="value small" data-i18n-title="services.getArtworkEvery"></p>
           <span></span>
           <div class="form-actions start">
-            <button class="primary">Set key</button>
-            <button type="button" id="artFanartRemove">Remove key</button>
+            <button class="primary" data-i18n="services.setKey"></button>
+            <button type="button" id="artFanartRemove" data-i18n="services.removeKey"></button>
           </div>
         </form>
       </section>
       </div>
     </section>
 
-    <section class="page settings-page" data-page="ai" data-title="AI providers" hidden>
+    <section class="page settings-page" data-page="ai" data-title="nav.aiProviders" hidden>
       <div class="page-heading with-tools">
         <div>
-          <h1>AI providers</h1>
-          <p class="subtitle">Keys, logins and models for the assistant and AutoFill. <span id="aiUsage" class="muted small"></span></p>
+          <h1 data-i18n="ai.aiProviders"></h1>
+          <p class="subtitle"><span data-i18n="ai.keysLoginsAnd"></span> <span id="aiUsage" class="muted small"></span></p>
         </div>
-        <button type="button" id="reloadAi">Reload</button>
+        <button type="button" id="reloadAi" data-i18n="common.reload"></button>
       </div>
 
       <div class="room-rows">
@@ -499,54 +498,54 @@
       <section class="room-row">
         <div class="room-row-intro">
           <div class="card-icon"><i data-icon="sparkle"></i></div>
-          <div><h2>Defaults</h2><p>An empty field clears that default. Reasoning <code>default</code> lets the vendor decide. Web lookup is billed by most vendors.</p></div>
+          <div><h2 data-i18n="ai.defaults"></h2><p data-i18n-html="ai.emptyFieldClears"></p></div>
         </div>
         <form id="aiSettingsForm" class="room-row-content fields wide-labels" autocomplete="off">
-          <label for="aiProv">Default provider</label><select id="aiProv" name="defaultProvider"></select>
-          <label for="aiModel">Default model</label><input id="aiModel" name="defaultModel" list="aiModelList">
+          <label for="aiProv" data-i18n="ai.defaultProvider"></label><select id="aiProv" name="defaultProvider"></select>
+          <label for="aiModel" data-i18n="ai.defaultModel"></label><input id="aiModel" name="defaultModel" list="aiModelList">
           <datalist id="aiModelList"></datalist>
-          <label for="aiRA">Reasoning: agent</label><select id="aiRA" name="reasoningAgent"><option>default</option><option>off</option><option>low</option><option>medium</option><option>high</option></select>
-          <label for="aiRS">Reasoning: suggestions</label><select id="aiRS" name="reasoningSuggestions"><option>default</option><option>off</option><option>low</option><option>medium</option><option>high</option></select>
-          <label for="aiWeb">Web lookup</label><select id="aiWeb" name="webLookup"><option value="off">off</option><option value="whenAvailable">when available</option></select>
-          <label for="aiSpeech">Speech recognition</label><select id="aiSpeech" name="speechRecognition"><option value="browser">browser</option><option value="server">server (speech provider)</option></select>
-          <label for="aiSpeechProv">Speech provider</label><select id="aiSpeechProv" name="speechProvider"></select>
-          <label for="aiSpeechModel">Speech model</label><input id="aiSpeechModel" name="speechModel" list="aiSpeechModels" placeholder="e.g. whisper-1, gemini-2.5-flash (none on the ChatGPT sign-in)">
+          <label for="aiRA" data-i18n="ai.reasoningAgent"></label><select id="aiRA" name="reasoningAgent"><option data-i18n="ai.default" value="default"></option><option data-i18n="common.off" value="off"></option><option data-i18n="ai.low" value="low"></option><option data-i18n="ai.medium" value="medium"></option><option data-i18n="ai.high" value="high"></option></select>
+          <label for="aiRS" data-i18n="ai.reasoningSuggestions"></label><select id="aiRS" name="reasoningSuggestions"><option data-i18n="ai.default" value="default"></option><option data-i18n="common.off" value="off"></option><option data-i18n="ai.low" value="low"></option><option data-i18n="ai.medium" value="medium"></option><option data-i18n="ai.high" value="high"></option></select>
+          <label for="aiWeb" data-i18n="ai.webLookup"></label><select id="aiWeb" name="webLookup"><option value="off" data-i18n="common.off"></option><option value="whenAvailable" data-i18n="ai.whenAvailable"></option></select>
+          <label for="aiSpeech" data-i18n="ai.speechRecognition"></label><select id="aiSpeech" name="speechRecognition"><option value="browser" data-i18n="ai.browser"></option><option value="server" data-i18n="ai.serverSpeechProvider"></option></select>
+          <label for="aiSpeechProv" data-i18n="ai.speechProvider"></label><select id="aiSpeechProv" name="speechProvider"></select>
+          <label for="aiSpeechModel" data-i18n="ai.speechModel"></label><input id="aiSpeechModel" name="speechModel" list="aiSpeechModels" data-i18n-placeholder="ai.eGWhisper">
           <datalist id="aiSpeechModels"></datalist>
-          <label for="aiSpeechLang">Language</label><input id="aiSpeechLang" name="speechLanguage" placeholder="(the browser's) e.g. de-DE">
-          <span></span><label class="toggle"><input type="checkbox" name="readReplies"> Read replies to spoken messages aloud</label>
-          <span></span><p class="hint">The assistant's microphone. <em>Server</em>: the speech provider's model hears it (OpenAI: with an API key on its speech models; on the ChatGPT sign-in through ChatGPT's own dictation, undocumented, no model needed. Gemini, OpenRouter, Groq, Mistral need a model). Without a usable one, or when it fails, the browser hears it (Chrome, Edge). The microphone needs https or localhost.</p>
-          <label for="aiTimeout">Agent timeout</label><div class="unit-input"><input id="aiTimeout" name="timeoutSeconds" type="number" min="1" max="600"><span>s</span></div>
-          <label for="aiTools">Tool calls</label><input id="aiTools" name="maxToolCalls" type="number" min="1" max="50">
-          <label for="aiBudget">Token budget</label><input id="aiBudget" name="tokenBudget" type="number" min="1000" max="10000000" step="1000">
-          <label for="aiConc">At once</label><input id="aiConc" name="maxConcurrent" type="number" min="1" max="8">
-          <span></span><div class="form-actions start"><button class="primary">Save</button></div>
+          <label for="aiSpeechLang" data-i18n="ai.language"></label><input id="aiSpeechLang" name="speechLanguage" data-i18n-placeholder="ai.browsersEG">
+          <span></span><label class="toggle"><input type="checkbox" name="readReplies"> <span data-i18n="ai.readRepliesTo"></span></label>
+          <span></span><p class="hint" data-i18n-html="ai.assistantsMicrophoneServer"></p>
+          <label for="aiTimeout" data-i18n="ai.agentTimeout"></label><div class="unit-input"><input id="aiTimeout" name="timeoutSeconds" type="number" min="1" max="600"><span>s</span></div>
+          <label for="aiTools" data-i18n="ai.toolCalls"></label><input id="aiTools" name="maxToolCalls" type="number" min="1" max="50">
+          <label for="aiBudget" data-i18n="ai.tokenBudget"></label><input id="aiBudget" name="tokenBudget" type="number" min="1000" max="10000000" step="1000">
+          <label for="aiConc" data-i18n="ai.atOnce"></label><input id="aiConc" name="maxConcurrent" type="number" min="1" max="8">
+          <span></span><div class="form-actions start"><button class="primary" data-i18n="common.save"></button></div>
         </form>
       </section>
 
       <section class="room-row">
         <div class="room-row-intro">
           <div class="card-icon"><i data-icon="sparkle"></i></div>
-          <div><h2>Proposals</h2><p>What the house (or the header's listener) might like next, from what it liked. Background runs cost tokens; a refresh runs whenever an AI is configured.</p></div>
+          <div><h2 data-i18n="common.proposals"></h2><p data-i18n="ai.whatHouseOr"></p></div>
         </div>
         <form id="proposalsForm" class="room-row-content fields wide-labels" autocomplete="off">
-          <span></span><label class="toggle"><input type="checkbox" name="enabled"> Background runs</label>
-          <label for="prInterval">Every</label><div class="unit-input"><input id="prInterval" name="intervalHours" type="number"><span>h</span></div>
-          <label for="prDebounce">Quiet for</label><div class="unit-input"><input id="prDebounce" name="debounceMinutes" type="number"><span>min</span></div>
-          <label for="prRuns">Runs a day</label><input id="prRuns" name="maxRunsPerDay" type="number">
-          <label for="prTracks">Tracks</label><input id="prTracks" name="tracks" type="number">
-          <label for="prAlbums">Albums</label><input id="prAlbums" name="albums" type="number">
-          <label for="prArtists">Artists</label><input id="prArtists" name="artists" type="number">
-          <label for="prBooks">Audiobooks</label><input id="prBooks" name="audiobooks" type="number">
-          <label for="prKeep" title="Each run adds to the lists; past this many of a kind the oldest go">Keep</label><div class="unit-input"><input id="prKeep" name="keep" type="number" min="1" max="1000"><span>of each kind</span></div>
-          <label for="prRequest">Request</label><input id="prRequest" name="request" placeholder="(the instructions' default)">
-          <span></span><div class="form-actions start"><button class="primary">Save</button></div>
+          <span></span><label class="toggle"><input type="checkbox" name="enabled"> <span data-i18n="ai.backgroundRuns"></span></label>
+          <label for="prInterval" data-i18n="ai.every"></label><div class="unit-input"><input id="prInterval" name="intervalHours" type="number"><span>h</span></div>
+          <label for="prDebounce" data-i18n="ai.quietFor"></label><div class="unit-input"><input id="prDebounce" name="debounceMinutes" type="number"><span data-i18n="ai.min"></span></div>
+          <label for="prRuns" data-i18n="ai.runsDay"></label><input id="prRuns" name="maxRunsPerDay" type="number">
+          <label for="prTracks" data-i18n="ai.tracks"></label><input id="prTracks" name="tracks" type="number">
+          <label for="prAlbums" data-i18n="common.albums"></label><input id="prAlbums" name="albums" type="number">
+          <label for="prArtists" data-i18n="common.artists"></label><input id="prArtists" name="artists" type="number">
+          <label for="prBooks" data-i18n="ai.audiobooks"></label><input id="prBooks" name="audiobooks" type="number">
+          <label for="prKeep" data-i18n-title="ai.eachRunAdds" data-i18n="ai.keep"></label><div class="unit-input"><input id="prKeep" name="keep" type="number" min="1" max="1000"><span data-i18n="ai.ofEachKind"></span></div>
+          <label for="prRequest" data-i18n="ai.request"></label><input id="prRequest" name="request" data-i18n-placeholder="ai.instructionsDefault">
+          <span></span><div class="form-actions start"><button class="primary" data-i18n="common.save"></button></div>
         </form>
       </section>
 
       <section class="room-row">
-        <div class="room-row-intro"><div class="card-icon"><i data-icon="key"></i></div><div><h2>Providers</h2><p>Each vendor's key, login and models; open one to change it.</p></div></div>
+        <div class="room-row-intro"><div class="card-icon"><i data-icon="key"></i></div><div><h2 data-i18n="ai.providers"></h2><p data-i18n="ai.eachVendorsKey"></p></div></div>
         <div class="room-row-content">
-        <p class="help">Keys, OAuth codes and tokens are sent and never shown again. <em>Log in</em> opens the vendor in a new window and returns to <code>ai-login.html</code> here; <em>log in on this machine</em> returns to the server's own callback. OpenAI's ChatGPT sign-in takes only a loopback return: open this page as <code>http://127.0.0.1:…</code> or <code>localhost</code>.</p>
+        <p class="help" data-i18n-html="ai.keysOauthCodes"></p>
         <div id="aiProviders" class="card-list"></div>
         </div>
       </section>
@@ -555,14 +554,14 @@
 
 <!-- ============================== DIAGNOSTICS ============================== -->
 
-    <section class="page" data-page="status" data-title="Status" hidden>
+    <section class="page" data-page="status" data-title="common.status" hidden>
       <div class="page-heading with-tools">
-        <div><h1>Status</h1><p class="subtitle">Providers, media endpoint, library, event hub and every zone.</p></div>
-        <button type="button" id="reloadStatus">Reload</button>
+        <div><h1 data-i18n="common.status"></h1><p class="subtitle" data-i18n="status.providersMediaEndpoint"></p></div>
+        <button type="button" id="reloadStatus" data-i18n="common.reload"></button>
       </div>
       <section class="panel"><div id="providers"></div></section>
       <section class="panel">
-        <header class="panel-head"><span class="panel-icon"><i data-icon="zones"></i></span><h2>Zones</h2></header>
+        <header class="panel-head"><span class="panel-icon"><i data-icon="zones"></i></span><h2 data-i18n="common.zones"></h2></header>
         <div id="zoneStatus" class="system-grid"></div>
       </section>
       <details class="panel">
@@ -571,47 +570,47 @@
       </details>
     </section>
 
-    <section class="page" data-page="system" data-title="System" hidden>
+    <section class="page" data-page="system" data-title="nav.system" hidden>
       <div class="page-heading with-tools">
-        <div><h1>System</h1><p class="subtitle">CPU, memory and Wi-Fi of the server, the core and every room, live every second. <span id="systemNote" class="muted small"></span></p></div>
-        <button type="button" id="reloadSystem">Reload</button>
+        <div><h1 data-i18n="system.system"></h1><p class="subtitle"><span data-i18n="system.cpuMemoryAnd"></span> <span id="systemNote" class="muted small"></span></p></div>
+        <button type="button" id="reloadSystem" data-i18n="common.reload"></button>
       </div>
       <div id="system" class="system-grid"></div>
     </section>
 
-    <section class="page" data-page="aiStatus" data-title="AI" hidden>
+    <section class="page" data-page="aiStatus" data-title="common.ai" hidden>
       <div class="page-heading with-tools">
-        <div><h1>AI</h1><p class="subtitle">The proposals' background runs, the last run, and the tokens the AI used. The proposals are in the library; their settings under <a href="#/ai">AI providers</a>.</p></div>
-        <button type="button" id="reloadAiStatus">Reload</button>
+        <div><h1 data-i18n="common.ai"></h1><p class="subtitle" data-i18n-html="aiStatus.proposalsBackgroundRuns"></p></div>
+        <button type="button" id="reloadAiStatus" data-i18n="common.reload"></button>
       </div>
       <section class="panel">
-        <header class="panel-head"><span class="panel-icon"><i data-icon="sparkle"></i></span><h2>Proposals <span id="aiStatusScope" class="muted small"></span></h2></header>
+        <header class="panel-head"><span class="panel-icon"><i data-icon="sparkle"></i></span><h2><span data-i18n="common.proposals"></span> <span id="aiStatusScope" class="muted small"></span></h2></header>
         <div id="aiStatus"></div>
       </section>
 
       <section class="panel">
-        <header class="panel-head"><span class="panel-icon"><i data-icon="pulse"></i></span><h2>Token usage</h2><span id="aiUsageRange" class="seg"></span></header>
-        <p class="help">Tokens (in + out) per server day, by what asked: background proposals, a queue's auto-fill, the agent (through its MCP tools), or a person asking for suggestions. AI clients connected over MCP pay for their own tokens and are not counted.</p>
+        <header class="panel-head"><span class="panel-icon"><i data-icon="pulse"></i></span><h2 data-i18n="header.tokenUsage"></h2><span id="aiUsageRange" class="seg"></span></header>
+        <p class="help" data-i18n="aiStatus.tokensInOut"></p>
         <div id="aiUsageChart"></div>
         <div id="aiUsageTable" class="table-wrap plain"></div>
-        <details class="sub"><summary>By provider and model</summary><div id="aiUsageModels" class="table-wrap plain"></div></details>
+        <details class="sub"><summary data-i18n="aiStatus.byProviderAnd"></summary><div id="aiUsageModels" class="table-wrap plain"></div></details>
       </section>
     </section>
 
-    <section class="page page-wide" data-page="activity" data-title="Activity" hidden>
-      <div class="page-heading"><h1>Activity</h1><p class="subtitle">Server events, this page's requests, the AI requests and events, and the tailed log files.</p></div>
+    <section class="page page-wide" data-page="activity" data-title="nav.activity" hidden>
+      <div class="page-heading"><h1 data-i18n="activity.activity"></h1><p class="subtitle" data-i18n="activity.serverEventsThis"></p></div>
       <section id="bottom" class="panel">
         <nav class="tabs" data-for="bottom">
-          <button data-tab="events" class="on">Events <span id="evCount"></span></button>
-          <button data-tab="requests">Requests <span id="reqCount"></span></button>
-          <button data-tab="ai">AI <span id="aiCount"></span></button>
-          <button data-tab="logs">Logs</button>
+          <button data-tab="events" class="on"><span data-i18n="activity.events"></span> <span id="evCount"></span></button>
+          <button data-tab="requests"><span data-i18n="activity.requests"></span> <span id="reqCount"></span></button>
+          <button data-tab="ai"><span data-i18n="common.ai"></span> <span id="aiCount"></span></button>
+          <button data-tab="logs" data-i18n="activity.logs"></button>
         </nav>
         <div class="row log-tools">
-          <input id="bottomFilter" type="search" placeholder="Filter" class="w-lg" aria-label="Filter lines">
-          <label class="toggle"><input type="checkbox" id="bottomPause"> Pause</label>
-          <label class="toggle"><input type="checkbox" id="showPolls"> Show background requests</label>
-          <button type="button" id="bottomClear">Clear</button>
+          <input id="bottomFilter" type="search" data-i18n-placeholder="activity.filter" class="w-lg" data-i18n-aria-label="activity.filterLines">
+          <label class="toggle"><input type="checkbox" id="bottomPause"> <span data-i18n="common.pause"></span></label>
+          <label class="toggle"><input type="checkbox" id="showPolls"> <span data-i18n="activity.showBackgroundRequests"></span></label>
+          <button type="button" id="bottomClear" data-i18n="activity.clear"></button>
         </div>
         <div class="tab on log" data-tab="events" id="events"></div>
         <div class="tab log" data-tab="requests" id="requests"></div>
@@ -620,24 +619,29 @@
       </section>
     </section>
 
-    <section class="page" data-page="console" data-title="API console" hidden>
-      <div class="page-heading"><h1>API console</h1><p class="subtitle">Send any request, including wrong ones on purpose.</p></div>
+    <section class="page" data-page="console" data-title="nav.apiConsole" hidden>
+      <div class="page-heading"><h1 data-i18n="console.apiConsole"></h1><p class="subtitle" data-i18n="console.sendAnyRequest"></p></div>
       <section class="panel">
         <div class="row console-line">
-          <select id="conMethod" aria-label="Method"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select>
-          <span class="mono">/api/v1/</span><input id="conPath" value="status" class="grow" aria-label="Path">
-          <button type="button" id="conSend" class="primary">Send</button>
+          <select id="conMethod" data-i18n-aria-label="console.method"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select>
+          <span class="mono">/api/v1/</span><input id="conPath" value="status" class="grow" data-i18n-aria-label="console.path">
+          <button type="button" id="conSend" class="primary" data-i18n="console.send"></button>
         </div>
-        <div class="row"><select id="conPreset" aria-label="Presets"><option value="">Presets…</option></select></div>
-        <textarea id="conBody" rows="7" placeholder="JSON body (empty = none)" aria-label="JSON body"></textarea>
+        <div class="row"><select id="conPreset" data-i18n-aria-label="console.presets"><option value="" data-i18n="console.presetsPick"></option></select></div>
+        <textarea id="conBody" rows="7" data-i18n-placeholder="console.jsonBodyEmpty" data-i18n-aria-label="console.jsonBody"></textarea>
         <pre id="conOut" class="json"></pre>
       </section>
     </section>
   </main>
 </div>
 
-<footer id="player" class="player" aria-label="Now playing" hidden></footer>
+<footer id="player" class="player" data-i18n-aria-label="player.nowPlaying" hidden></footer>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<script src="/assets/i18n.js"></script>
+<script src="/assets/shared.en.js"></script>
+<script src="/assets/shared.de.js"></script>
+<script src="app.en.js"></script>
+<script src="app.de.js"></script>
 <script src="/assets/usage-charts.js"></script>
 <script src="app.js"></script>
 </body>

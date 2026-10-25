@@ -47,6 +47,7 @@ update the protocol document in the same change.
 - Inspect `git status` before editing; preserve existing staged and unstaged work.
   Prefer the smallest correct change and existing platform APIs/dependencies.
 - After changing `server-gui/www/` or its shared assets (`shared/web/theme.css`,
+  `shared/web/i18n.js`, `shared/web/shared.en.js`, `shared/web/shared.de.js`,
   `shared/web/usage-charts.js`), run
   `powershell -ExecutionPolicy Bypass -File scripts/copy-server-gui.ps1`
   before browser verification. This updates the Windows x64 server release;

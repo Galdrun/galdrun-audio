@@ -30,7 +30,7 @@
     <None Include="..\..\..\server-gui\www\**"
           Link="gui\%(RecursiveDir)%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <None Include="..\..\..\shared\web\theme.css;..\..\..\shared\web\usage-charts.js"
+    <None Include="..\..\..\shared\web\theme.css;..\..\..\shared\web\i18n.js;..\..\..\shared\web\shared.en.js;..\..\..\shared\web\shared.de.js;..\..\..\shared\web\usage-charts.js"
           Link="gui\assets\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

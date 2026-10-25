@@ -4,17 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>Galdrun AI login</title>
+<title data-i18n="login.pageTitle"></title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <main class="panel" style="margin: 16px">
-  <h2>Galdrun AI login</h2>
-  <pre id="out" class="json">finishing the login…</pre>
-  <p class="hint">The ServerGui reads the providers again by itself. This window can be closed.</p>
+  <h2 data-i18n="login.title"></h2>
+  <pre id="out" class="json" data-i18n="login.finishingLogin"></pre>
+  <p class="hint" data-i18n="login.serverguiReadsProviders"></p>
 </main>
+<script src="/assets/i18n.js"></script>
+<script src="app.en.js"></script>
+<script src="app.de.js"></script>
 <script>
 'use strict';
+i18n.translate();
 // Where the vendor returns (the ServerGui's phase 12): one call with the
 // code, the server's answer shown as it is, and the ServerGui told. The code
 // and state leave this page's URL first, so they stay out of the history.
@@ -27,7 +31,7 @@
   // Opened by hand or reloaded: nothing came back from a vendor.
   if (!state || (!code && !error)) {
     out.className = 'json bad';
-    out.textContent = 'No login came back to this page. It is where a vendor returns after a login: start one with "log in" on a provider in the ServerGui\'s AI tab.';
+    out.textContent = tt('login.noLoginCame');
     return;
   }
   // A vendor's refusal goes to the callback, which drops the state and says so.

@@ -16,16 +16,21 @@ done < "$BUILD_DIR/busybox-1.37.0/busybox.links"
 rm -f "$target"/usr/lib/libstdc++*-gdb.py
 project=${RAUMFELD_PROJECT_DIR:?Run build.sh to supply project location}
 board=${RAUMFELD_BOARD:?}
-"${HOST_DIR}/bin/arm-linux-g++" -std=c++17 -Os -Wall -Wextra -Werror \
+cxx=arm-linux-g++
+[[ ${GALDRUN_CLIENT_TARGET:-linux-armv6} != linux-armv8 ]] || cxx=aarch64-linux-g++
+"${HOST_DIR}/bin/$cxx" -std=c++17 -Os -Wall -Wextra -Werror \
     -static-libstdc++ -static-libgcc "$project/board/common/captive-portal.cpp" \
     -o "$target/usr/sbin/raumfeld-captive-portal"
 release="$project/../../releases/client/${GALDRUN_CLIENT_TARGET:-linux-armv6}"
-[[ -s "$release/galdrun-client" && -s "$release/lib/libatomic.so.1" ]] || {
+[[ -s "$release/galdrun-client" ]] &&
+    { [[ ${GALDRUN_CLIENT_TARGET:-linux-armv6} == linux-armv8 ]] || [[ -s "$release/lib/libatomic.so.1" ]]; } || {
     echo "Build/export ${GALDRUN_CLIENT_TARGET:-linux-armv6} before building firmware." >&2; exit 1;
 }
 mkdir -p "$target/opt/galdrun-client/lib" "$target/opt/galdrun-client/licenses" "$target/etc/galdrun"
 install -m 0755 "$release/galdrun-client" "$target/opt/galdrun-client/galdrun-client"
-install -m 0644 "$release/lib/"* "$target/opt/galdrun-client/lib/"
+for library in "$release/lib/"*; do
+    if [[ -f $library ]]; then install -m 0644 "$library" "$target/opt/galdrun-client/lib/"; fi
+done
 install -m 0644 "$release/licenses/"* "$target/opt/galdrun-client/licenses/"
 install -m 0644 "$release/build-info.txt" "$target/opt/galdrun-client/build-info.txt"
 install -m 0644 "$project/board/$board/client-default.json" "$target/opt/galdrun-client/client-default.json"

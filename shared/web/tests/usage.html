@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Usage charts check</title><link rel="stylesheet" href="../theme.css">
 <main><section class="settings-card"><div class="card-intro"><h2>Status</h2></div><div class="card-content"><div id="usageCharts" class="usage-charts"></div><div id="wifiChart" class="wifi-chart"></div></div></section><p id="result"></p></main>
-<script src="../usage-charts.js"></script><script>
+<script src="../i18n.js"></script><script src="../shared.en.js"></script><script src="../usage-charts.js"></script><script>
 try {
   const check = (value, message) => {if (!value) throw Error(message)};
   const container = document.getElementById('usageCharts'), wifi = document.getElementById('wifiChart'); createUsageCharts(container, wifi);
