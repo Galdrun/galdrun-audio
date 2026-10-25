@@ -11,18 +11,11 @@ fi
 printf '%s  %s\n' a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2 "$archive" | sha256sum --check
 if [[ ! -d "$tools/downloads/openssl-3.5.8" ]]; then tar -xzf "$archive" -C "$tools/downloads"; fi
 
-if [[ $# == 0 ]]; then set -- x64 x86 armv7 armv8 armv9; fi
+if [[ $# == 0 ]]; then set -- x64 armv7 armv8 armv9; fi
 for target in "$@"; do
     runner=""; flags=""; cross=""; prefix=""; sysroot=""
     case "$target" in
         x64) cc=gcc; ar=ar; ranlib=ranlib; openssl_target=linux-x86_64 ;;
-        x86)
-            prefix=i686-linux-gnu-
-            cc="${prefix}gcc"; ar="${prefix}ar"; ranlib="${prefix}ranlib"
-            openssl_target=linux-x86
-            cross="--enable-cross-compile --target-os=linux --arch=x86 --cross-prefix=$prefix"
-            sysroot=/usr/i686-linux-gnu
-            runner="qemu-i386 -L $sysroot" ;;
         armv7)
             prefix="$tools/x-tools/armv6-rpi-linux-gnueabihf/bin/armv6-rpi-linux-gnueabihf-"
             cc="${prefix}gcc"; ar="${prefix}ar"; ranlib="${prefix}ranlib"

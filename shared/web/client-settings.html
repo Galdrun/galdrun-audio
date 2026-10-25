@@ -95,6 +95,9 @@
       <input id="deviceName" maxlength="31" pattern="[A-Za-z0-9](?:[A-Za-z0-9\-]{0,29}[A-Za-z0-9])?" autocomplete="off" spellcheck="false" aria-describedby="deviceNameHint" disabled>
       <p class="hint" id="deviceNameHint" data-i18n="client.itsNameOn"></p>
     </div>
+    <label for="active" data-i18n="client.inTheSystem"></label>
+    <select id="active" aria-describedby="activeHint"><option value="true" data-i18n="client.activeRoom"></option><option value="false" data-i18n="client.deactivated"></option></select>
+    <p class="hint" id="activeHint" data-i18n="client.deactivatedHint"></p>
     <label for="server" data-i18n="client.serverHostPort"></label>
     <input id="server" placeholder="192.168.1.10:4711" autocomplete="off" aria-describedby="serverHint">
     <p class="hint" id="serverHint" data-i18n="client.addressOfYour"></p>

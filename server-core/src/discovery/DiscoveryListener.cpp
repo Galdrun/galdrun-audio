@@ -33,8 +33,10 @@ const char* errorName(DiscoveryListenerError error)
 class DiscoveryListener::Impl
 {
 public:
-    Impl(DiscoveredClients& clients, const IClock& clock, std::function<void()> onTick)
-        : clients_(clients), clock_(clock), onTick_(std::move(onTick))
+    Impl(DiscoveredClients& clients, const IClock& clock, std::function<void()> onTick,
+         std::function<void(const std::string&, bool)> onActiveChanged)
+        : clients_(clients), clock_(clock), onTick_(std::move(onTick)),
+          onActiveChanged_(std::move(onActiveChanged))
     {
     }
 
@@ -167,15 +169,20 @@ private:
             const std::string address =
                 ::inet_ntop(AF_INET, &from.sin_addr, text, sizeof(text)) != nullptr ? text : "";
             ++received_;
+            const auto previous = clients_.find(ClientId(beacon.clientId));
             if (clients_.onBeacon(beacon, address, clock_.monotonicNowNs()))
                 MULTIROOM_INFO("discovered client {} at {}, control port {}", beacon.clientId, address,
                          beacon.controlPort);
+            if (onActiveChanged_ && ((!previous && !beacon.active) ||
+                                    (previous && previous->active != beacon.active)))
+                onActiveChanged_(beacon.clientId, beacon.active);
         }
     }
 
     DiscoveredClients& clients_;
     const IClock& clock_;
     std::function<void()> onTick_;
+    std::function<void(const std::string&, bool)> onActiveChanged_;
     net::Library library_;
     net::Socket socket_ = net::kInvalidSocket;
     std::atomic<bool> listening_{true};
@@ -195,7 +202,8 @@ Result<std::unique_ptr<DiscoveryListener>, DiscoveryListenerError>
 DiscoveryListener::start(DiscoveryListenerSettings settings, DiscoveredClients& clients,
                          const IClock& clock)
 {
-    auto impl = std::make_unique<Impl>(clients, clock, std::move(settings.onTick));
+    auto impl = std::make_unique<Impl>(clients, clock, std::move(settings.onTick),
+                                       std::move(settings.onActiveChanged));
 
     uint16_t port = 0;
     if (const Status<DiscoveryListenerError> bound = impl->bind(settings, port); !bound)

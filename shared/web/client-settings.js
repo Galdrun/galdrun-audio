@@ -665,6 +665,7 @@ function controlSettings() {
     // Hidden when the output loses its clock, not changed: kept as saved.
     drift: driftEnabled ? $('driftCorrection').value : saved.drift,
     room: $('room').value.trim(), clientId: $('clientId').value.trim(), server: $('server').value.trim(),
+    active: $('active').value,
     device: $('device').value,
     network: networkEnabled ? JSON.stringify(networkSettings()) : '',
     cpu: cpuEnabled ? $('cpuMhz').value : '',
@@ -706,24 +707,27 @@ async function controlLoad() {
   saved.room = st.name || '';
   saved.clientId = savedClientId = st.clientId;
   saved.server = (await api('getServer')).server;
+  saved.active = String((await api('getActive')).active);
   renderDrift(st.audio.driftCorrection);
   // Also while hidden, so an output that gains a clock shows what is configured.
   $('driftCorrection').value = saved.drift = st.audio.driftCorrection?.configured || '';
   $('room').value = saved.room;
   $('clientId').value = saved.clientId;
   $('server').value = saved.server;
+  $('active').value = saved.active;
   await Promise.all([loadDevices(), loadNetwork(), loadCpu(), loadDac(), loadLeds(), loadPower(), loadSsh(), loadAudioProfile()]);
   ready = true;
   updateSave();
 }
 
 async function controlSave() {
-  const {drift, room, clientId, server, device, network, cpu, dac, leds, power} = controlSettings();
+  const {drift, room, clientId, server, active, device, network, cpu, dac, leds, power} = controlSettings();
   const deviceChanged = device !== saved.device;
   const networkChanged = network !== saved.network;
   if (room !== saved.room) { await api('setName', {name: room}); saved.room = room; }
   if (clientId !== saved.clientId) { await api('setClientId', {clientId}); saved.clientId = savedClientId = clientId; }
   if (server !== saved.server) { await api('setServer', {server}); saved.server = server; }
+  if (active !== saved.active) saved.active = String((await api('setActive', {active: active === 'true'})).active);
   if (power !== saved.power) {
     renderPower(await api('setPower', JSON.parse(power)));
     saved.power = powerSettings();
@@ -828,6 +832,7 @@ function describeCodec(formats) {
 function boardBody() {
   const body = {
     ssid: $('wifiSsid').value, bssid: $('wifiAp').value, server: $('server').value.trim(), audioDeviceId: $('device').value,
+    active: $('active').value === 'true',
     name: $('room').value.trim(), clientId: $('clientId').value.trim(), deviceName: $('deviceName').value.trim(),
     ipMode: $('wifiMode').value, ip: $('wifiIp').value.trim(), netmask: $('wifiMask').value.trim(),
     gateway: $('wifiGateway').value.trim(), dns: $('wifiDns').value.trim(),
@@ -883,6 +888,7 @@ async function boardLoad(response) {
   addressRows();
   $('wifiNow').textContent = s.currentIp ? tt('board.nowOn', {ip: s.currentIp}) + ' ' + tt('board.wrongStaticAddress') : '';
   $('server').value = s.server;
+  $('active').value = String(s.active !== false);
   $('device').value = s.audioDeviceId;
   $('clock').value = s.i2sClockMode;
   if (![...$('rate').options].some(o => o.value === String(s.i2sSlaveSampleRate)))

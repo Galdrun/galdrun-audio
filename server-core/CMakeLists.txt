@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 
+# One version for the core and the server (server/Directory.Build.props reads it too).
+set(MULTIROOM_VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../shared/branding/server-version.txt")
+file(STRINGS "${MULTIROOM_VERSION_FILE}" MULTIROOM_SERVER_RELEASE_VERSION LIMIT_COUNT 1)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${MULTIROOM_VERSION_FILE}")
+
 project(MultiroomCore
-    VERSION 0.1.0
+    VERSION ${MULTIROOM_SERVER_RELEASE_VERSION}
     DESCRIPTION "Multiroom audio server core"
     LANGUAGES CXX)
 
@@ -250,7 +255,9 @@ endif()
 # releases/server-core/<platform>, named like the client's presets.
 # ---------------------------------------------------------------------------
 
-if(WIN32)
+if(WIN32 AND CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "ARM64")
+    set(release_platform "windows-armv8")
+elseif(WIN32)
     string(TOLOWER "windows-${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}" release_platform)
 elseif(MULTIROOM_TARGET)
     set(release_platform "linux-${MULTIROOM_TARGET}")
@@ -287,6 +294,8 @@ else()
     endif()
     if(MSVC)
         # The MSVC runtime, app-local, so the target needs no redistributable.
+        # CMake takes it from the redist folder of the target architecture
+        # (x64 or arm64), not the host's.
         set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
         include(InstallRequiredSystemLibraries)
         list(APPEND release_files ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS})

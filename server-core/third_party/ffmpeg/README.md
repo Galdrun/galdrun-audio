@@ -118,7 +118,9 @@ Two other ways to point the build at FFmpeg, both in
 `third_party/CMakeLists.txt` and both preferred over editing this directory:
 
 - `-DMULTIROOM_FFMPEG_ROOT=<path>`: any SDK laid out as `include/` and `lib/`.
-  On Linux, `server-core/ffmpeg`'s own `dist/linux-x86_64` is one.
+  On Linux, `server-core/ffmpeg`'s own `dist/linux-x86_64` is one. A shared
+  Windows build's `dist/` works too (import libraries in `bin/`): the
+  `windows-armv8` preset uses `dist/windows-armv8-shared`.
 - Nothing at all on Linux or macOS: the build falls through to `pkg-config`
   and uses the system `libavformat`, `libavcodec` and `libavutil`.
 

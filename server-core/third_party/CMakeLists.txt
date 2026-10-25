@@ -143,7 +143,8 @@ endif()
 #
 #   1. MULTIROOM_FFMPEG_ROOT, if the operator set it -- an SDK laid out as
 #      include/ and lib/, which is what every prebuilt package looks like.
-#   2. ffmpeg/<platform>/, the vendored drop. Windows x64 only today.
+#   2. ffmpeg/<platform>/, the vendored drop. Windows x64 only today; the
+#      windows-armv8 preset points MULTIROOM_FFMPEG_ROOT at ../ffmpeg/dist.
 #   3. pkg-config, which is how every Linux and macOS package manager
 #      publishes it.
 #
@@ -170,7 +171,7 @@ if(MULTIROOM_WITH_FFMPEG)
     if(MULTIROOM_FFMPEG_ROOT)
         set(_multiroom_ffmpeg_root "${MULTIROOM_FFMPEG_ROOT}")
         set(_multiroom_ffmpeg_origin "MULTIROOM_FFMPEG_ROOT")
-    elseif(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8
+    elseif(WIN32 AND CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "x64"
            AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg/win64/lib/avformat.lib")
         set(_multiroom_ffmpeg_root "${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg")
         set(_multiroom_ffmpeg_origin "vendored win64")
@@ -181,6 +182,8 @@ if(MULTIROOM_WITH_FFMPEG)
     if(_multiroom_ffmpeg_root)
         # The include directory is shared by every layout; the libraries are
         # under win64/ in the vendored drop and directly under lib/ in an SDK.
+        # A shared MinGW build of ../ffmpeg puts its MSVC import libraries
+        # beside the DLLs in bin/, so that is searched too.
         set(_multiroom_ffmpeg_include "${_multiroom_ffmpeg_root}/include")
         if(EXISTS "${_multiroom_ffmpeg_root}/win64/lib")
             set(_multiroom_ffmpeg_lib "${_multiroom_ffmpeg_root}/win64/lib")
@@ -193,7 +196,7 @@ if(MULTIROOM_WITH_FFMPEG)
         foreach(_lib avformat avcodec avutil)
             find_library(MULTIROOM_FFMPEG_${_lib}
                 NAMES ${_lib} lib${_lib}
-                PATHS "${_multiroom_ffmpeg_lib}"
+                PATHS "${_multiroom_ffmpeg_lib}" "${_multiroom_ffmpeg_bin}"
                 NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
             if(NOT MULTIROOM_FFMPEG_${_lib})
                 message(FATAL_ERROR

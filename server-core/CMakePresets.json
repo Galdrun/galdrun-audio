@@ -23,6 +23,16 @@
       }
     },
     {
+      "name": "windows-armv8",
+      "inherits": "windows-x64",
+      "architecture": "ARM64",
+      "binaryDir": "${sourceDir}/build/windows-armv8",
+      "cacheVariables": {
+        "MULTIROOM_FFMPEG_ROOT": "${sourceDir}/ffmpeg/dist/windows-armv8-shared",
+        "MULTIROOM_BUILD_TESTS": "OFF"
+      }
+    },
+    {
       "name": "linux-base",
       "hidden": true,
       "generator": "Ninja",
@@ -45,17 +55,6 @@
       "inherits": "linux-base",
       "cacheVariables": {
         "MULTIROOM_FFMPEG_ROOT": "${sourceDir}/ffmpeg/dist/linux-x64-shared"
-      }
-    },
-    {
-      "name": "linux-x86",
-      "displayName": "ServerCore Linux x86",
-      "inherits": "linux-base",
-      "toolchainFile": "${sourceDir}/cmake/LinuxCross.cmake",
-      "cacheVariables": {
-        "MULTIROOM_FFMPEG_ROOT": "${sourceDir}/ffmpeg/dist/linux-x86-shared",
-        "MULTIROOM_TARGET": "x86",
-        "MULTIROOM_BUILD_TESTS": "OFF"
       }
     },
     {
@@ -99,12 +98,13 @@
       "configuration": "Release"
     },
     {
-      "name": "linux-x64",
-      "configurePreset": "linux-x64"
+      "name": "windows-armv8",
+      "configurePreset": "windows-armv8",
+      "configuration": "Release"
     },
     {
-      "name": "linux-x86",
-      "configurePreset": "linux-x86"
+      "name": "linux-x64",
+      "configurePreset": "linux-x64"
     },
     {
       "name": "linux-armv7",

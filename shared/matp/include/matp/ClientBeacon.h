@@ -32,6 +32,8 @@ const uint64_t kBeaconIntervalNs = 2000000000ULL;
 
 struct ClientBeacon
 {
+    // Disabled clients still announce this flag so cached rooms can be hidden.
+    bool active = true;
     uint32_t protocolVersion = 0;
     std::string clientId;
     // The room's name (MATP section 60), empty when the beacon did not say

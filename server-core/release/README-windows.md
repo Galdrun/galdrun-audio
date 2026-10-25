@@ -25,6 +25,7 @@ sc.exe create GaldrunCore binPath= "\"C:\Galdrun\core\galdrun-core.exe\" --servi
 sc.exe start GaldrunCore
 ```
 
-Windows 10/11, 64-bit. Source and licences: FFmpeg 9.0.2 (LGPL, audio decoders
+`windows-x64`: Windows 10/11, 64-bit Intel/AMD. `windows-armv8`: Windows 11 on
+ARM64, built on x64 and not yet tested on an ARM64 device. Source and licences: FFmpeg 9.0.2 (LGPL, audio decoders
 only, built by `server-core/ffmpeg/build-windows.ps1`), soxr and r8brain (in
 `server-core/third_party`). All notices are in `licenses/`.

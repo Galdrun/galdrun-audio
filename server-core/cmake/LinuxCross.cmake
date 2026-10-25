@@ -1,12 +1,6 @@
 set(CMAKE_SYSTEM_NAME Linux)
 set(tools "$ENV{HOME}/.local/share/multiroom-linux")
-if(MULTIROOM_TARGET STREQUAL "x86")
-    set(CMAKE_SYSTEM_PROCESSOR i686)
-    set(CMAKE_C_COMPILER i686-linux-gnu-gcc)
-    set(CMAKE_CXX_COMPILER i686-linux-gnu-g++)
-    set(CMAKE_FIND_ROOT_PATH /usr/i686-linux-gnu)
-    set(cpu_flags "-D_FILE_OFFSET_BITS=64")
-elseif(MULTIROOM_TARGET STREQUAL "armv7")
+if(MULTIROOM_TARGET STREQUAL "armv7")
     # Raspberry Pi 2 and newer on a 32-bit OS: Cortex-A7 or later, all with NEON.
     set(CMAKE_SYSTEM_PROCESSOR arm)
     set(prefix "${tools}/x-tools/armv6-rpi-linux-gnueabihf/bin/armv6-rpi-linux-gnueabihf-")

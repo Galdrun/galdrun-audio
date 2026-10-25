@@ -1,0 +1,45 @@
+#!/bin/sh
+# The Galdrun server on the Pi server image (scripts/build-server-image.sh). Its library,
+# playback state and caches persist in /var/lib/galdrun/server on the ext4 root.
+set -eu
+umask 077
+binary=/opt/galdrun-server/galdrun-server
+pidfile=/run/galdrun-server.pid
+# Where ASP.NET keeps its data-protection keys; init gives services no home.
+export HOME=/var/lib/galdrun
+
+start() {
+    if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then return 0; fi
+    mkdir -p /etc/galdrun /var/lib/galdrun/server
+    if [ ! -f /etc/galdrun/server.json ]; then
+        cp /opt/galdrun-server/server-default.json /etc/galdrun/server.json
+    fi
+    start-stop-daemon -S -b -m -p "$pidfile" -x "$binary" -- --config /etc/galdrun/server.json
+}
+
+stop() {
+    [ -f "$pidfile" ] || return 0
+    pid=$(cat "$pidfile")
+    if ! kill -0 "$pid" 2>/dev/null; then rm -f "$pidfile"; return 0; fi
+    start-stop-daemon -K -p "$pidfile" -x "$binary" || return 1
+    # SIGTERM is the clean stop: the server saves its playback state first.
+    for attempt in $(seq 1 300); do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            rm -f "$pidfile"
+            return 0
+        fi
+        sleep 0.1
+    done
+    echo 'Server did not stop; leaving its PID file for inspection' >&2
+    return 1
+}
+
+case "${1:-}" in
+    start) start ;;
+    stop) stop ;;
+    restart) stop && start ;;
+    status)
+        [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null
+        ;;
+    *) echo "Usage: $0 {start|stop|restart|status}" >&2; exit 1 ;;
+esac

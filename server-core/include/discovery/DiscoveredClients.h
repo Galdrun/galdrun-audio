@@ -38,6 +38,7 @@ namespace multiroom {
 
 struct DiscoveredClient
 {
+    bool active = true;
     ClientId client;
     std::string address; // the beacon's source address, dotted IPv4
     uint16_t controlPort = 0;

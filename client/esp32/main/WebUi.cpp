@@ -247,6 +247,7 @@ esp_err_t handleGetSettings(httpd_req_t* request)
     body["name"] = json::Value(config.name);
     body["clientId"] = json::Value(config.clientId);
     body["server"] = json::Value(config.server);
+    body["active"] = json::Value(config.active);
     body["audioDeviceId"] = json::Value(config.audioDeviceId);
     body["i2sClockMode"] = json::Value(i2sClockModeName(config.i2s.clockMode));
     body["i2sSlaveSampleRate"] = json::Value(config.i2s.slaveSampleRate);
@@ -437,6 +438,8 @@ esp_err_t handlePostSettings(httpd_req_t* request)
         (root.find("audioDeviceId") != nullptr &&
          !json::getString(root, "audioDeviceId", config.audioDeviceId)))
         return sendError(request, "400 Bad Request", "server and audioDeviceId must be strings");
+    if (root.find("active") != nullptr && !json::getBool(root, "active", config.active))
+        return sendError(request, "400 Bad Request", "active must be true or false");
     if (root.find("i2sClockMode") != nullptr &&
         (!json::getString(root, "i2sClockMode", clockMode) ||
          !parseI2sClockMode(clockMode, config.i2s.clockMode)))

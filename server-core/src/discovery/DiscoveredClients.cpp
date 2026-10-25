@@ -39,6 +39,7 @@ bool DiscoveredClients::onBeacon(const matp::ClientBeacon& beacon, const std::st
     }
 
     DiscoveredClient& entry = found->second;
+    entry.active = beacon.active;
     entry.address = address;
     entry.controlPort = beacon.controlPort;
     entry.protocolVersion = beacon.protocolVersion;

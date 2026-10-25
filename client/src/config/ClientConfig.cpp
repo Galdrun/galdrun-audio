@@ -418,6 +418,7 @@ std::string serialize(const ClientConfig& config)
 {
     json::Value root = json::Value::makeObject();
     root["server"] = json::Value(config.server);
+    root["active"] = json::Value(config.active);
     root["clientId"] = json::Value(config.clientId);
     root["name"] = json::Value(config.name);
     root["audioDeviceId"] = json::Value(config.audioDeviceId);
@@ -463,6 +464,11 @@ bool deserialize(const std::string& text, ClientConfig& out, std::string& error)
     if (root.find("server") != nullptr && !json::getString(root, "server", config.server))
     {
         error = "server must be a string";
+        return false;
+    }
+    if (root.find("active") != nullptr && !json::getBool(root, "active", config.active))
+    {
+        error = "active must be true or false";
         return false;
     }
     if (root.find("clientId") != nullptr && !json::getString(root, "clientId", config.clientId))

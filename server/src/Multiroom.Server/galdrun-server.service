@@ -6,6 +6,9 @@
 # SIGTERM to stop -- the same stop path Ctrl+C takes -- and reads its stderr
 # into the journal. So the server does not fork, detach or write a PID file.
 #
+# A galdrun-core.service on the same machine is started first; without one
+# (the core runs elsewhere) Wants= is simply not met and the server starts alone.
+#
 # Linux packages are published; the systemd unit has not been exercised yet.
 #
 # The config is required: a service has no user profile to lean on. The data
@@ -16,8 +19,8 @@
 
 [Unit]
 Description=Galdrun high-end server
-Wants=network-online.target
-After=network-online.target
+Wants=network-online.target galdrun-core.service
+After=network-online.target galdrun-core.service
 
 [Service]
 Type=simple

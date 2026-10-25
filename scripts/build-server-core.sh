@@ -9,8 +9,9 @@
 #   scripts/build-server-core.sh --packages-only ...   # only install missing apt packages
 #
 # Targets:
-#   all, linux (default)  linux-x86 linux-x64 linux-armv7 linux-armv8 linux-armv9
-# windows-x64 needs Windows: use scripts\build-server-core.ps1 there.
+#   all, linux (default)  linux-x64 linux-armv7 linux-armv8 linux-armv9
+# windows-x64 and windows-armv8 need Windows: use scripts\build-server-core.ps1 there.
+# linux-x86 is not built: .NET has no runtime for it, so no server could run beside it.
 #
 # Installs when missing (Ubuntu/Debian on x86-64):
 #   apt packages (via sudo)   system-wide
@@ -21,7 +22,7 @@
 set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 . "$root/scripts/setup/linux.sh"
-linux_targets=(linux-x86 linux-x64 linux-armv7 linux-armv8 linux-armv9)
+linux_targets=(linux-x64 linux-armv7 linux-armv8 linux-armv9)
 
 packages_only=false
 if [[ ${1:-} == --packages-only ]]; then packages_only=true; shift; fi
@@ -30,14 +31,15 @@ targets=()
 for name in "$@"; do
     case $name in
         all|linux) targets+=("${linux_targets[@]}") ;;
-        linux-x86|linux-x64|linux-armv[7-9]) targets+=("$name") ;;
-        windows|windows-x64) die "$name needs Windows: run scripts\build-server-core.ps1 there." ;;
+        linux-x64|linux-armv[7-9]) targets+=("$name") ;;
+        windows|windows-x64|windows-armv8) die "$name needs Windows: run scripts\build-server-core.ps1 there." ;;
         *) die "Unknown target: $name (see the top of $0)" ;;
     esac
 done
 mapfile -t targets < <(printf '%s\n' "${targets[@]}" | awk '!seen[$0]++')
 
-# perl builds OpenSSL; nasm and pkgconf build FFmpeg; qemu-user runs the cross-built FFmpeg's self-test.
+# perl builds OpenSSL; nasm and pkgconf build FFmpeg; qemu-user runs the cross-built FFmpeg's self-test;
+# the i686 compilers are for client/scripts/install-linux-tools.sh, which also sets up the client's x86 ALSA.
 install_packages build-essential cmake ninja-build curl xz-utils bzip2 perl nasm pkgconf qemu-user \
     gcc-i686-linux-gnu g++-i686-linux-gnu
 $packages_only && exit 0

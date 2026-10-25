@@ -252,7 +252,8 @@ public sealed record CoreClientInfo(
     // A disconnected room's announced deep sleep (the stream's powerState while connected).
     string? PowerState = null,
     // With powerState "sleep": the MAC its Wake-on-LAN magic packet names.
-    string? WakeOnLan = null);
+    string? WakeOnLan = null,
+    bool Active = true);
 
 // The room's Volume Control as its client reported it (MATP section 59), and
 // the path it resolved: never Auto. Reason says why Effective is not what

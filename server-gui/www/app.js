@@ -6726,7 +6726,7 @@ $('#conSend').addEventListener('click', async () => {
 
 const EVENT_TYPES = [
   'zone.sourceNeeded', 'zone.sourceStarted', 'zone.sourceFailed', 'zone.ended', 'zone.transport',
-  'room.connected', 'room.disconnected', 'room.joined', 'room.left', 'room.notReady', 'room.fellBehind', 'room.leftBehind', 'room.input',
+  'room.connected', 'room.disconnected', 'room.active', 'room.joined', 'room.left', 'room.notReady', 'room.fellBehind', 'room.leftBehind', 'room.input',
   'room.unstable', 'room.stable', // server phase 34
   // What a room's client reports -- re-sent capabilities, sound cards, buffer,
   // volume control -- is announced when it arrives, so nothing waits and re-reads.

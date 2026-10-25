@@ -577,6 +577,36 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
         response["deepSleep"] = json::Value(deepSleepSupported());
         return response;
     }
+    case ControlCommand::GetActive:
+    case ControlCommand::SetActive:
+    {
+        if (runtime_.config == nullptr)
+            return makeControlError(request, control_error::kUnavailable, "no configuration loaded");
+        if (request.command == ControlCommand::SetActive)
+        {
+            bool active = true;
+            if (request.params.members().size() != 1 || !json::getBool(request.params, "active", active))
+                return makeControlError(request, control_error::kInvalidArgument, "params must contain only an active boolean");
+            if (active != runtime_.config->active)
+            {
+                ClientConfig next = *runtime_.config;
+                next.active = active;
+                std::string saveError;
+                if (!saveConfig(runtime_, next, saveError))
+                    return makeControlError(request, control_error::kFailed, saveError);
+                runtime_.config->active = active;
+                // Discovery also reports the disabled status, hiding cached rooms.
+                std::string connectError;
+                if (runtime_.server != nullptr &&
+                    !runtime_.server->setServer(active ? runtime_.config->server : std::string(), connectError))
+                    MULTIROOM_ERROR("could not apply the server address: %s", connectError.c_str());
+                MULTIROOM_INFO("client %s", active ? "activated" : "deactivated: no server connection");
+            }
+        }
+        auto response = makeControlSuccess(request);
+        response["active"] = json::Value(runtime_.config->active);
+        return response;
+    }
     case ControlCommand::GetLeds:
     case ControlCommand::SetLeds:
     {
@@ -1014,8 +1044,9 @@ json::Value ClientCommandHandler::handleSetServer(const ControlRequest& request)
     }
 
     // The other half: the connection drops what it has and goes to the new
-    // address, or stays idle when the address was cleared.
-    if (runtime_.server != nullptr)
+    // address, or stays idle when the address was cleared -- or while the
+    // client is deactivated, which keeps the address for later.
+    if (runtime_.server != nullptr && runtime_.config->active)
     {
         std::string connectError;
         // The address was validated above, so this cannot fail -- which is not

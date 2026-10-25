@@ -30,6 +30,7 @@ std::string makeClientBeacon(const ClientBeacon& beacon)
 {
     json::Value root = json::Value::makeObject();
     root["type"] = json::Value(kBeaconType);
+    root["active"] = json::Value(beacon.active);
     root["protocolVersion"] = json::Value(kProtocolVersion);
     root["clientId"] = json::Value(beacon.clientId);
     if (!beacon.name.empty())
@@ -62,6 +63,11 @@ bool parseClientBeacon(const std::string& text, ClientBeacon& out, std::string& 
     }
 
     ClientBeacon beacon;
+    if (root.find("active") != nullptr && !json::getBool(root, "active", beacon.active))
+    {
+        error = "active must be a boolean";
+        return false;
+    }
     const json::Value* version = root.find("protocolVersion");
     if (version == nullptr || !version->isNumber() || !version->isIntegral() ||
         version->asInt() < 0 || version->asInt() > 0xFFFF)

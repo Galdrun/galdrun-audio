@@ -49,6 +49,17 @@ travel with each image; boot and wireless firmware contain redistributable
 binary blobs. Corresponding downloaded source archives and legal-info sources
 remain in the local Buildroot cache for source distribution.
 
+## Server images
+
+`scripts/build-server.sh rpi3 rpi4 rpi5` (Windows: `scripts/build-server.ps1 -Target rpi3`, ...)
+turns each finished client image into a server image: the same system plus the
+server (web interface on 4723) and the core, started by `S90galdrun-core` and
+`S91galdrun-server`, with a 3 GB root. `scripts/build-server-image.sh` assembles it
+from the Buildroot output's `rootfs.tar` and `boot.vfat` with its own host tools; it
+needs no second Buildroot build. Pi 3 or newer only; results go to
+`releases/server/raspberrypi/rpi{3,4,5}/`. Their files are in `board/rpi/server/`,
+including the README that ships with them.
+
 ## Install and recover
 
 1. Keep the existing working card untouched. Back up its identity/settings first.

@@ -24,6 +24,14 @@ function Initialize-Msvc {
     if (-not (Get-Command cmake.exe -ErrorAction SilentlyContinue)) { Install-WingetPackage Kitware.CMake }
 }
 
+# The ARM64 cross compiler is an optional Visual Studio component; it is not installed silently.
+function Assert-MsvcArm64 {
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath)) {
+        throw 'windows-armv8 needs "MSVC ARM64 build tools" (Microsoft.VisualStudio.Component.VC.Tools.ARM64): add it in the Visual Studio Installer under Individual components, then run this again.'
+    }
+}
+
 # Makes dotnet.exe the SDK the global.json in the current directory names (or a later
 # feature band of it), installing it into %LOCALAPPDATA%\Microsoft\dotnet with
 # dotnet-install when missing.

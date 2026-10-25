@@ -140,6 +140,32 @@ MULTIROOM_TEST(discovery_listener_hears_a_beacon_and_drops_noise)
     CHECK_EQ(kitchen->lastSeenNs, uint64_t(5000));
 }
 
+MULTIROOM_TEST(discovery_listener_announces_disabled_and_reactivated_clients_once_per_change)
+{
+    multiroomtest::ManualClock clock{0};
+    DiscoveredClients clients;
+    std::atomic<int> changes{0};
+    DiscoveryListenerSettings settings;
+    settings.bindAddress = "127.0.0.1";
+    settings.port = 0;
+    settings.onActiveChanged = [&](const std::string&, bool active) {
+        changes.fetch_add(active ? 10 : 1);
+    };
+    auto listener = DiscoveryListener::start(settings, clients, clock);
+    CHECK_OK(listener);
+    BeaconSender sender;
+    auto beacon = beaconFor("kitchen");
+    beacon.active = false; // A core starting while this client is disabled.
+    CHECK(sender.send((*listener)->port(), matp::makeClientBeacon(beacon)));
+    CHECK(waitFor([&] { return changes.load() == 1; }));
+    CHECK(sender.send((*listener)->port(), matp::makeClientBeacon(beacon)));
+    CHECK(waitFor([&] { return (*listener)->received() == 2; }));
+    CHECK_EQ(changes.load(), 1);
+    beacon.active = true;
+    CHECK(sender.send((*listener)->port(), matp::makeClientBeacon(beacon)));
+    CHECK(waitFor([&] { return changes.load() == 11; }));
+}
+
 MULTIROOM_TEST(discovery_listener_says_so_when_select_fails_and_stops_ticking)
 {
     // As for the TCP listeners: stopped for good and said so, so that main()

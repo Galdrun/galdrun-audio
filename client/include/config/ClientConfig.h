@@ -73,6 +73,12 @@ struct ClientConfig
 {
     std::string server; // "host:port", empty until configured
 
+    // False takes this client out of the system without uninstalling it: no
+    // server connection; its disabled discovery status hides it from lists, while
+    // the control API and its settings page keep running. `server` is kept
+    // for when it is switched back on.
+    bool active = true;
+
     // Identity sent in the MATP HELLO message: 16 random hex digits
     // (phase 26). The server keys this client's own output stream, drift
     // model, resampler state and everything a high-end server keeps about the

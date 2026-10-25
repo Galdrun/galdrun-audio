@@ -14,6 +14,9 @@ of its zone.
   server can add it without you typing an address.
 - **Settings in the browser** at `http://<device>:4720/`: name, audio device,
   volume control, buttons, and on Raumfeld/ESP32 also network and Wi-Fi.
+  **In the system: Deactivated** takes the client out of the system without
+  uninstalling it: no server connection and hidden from client/room lists;
+  the settings page and disabled-status discovery keep working. Enabled by default.
 - **Buttons and encoders** on boards that have them: play/pause, volume, mute,
   standby, and more.
 

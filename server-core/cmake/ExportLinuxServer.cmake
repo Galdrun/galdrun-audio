@@ -2,7 +2,7 @@ file(MAKE_DIRECTORY "${DESTINATION}/lib" "${DESTINATION}/licenses")
 configure_file("${BINARY}" "${DESTINATION}/${BINARY_NAME}" COPYONLY)
 file(COPY "${SOURCE}/release/run.sh" DESTINATION "${DESTINATION}"
     FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
-foreach(asset README.md server.example.json)
+foreach(asset README.md server.example.json galdrun-core.service)
     configure_file("${SOURCE}/release/${asset}" "${DESTINATION}/${asset}" COPYONLY)
 endforeach()
 file(WRITE "${DESTINATION}/build-info.txt" "Version: ${VERSION}\nConfiguration: ${CONFIG}\n")

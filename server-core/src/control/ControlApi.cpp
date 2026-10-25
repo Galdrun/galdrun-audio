@@ -579,8 +579,22 @@ ControlApi::Reply ControlApi::clients()
 {
     const uint64_t now = clock_.monotonicNowNs();
     json::Value list = json::Value::makeArray();
-    for (const RoomRecord& room : rooms_.rooms())
+    const auto rooms = rooms_.rooms();
+    for (const RoomRecord& room : rooms)
         list.pushBack(clientJson(room, now));
+    // Include disabled identities after a core restart, too: the .NET server
+    // may still hold their desired settings even before they connect again.
+    for (const auto& found : discovered_.clients())
+    {
+        if (!found.active && std::none_of(rooms.begin(), rooms.end(), [&](const auto& room) {
+                return room.client == found.client;
+            }))
+        {
+            RoomRecord room;
+            room.client = found.client;
+            list.pushBack(clientJson(room, now));
+        }
+    }
 
     Reply reply;
     reply.body["clients"] = std::move(list);
@@ -596,6 +610,8 @@ ControlApi::Reply ControlApi::discoveryClients()
     json::Value list = json::Value::makeArray();
     for (const DiscoveredClient& found : discovered)
     {
+        if (!found.active)
+            continue;
         json::Value entry = json::Value::makeObject();
         entry["client"] = json::Value(found.client.str());
         entry["address"] = json::Value(found.address);
@@ -680,6 +696,8 @@ ControlApi::Reply ControlApi::callClient(const std::string& name, const std::str
     const std::optional<DiscoveredClient> found = discovered_.find(ClientId(name));
     if (!found)
         return Reply::failure(kNotFound, "no beacon from " + name + " has been heard");
+    if (!found->active)
+        return Reply::failure(kUnavailable, name + " is disabled");
     if (!isPresent(*found, clock_.monotonicNowNs()))
         return Reply::failure(kUnavailable, name + " has not sent a beacon recently");
 
@@ -2519,6 +2537,14 @@ ClientSessionHooks ControlApi::sessionHooks()
     return hooks;
 }
 
+void ControlApi::clientActiveChanged(const std::string& client, bool active)
+{
+    auto event = eventHead("room.active");
+    event["client"] = json::Value(client);
+    event["active"] = json::Value(active);
+    publish(event);
+}
+
 void ControlApi::sampleSystem()
 {
     const uint64_t now = clock_.monotonicNowNs();
@@ -2568,6 +2594,8 @@ json::Value ControlApi::clientJson(const RoomRecord& room, uint64_t nowNs) const
 {
     json::Value out = json::Value::makeObject();
     out["clientId"] = json::Value(room.client.str());
+    const auto discovered = discovered_.find(room.client);
+    out["active"] = json::Value(!discovered || discovered->active);
     if (!room.name.empty())
         out["name"] = json::Value(room.name);
     out["connected"] = json::Value(room.connected);

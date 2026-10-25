@@ -12,7 +12,7 @@ You control everything in the browser, through the API, or by asking an AI.
   favourites, likes, play history, audiobook positions and AutoFill when a queue
   runs out.
 - **Per room**: volume, equalizer with profiles, and how the room is kept in sync.
-- **Web interface** on port 4720 for everything above, including the client
+- **Web interface** on port 4723 for everything above, including the client
   devices' settings.
 - **API and MCP**: a REST API under `/api/v1` for apps, and an MCP server so AI
   assistants can control the house.
@@ -29,6 +29,7 @@ You control everything in the browser, through the API, or by asking an AI.
 | `linux-x64` | 64-bit Intel/AMD Linux |
 | `linux-armv7` | Raspberry Pi 2 or newer with a 32-bit OS |
 | `linux-armv8` | Raspberry Pi 3, 4, 5 with a 64-bit OS |
+| `linux-armv9` | ARMv9-A hardware; the `linux-armv8` build, named to match the core |
 
 Every release is self-contained: .NET is included, nothing has to be installed.
 Linux needs the usual system libraries (glibc, libstdc++, OpenSSL, ICU, zlib);
@@ -45,12 +46,12 @@ cp server.example.json server.json               # first run only (Windows: copy
 .\galdrun-server.exe --config server.json        # Windows
 ```
 
-Then open `http://127.0.0.1:4720/`. Without `--config` the server keeps its data
+Then open `http://127.0.0.1:4723/`. Without `--config` the server keeps its data
 in `%LOCALAPPDATA%\Galdrun\Server` (Linux: `~/.local/share/Galdrun/Server`).
 
 | Port | Use | Default bind |
 |---|---|---|
-| 4720 | Web interface | 127.0.0.1 (`gui.bind`, `gui.port`) |
+| 4723 | Web interface | 127.0.0.1 (`gui.bind`, `gui.port`) |
 | 4725 | REST API and MCP | 127.0.0.1 (`api.bind`, `api.port`) |
 | 4714 | Media the core fetches | `media.port` |
 | 4713 | The core's control API | `core.host`, `core.port` |

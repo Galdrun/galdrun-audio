@@ -479,6 +479,9 @@ int runServer(const CommandLineOptions& options, bool asService)
     DiscoveryListenerSettings discoverySettings;
     discoverySettings.port = config.network.discoveryPort;
     discoverySettings.onTick = [&api]() { api.sampleSystem(); };
+    discoverySettings.onActiveChanged = [&api](const std::string& client, bool active) {
+        api.clientActiveChanged(client, active);
+    };
     auto discovery = DiscoveryListener::start(discoverySettings, discovered, clock);
     if (!discovery)
     {

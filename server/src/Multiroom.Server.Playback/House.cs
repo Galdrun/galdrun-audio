@@ -68,7 +68,12 @@ public sealed class House(CoreLink link, QueueEngine queues, ProviderRegistry pr
     // Every zone any half knows of, by name.
     public SortedSet<string> ZoneNames() =>
         new(link.Model.Current.Zones.Keys.Concat(link.Desired.Zones.Select(z => z.Zone))
-            .Concat(queues.Queues.Select(q => q.Zone)), StringComparer.Ordinal);
+            .Concat(queues.Queues.Select(q => q.Zone)).Where(zone =>
+            {
+                var clients = link.Desired.Zones.FirstOrDefault(z => z.Zone == zone).Clients
+                    ?? link.Model.Current.Zones.GetValueOrDefault(zone)?.Clients ?? [];
+                return clients.Count == 0 || clients.Any(IsActive);
+            }), StringComparer.Ordinal);
 
     public IReadOnlyList<ZoneView> Zones() => [.. ZoneNames().Select(ZoneOf)];
 
@@ -238,9 +243,11 @@ public sealed class House(CoreLink link, QueueEngine queues, ProviderRegistry pr
         ?? client;
 
     // Every room either half knows of, by client id.
+    private bool IsActive(string client) => link.Model.Current.Rooms.GetValueOrDefault(client)?.Active != false;
+
     private SortedSet<string> RoomNames() =>
         new(link.Model.Current.Rooms.Keys.Concat(link.Desired.Rooms.Keys)
-            .Concat(link.Desired.Zones.SelectMany(z => z.Clients ?? [])), StringComparer.Ordinal);
+            .Concat(link.Desired.Zones.SelectMany(z => z.Clients ?? [])).Where(IsActive), StringComparer.Ordinal);
 
     private ZoneView ZoneOf(string zone)
     {
@@ -254,14 +261,17 @@ public sealed class House(CoreLink link, QueueEngine queues, ProviderRegistry pr
         if (actual is not null)
             actual = actual with
             {
-                Health = actual.Members
+                Clients = [.. actual.Clients.Where(IsActive)],
+                Members = [.. actual.Members.Where(IsActive)],
+                Health = actual.Members.Where(IsActive)
                     .Select(c => (Client: c, model.Rooms.GetValueOrDefault(c)?.Health))
                     .Where(h => h.Health is not null)
                     .ToDictionary(h => h.Client, h => h.Health!, StringComparer.Ordinal),
             };
-        var members = desired.Clients ?? actual?.Clients ?? [];
-        var name = members.Count == 0 ? zone : string.Join(" + ", members.Select(NameOf));
-        return new ZoneView(zone, name, desired.Zone is null ? null : new ZoneDesired(desired.Clients, level.Volume, level.Muted),
+        var members = (desired.Clients ?? actual?.Clients ?? []).Where(IsActive).ToArray();
+        var name = members.Length == 0 ? zone : string.Join(" + ", members.Select(NameOf));
+        return new ZoneView(zone, name, desired.Zone is null ? null : new ZoneDesired(
+            desired.Clients is null ? null : members, level.Volume, level.Muted),
             actual, state, title, RadioTrackMetadata.FromTitle(title),
             autoFill.View(zone), users.Of(zone));
     }

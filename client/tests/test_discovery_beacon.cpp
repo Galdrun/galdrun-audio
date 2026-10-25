@@ -97,6 +97,11 @@ MULTIROOM_TEST(beacon_round_trips_through_the_shared_parser)
     CHECK_EQ(parsed.host, std::string("livingroom-pi"));
     CHECK_EQ(parsed.controlPort, static_cast<uint16_t>(4720));
     CHECK(parsed.server == std::optional<std::string>("10.0.0.7:4711"));
+    CHECK(parsed.active);
+    auto disabled = testBeacon();
+    disabled.active = false;
+    CHECK(matp::parseClientBeacon(matp::makeClientBeacon(disabled), parsed, error));
+    CHECK(!parsed.active);
 }
 
 MULTIROOM_TEST(beacon_tells_no_server_from_an_older_client)
@@ -114,6 +119,10 @@ MULTIROOM_TEST(beacon_tells_no_server_from_an_older_client)
                                   "\"clientId\":\"a\",\"controlPort\":4720}",
                                   parsed, error));
     CHECK(!parsed.server.has_value());
+    CHECK(parsed.active); // Existing clients without the field remain enabled.
+    CHECK(!matp::parseClientBeacon("{\"type\":\"clientBeacon\",\"protocolVersion\":2,"
+                                  "\"clientId\":\"a\",\"controlPort\":4720,\"active\":\"false\"}",
+                                  parsed, error));
     CHECK(!matp::parseClientBeacon("{\"type\":\"clientBeacon\",\"protocolVersion\":2,"
                                    "\"clientId\":\"a\",\"controlPort\":4720,\"server\":1}",
                                    parsed, error));

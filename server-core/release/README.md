@@ -16,16 +16,19 @@ certificates for HTTPS streams (`sudo apt install ca-certificates`). The example
 config uses the defaults; `./run.sh --help` lists the options. Rebuilds keep
 your `server.json`.
 
+As a service: copy `galdrun-core.service` to `/etc/systemd/system/`, adjust
+`ExecStart` and the config path (defaults: `/opt/galdrun/core`,
+`/etc/galdrun/galdrun-core.json`), then `systemctl enable --now galdrun-core`.
+
 | Folder | Runs on |
 |---|---|
 | `linux-armv7` | Raspberry Pi 2 or newer with a 32-bit OS; ARMv7 with NEON |
 | `linux-armv8` | Raspberry Pi 3, 4, 5 with a 64-bit OS |
 | `linux-armv9` | ARMv9-A hardware only (a Pi 5 is ARMv8.2) |
 | `linux-x64` | 64-bit Intel/AMD |
-| `linux-x86` | 32-bit Intel/AMD |
 
 ARM builds need glibc 2.31 or newer (Raspberry Pi OS / DietPi Bullseye or newer).
-The Intel builds need glibc 2.43 or newer (Ubuntu 26.04 or newer).
+The x64 build needs glibc 2.43 or newer (Ubuntu 26.04 or newer).
 
 Source and licences: FFmpeg 9.0.2 (LGPL, audio decoders only, built by
 `server-core/ffmpeg/build.sh`), OpenSSL 3.5.8, soxr and r8brain (in

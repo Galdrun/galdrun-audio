@@ -121,6 +121,21 @@ MULTIROOM_TEST(config_led_off_is_optional_boolean_and_persists)
     CHECK(config.ledsOff);
 }
 
+MULTIROOM_TEST(config_active_defaults_on_and_persists)
+{
+    ClientConfig config;
+    std::string error;
+    CHECK(client_config::deserialize("{}", config, error));
+    CHECK(config.active);
+    CHECK(!client_config::deserialize("{\"active\":\"false\"}", config, error));
+    CHECK(client_config::deserialize("{\"active\":false}", config, error));
+    CHECK(!config.active);
+    const auto saved = client_config::serialize(config);
+    config.active = true;
+    CHECK(client_config::deserialize(saved, config, error));
+    CHECK(!config.active);
+}
+
 MULTIROOM_TEST(config_accepts_only_usable_client_ids)
 {
     CHECK(discovery::isValidNodeId("livingroom"));

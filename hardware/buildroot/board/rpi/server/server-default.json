@@ -1,0 +1,12 @@
+{
+  "dataDirectory": "/var/lib/galdrun/server",
+  "logging": { "file": "/run/log/galdrun-server.log", "maxBytes": 1048576 },
+  "api": { "bind": "0.0.0.0" },
+  "gui": {
+    "bind": "0.0.0.0",
+    "logs": [
+      { "name": "core", "path": "/run/log/galdrun-core.log" },
+      { "name": "client", "path": "/run/log/galdrun-client.log" }
+    ]
+  }
+}

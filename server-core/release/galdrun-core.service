@@ -1,0 +1,26 @@
+# The Galdrun core audio server under systemd, beside the released executable.
+# Copy it to /etc/systemd/system/ and adjust ExecStart to where this folder was put.
+# galdrun-server.service starts after it when both are installed.
+#
+# systemd runs a foreground process, sends it SIGTERM to stop -- the same stop
+# path Ctrl+C takes -- and reads its stderr into the journal. run.sh sets the
+# library path for lib/ and then replaces itself with galdrun-core.
+#
+# The config is required: a service has no user config directory to lean on.
+# The journal is the log; a file log belongs under LogsDirectory, /var/log/galdrun.
+
+[Unit]
+Description=Galdrun core audio server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/galdrun/core/run.sh --config /etc/galdrun/galdrun-core.json
+Restart=on-failure
+DynamicUser=yes
+LogsDirectory=galdrun
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

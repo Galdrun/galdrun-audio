@@ -25,6 +25,7 @@ public sealed record ZoneTransport(string Zone, TransportState State, ulong Time
 public sealed record RoomConnected(string Client, string DeviceName, bool Reconnect, string? Zone = null, string? Address = null) : CoreEvent;
 
 public sealed record RoomDisconnected(string Client, string Reason, string? Zone = null) : CoreEvent;
+public sealed record RoomActive(string Client, bool Active) : CoreEvent;
 
 public sealed record RoomJoined(
     string Client,

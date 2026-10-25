@@ -5,11 +5,10 @@ arm="$HOME/.local/share/multiroom-linux/x-tools/aarch64-rpi3-linux-gnu"
 arm_sysroot="$($arm/bin/aarch64-rpi3-linux-gnu-gcc -print-sysroot)"
 arm32="$HOME/.local/share/multiroom-linux/x-tools/armv6-rpi-linux-gnueabihf"
 arm32_sysroot="$($arm32/bin/armv6-rpi-linux-gnueabihf-gcc -print-sysroot)"
-for target in x64 x86 armv7 armv8 armv9; do
+for target in x64 armv7 armv8 armv9; do
     directory="$root/releases/server-core/linux-$target"
     runner=()
     case "$target" in
-        x86) runner=(qemu-i386 -L /usr/i686-linux-gnu) ;;
         armv7) runner=(qemu-arm -cpu cortex-a7 -L "$arm32_sysroot") ;;
         armv8) runner=(qemu-aarch64 -cpu cortex-a53 -L "$arm_sysroot") ;;
         armv9) runner=(qemu-aarch64 -cpu max -L "$arm_sysroot") ;;

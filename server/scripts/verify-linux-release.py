@@ -11,7 +11,8 @@ import urllib.request
 
 root = Path(__file__).resolve().parents[2]
 # ELF e_machine: 62 x86-64, 40 ARM, 183 AArch64.
-for rid, machine in (("linux-x64", 62), ("linux-armv7", 40), ("linux-armv8", 183)):
+for rid, machine in (("linux-x64", 62), ("linux-armv7", 40), ("linux-armv8", 183),
+                     ("linux-armv9", 183)):
     release = root / "releases" / "server" / rid
     for name in ("galdrun-server", "libcoreclr.so", "libhostfxr.so", "libe_sqlite3.so"):
         header = (release / name).read_bytes()[:20]

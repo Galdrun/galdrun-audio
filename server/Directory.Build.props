@@ -10,6 +10,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <IsPackable>false</IsPackable>
-    <Version>0.1.0</Version>
+    <!-- One version for the server and the core (server-core/CMakeLists.txt reads it too). -->
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../shared/branding/server-version.txt').Trim())</Version>
   </PropertyGroup>
 </Project>

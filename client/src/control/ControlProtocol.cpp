@@ -29,6 +29,8 @@ const CommandEntry kCommands[] = {
     {ControlCommand::RescanAudio, "rescanAudio"},
     {ControlCommand::GetServer, "getServer"},
     {ControlCommand::SetServer, "setServer"},
+    {ControlCommand::GetActive, "getActive"},
+    {ControlCommand::SetActive, "setActive"},
     {ControlCommand::GetClientId, "getClientId"},
     {ControlCommand::SetClientId, "setClientId"},
     {ControlCommand::SetName, "setName"},

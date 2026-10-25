@@ -163,7 +163,9 @@ public sealed class ApiOptions
 // own: loopback by default, and not loopback is logged as a warning.
 public sealed class GuiOptions
 {
-    public const int DefaultPort = 4720;
+    // Not 4720: that is every client's settings page, and a client often runs
+    // on the server's machine.
+    public const int DefaultPort = 4723;
 
     public string Bind { get; set; } = "127.0.0.1";
 

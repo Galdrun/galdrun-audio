@@ -69,6 +69,12 @@ FFmpeg's supported native toolchain on Windows is MSYS2 + MinGW-w64:
    ```
    (In a CLANG64 shell use `mingw-w64-clang-x86_64-toolchain` instead.)
 
+`build-windows.ps1` does all of this in a portable MSYS2 under `tools/`.
+`build-windows.ps1 -Target armv8` cross-compiles Windows ARM64 from the x64
+host with llvm-mingw (downloaded to `tools/llvm-mingw`) into
+`dist/windows-armv8[-shared]`; it sets `NO_RUN_CHECKS=1`, since x64 Windows
+cannot run ARM64 binaries.
+
 ## Build
 
 ```sh
@@ -103,6 +109,7 @@ server-core/ffmpeg/
 | `EXTRA_FILTERS`   | empty   | Extra filters, e.g. `"anequalizer anlmdn"`                     |
 | `EXTRA_CONFIGURE` | empty   | Extra flags appended to `configure`                            |
 | `LISTGEN_ONLY=1`  | off     | Only generate the component lists, then stop (debugging)       |
+| `NO_RUN_CHECKS=1` | off     | Skip the checks that run `ffmpeg` (cross-builds the host cannot run) |
 
 Examples:
 

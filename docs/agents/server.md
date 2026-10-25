@@ -52,6 +52,12 @@ wire order on the reader; event subscribers run through a separate bounded
 dispatch queue. Never block the reader on downstream work. Lost events trigger
 resynchronization; a stale event for replaced staging must not advance a queue.
 
+The core's `clients[].active` (default true for older cores) comes from client
+discovery, including disabled clients that have not connected since a restart.
+`House` hides inactive rooms and zones containing only inactive rooms, while
+retaining their desired settings for reactivation. `discovery.clients` omits
+inactive clients; an ordinary disconnected room remains visible.
+
 Keep ownership straight when changing settings:
 
 - `.NET DesiredState`: requested memberships, audio control, latency, EQ, room

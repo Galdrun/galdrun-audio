@@ -141,7 +141,8 @@ public sealed partial class ApiTests : IAsyncDisposable
 
         var page = await gui.GetAsync(new Uri("/", UriKind.Relative), Ct);
         Assert.Equal(HttpStatusCode.OK, page.StatusCode);
-        Assert.Contains("<title>Galdrun Server</title>", await page.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
+        // The title is localised in the browser (app.<lang>.js 'page.title').
+        Assert.Contains("<title data-i18n=\"page.title\"></title>", await page.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
         Assert.Equal(HttpStatusCode.OK, (await gui.GetAsync(new Uri("/assets/theme.css", UriKind.Relative), Ct)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await gui.GetAsync(new Uri("/legacy/index.html", UriKind.Relative), Ct)).StatusCode);
 

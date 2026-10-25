@@ -45,6 +45,8 @@ enum class ControlCommand
     RescanAudio,
     GetServer,
     SetServer,
+    GetActive,
+    SetActive,
     GetClientId,
     SetClientId,
     SetName,

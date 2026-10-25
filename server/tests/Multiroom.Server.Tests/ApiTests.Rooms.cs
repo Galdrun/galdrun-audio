@@ -9,6 +9,52 @@ namespace Multiroom.Server.Tests;
 public sealed partial class ApiTests
 {
     [Fact]
+    public async Task Disabled_rooms_and_their_solo_zones_are_hidden_and_reappear_with_their_settings()
+    {
+        await StartAsync();
+        await Ok(HttpMethod.Patch, "rooms/roomA", """{"volume":0.42}""");
+        var status = JsonNode.Parse(_core.StatusBody)!;
+        var client = status["clients"]![0]!;
+        client["active"] = false;
+        client["connected"] = false;
+        _core.StatusBody = status.ToJsonString();
+
+        using var events = await EventsAsync(null);
+        await _core.EmitAsync("""{"event":"room.active","client":"roomA","active":false}""");
+        var changed = JsonNode.Parse((await events.NextAsync(e => e.Type == "room.active")).Data)!;
+        Assert.False(changed["active"]!.GetValue<bool>());
+        Assert.Empty((await Ok(HttpMethod.Get, "rooms")).AsArray());
+        Assert.Empty((await Ok(HttpMethod.Get, "zones")).AsArray());
+        await Refused(HttpMethod.Get, "rooms/roomA", null, HttpStatusCode.NotFound, "notFound");
+
+        client["active"] = true;
+        client["connected"] = true;
+        _core.StatusBody = status.ToJsonString();
+        var restored = await Ok(HttpMethod.Get, "rooms/roomA");
+        Assert.Equal(0.42, restored["desired"]!["volume"]!.GetValue<double>());
+        Assert.Single((await Ok(HttpMethod.Get, "zones")).AsArray());
+
+        var other = client.DeepClone();
+        other["clientId"] = "roomB";
+        status["clients"]!.AsArray().Add(other);
+        _core.StatusBody = status.ToJsonString();
+        await Ok(HttpMethod.Get, "rooms");
+        await Ok(HttpMethod.Put, "zones/living/clients", """{"clients":["roomA","roomB"]}""");
+        client["active"] = false;
+        client["connected"] = false;
+        _core.StatusBody = status.ToJsonString();
+        Assert.Single((await Ok(HttpMethod.Get, "rooms")).AsArray());
+        var group = await Ok(HttpMethod.Get, "zones/living");
+        Assert.Equal(["roomB"], group["desired"]!["clients"]!.AsArray().Select(c => c!.GetValue<string>()));
+        client["active"] = true;
+        client["connected"] = true;
+        _core.StatusBody = status.ToJsonString();
+        await Ok(HttpMethod.Get, "rooms");
+        group = await Ok(HttpMethod.Get, "zones/living");
+        Assert.Equal(["roomA", "roomB"], group["desired"]!["clients"]!.AsArray().Select(c => c!.GetValue<string>()));
+    }
+
+    [Fact]
     public async Task Room_power_state_is_exposed_in_room_status_and_forwarded_as_live_events()
     {
         var status = JsonNode.Parse(_core.StatusBody)!;

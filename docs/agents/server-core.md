@@ -95,6 +95,12 @@ fields are rejected. `zone.setClients` replaces the complete membership.
 Subscribers with overflowing event queues receive `events.lost` and must read
 `status` again. The control API is unauthenticated and defaults to loopback.
 
+Discovery's optional `active` flag defaults to true. Disabled clients keep
+announcing `active: false`; `discovery.clients` hides them, while internal
+`clients`/`status` reports their flag so .NET can hide remembered rooms.
+`DiscoveryListener` publishes changes through `ControlApi::clientActiveChanged`
+as `room.active`; see the shared beacon definition and protocol wire reference.
+
 For contract changes, update the .NET side under
 `server/src/Multiroom.Server.Playback/Core/`: `CoreCommands.cs`,
 `CoreReplies.cs`, `CoreEvents.cs`, `CoreModel.cs`, `CoreLink.cs`, and

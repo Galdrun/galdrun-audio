@@ -19,6 +19,12 @@ bundles the 32-bit ARMv7 client (`linux-armv7`), including on its 64-bit-capable
 models. The separate `rpi4` and `rpi5` images both bundle the 64-bit ARM client
 (`linux-armv8`), with board-specific kernels and boot files.
 
+The **server images** `galdrun-server-rpi{3,4,5}-sdcard.img.gz` add the Galdrun
+server and core to the same appliance, for Pi 3 B/B+ (1 GB) and newer. They are
+built by `scripts/build-server.sh rpi3 rpi4 rpi5` into
+`releases/server/raspberrypi/<image-family>/`; see their
+[README](../../hardware/buildroot/board/rpi/server/README.md).
+
 ## Image location and setup
 
 Build outputs are in `releases/client/raspberrypi/<image-family>/` relative to

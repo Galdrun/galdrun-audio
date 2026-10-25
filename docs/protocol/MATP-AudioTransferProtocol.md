@@ -3603,6 +3603,19 @@ the code ever disagree.
 A client that receives `PREPARE_STREAM` without `audioPort` uses the control
 port plus one. The reference core always sends it.
 
+## Client discovery and disabling
+
+Client discovery's shared definition is `shared/matp/include/matp/ClientBeacon.h`.
+Its optional boolean `active` defaults to true when absent. A disabled client
+keeps sending `clientBeacon` with `active: false`, but makes no MATP connection;
+this lets every core hide cached client entries, including after restarting.
+The core omits inactive entries from `discovery.clients` and reports their
+identities with `active: false` in its internal `clients`/`status` control API.
+Changes publish `room.active` with `client` and `active`, forwarded by .NET to
+SSE so the GUI refreshes. The .NET server hides inactive rooms and zones with
+no active rooms, retaining settings and memberships for reactivation. Normal
+network loss does not hide a room. Device control and settings stay available.
+
 ## Control framing
 
 ```text

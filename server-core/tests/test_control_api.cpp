@@ -2488,6 +2488,28 @@ MULTIROOM_TEST(control_api_keeps_a_room_s_equalizer_and_never_applies_it_to_a_bi
     CHECK(!rig.rooms.find(ClientId("roomA"))->equalizer->enabled);
 }
 
+MULTIROOM_TEST(control_api_hides_disabled_discovery_and_reports_its_state_after_a_restart)
+{
+    ApiRig rig;
+    LineClient caller(rig.listener->port());
+    matp::ClientBeacon beacon;
+    beacon.clientId = "disabled";
+    beacon.controlPort = 4720;
+    beacon.active = false;
+    rig.discovered.onBeacon(beacon, "10.0.0.7", rig.clock.monotonicNowNs());
+    CHECK(entry(caller.request(R"({"command":"discovery.clients"})"), "clients", "client", "disabled") == nullptr);
+    const auto listed = caller.request(R"({"command":"clients"})");
+    const auto* room = entry(listed, "clients", "clientId", "disabled");
+    CHECK(room != nullptr);
+    CHECK(!flag(*room, "active"));
+    CHECK_EQ(errorOf(caller.request(R"({"command":"client.attach","params":{"client":"disabled"}})")),
+             std::string("unavailable"));
+    beacon.active = true;
+    rig.discovered.onBeacon(beacon, "10.0.0.7", rig.clock.monotonicNowNs());
+    CHECK(entry(caller.request(R"({"command":"discovery.clients"})"), "clients", "client", "disabled") != nullptr);
+    CHECK(entry(caller.request(R"({"command":"clients"})"), "clients", "clientId", "disabled") == nullptr);
+}
+
 MULTIROOM_TEST(control_api_lists_the_clients_the_beacons_announced)
 {
     ApiRig rig;

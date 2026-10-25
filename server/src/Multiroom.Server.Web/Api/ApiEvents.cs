@@ -143,6 +143,7 @@ public sealed class ApiEvents : ICoreEventSubscriber, IDisposable
             ZoneTransport => "zone.transport",
             RoomConnected => "room.connected",
             RoomDisconnected => "room.disconnected",
+            RoomActive => "room.active",
             RoomJoined => "room.joined",
             RoomLeft => "room.left",
             RoomNotReady => "room.notReady",

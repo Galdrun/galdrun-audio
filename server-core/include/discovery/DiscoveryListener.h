@@ -42,6 +42,7 @@ struct DiscoveryListenerSettings
     // its own system figures here (phase 34): this thread already wakes that
     // often and holds no zone lock, and a sample reads files on Linux.
     std::function<void()> onTick;
+    std::function<void(const std::string&, bool)> onActiveChanged;
 };
 
 class DiscoveryListener

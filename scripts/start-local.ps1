@@ -20,8 +20,7 @@ if ($running.Count -gt 0) { throw "already running: $(($running | ForEach-Object
 $defaults = @{
     'server.json' = '{ "dataDirectory": "../server", "gui": { "logs": [ { "name": "core", "path": "../core/core.log" } ] } }'
     'core.json'   = '{}'
-    # 4720 is the server's web interface, so the client's settings page moves to 4723.
-    'client.json' = '{ "server": "127.0.0.1:4711", "audioAccessMode": "shared", "controlPort": 4723 }'
+    'client.json' = '{ "server": "127.0.0.1:4711", "audioAccessMode": "shared" }'
 }
 foreach ($dir in 'config', 'server', 'core', 'client') { New-Item -ItemType Directory -Force (Join-Path $run $dir) | Out-Null }
 foreach ($name in $defaults.Keys) {
@@ -44,4 +43,4 @@ Start-Part 'core' 'server-core\windows-x64\galdrun-core.exe' @('--config', "`"$c
 Start-Sleep -Milliseconds 500
 Start-Part 'server' 'server\windows-x64\galdrun-server.exe' @('--config', "`"$config\server.json`"")
 Start-Part 'client' 'client\windows-x64\galdrun-client.exe' @('--config', "`"$config\client.json`"", '--audio-cache', "`"$run\client\audio_devices.json`"")
-Write-Host 'Web interface: http://127.0.0.1:4720/'
+Write-Host 'Web interface: http://127.0.0.1:4723/ (client settings: http://127.0.0.1:4720/)'

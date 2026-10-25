@@ -247,6 +247,8 @@ int main(int argc, char** argv)
     logDeviceSummary(cache);
 
     MULTIROOM_INFO("server: %s", config.server.empty() ? "<not configured>" : config.server.c_str());
+    if (!config.active)
+        MULTIROOM_INFO("deactivated: announcing disabled status, no server connection");
 
     matp::Identity identity;
     identity.clientId = config.clientId;
@@ -258,7 +260,8 @@ int main(int argc, char** argv)
     // for it. The MATP handshake on top of it is driven from the main loop.
     ServerConnection connection;
     std::string connectionError;
-    if (!connection.setServer(config.server, connectionError))
+    // A deactivated client keeps its address but connects nowhere.
+    if (!connection.setServer(config.active ? config.server : std::string(), connectionError))
     {
         // The config and the command line both validate the address, so this
         // is a contradiction rather than a user error.
@@ -415,6 +418,7 @@ int main(int argc, char** argv)
                 beaconInfo.clientId = config.clientId; // setClientId changes it
                 beaconInfo.name = config.name;         // setName this
                 beaconInfo.server = config.server;     // and setServer this
+                beaconInfo.active = config.active;
                 beacon.poll(nowNs, [&]() { return matp::makeClientBeacon(beaconInfo); });
                 step(LoopTiming::Beacon);
 

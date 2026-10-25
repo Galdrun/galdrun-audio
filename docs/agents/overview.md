@@ -29,12 +29,12 @@ and removes zones left empty. The core itself exposes lower-level zone commands.
 | Client -> core `4712` | TCP | `STREAM_ATTACH`, then binary PCM packets from core |
 | Client -> core `4721` | UDP broadcast | Client discovery beacons |
 | Core -> .NET server `4722` | UDP broadcast | Core discovery beacons |
-| Browser -> .NET server `4720` | HTTP | GUI; proxies API requests |
+| Browser -> .NET server `4723` | HTTP | GUI; proxies API requests |
 | API/MCP caller -> .NET server `4725` | HTTP | REST `/api/v1`, events, MCP |
 | Browser/core -> client `4720` | HTTP or line-based TCP JSON | Device settings/control, separate from MATP |
 
-Server GUI and client settings both default to `4720`; when colocated, use a
-different client `controlPort`. `scripts/start-local.ps1` uses `4723` for it.
+The server GUI defaults to `4723` and client settings to `4720`, so both run
+side by side on one machine without configuration.
 Core control and .NET listeners default to loopback. Follow the actual config
 before diagnosing reachability; token settings for API and media are separate.
 

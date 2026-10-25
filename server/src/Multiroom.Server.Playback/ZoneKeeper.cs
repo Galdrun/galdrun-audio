@@ -210,7 +210,8 @@ public sealed partial class ZoneKeeper : BackgroundService, ICoreEventSubscriber
 
         model = _link.Model.Current;
         var held = model.Zones.Values.SelectMany(z => z.Clients).ToHashSet(StringComparer.Ordinal);
-        foreach (var client in model.Rooms.Keys.Where(c => _link.Desired.ZoneOf(c) is null && !held.Contains(c)).ToList())
+        foreach (var client in model.Rooms.Keys.Where(c => model.Rooms[c].Active &&
+                     _link.Desired.ZoneOf(c) is null && !held.Contains(c)).ToList())
         {
             var zone = NewZone();
             LogCreated(_log, zone, client);

@@ -78,7 +78,11 @@ come from root `shared/matp/include/`, not a second client definition.
 
 ## Configuration and checks
 
-`client.json` is persistent; CLI overrides apply to that run. A generated
+`client.json` is persistent; CLI overrides apply to that run. `active: false`
+(`setActive`, the settings page's "In the system") stops the server connection
+but keeps `server`, the control API and discovery with `active: false`, so cores
+can hide cached rooms even after restarting. Clients default to active. `main.cpp` and
+`handleSetServer` both honour it. A generated
 `clientId` must survive restarts. `audio_devices.json` caches expensive full
 capability probes; `--rescan-audio` rebuilds it. See `src/app/CommandLine.cpp`
 for exact flags and `src/config/ClientConfig.cpp` for defaults/validation.

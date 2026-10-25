@@ -10,8 +10,9 @@ for the source directory, generator and options.
 | Script (relative to repository root) | Purpose / when to use |
 | --- | --- |
 | `scripts/build-client.ps1`, `scripts/build-client.sh` | Build desktop/Linux clients, ESP32, Connector 2 firmware or `rpi1`/`rpi3`/`rpi4`/`rpi5` SD images; bootstrap tools; export to `releases/client/` |
-| `scripts/build-server-core.ps1`, `scripts/build-server-core.sh` | Build/export the C++ audio engine and its runtime libraries to `releases/server-core/` |
-| `scripts/build-server.ps1`, `scripts/build-server.sh` | Publish self-contained .NET server releases, including the browser GUI, to `releases/server/` |
+| `scripts/build-server-core.ps1`, `scripts/build-server-core.sh` | Build/export the C++ audio engine and its runtime libraries to `releases/server-core/` (`windows-x64`, `windows-armv8`, `linux-x64`, `linux-armv7`/`armv8`/`armv9`; no `linux-x86`) |
+| `scripts/build-server.ps1`, `scripts/build-server.sh` | Publish self-contained .NET server releases, including the browser GUI, to `releases/server/` (same targets as the core; `linux-armv9` is the `linux-arm64` build under its own name). `rpi3`/`rpi4`/`rpi5` (`raspberrypi`) build Pi server SD images into `releases/server/raspberrypi/`: core and client image first, then `hardware/buildroot/scripts/build-server-image.sh` |
+| `scripts/release/package.py` (gitignored, local) | Pack `releases/` into release archives, plus one `galdrun-server-bundle-*` per target with both server and core, using `scripts/release/bundle/` (README, `start.sh`, `start.cmd`/`start.ps1`) |
 | `scripts/copy-server-gui.ps1` | Copy `server-gui/www/` and shared web assets into an existing server release's `gui/`; defaults to `windows-x64`, accepts `-Target <target>` |
 | `scripts/build-mobile-gui.ps1`, `scripts/build-mobile-gui.sh` | Publish the Avalonia desktop app; these scripts do not build Android/iOS |
 | `scripts/setup/windows.ps1`, `scripts/setup/linux.sh` | Helpers sourced by build scripts for tool/dependency setup; not standalone entry points |
@@ -94,7 +95,10 @@ ctest --preset windows-x64
 Linux uses the same three commands with `linux-x64`. Presets enable FFmpeg,
 soxr and r8brain. Windows FFmpeg is bundled in `third_party/ffmpeg/`; Linux's
 preset expects `ffmpeg/dist/linux-x64-shared`. Use the dependency/build scripts
-in [the core README](../../server-core/README.md) if absent. Bare CMake defaults
+in [the core README](../../server-core/README.md) if absent. `windows-armv8`
+cross-compiles: it needs the Visual Studio component "MSVC ARM64 build tools"
+and `ffmpeg/dist/windows-armv8-shared` (`ffmpeg/build-windows.ps1 -Target armv8`,
+llvm-mingw), has no tests, and cannot run on the x64 host. Bare CMake defaults
 differ from presets: resamplers are off, FFmpeg on. A deliberately reduced
 `-DMULTIROOM_WITH_FFMPEG=OFF` build is not a playback verification.
 
@@ -150,14 +154,17 @@ avoid a default all-target build for a small edit. Windows uses WSL for C++
 Linux/firmware targets. For release/architecture checks inspect
 `client/scripts/verify-linux-binaries.sh`,
 `server-core/scripts/verify-linux-binaries.sh`, and
-`server/scripts/verify-linux-release.py` (Linux/WSL).
+`server/scripts/verify-linux-release.py` (Linux/WSL). The server and the core
+take their version from `shared/branding/server-version.txt`; the server logs a
+warning when the core it reaches reports another one.
 
 After rebuilding, start a local stack when needed with
 `powershell -ExecutionPolicy Bypass -File scripts/start-local.ps1`.
 `restart-local.ps1` stops then starts; it does not build. These scripts run the
 Windows x64 releases. Configs are `scripts/.run/config/{server,core,client}.json`;
 logs/data are under `scripts/.run/{server,core,client}/` and remain untracked.
-The GUI is `http://127.0.0.1:4720/`; local client settings are on `4723`.
+The GUI is `http://127.0.0.1:4723/`; client settings are on `4720` (configs created
+before the port change may still set them the other way round).
 Preserve existing configs/data instead of resetting them to debug a build.
 Starting scripts explicitly opens consoles; automated helper processes launched
 by agents should use hidden windows unless an interactive console is requested.
@@ -165,13 +172,24 @@ by agents should use hidden windows unless an interactive console is requested.
 For manual runs, set separate config/data/cache paths so experiments do not
 reuse installed state. Useful observations: core JSON `status`, REST
 `/api/v1/status` and `/api/v1/system`, client `status`/`diagnostics`, and the
-component logs. GUI and client both default to `4720` outside the local scripts.
+component logs. The server GUI defaults to `4723`, every client's settings page to `4720`.
 
 ## Pick verification by changed surface
 
 Pi image builds are `scripts/build-client.sh rpi1 rpi3 rpi4 rpi5` (Windows: the equivalent
 PowerShell targets). See [the Pi guide](../../hardware/buildroot/board/rpi/README.md).
 Firmware host checks live in `hardware/buildroot/scripts/test-*.py`; in particular
+`test-server-image.py` checks final server-image metadata. Server image assembly
+builds ICU and its dependencies in `<board>-server-deps` beside the client build
+cache; it preserves the client filesystem and config. The assembled image's
+manifest records its own partition sizes and hashes, plus server/core provenance.
+Image assembly also runs `test-server-runtime.py <rootfs> <board>`: core ABI,
+enabled client defaults, .NET API, ICU browsing, SQLite and clean shutdown.
+ARM32 QEMU validation alone sets `DOTNET_EnableWriteXorExecute=0`: the default
+dual-mapped JIT memory crashed QEMU 10.2.1 in CoreCLR `MethodTable::CanCastTo`.
+The device service retains .NET's production W^X default. An emulated pass does
+not qualify physical boot or playback.
+For shared appliance changes,
 run network/init/scan, client-image, SSH, build-cache, `test-rpi-profile.py`,
 `test-rpi-inputs.py` and
 `test-appliance-update.py` for shared-service changes. `verify-rpi-images.py` is

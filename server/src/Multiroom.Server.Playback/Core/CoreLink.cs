@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -67,6 +68,7 @@ public sealed partial class CoreLink : BackgroundService
         ["zone.transport"] = typeof(ZoneTransport),
         ["room.connected"] = typeof(RoomConnected),
         ["room.disconnected"] = typeof(RoomDisconnected),
+        ["room.active"] = typeof(RoomActive),
         ["room.joined"] = typeof(RoomJoined),
         ["room.left"] = typeof(RoomLeft),
         ["room.notReady"] = typeof(RoomNotReady),
@@ -164,6 +166,12 @@ public sealed partial class CoreLink : BackgroundService
 
     // The core's version from the last `status` handshake; null before one.
     public string? CoreVersion { get; private set; }
+
+    // The server's version, as the core reports its own: without the commit
+    // that follows '+'. Every server assembly carries the same one.
+    private static readonly string ServerVersion =
+        typeof(CoreLink).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion.Split('+')[0] ?? "unknown";
 
     // A handler that sends through this link, and so cannot be one of the
     // constructor's: the container could build neither first. It receives
@@ -531,6 +539,8 @@ public sealed partial class CoreLink : BackgroundService
         var model = Model.Current;
         var server = status.Value.Server;
         CoreVersion = server.Version;
+        if (server.Version != ServerVersion)
+            LogVersionMismatch(_log, server.Version, ServerVersion);
         var uptime = TimeSpan.FromMilliseconds(server.UptimeMs);
         LogSynchronised(_log, server.Version, uptime, model.Zones.Count, model.Rooms.Count, commands.Count);
         _events.Writer.TryWrite(new CoreSynchronised(reconnected));
@@ -799,6 +809,10 @@ public sealed partial class CoreLink : BackgroundService
         Message = "synchronised with the core {Version}, up {Uptime}: {Zones} zone(s), {Rooms} room(s), {Commands} command(s) re-asserted")]
     private static partial void LogSynchronised(ILogger log, string version, TimeSpan uptime, int zones, int rooms,
         int commands);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "the core is version {CoreVersion}, this server {ServerVersion}: take both from the same release")]
+    private static partial void LogVersionMismatch(ILogger log, string coreVersion, string serverVersion);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "the core lost events for this server; reading status again")]
     private static partial void LogResync(ILogger log);

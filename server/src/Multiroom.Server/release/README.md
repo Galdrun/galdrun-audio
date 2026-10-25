@@ -15,13 +15,13 @@ cp server.example.json server.json               # first run only (Windows: copy
 .\galdrun-server.exe --config server.json        # Windows
 ```
 
-Then open the web interface at `http://127.0.0.1:4720/`. Ctrl+C stops the server.
+Then open the web interface at `http://127.0.0.1:4723/`. Ctrl+C stops the server.
 The library, playback state and caches go to `data/` beside `server.json` (the
 example's `dataDirectory`). Rebuilds keep `server.json` and `data/`.
 
 | Port | Use | Listens on |
 |---|---|---|
-| 4720 | Web interface | 127.0.0.1 (`gui.bind`, `gui.port`) |
+| 4723 | Web interface | 127.0.0.1 (`gui.bind`, `gui.port`) |
 | 4725 | API for apps and MCP | 127.0.0.1 (`api.bind`, `api.port`) |
 | 4714 | Media for the core | the core fetches from here (`media.port`) |
 | 4713 | The core's control API | `core.host`, `core.port` |
@@ -40,6 +40,7 @@ Windows: `sc.exe create GaldrunServer binPath= "\"C:\Galdrun\server\galdrun-serv
 | `linux-x64` | 64-bit Intel/AMD Linux |
 | `linux-armv7` | Raspberry Pi 2 or newer with a 32-bit OS |
 | `linux-armv8` | Raspberry Pi 3, 4, 5 with a 64-bit OS |
+| `linux-armv9` | ARMv9-A hardware; the same build as `linux-armv8`, named to match the core |
 
 Built on .NET 11; the supported Linux distributions are listed at
 https://github.com/dotnet/core/blob/main/release-notes/11.0/supported-os.md.

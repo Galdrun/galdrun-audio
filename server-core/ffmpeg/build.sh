@@ -45,6 +45,7 @@
 #   EXTRA_CONFIGURE   extra flags appended to configure
 #   TARGET_ARCH       output tag for cross-builds (e.g. armv8); compiler flags go in EXTRA_CONFIGURE
 #   FFMPEG_RUNNER     command prefix for cross-build verification (e.g. qemu-aarch64 -L <sysroot>)
+#   NO_RUN_CHECKS=1   skip the checks that run ffmpeg (cross-builds the host cannot run at all)
 #   LISTGEN_ONLY=1    only generate the component lists, then stop (debug)
 #
 set -euo pipefail
@@ -306,32 +307,36 @@ FFBIN="$PREFIX/bin/ffmpeg"
 [ -x "$FFBIN" ] || FFBIN="$PREFIX/bin/ffmpeg.exe"
 [ -x "$FFBIN" ] || die "ffmpeg binary not found in $PREFIX/bin"
 
-log "verifying: no video codecs present ..."
-RUNNER=()
-if [ -n "${FFMPEG_RUNNER:-}" ]; then read -r -a RUNNER <<< "$FFMPEG_RUNNER"; fi
-out="$("${RUNNER[@]}" "$FFBIN" -hide_banner -decoders 2>/dev/null | grep -v '=')"
-video=$(printf '%s\n' "$out" | awk '$1 ~ /V/' | wc -l)
-audio=$(printf '%s\n' "$out" | awk '$1 ~ /A/' | wc -l)
-[ "$video" -eq 0 ] || { printf '%s\n' "$out" | awk '$1 ~ /V/' | head; die "decoder list contains $video video codecs"; }
-[ "$audio" -gt 60 ] || die "only $audio audio decoders found - decoder selection failed"
-log "  decoders: $audio audio codecs, 0 video codecs"
-
-out="$("${RUNNER[@]}" "$FFBIN" -hide_banner -encoders 2>/dev/null | grep -v '=')"
-video=$(printf '%s\n' "$out" | awk '$1 ~ /V/' | wc -l)
-audio=$(printf '%s\n' "$out" | awk '$1 ~ /A/' | wc -l)
-[ "$video" -eq 0 ] || die "encoder list contains $video video codecs"
-if [ "$audio" -gt 0 ]; then
-    log "  encoders: $audio audio codecs, 0 video codecs"
+if [ "${NO_RUN_CHECKS:-0}" = "1" ]; then
+    printf '\033[1;33mNOTE:\033[0m NO_RUN_CHECKS=1 -> codec list and smoke test skipped; run them on the target.\n'
 else
-    log "  encoders: none (decode-only build)"
-fi
+    log "verifying: no video codecs present ..."
+    RUNNER=()
+    if [ -n "${FFMPEG_RUNNER:-}" ]; then read -r -a RUNNER <<< "$FFMPEG_RUNNER"; fi
+    out="$("${RUNNER[@]}" "$FFBIN" -hide_banner -decoders 2>/dev/null | grep -v '=')"
+    video=$(printf '%s\n' "$out" | awk '$1 ~ /V/' | wc -l)
+    audio=$(printf '%s\n' "$out" | awk '$1 ~ /A/' | wc -l)
+    [ "$video" -eq 0 ] || { printf '%s\n' "$out" | awk '$1 ~ /V/' | head; die "decoder list contains $video video codecs"; }
+    [ "$audio" -gt 60 ] || die "only $audio audio decoders found - decoder selection failed"
+    log "  decoders: $audio audio codecs, 0 video codecs"
 
-log "running demux smoke test (raw pcm -> null) ..."
-SMOKE="$BUILD/smoke"
-mkdir -p "$SMOKE"
-dd if=/dev/zero of="$SMOKE/in.pcm" bs=1024 count=64 status=none 2>/dev/null || dd if=/dev/zero of="$SMOKE/in.pcm" bs=1024 count=64 2>/dev/null
-"${RUNNER[@]}" "$FFBIN" -hide_banner -loglevel error -y -f s16le -ar 44100 -ac 2 -i "$SMOKE/in.pcm" -c copy -f null -
-rm -rf "$SMOKE"
+    out="$("${RUNNER[@]}" "$FFBIN" -hide_banner -encoders 2>/dev/null | grep -v '=')"
+    video=$(printf '%s\n' "$out" | awk '$1 ~ /V/' | wc -l)
+    audio=$(printf '%s\n' "$out" | awk '$1 ~ /A/' | wc -l)
+    [ "$video" -eq 0 ] || die "encoder list contains $video video codecs"
+    if [ "$audio" -gt 0 ]; then
+        log "  encoders: $audio audio codecs, 0 video codecs"
+    else
+        log "  encoders: none (decode-only build)"
+    fi
+
+    log "running demux smoke test (raw pcm -> null) ..."
+    SMOKE="$BUILD/smoke"
+    mkdir -p "$SMOKE"
+    dd if=/dev/zero of="$SMOKE/in.pcm" bs=1024 count=64 status=none 2>/dev/null || dd if=/dev/zero of="$SMOKE/in.pcm" bs=1024 count=64 2>/dev/null
+    "${RUNNER[@]}" "$FFBIN" -hide_banner -loglevel error -y -f s16le -ar 44100 -ac 2 -i "$SMOKE/in.pcm" -c copy -f null -
+    rm -rf "$SMOKE"
+fi
 
 log "done."
 log "install prefix : $PREFIX"

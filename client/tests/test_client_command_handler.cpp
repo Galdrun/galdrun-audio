@@ -4,6 +4,7 @@
 #include "app/DeviceSelection.h"
 #include "app/StreamPlayback.h"
 #include "matp/Session.h"
+#include "net/ServerConnection.h"
 #include "util/FileUtil.h"
 #include "util/Time.h"
 
@@ -485,6 +486,48 @@ MULTIROOM_TEST(set_server_validates_and_persists)
     CHECK(client_config::load(fixture.runtime.configPath, reloaded, error) ==
           client_config::LoadResult::Ok);
     CHECK_EQ(reloaded.server, std::string("10.0.0.5:4711"));
+}
+
+MULTIROOM_TEST(set_active_persists_and_disconnects_but_keeps_the_address)
+{
+    multiroomtest::TempDirectory temp("control");
+    Fixture fixture;
+    fixture.runtime.configPath = temp.file("client.json");
+    ServerConnection connection; // never started: only its address is read
+    std::string error;
+    CHECK(connection.setServer(fixture.config.server, error));
+    fixture.runtime.server = &connection;
+    ClientCommandHandler handler(fixture.runtime);
+
+    CHECK_EQ(fieldBool(handler.handle(makeRequest("getActive", ControlCommand::GetActive)), "active", false), true);
+
+    ControlRequest off = makeRequest("setActive", ControlCommand::SetActive);
+    off.params["active"] = json::Value(false);
+    const json::Value response = handler.handle(off);
+    CHECK_EQ(fieldBool(response, "ok", false), true);
+    CHECK_EQ(fieldBool(response, "active", true), false);
+    CHECK(connection.server().empty());
+    CHECK_EQ(fixture.config.server, std::string("192.168.1.10:4711"));
+
+    // A new address while deactivated is stored, not connected to.
+    ControlRequest server = makeRequest("setServer", ControlCommand::SetServer);
+    server.params["server"] = json::Value("10.0.0.5:4711");
+    CHECK_EQ(fieldBool(handler.handle(server), "ok", false), true);
+    CHECK(connection.server().empty());
+
+    ClientConfig reloaded;
+    CHECK(client_config::load(fixture.runtime.configPath, reloaded, error) == client_config::LoadResult::Ok);
+    CHECK(!reloaded.active);
+    CHECK_EQ(reloaded.server, std::string("10.0.0.5:4711"));
+
+    ControlRequest on = makeRequest("setActive", ControlCommand::SetActive);
+    on.params["active"] = json::Value(true);
+    CHECK_EQ(fieldBool(handler.handle(on), "active", false), true);
+    CHECK_EQ(connection.server(), std::string("10.0.0.5:4711"));
+
+    ControlRequest bad = makeRequest("setActive", ControlCommand::SetActive);
+    bad.params["active"] = json::Value("no");
+    CHECK_EQ(fieldBool(handler.handle(bad), "ok", true), false);
 }
 
 MULTIROOM_TEST(set_server_that_cannot_be_saved_keeps_the_command_line_override)

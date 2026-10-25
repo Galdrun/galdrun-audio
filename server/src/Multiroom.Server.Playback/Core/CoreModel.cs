@@ -34,7 +34,8 @@ public sealed record CoreRoom(
     // Section 57: whether the client can run the deepSleep input action.
     bool? DeepSleep = null,
     // With PowerState "sleep": the MAC its Wake-on-LAN magic packet names.
-    string? WakeOnLan = null);
+    string? WakeOnLan = null,
+    bool Active = true);
 
 // Whether a room in a zone keeps falling behind (the core's phase 41, this
 // server's phase 34): absent for a room in no zone. Rejoins is the episode's
@@ -156,7 +157,8 @@ public sealed class CoreModel(TimeProvider? time = null)
         c.Stream?.PowerState ?? c.PowerState,
         c.DriftCorrection,
         c.DeepSleep,
-        c.WakeOnLan);
+        c.WakeOnLan,
+        c.Active);
 
     // A core before its phase 41, or a room in no zone, says nothing.
     private static CoreRoomHealth? HealthOf(CoreClientInfo c, CoreRoom? room, DateTimeOffset now)
@@ -258,6 +260,9 @@ public sealed class CoreModel(TimeProvider? time = null)
             BufferMs = null,
             VolumeControl = null,
         }), e.Client, e.Zone),
+        RoomActive e => m.Rooms.TryGetValue(e.Client, out var activeRoom)
+            ? m with { Rooms = m.Rooms.SetItem(e.Client, activeRoom with { Active = e.Active }) }
+            : m,
         RoomJoined e => Join(Room(m, e.Client, r => r with
         {
             Member = true,
