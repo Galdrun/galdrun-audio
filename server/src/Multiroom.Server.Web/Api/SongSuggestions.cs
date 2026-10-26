@@ -58,11 +58,12 @@ public sealed class SongSuggestions(SongSuggester suggester, SongResolver resolv
     // either. `avoidSongs` (AutoFill's recent plays, newest first): their
     // songs are not answered from any provider. `avoidKeys` (phase 38): more
     // songs not to answer, by SongResolver.SongKey; `maxRounds` in place of
-    // the settings' rounds.
+    // the settings' rounds; `user` whose marks weight the seed (everyone's
+    // when absent).
     public async Task<Result<SuggestionAnswer, AiError>> SuggestAsync(string request, IReadOnlyList<Track> seed,
         IReadOnlyList<Track> exclude, int count, string? provider, string? model, AiReasoning? reasoning,
         CancellationToken cancellationToken, IReadOnlyList<Track>? avoidSongs = null, IReadOnlySet<string>? avoidKeys = null,
-        int? maxRounds = null)
+        int? maxRounds = null, string user = UserStore.Everyone)
     {
         if (string.IsNullOrWhiteSpace(request))
             return Result.Fail(AiError.InvalidArgument, "request is empty");
@@ -74,7 +75,7 @@ public sealed class SongSuggestions(SongSuggester suggester, SongResolver resolv
         Interlocked.Increment(ref _requests);
 
         // A lookup that fails marks nothing: the marks weight, they do not decide.
-        var preferred = Preferred(seed);
+        var preferred = Preferred(seed, user);
         List<SeedSong> seedSongs = [.. seed.Select(t => new SeedSong(SongSuggestion.Of(t), preferred.Has(t)))];
         List<Track> excluded = [.. seed, .. exclude];
         var answered = new List<ResolvedSong>();
@@ -151,18 +152,20 @@ public sealed class SongSuggestions(SongSuggester suggester, SongResolver resolv
             sources);
     }
 
-    // The liked or favourite tracks among these; none when the lookup fails.
-    public HashSet<(string ProviderId, string ProviderItemId)> Preferred(IEnumerable<Track> tracks) =>
-        PreferredTracks.Of(likes, playlists, tracks) is { IsSuccess: true } found ? found.Value : [];
+    // The liked or favourite tracks among these, in `user`'s scope; none when
+    // the lookup fails.
+    public HashSet<(string ProviderId, string ProviderItemId)> Preferred(IEnumerable<Track> tracks,
+        string user = UserStore.Everyone) =>
+        PreferredTracks.Of(likes, playlists, tracks, user) is { IsSuccess: true } found ? found.Value : [];
 
     // At most `limit` of `tracks` as a seed, in their order: the preferred
     // ones first, then those nearest the end (a queue's latest) or the start
-    // (a playlist's first).
-    public IReadOnlyList<Track> Pick(IReadOnlyList<Track> tracks, int limit, bool fromEnd)
+    // (a playlist's first). Preferred in `user`'s scope.
+    public IReadOnlyList<Track> Pick(IReadOnlyList<Track> tracks, int limit, bool fromEnd, string user = UserStore.Everyone)
     {
         if (tracks.Count <= limit)
             return tracks;
-        var preferred = Preferred(tracks);
+        var preferred = Preferred(tracks, user);
         return [.. tracks.Select((t, i) => (Track: t, Index: i))
             .OrderBy(p => preferred.Has(p.Track) ? 0 : 1)
             .ThenBy(p => fromEnd ? -p.Index : p.Index)

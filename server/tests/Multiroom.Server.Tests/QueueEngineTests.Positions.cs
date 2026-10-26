@@ -38,6 +38,34 @@ public sealed partial class QueueEngineTests
     }
 
     [Fact]
+    public void A_listener_has_a_place_of_their_own_and_reads_the_households_where_they_have_none()
+    {
+        var database = new LibraryDatabase(Path.Combine(_dir.Path, "library.db"));
+        Assert.True(database.Migrate().IsSuccess);
+        var positions = new BookPositionStore(database);
+        Assert.True(new UserStore(database).Add("Alice").IsSuccess);
+        var at = DateTimeOffset.UnixEpoch;
+        BookPosition Place(string reference, long offset, string user) =>
+            new(reference, "The Book", null, 0, null, offset, offset, null, false, at = at.AddMinutes(1), user);
+
+        Assert.True(positions.Save(Place("fake:book", 10, "")).IsSuccess);
+        Assert.Equal(10, positions.Get("fake:book", "Alice").Value!.OffsetMs);
+        Assert.True(positions.Save(Place("fake:book", 20, "Alice")).IsSuccess);
+        Assert.True(positions.Save(Place("fake:other", 30, "")).IsSuccess);
+        Assert.Equal((10L, 20L), (positions.Get("fake:book").Value!.OffsetMs, positions.Get("fake:book", "Alice").Value!.OffsetMs));
+        Assert.Equal([("fake:other", ""), ("fake:book", "Alice")],
+            positions.Page(0, 10, "Alice").Value.Items.Select(p => (p.Reference, p.User)));
+        Assert.Equal(3, positions.Page(0, 10, UserStore.Everyone).Value.Total);
+
+        // A user unknown is saved as the household.
+        Assert.True(positions.Save(Place("fake:third", 40, "Nobody")).IsSuccess);
+        Assert.Equal("", positions.Get("fake:third").Value!.User);
+
+        Assert.True(positions.Delete("fake:book", "Alice").IsSuccess);
+        Assert.Equal(10, positions.Get("fake:book", "Alice").Value!.OffsetMs);
+    }
+
+    [Fact]
     public async Task A_book_s_place_is_always_saved_and_resumed_only_when_the_house_says_so()
     {
         var (positions, settings, player, recorder, store) = await PositionsAsync();

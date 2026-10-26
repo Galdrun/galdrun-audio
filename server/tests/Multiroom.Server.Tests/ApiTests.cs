@@ -90,7 +90,7 @@ public sealed partial class ApiTests : IAsyncDisposable
         // The self-check: the media endpoint answered its probe, and the
         // database is at the latest schema.
         Assert.Equal($"reachable at {baseUri}", status["media"]!["reachability"]!.GetValue<string>());
-        Assert.Equal(28, status["library"]!["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(29, status["library"]!["schemaVersion"]!.GetValue<int>());
         Assert.NotNull(status["library"]!["indexer"]!["queueDepth"]);
         Assert.Equal(["local", "webradio", "tidal", "fake", "slow"],
             status["providers"]!.AsArray().Select(p => p!["id"]!.GetValue<string>()));
@@ -168,6 +168,9 @@ public sealed partial class ApiTests : IAsyncDisposable
         using var notAnObject = new StringContent("[1]", Encoding.UTF8, "application/json");
         Assert.Equal(HttpStatusCode.BadRequest, (await gui.PutAsync(new Uri("/gui/settings", UriKind.Relative), notAnObject, Ct)).StatusCode);
         Assert.Equal(HttpStatusCode.MethodNotAllowed, (await gui.DeleteAsync(new Uri("/gui/settings", UriKind.Relative), Ct)).StatusCode);
+
+        // The log tail resumes from offsets by name; anything else is refused.
+        Assert.Equal(HttpStatusCode.BadRequest, (await gui.GetAsync(new Uri("/gui/logs?from=%5B1%5D", UriKind.Relative), Ct)).StatusCode);
     }
 
     // --- providers and search -------------------------------------------------

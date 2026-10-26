@@ -65,16 +65,16 @@ public sealed class PlayHistoryStore(LibraryDatabase database)
 
     // One page, newest first, of one zone's plays or the house's, in a
     // user's scope (UserStore.Scope: the household's, a user's with the
-    // household's, or everyone's), and how many there are. A play is one
-    // event, so nothing is merged.
+    // household's, or everyone's; only: the user's own), and how many there
+    // are. A play is one event, so nothing is merged.
     public Result<(IReadOnlyList<PlayedTrack> Items, int Total), LibraryError> Page(string? zone, int offset, int limit,
-        string? user = UserStore.Household) =>
+        string? user = UserStore.Household, bool only = false) =>
         Run<(IReadOnlyList<PlayedTrack>, int)>(c =>
         {
             var scope = UserStore.Canonical(c, null, user, everyone: true);
             if (!scope.IsSuccess)
                 return scope.Failure;
-            var where = " WHERE " + UserStore.Scope(scope.Value) + (zone is null ? "" : " AND zone = $zone");
+            var where = " WHERE " + UserStore.Scope(scope.Value, only) + (zone is null ? "" : " AND zone = $zone");
             var items = Rows(c, Columns + where + " ORDER BY id DESC LIMIT $limit OFFSET $offset",
                 ("$zone", zone), ("$user", scope.Value), ("$limit", limit), ("$offset", offset));
             using var count = Command(c, "SELECT COUNT(*) FROM play_history" + where, ("$zone", zone),

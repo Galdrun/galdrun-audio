@@ -53,8 +53,9 @@ public sealed record RoomDesired(
 // and offset, the buffer, underruns, rejoins and the age of the room's last
 // report. Absent when the core has never reported the room.
 // Name is what people call the room (phase 39): the core's, else the last one
-// this server kept, else the client id.
-public sealed record RoomView(string Client, string Name, RoomDesired Desired, CoreRoom? Actual);
+// this server kept, else the client id. User is who listens in it, "" the
+// household (ZoneUsers).
+public sealed record RoomView(string Client, string Name, RoomDesired Desired, CoreRoom? Actual, string User = "");
 
 // The house as a caller sees it: zones and rooms
 // with both halves, and a zone's own level. The REST API and the MCP tools
@@ -124,7 +125,7 @@ public sealed class House(CoreLink link, QueueEngine queues, ProviderRegistry pr
             new RoomDesired(zone, settings.AudioControl, volume,
                 settings.Muted, settings.OutputLatencyMs, effective.Volume, effective.Muted,
                 settings.Equalizer, effective.Grouped, settings.MaxVolumeDb),
-            link.Model.Current.Rooms.GetValueOrDefault(client));
+            link.Model.Current.Rooms.GetValueOrDefault(client), users.OfRoom(client));
     }
 
     // Phase 15: the zone's own volume and mute, recorded and sent to every
@@ -157,19 +158,20 @@ public sealed class House(CoreLink link, QueueEngine queues, ProviderRegistry pr
         return autoFill.Set(zone, patch);
     }
 
-    // Phase 36: who is listening in a zone, "" for the household; a name
-    // UserStore does not know is refused by name.
-    public Result<ZoneView, QueueError> SetUser(string zone, string user)
+    // Phase 36: who listens in a room, "" for the household; a name
+    // UserStore does not know is refused by name. The room's zone follows
+    // (ZoneUsers.Of).
+    public Result<RoomView, CoreError> SetUser(string client, string user)
     {
-        if (!ZoneNames().Contains(zone))
-            return Result.Fail(QueueError.NotFound, $"no zone {zone}");
+        if (!RoomNames().Contains(client))
+            return Result.Fail(CoreError.NotFound, $"no room {client}");
         var resolved = userStore.Resolve(user);
         if (!resolved.IsSuccess)
             return Result.Fail(resolved.Failure.Code == LibraryError.InvalidArgument
-                ? QueueError.InvalidArgument
-                : QueueError.Unavailable, resolved.Failure.Detail);
-        users.Set(zone, resolved.Value);
-        return ZoneOf(zone);
+                ? CoreError.InvalidArgument
+                : CoreError.Unavailable, resolved.Failure.Detail);
+        users.Set(client, resolved.Value);
+        return Room(client);
     }
 
     // A room's own volume and mute (the room patch's pair), answered as the room.

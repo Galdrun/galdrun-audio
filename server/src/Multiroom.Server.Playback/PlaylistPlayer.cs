@@ -41,9 +41,10 @@ public sealed record ExpandedNode(QueueGroup? Group, IReadOnlyList<Track> Tracks
 // phase 30's verdict) goes in as one group (phase 31), unless the caller
 // asks for single items; anything else goes in track by track. A book goes in
 // with where a listener stopped in it (phase 33), and starts there when the
-// house resumes books and the caller did not ask for its start.
+// house resumes books and the caller did not ask for its start: the zone's
+// listener's place, else the household's.
 public sealed class PlaylistPlayer(PlaylistStore store, IQueueEngine queues, ProviderRegistry providers,
-    PlaybackSettings? settings = null, BookPositionStore? positions = null)
+    PlaybackSettings? settings = null, BookPositionStore? positions = null, ZoneUsers? users = null)
 {
     // Whether books go in as one item when the caller does not say.
     public PlaybackSettings Settings { get; } = settings ?? new PlaybackSettings();
@@ -78,7 +79,7 @@ public sealed class PlaylistPlayer(PlaylistStore store, IQueueEngine queues, Pro
                         parts.Add(part);
                 }
                 if (parts.Count > 0)
-                    queue.AddRange(Book(group with { Parts = parts }, fromStart));
+                    queue.AddRange(Book(group with { Parts = parts }, fromStart, zone));
             }
             else if (Unplayable(entry.Track, null) is { } reason)
             {
@@ -116,7 +117,7 @@ public sealed class PlaylistPlayer(PlaylistStore store, IQueueEngine queues, Pro
                 return Result.Fail(QueueError.Unavailable, $"favourite {favorite} ({book.Title}): " +
                     string.Join("; ", parts.Take(5).Select(p => $"part {p.Title}: {p.Reason}")));
             }
-            return await PlaceAsync(zone, Book(book, fromStart), placement, index, cancellationToken).ConfigureAwait(false);
+            return await PlaceAsync(zone, Book(book, fromStart, zone), placement, index, cancellationToken).ConfigureAwait(false);
         }
         var (track, station) = (found.Value.Track, found.Value.Station);
         if (Unplayable(track, station) is { } reason)
@@ -140,7 +141,7 @@ public sealed class PlaylistPlayer(PlaylistStore store, IQueueEngine queues, Pro
             return expanded.Failure;
         var (book, tracks, refused, truncated) = expanded.Value;
         var queued = book is not null
-            ? await PlaceAsync(zone, [new QueueEntry(Group: Marked(book, fromStart))], placement, index, cancellationToken).ConfigureAwait(false)
+            ? await PlaceAsync(zone, [new QueueEntry(Group: Marked(book, fromStart, zone))], placement, index, cancellationToken).ConfigureAwait(false)
             : await PlaceAsync(zone, tracks, placement, index, cancellationToken).ConfigureAwait(false);
         return queued.IsSuccess
             ? new NodeEnqueued(queued.Value, tracks.Count, refused, truncated, book is not null)
@@ -194,16 +195,16 @@ public sealed class PlaylistPlayer(PlaylistStore store, IQueueEngine queues, Pro
 
     // A stored book as one item, or file by file when the house does not
     // group books: a file's chapters are one track.
-    private List<QueueEntry> Book(QueueGroup book, bool fromStart) => Settings.GroupBooks
-        ? [new QueueEntry(Group: Marked(book, fromStart))]
+    private List<QueueEntry> Book(QueueGroup book, bool fromStart, string zone) => Settings.GroupBooks
+        ? [new QueueEntry(Group: Marked(book, fromStart, zone))]
         : [.. book.Parts.Where((p, i) => p.Chapter is null || i == 0 || book.Parts[i - 1].Track != p.Track)
             .Select(p => new QueueEntry(p.Track))];
 
     // The book with its saved place, while that is still a part of it (the
     // part's track the one saved); a finished book has none.
-    private QueueGroup Marked(QueueGroup book, bool fromStart)
+    private QueueGroup Marked(QueueGroup book, bool fromStart, string zone)
     {
-        if (positions is null || positions.Get(BookPositions.ReferenceOf(book)) is not { IsSuccess: true, Value: { } saved } ||
+        if (positions is null || positions.Get(BookPositions.ReferenceOf(book), users?.Of(zone) ?? UserStore.Household) is not { IsSuccess: true, Value: { } saved } ||
             saved.Finished || saved.Part >= book.Parts.Count ||
             saved.PartReference != BookPositions.ReferenceOf(book.Parts[saved.Part].Track))
         {

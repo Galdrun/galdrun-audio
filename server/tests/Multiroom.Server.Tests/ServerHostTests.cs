@@ -70,7 +70,7 @@ public sealed class ServerHostTests : IDisposable
             TestContext.Current.CancellationToken);
         Assert.Contains($"could not read {saved}", log, StringComparison.Ordinal);
         // Replaced by a readable one when it stopped.
-        Assert.Contains("\"version\":10", await File.ReadAllTextAsync(saved, TestContext.Current.CancellationToken),
+        Assert.Contains("\"version\":11", await File.ReadAllTextAsync(saved, TestContext.Current.CancellationToken),
             StringComparison.Ordinal);
     }
 
@@ -122,7 +122,7 @@ public sealed class ServerHostTests : IDisposable
 
         Assert.Equal(0, exit);
         var log = await ReadLog();
-        Assert.Contains($"library database {Path.Combine(_dir.Path, "data", "library.db")} at schema 28", log,
+        Assert.Contains($"library database {Path.Combine(_dir.Path, "data", "library.db")} at schema 29", log,
             StringComparison.Ordinal);
         Assert.Contains($"not indexed {Path.Combine(music, "broken.flac")}", log, StringComparison.Ordinal);
     }

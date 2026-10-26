@@ -317,8 +317,14 @@ public sealed class ApiEvents : ICoreEventSubscriber, IDisposable
     private void OnFavoriteRemoved(object? sender, Favorite favorite) =>
         Publish("favorite.changed", new { id = favorite.Id, removed = true, user = favorite.User });
 
-    private void OnZoneUserChanged(object? sender, string zone) =>
-        Publish("zone.userChanged", new { zone, user = _users.Of(zone) });
+    // room.userChanged: a room's listener; zone.userChanged follows for the
+    // zone that names it, its listener as its rooms decide it.
+    private void OnZoneUserChanged(object? sender, string client)
+    {
+        Publish("room.userChanged", new { client, user = _users.OfRoom(client) });
+        if ((_link.Desired.ZoneOf(client) ?? _link.Model.Current.Rooms.GetValueOrDefault(client)?.Zone) is { } zone)
+            Publish("zone.userChanged", new { zone, user = _users.Of(zone) });
+    }
 
     // The folder as GET library/folders answers it, or its id once removed.
     private void OnFolderChanged(object? sender, string id) =>

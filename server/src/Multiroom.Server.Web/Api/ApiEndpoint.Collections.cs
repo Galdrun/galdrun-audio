@@ -45,9 +45,14 @@ public sealed partial class ApiEndpoint
                 WithId(entry, "entry", e => Task.FromResult(Answer(playlists.RemoveEntry(id, e))))));
 
         app.MapGet("/api/v1/favorites", (Delegate)((HttpContext c) =>
-            UnknownQuery(c.Request, "user") is { } unknown
-                ? Error(unknown)
-                : Answer(playlists.Favorites(c.Request.Query["user"].ToString()))));
+        {
+            if (UnknownQuery(c.Request, "user", "only") is { } unknown)
+                return Error(unknown);
+            var only = Only(c.Request);
+            return only.IsSuccess
+                ? Answer(playlists.Favorites(c.Request.Query["user"].ToString(), only.Value))
+                : Error(only.Failure);
+        }));
         app.MapPost("/api/v1/favorites", (Delegate)((HttpContext c) =>
             WithBody<FavoriteRequest, Favorite, LibraryError>(c, r => AddFavoriteAsync(r, c.RequestAborted),
                 StatusCodes.Status201Created)));

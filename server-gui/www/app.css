@@ -62,7 +62,6 @@ button.menu-toggle { display: none; }
 .sidebar a[aria-current="page"] { background: var(--accent); color: white; box-shadow: 0 3px 10px #1d706d30; }
 .sidebar a[aria-current="page"] svg { color: white; }
 .sidebar a:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
-.nav-count { margin-left: auto; font-size: 12px; font-weight: 600; opacity: .75; }
 /* The sidebar's own collapse button, at its top right (on the left of the
    first group's heading when collapsed). */
 .nav-collapse { flex: none; align-self: flex-end; display: inline-grid; place-items: center; width: 34px; height: 34px; min-width: 34px; min-height: 34px;
@@ -75,7 +74,6 @@ button.menu-toggle { display: none; }
   body.nav-collapsed { --sidebar-width: 72px; }
   body.nav-collapsed .sidebar { padding-left: 10px; padding-right: 10px; overflow-x: hidden; }
   body.nav-collapsed .sidebar a:not(.small) { justify-content: center; gap: 0; padding: 8px 0; font-size: 0; }
-  body.nav-collapsed .nav-count { display: none; }
   body.nav-collapsed .nav-group { height: 0; min-height: 0; margin: 8px 0; padding: 0; overflow: hidden; font-size: 0; pointer-events: none; }
   /* Down to its icons, a foldable group's heading is its first letter (and
      its arrow), still folding it: a folded group stays folded. */
@@ -936,15 +934,34 @@ li[aria-expanded="true"] > .save-row .tree-chevron svg { transform: rotate(90deg
 /* --- activity -------------------------------------------------------------------------- */
 
 .page.page-wide { max-width: none; }
-.tabs { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
-.tabs > button { background: transparent; border-radius: 8px 8px 0 0; border-bottom: 3px solid transparent; color: var(--muted); }
-.tabs > button.on { color: var(--accent); border-bottom-color: var(--accent); }
+/* The activity log fills the window under the header, as the assistant does. */
+main:has(> .page-log:not([hidden])) { padding: 0; }
+.page.page-log:not([hidden]) { max-width: none; height: calc(100vh - var(--header-height) - var(--player-space)); display: grid; grid-template-columns: 272px minmax(0, 1fr); }
+/* The logs on the left, as the assistant's chats. */
+.log-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: #fdfbf7aa; }
+.log-side > .pane-bar { padding: 6px 16px; }
+.tabs { display: flex; flex-direction: column; gap: 1px; padding: 10px 8px; overflow-y: auto; }
+.tabs > button { display: flex; align-items: baseline; gap: 8px; min-height: 36px; padding: 7px 10px; border-radius: 8px; background: transparent; color: var(--fg); font-weight: 450; text-align: left; }
+.tabs > button:hover { background: var(--soft); }
+.tabs > button.on { background: var(--soft); color: var(--accent); font-weight: 600; }
+.page-log > .pane { min-height: 0; }
+.page-log .log-tools { gap: 10px; padding: 6px 12px; }
+.page-log .log-tools input[type=search] { min-height: 36px; padding: 4px 12px; }
+.page-log .log-tools button { min-height: 36px; padding: 4px 14px; }
+.page-log .tab.on { flex: 1; height: auto; min-height: 0; resize: none; border-radius: 0; padding: 6px 16px; }
+@media (max-width: 760px) {
+  .page.page-log:not([hidden]) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .log-side { border-right: 0; border-bottom: 1px solid var(--line); }
+  .log-side > .pane-bar { display: none; }
+  .tabs { flex-direction: row; overflow-x: auto; }
+  .tabs > button { flex: none; }
+  .page-log .log-tools { height: auto; flex-wrap: wrap; }
+}
 .tab { display: none; }
 .tab.on { display: block; }
 .log { height: calc(100vh - 330px); min-height: 280px; overflow: auto; resize: vertical; white-space: pre-wrap; word-break: break-all; background: #f6f3ec; border-radius: 8px; padding: 6px 10px; }
 .log .line { border-bottom: 1px solid var(--line); padding: 2px 0; cursor: pointer; }
 .log .line pre { margin: 2px 0 4px 16px; cursor: text; white-space: pre-wrap; overflow-wrap: anywhere; }
-.console-line .mono { color: var(--muted); }
 
 /* --- toast ----------------------------------------------------------------------------- */
 
@@ -997,9 +1014,6 @@ li[aria-expanded="true"] > .save-row .tree-chevron svg { transform: rotate(90deg
 .fields > label { overflow-wrap: anywhere; }
 td:last-child:has(> button) { white-space: nowrap; }
 
-/* --- system: one card per machine, with the clients' usage charts ---------------------- */
-.system-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 16px; align-items: start; }
-.usage-box .usage-charts { margin-top: 8px; }
 .queue-head .mode { color: var(--muted); opacity: .55; }
 .queue-head .mode.on { color: var(--accent); background: var(--soft); box-shadow: inset 0 0 0 1px var(--accent); opacity: 1; }
 /* AutoFill on but held back by the server (repeat all, or the last fill added nothing). */
@@ -1138,29 +1152,10 @@ body:has(#player:not([hidden])) { padding-bottom: var(--player-space); }
 .queue-list tr:has([aria-busy="true"]) .row-tools { max-width: 160px; opacity: 1; transform: none; }
 
 /* --- clients (rooms): one card per client (as the Home page's zones), the room's settings on a page of its own ----- */
-.client-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 12px; }
-.client-card { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; padding: 10px 12px 10px 10px;
-  border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: 0 6px 22px #18233308; transition: border-color .15s, box-shadow .15s; }
-.client-card.attached { background: linear-gradient(135deg, var(--soft), var(--card) 70%); }
-.client-card .cover-art { position: relative; width: 60px; height: 60px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 10px; background: var(--soft); color: var(--accent); }
-.client-card .cover-art img.room-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.client-card .cover-art svg { width: 26px; height: 26px; }
-.client-card-text { flex: 1; min-width: 0; }
-.client-card-device { display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.client-card-device svg { flex: none; width: 13px; height: 13px; color: var(--good); }
-.client-card-name { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 650; }
-.client-card-id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.client-card-info { flex: 1 0 100%; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 14px; margin: 4px 0 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; }
-.client-card-info dt { color: var(--muted); }
-.client-card-info dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.client-card-info dd.client-card-reason { white-space: normal; overflow-wrap: anywhere; }
-.client-card-link { flex: none; align-self: flex-start; display: grid; color: var(--accent); cursor: help; }
-.client-card-link svg { width: 24px; height: 24px; }
-.client-card-link.stale { color: var(--muted); opacity: .5; }
-.client-card-link.unknown { color: var(--muted); }
-.client-card-health { flex: none; align-self: flex-start; display: grid; cursor: help; }
-.client-card-health svg { width: 24px; height: 24px; }
-.client-card .client-tools { flex: 1 0 100%; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.client-link { display: grid; color: var(--accent); cursor: help; }
+.client-link.stale { color: var(--muted); opacity: .5; }
+.client-link.unknown { color: var(--muted); }
+.client-health { display: grid; cursor: help; }
 .client-volume { flex: 1; min-width: 0; margin-right: 6px; }
 .client-volume .volume-row { margin: 0; flex-wrap: nowrap; gap: 8px; }
 .client-volume .volume-row input[type=range] { min-width: 0; }
@@ -1172,6 +1167,36 @@ body:has(#player:not([hidden])) { padding-bottom: var(--player-space); }
 .client-tools button:disabled { opacity: .35; }
 .client-tools .icon-only { display: inline-grid; place-items: center; width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; vertical-align: middle; }
 .client-tools .icon-only svg { width: 18px; height: 18px; }
+/* Clients: one per row, its picture as tall as the row. */
+.client-table { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); border-collapse: separate; border-spacing: 0; overflow: hidden; }
+.client-table th { padding: 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.client-table td { height: 56px; padding: 6px 10px; white-space: nowrap; }
+.client-table tbody tr:last-child > td { border-bottom: 0; }
+.client-table tr.attached > td { background: color-mix(in srgb, var(--soft) 45%, transparent); }
+.client-table td.client-pic { width: 48px; padding-right: 0; }
+.client-table .cover-art { position: relative; width: 44px; height: 44px; display: grid; place-items: center; overflow: hidden; border-radius: 8px; background: var(--soft); color: var(--accent); }
+.client-table .cover-art img.room-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.client-table .cover-art svg { width: 20px; height: 20px; }
+.client-pic-open { display: block; min-height: 0; padding: 0; border: 0; border-radius: 8px; background: none; cursor: pointer; }
+.client-pic-open:hover .cover-art { outline: 2px solid var(--accent); outline-offset: 1px; }
+.client-title { display: flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 15px; font-weight: 650; }
+/* As wide as a client's settings page. */
+.page[data-page="rooms"] { max-width: 1360px; }
+/* The client's name and device: 140 to 380px with the window, cut off with an
+   ellipsis (the full text on hover). The spare width goes before the buttons. */
+.client-table td.client-who > div { max-width: clamp(140px, 24vw, 380px); }
+.client-table td.client-who > div, .client-table .client-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.client-table .client-spare { width: 100%; padding: 0; }
+.client-table .icon-col { text-align: center; }
+.client-table td.client-ip { font-size: 12px; }
+.client-table .client-tools .attach.icon-only { min-width: 32px; }
+.client-table td.icon-col > span { display: inline-grid; vertical-align: middle; }
+.client-health svg, .client-link svg { width: 20px; height: 20px; }
+.client-mark { display: inline-grid; cursor: help; }
+.client-mark svg { width: 20px; height: 20px; }
+.client-mark.muted { color: var(--muted); opacity: .6; }
+.client-table td.client-vol { width: 220px; min-width: 180px; }
+.client-table .client-volume { margin: 0; }
 /* A client's settings page: a header with the room's picture (faded in behind
    it on the right), state, name, zone and volume, and its actions; under it
    one card with a row per part and Advanced folded at the end. */

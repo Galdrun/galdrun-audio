@@ -295,6 +295,15 @@ public sealed partial class ApiEndpoint(
     // --- the query string ---------------------------------------------------
 
     // A query key no route takes is refused by name, as a body field is.
+    // ?only=true (phase 36): a user's own rows, without the household's.
+    internal static Result<bool, ApiRequestError> Only(HttpRequest request) =>
+        request.Query["only"].ToString() switch
+        {
+            "" or "false" => false,
+            "true" => true,
+            var text => Result.Fail(ApiRequestError.InvalidRequest, $"only: true or false, was {text}"),
+        };
+
     internal static Failure<ApiRequestError>? UnknownQuery(HttpRequest request, params string[] known)
     {
         var unknown = request.Query.Keys.FirstOrDefault(k => !known.Contains(k, StringComparer.Ordinal));

@@ -44,14 +44,16 @@ public sealed class LikeStore(LibraryDatabase database)
     // A like whose radio song was found as a provider track (SetFound).
     public event EventHandler<LikedItem>? Changed;
 
-    // In the order they were liked; only `kind` when given.
-    public Result<IReadOnlyList<LikedItem>, LibraryError> Likes(LikeKind? kind, string? user = UserStore.Household) =>
+    // In the order they were liked; only `kind` when given. Only: the user's
+    // own, without the household's.
+    public Result<IReadOnlyList<LikedItem>, LibraryError> Likes(LikeKind? kind, string? user = UserStore.Household,
+        bool only = false) =>
         Run<IReadOnlyList<LikedItem>>(c =>
         {
             var scope = UserStore.Canonical(c, null, user, everyone: true);
             if (!scope.IsSuccess)
                 return scope.Failure;
-            var where = " WHERE " + UserStore.Scope(scope.Value) + (kind is null ? "" : " AND kind = $kind");
+            var where = " WHERE " + UserStore.Scope(scope.Value, only) + (kind is null ? "" : " AND kind = $kind");
             var rows = Rows(c, Columns + where + " ORDER BY id", ReadLike, ("$user", scope.Value),
                 ("$kind", kind is { } k ? KindName(k) : null));
             return UserStore.Merged(rows, scope.Value, RefOf, l => l.User);

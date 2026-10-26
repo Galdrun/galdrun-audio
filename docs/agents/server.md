@@ -68,6 +68,10 @@ Keep ownership straight when changing settings:
 - Client config: identity/name, device, buffer, Volume Control, drift actuator,
   inputs and hardware settings. Commands go through the core; returned client
   reports update the actual view. Remembered names are not replayed as intent.
+- Listeners (`Library/UserStore.cs`): each room has one (`Playback/ZoneUsers.cs`,
+  kept in `playback.json`); a zone's is its active rooms' shared listener,
+  else the household. Plays, book positions and AutoFill's seed use the
+  zone's. End-user behaviour: [docs/server/Listeners.md](../server/Listeners.md).
 - `<dataDirectory>/playback.json`: queues/positions and desired state, written
   atomically by `PlaybackStore`; SQLite `library.db`: library and store data;
   `core.json`: selected core. Inspect each store before changing persistence.

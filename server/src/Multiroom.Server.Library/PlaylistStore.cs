@@ -323,14 +323,14 @@ public sealed class PlaylistStore(LibraryDatabase database)
 
     // In the order they were added, in a user's scope as likes are read
     // (UserStore.Scope): the household's, a user's with the household's, or
-    // everyone's.
-    public Result<IReadOnlyList<Favorite>, LibraryError> Favorites(string? user = UserStore.Household) =>
+    // everyone's; only: the user's own.
+    public Result<IReadOnlyList<Favorite>, LibraryError> Favorites(string? user = UserStore.Household, bool only = false) =>
         Read<IReadOnlyList<Favorite>>(c =>
         {
             var scope = UserStore.Canonical(c, null, user, everyone: true);
             if (!scope.IsSuccess)
                 return scope.Failure;
-            var rows = Rows(c, null, FavoriteColumns + " WHERE " + UserStore.Scope(scope.Value) + " ORDER BY id",
+            var rows = Rows(c, null, FavoriteColumns + " WHERE " + UserStore.Scope(scope.Value, only) + " ORDER BY id",
                 ReadFavorite, ("$user", scope.Value));
             return WithParts(c, null, UserStore.Merged(rows, scope.Value, KeyOf, f => f.User));
         });

@@ -235,9 +235,9 @@ public sealed class MultiroomTools
             "The reference is the book's browse node as provider:id (\"local:book:3\" is provider local, id book:3): " +
             "queue it with add_to_queue's or replace_queue's node and play. Where the house resumes books, its group says " +
             "resume and it starts where it was left; otherwise seek the item to the savedPositionMs its entry in groups answers.",
-            (int offset = 0, int? limit = null) =>
+            ([Description(UserScopeParameter)] string? user = null, int offset = 0, int? limit = null) =>
             {
-                var page = Ok(bookPositions.Page(Offset(offset), Limit(limit)));
+                var page = Ok(bookPositions.Page(Offset(offset), Limit(limit), user));
                 return new ToolList<BookPosition>(page.Items, offset, page.Total, offset + page.Items.Count < page.Total);
             });
 

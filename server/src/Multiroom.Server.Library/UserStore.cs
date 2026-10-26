@@ -11,7 +11,8 @@ public sealed record HouseholdUser(string Name, DateTimeOffset Added);
 // and is stored, and answered, as it was added.
 //
 // A user's rows are read with the household's: Scope and Merged are the one
-// rule the stores share. A user removed leaves their rows to the household.
+// rule the stores share. A user removed leaves their rows to the household,
+// or takes them along.
 public sealed class UserStore(LibraryDatabase database)
 {
     public const string Household = "";
@@ -55,9 +56,11 @@ public sealed class UserStore(LibraryDatabase database)
     }
 
     // Their likes and favourites become the household's, except one the
-    // household has already, which is left once; their plays become the
-    // household's; their proposals and dismissals go.
-    public Result<bool, LibraryError> Remove(string name)
+    // household has already, which is left once; their plays and book
+    // positions become the household's, except a book the household has a
+    // place in; their proposals and dismissals go. With deleteTheirs, their
+    // likes, favourites, plays and book positions go too.
+    public Result<bool, LibraryError> Remove(string name, bool deleteTheirs = false)
     {
         var removed = Run<string>(c =>
         {
@@ -68,13 +71,20 @@ public sealed class UserStore(LibraryDatabase database)
             foreach (var table in (string[])["liked", "favorite"])
             {
                 Execute(c, transaction, $"""
-                    DELETE FROM {table} WHERE user = $user AND EXISTS (SELECT 1 FROM {table} h
+                    DELETE FROM {table} WHERE user = $user AND ($all OR EXISTS (SELECT 1 FROM {table} h
                         WHERE h.user = '' AND h.kind = {table}.kind AND h.provider_id = {table}.provider_id
-                          AND h.provider_item_id = {table}.provider_item_id)
-                    """, ("$user", user.Value));
+                          AND h.provider_item_id = {table}.provider_item_id))
+                    """, ("$user", user.Value), ("$all", deleteTheirs));
                 Execute(c, transaction, $"UPDATE {table} SET user = '' WHERE user = $user", ("$user", user.Value));
             }
+            if (deleteTheirs)
+                Execute(c, transaction, "DELETE FROM play_history WHERE user = $user", ("$user", user.Value));
             Execute(c, transaction, "UPDATE play_history SET user = '' WHERE user = $user", ("$user", user.Value));
+            Execute(c, transaction, """
+                DELETE FROM book_position WHERE user = $user AND ($all OR EXISTS (SELECT 1 FROM book_position h
+                    WHERE h.user = '' AND h.reference = book_position.reference))
+                """, ("$user", user.Value), ("$all", deleteTheirs));
+            Execute(c, transaction, "UPDATE book_position SET user = '' WHERE user = $user", ("$user", user.Value));
             // Their proposals (phase 38) were theirs alone.
             Execute(c, transaction, "DELETE FROM proposal_run WHERE user = $user", ("$user", user.Value));
             Execute(c, transaction, "DELETE FROM proposal_dismissed WHERE user = $user", ("$user", user.Value));
@@ -109,13 +119,13 @@ public sealed class UserStore(LibraryDatabase database)
     }
 
     // The rows a scope reads, as a condition on a table's `user` with $user
-    // as its parameter: the household's alone, a user's with the household's,
-    // or everyone's.
-    internal static string Scope(string user) => user switch
+    // as its parameter: the household's alone, a user's with the household's
+    // (only: theirs alone), or everyone's.
+    internal static string Scope(string user, bool only = false) => user switch
     {
         Everyone => "1 = 1",
         Household => "user = ''",
-        _ => "user IN ('', $user)",
+        _ => only ? "user = $user" : "user IN ('', $user)",
     };
 
     // An item marked by the household and by the user is answered once, as

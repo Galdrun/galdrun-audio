@@ -48,11 +48,8 @@
 
     <button type="button" class="nav-group nav-group-toggle" data-group="diagnostics" data-short="D" data-i18n-title="nav.diagnostics" aria-controls="navDiagnostics" aria-expanded="true"><span data-i18n="nav.diagnostics"></span><i data-icon="forward"></i></button>
     <div id="navDiagnostics" class="nav-links">
-      <a href="#/status"><i data-icon="pulse"></i><span data-i18n="common.status"></span></a>
-      <a href="#/system"><i data-icon="gauge"></i><span data-i18n="nav.system"></span></a>
       <a href="#/aiStatus"><i data-icon="sparkle"></i><span data-i18n="common.ai"></span></a>
-      <a href="#/activity"><i data-icon="log"></i><span data-i18n="nav.activity"></span> <span id="evCountNav" class="nav-count"></span></a>
-      <a href="#/console"><i data-icon="terminal"></i><span data-i18n="nav.apiConsole"></span></a>
+      <a href="#/activity"><i data-icon="log"></i><span data-i18n="nav.activity"></span></a>
     </div>
   </nav>
   <div class="scrim" id="scrim" hidden></div>
@@ -127,9 +124,7 @@
           <h1 data-i18n="common.clients"></h1>
           <p class="subtitle" data-i18n="clients.everyAudioClient"></p>
         </div>
-        <div class="row">
-          <span id="clientsNote" class="muted small"></span>
-        </div>
+        <span id="clientsNote" class="muted small"></span>
       </div>
       <div id="clients" class="table-wrap plain"></div>
     </section>
@@ -485,12 +480,9 @@
     </section>
 
     <section class="page settings-page" data-page="ai" data-title="nav.aiProviders" hidden>
-      <div class="page-heading with-tools">
-        <div>
-          <h1 data-i18n="ai.aiProviders"></h1>
-          <p class="subtitle"><span data-i18n="ai.keysLoginsAnd"></span> <span id="aiUsage" class="muted small"></span></p>
-        </div>
-        <button type="button" id="reloadAi" data-i18n="common.reload"></button>
+      <div class="page-heading">
+        <h1 data-i18n="ai.aiProviders"></h1>
+        <p class="subtitle"><span data-i18n="ai.keysLoginsAnd"></span> <span id="aiUsage" class="muted small"></span></p>
       </div>
 
       <div class="room-rows">
@@ -554,62 +546,44 @@
 
 <!-- ============================== DIAGNOSTICS ============================== -->
 
-    <section class="page" data-page="status" data-title="common.status" hidden>
-      <div class="page-heading with-tools">
-        <div><h1 data-i18n="common.status"></h1><p class="subtitle" data-i18n="status.providersMediaEndpoint"></p></div>
-        <button type="button" id="reloadStatus" data-i18n="common.reload"></button>
-      </div>
-      <section class="panel"><div id="providers"></div></section>
-      <section class="panel">
-        <header class="panel-head"><span class="panel-icon"><i data-icon="zones"></i></span><h2 data-i18n="common.zones"></h2></header>
-        <div id="zoneStatus" class="system-grid"></div>
-      </section>
-      <details class="panel">
-        <summary class="panel-head"><span class="panel-icon"><i data-icon="code"></i></span><h2>GET status</h2></summary>
-        <pre id="statusJson" class="json"></pre>
-      </details>
-    </section>
-
-    <section class="page" data-page="system" data-title="nav.system" hidden>
-      <div class="page-heading with-tools">
-        <div><h1 data-i18n="system.system"></h1><p class="subtitle"><span data-i18n="system.cpuMemoryAnd"></span> <span id="systemNote" class="muted small"></span></p></div>
-        <button type="button" id="reloadSystem" data-i18n="common.reload"></button>
-      </div>
-      <div id="system" class="system-grid"></div>
-    </section>
-
     <section class="page" data-page="aiStatus" data-title="common.ai" hidden>
-      <div class="page-heading with-tools">
-        <div><h1 data-i18n="common.ai"></h1><p class="subtitle" data-i18n-html="aiStatus.proposalsBackgroundRuns"></p></div>
-        <button type="button" id="reloadAiStatus" data-i18n="common.reload"></button>
+      <div class="page-heading"><h1 data-i18n="common.ai"></h1><p class="subtitle" data-i18n-html="aiStatus.proposalsBackgroundRuns"></p></div>
+      <div class="room-rows">
+        <section class="room-row">
+          <div class="room-row-intro">
+            <div class="card-icon"><i data-icon="sparkle"></i></div>
+            <div><h2 data-i18n="common.proposals"></h2><p id="aiStatusScope"></p></div>
+          </div>
+          <div id="aiStatus" class="room-row-content"></div>
+        </section>
+        <section class="room-row">
+          <div class="room-row-intro">
+            <div class="card-icon"><i data-icon="pulse"></i></div>
+            <div><h2 data-i18n="header.tokenUsage"></h2><p data-i18n="aiStatus.tokensInOut"></p></div>
+          </div>
+          <div class="room-row-content">
+            <span id="aiUsageRange" class="seg"></span>
+            <div id="aiUsageChart"></div>
+            <div id="aiUsageTable" class="table-wrap plain"></div>
+            <details class="sub"><summary data-i18n="aiStatus.byProviderAnd"></summary><div id="aiUsageModels" class="table-wrap plain"></div></details>
+          </div>
+        </section>
       </div>
-      <section class="panel">
-        <header class="panel-head"><span class="panel-icon"><i data-icon="sparkle"></i></span><h2><span data-i18n="common.proposals"></span> <span id="aiStatusScope" class="muted small"></span></h2></header>
-        <div id="aiStatus"></div>
-      </section>
-
-      <section class="panel">
-        <header class="panel-head"><span class="panel-icon"><i data-icon="pulse"></i></span><h2 data-i18n="header.tokenUsage"></h2><span id="aiUsageRange" class="seg"></span></header>
-        <p class="help" data-i18n="aiStatus.tokensInOut"></p>
-        <div id="aiUsageChart"></div>
-        <div id="aiUsageTable" class="table-wrap plain"></div>
-        <details class="sub"><summary data-i18n="aiStatus.byProviderAnd"></summary><div id="aiUsageModels" class="table-wrap plain"></div></details>
-      </section>
     </section>
 
-    <section class="page page-wide" data-page="activity" data-title="nav.activity" hidden>
-      <div class="page-heading"><h1 data-i18n="activity.activity"></h1><p class="subtitle" data-i18n="activity.serverEventsThis"></p></div>
-      <section id="bottom" class="panel">
-        <nav class="tabs" data-for="bottom">
-          <button data-tab="events" class="on"><span data-i18n="activity.events"></span> <span id="evCount"></span></button>
-          <button data-tab="requests"><span data-i18n="activity.requests"></span> <span id="reqCount"></span></button>
-          <button data-tab="ai"><span data-i18n="common.ai"></span> <span id="aiCount"></span></button>
-          <button data-tab="logs" data-i18n="activity.logs"></button>
+    <section class="page page-log" data-page="activity" data-title="nav.activity" data-i18n-aria-label="activity.activity" hidden>
+      <aside class="log-side">
+        <div class="pane-bar"><strong class="grow" data-i18n="activity.activity"></strong></div>
+        <nav class="tabs" data-for="bottom" data-i18n-aria-label="activity.activity">
+        <button type="button" data-tab="events" class="on"><span class="grow" data-i18n="activity.events"></span> <span id="evCount" class="muted small"></span></button>
+        <button type="button" data-tab="requests"><span class="grow" data-i18n="activity.requests"></span> <span id="reqCount" class="muted small"></span></button>
+        <button type="button" data-tab="ai"><span class="grow" data-i18n="common.ai"></span> <span id="aiCount" class="muted small"></span></button>
+        <button type="button" data-tab="logs"><span class="grow" data-i18n="activity.logs"></span> <span id="logCount" class="muted small"></span></button>
         </nav>
-        <div class="row log-tools">
+      </aside>
+      <section id="bottom" class="pane">
+        <div class="pane-bar log-tools">
           <input id="bottomFilter" type="search" data-i18n-placeholder="activity.filter" class="w-lg" data-i18n-aria-label="activity.filterLines">
-          <label class="toggle"><input type="checkbox" id="bottomPause"> <span data-i18n="common.pause"></span></label>
-          <label class="toggle"><input type="checkbox" id="showPolls"> <span data-i18n="activity.showBackgroundRequests"></span></label>
           <button type="button" id="bottomClear" data-i18n="activity.clear"></button>
         </div>
         <div class="tab on log" data-tab="events" id="events"></div>
@@ -619,19 +593,6 @@
       </section>
     </section>
 
-    <section class="page" data-page="console" data-title="nav.apiConsole" hidden>
-      <div class="page-heading"><h1 data-i18n="console.apiConsole"></h1><p class="subtitle" data-i18n="console.sendAnyRequest"></p></div>
-      <section class="panel">
-        <div class="row console-line">
-          <select id="conMethod" data-i18n-aria-label="console.method"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select>
-          <span class="mono">/api/v1/</span><input id="conPath" value="status" class="grow" data-i18n-aria-label="console.path">
-          <button type="button" id="conSend" class="primary" data-i18n="console.send"></button>
-        </div>
-        <div class="row"><select id="conPreset" data-i18n-aria-label="console.presets"><option value="" data-i18n="console.presetsPick"></option></select></div>
-        <textarea id="conBody" rows="7" data-i18n-placeholder="console.jsonBodyEmpty" data-i18n-aria-label="console.jsonBody"></textarea>
-        <pre id="conOut" class="json"></pre>
-      </section>
-    </section>
   </main>
 </div>
 
@@ -642,7 +603,6 @@
 <script src="/assets/shared.de.js"></script>
 <script src="app.en.js"></script>
 <script src="app.de.js"></script>
-<script src="/assets/usage-charts.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -23,10 +23,16 @@ public sealed partial class ApiEndpoint
         app.MapGet("/api/v1/history", (Delegate)History);
         app.MapGet("/api/v1/books/positions", (Delegate)BookPositionsPage);
         // The reference is the book's ("local:book:3", "local:folder:<path>"),
-        // percent-encoded where it holds a slash.
-        app.MapDelete("/api/v1/books/positions/{**reference}", (string reference) =>
+        // percent-encoded where it holds a slash; ?user= whose place, absent
+        // the household's.
+        app.MapDelete("/api/v1/books/positions/{**reference}", (string reference, HttpContext c) =>
         {
-            var deleted = bookPositions.Delete(Uri.UnescapeDataString(reference));
+            if (UnknownQuery(c.Request, "user") is { } unknown)
+                return Error(unknown);
+            var user = users.Resolve(c.Request.Query["user"].ToString());
+            if (!user.IsSuccess)
+                return Error(user.Failure);
+            var deleted = bookPositions.Delete(Uri.UnescapeDataString(reference), user.Value);
             return deleted.IsSuccess ? Results.NoContent() : Error(deleted.Failure);
         });
         app.MapPut("/api/v1/zones/{zone}/clients", (string zone, HttpContext c) =>
@@ -83,16 +89,9 @@ public sealed partial class ApiEndpoint
         if (!body.IsSuccess)
             return Error(body.Failure);
         var patch = body.Value!;
-        if (patch is { Volume: null, Muted: null, AutoFill: null, User: null })
+        if (patch is { Volume: null, Muted: null, AutoFill: null })
             return Error(Result.Fail(QueueError.InvalidArgument,
-                "a zone patch needs volume, muted, autoFill, user, or more of them"));
-        // Phase 36: who is listening, checked before anything is set.
-        if (patch.User is { } user)
-        {
-            var set = house.SetUser(zone, user);
-            if (!set.IsSuccess)
-                return Error(set.Failure);
-        }
+                "a zone patch needs volume, muted, autoFill, or more of them"));
         if (patch.AutoFill is { } autoFill)
         {
             var set = house.SetAutoFill(zone, autoFill);
@@ -109,28 +108,32 @@ public sealed partial class ApiEndpoint
     // in a user's scope with ?user= (phase 36).
     private IResult History(HttpContext context)
     {
-        if (UnknownQuery(context.Request, "zone", "user", "offset", "limit") is { } unknown)
+        if (UnknownQuery(context.Request, "zone", "user", "only", "offset", "limit") is { } unknown)
             return Error(unknown);
         var page = Page(context.Request);
         if (!page.IsSuccess)
             return Error(page.Failure);
+        var only = Only(context.Request);
+        if (!only.IsSuccess)
+            return Error(only.Failure);
         var zone = context.Request.Query["zone"].ToString();
         var read = history.Page(zone.Length == 0 ? null : zone, page.Value.Offset, page.Value.Limit,
-            context.Request.Query["user"].ToString());
+            context.Request.Query["user"].ToString(), only.Value);
         return read.IsSuccess
             ? Json(new HistoryPage(read.Value.Items, page.Value.Offset, read.Value.Total))
             : Error(read.Failure);
     }
 
-    // Phase 33: where a listener stopped in each book, newest first.
+    // Phase 33: where a listener stopped in each book, newest first, in a
+    // user's scope with ?user=.
     private IResult BookPositionsPage(HttpContext context)
     {
-        if (UnknownQuery(context.Request, "offset", "limit") is { } unknown)
+        if (UnknownQuery(context.Request, "user", "offset", "limit") is { } unknown)
             return Error(unknown);
         var page = Page(context.Request);
         if (!page.IsSuccess)
             return Error(page.Failure);
-        var read = bookPositions.Page(page.Value.Offset, page.Value.Limit);
+        var read = bookPositions.Page(page.Value.Offset, page.Value.Limit, context.Request.Query["user"].ToString());
         return read.IsSuccess
             ? Json(new BookPositionPage(read.Value.Items, page.Value.Offset, read.Value.Total))
             : Error(read.Failure);

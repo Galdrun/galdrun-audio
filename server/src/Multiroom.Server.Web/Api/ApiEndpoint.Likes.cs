@@ -22,27 +22,45 @@ public sealed record ItemStatus(LikeKind Kind, string ProviderId, string Provide
 // person's. A write's `user` is whose it is, absent or "" the household's; a
 // read's is a scope: the household's alone, `user=alice` hers with the
 // household's (an item both marked answered once, as hers), `user=*` every
-// row with its user.
+// row with its user; `only=true` with a user: theirs alone.
 public sealed partial class ApiEndpoint
 {
+    private IResult RemoveUser(string name, HttpContext context)
+    {
+        if (UnknownQuery(context.Request, "data") is { } unknown)
+            return Error(unknown);
+        return context.Request.Query["data"].ToString() switch
+        {
+            "" or "household" => Deleted(users.Remove(name)),
+            "delete" => Deleted(users.Remove(name, deleteTheirs: true)),
+            var text => Error(Result.Fail(ApiRequestError.InvalidRequest, $"data: household or delete, was {text}")),
+        };
+    }
+
     private void MapLikes(WebApplication app)
     {
         app.MapGet("/api/v1/likes", (Delegate)((HttpContext c) =>
         {
-            if (UnknownQuery(c.Request, "kind", "user") is { } unknown)
+            if (UnknownQuery(c.Request, "kind", "user", "only") is { } unknown)
                 return Error(unknown);
+            var parsed = Only(c.Request);
+            if (!parsed.IsSuccess)
+                return Error(parsed.Failure);
+            var only = parsed.Value;
             var user = c.Request.Query["user"].ToString();
             var text = c.Request.Query["kind"].ToString();
             if (text.Length == 0)
-                return Answer(likes.Likes(null, user));
+                return Answer(likes.Likes(null, user, only));
             return Enum.TryParse<LikeKind>(text, ignoreCase: true, out var kind) && Enum.IsDefined(kind)
-                ? Answer(likes.Likes(kind, user))
+                ? Answer(likes.Likes(kind, user, only))
                 : Error(Result.Fail(ApiRequestError.InvalidRequest, $"kind: track, album, artist, station or audiobook, was {text}"));
         }));
         app.MapGet("/api/v1/users", () => Answer(users.Users()));
         app.MapPost("/api/v1/users", (Delegate)((HttpContext c) =>
             Sync<UserCreate, HouseholdUser>(c, r => users.Add(r.Name), StatusCodes.Status201Created)));
-        app.MapDelete("/api/v1/users/{name}", (string name) => Deleted(users.Remove(name)));
+        // ?data=household (the default) leaves their marks, plays and book
+        // positions to the household; ?data=delete deletes them with the user.
+        app.MapDelete("/api/v1/users/{name}", RemoveUser);
         app.MapPost("/api/v1/likes", (Delegate)((HttpContext c) =>
             WithBody<LikeRequest, LikedItem, LibraryError>(c, r => AddLikeAsync(r, c.RequestAborted),
                 StatusCodes.Status201Created)));

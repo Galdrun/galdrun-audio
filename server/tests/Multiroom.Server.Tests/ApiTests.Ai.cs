@@ -396,7 +396,8 @@ public sealed partial class ApiTests
         vendor.Answers.Enqueue(TextAnswer("Done."));
         await Ok(HttpMethod.Post, "ai/commands", """{"text":"like this"}""");
         Assert.DoesNotContain("from the user", SystemOf(vendor.Requests.Last()), StringComparison.Ordinal);
-        await Ok(HttpMethod.Patch, "zones/living", """{"user":"Alice"}""");
+        await Ok(HttpMethod.Put, "zones/living/clients", """{"clients":["roomA"]}""");
+        await Ok(HttpMethod.Patch, "rooms/roomA", """{"user":"Alice"}""");
         vendor.Answers.Enqueue(TextAnswer("Done."));
         await Ok(HttpMethod.Post, "ai/commands", """{"text":"like this","zone":"living"}""");
         Assert.Contains("from the user \"Alice\"", SystemOf(vendor.Requests.Last()), StringComparison.Ordinal);

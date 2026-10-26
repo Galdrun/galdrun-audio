@@ -48,8 +48,9 @@ public sealed partial class PlaybackStore : BackgroundService
     // older file leaves every zone to the household. 9 (phase 39) adds each
     // room's last name; an older file shows rooms by their ids until they say
     // one. 10 adds each room's equalizer and the user's equalizer profiles; an
-    // older file has neither.
-    private const int FormatVersion = 10;
+    // older file has neither. 11 keeps each room's user instead of each
+    // zone's; an older file's zone user goes to the rooms that zone names.
+    private const int FormatVersion = 11;
     private static readonly TimeSpan Debounce = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan Checkpoint = TimeSpan.FromSeconds(15);
 
@@ -100,7 +101,8 @@ public sealed partial class PlaybackStore : BackgroundService
         IReadOnlyDictionary<string, AutoFillSettings>? AutoFill = null,
         PlaybackSettingsView? Settings = null,
         IReadOnlyDictionary<string, string>? Users = null,
-        IReadOnlyList<EqualizerProfile>? EqualizerProfiles = null);
+        IReadOnlyList<EqualizerProfile>? EqualizerProfiles = null,
+        IReadOnlyDictionary<string, string>? RoomUsers = null);
 
     private sealed record SavedZone(string Zone, IReadOnlyList<string>? Clients = null, double Volume = 1.0,
         bool Muted = false);
@@ -117,8 +119,11 @@ public sealed partial class PlaybackStore : BackgroundService
                 _autoFill?.Restore(autoFill);
             if (saved.Settings is { } playback)
                 _settings?.Restore(playback);
-            if (saved.Users is { } users)
+            if (saved.RoomUsers is { } users)
                 _users?.Restore(users);
+            else if (saved.Users is { } zoneUsers)
+                _users?.Restore(zoneUsers.SelectMany(u => _desired.MembersOf(u.Key).Select(room => (room, u.Value)))
+                    .DistinctBy(u => u.room, StringComparer.Ordinal).ToDictionary(u => u.room, u => u.Value, StringComparer.Ordinal));
             if (saved.EqualizerProfiles is { } profiles)
                 _equalizerProfiles?.Restore(profiles);
             LogRestored(_log, saved.Queues.Count, saved.Zones.Count, _options.Path,
@@ -184,7 +189,7 @@ public sealed partial class PlaybackStore : BackgroundService
         {
             using var file = File.OpenRead(_options.Path);
             var saved = JsonSerializer.Deserialize<Saved>(file, Json);
-            if (saved?.Version is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 or FormatVersion)
+            if (saved?.Version is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 or 10 or FormatVersion)
                 return saved;
             LogUnreadable(_log, _options.Path, $"format {saved?.Version} is not {FormatVersion}");
         }
@@ -203,8 +208,8 @@ public sealed partial class PlaybackStore : BackgroundService
                 var level = levels.GetValueOrDefault(z.Zone) ?? new DesiredZoneLevel();
                 return new SavedZone(z.Zone, z.Clients, level.Volume, level.Muted);
             })],
-            _desired.Rooms, _engine.Save(), _autoFill?.Save(), _settings?.Current, _users?.Save(),
-            _equalizerProfiles?.Save());
+            _desired.Rooms, _engine.Save(), _autoFill?.Save(), _settings?.Current, null,
+            _equalizerProfiles?.Save(), _users?.Save());
         var temporary = _options.Path + ".tmp";
         try
         {

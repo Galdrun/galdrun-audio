@@ -249,14 +249,14 @@ public sealed partial class GuiEndpoint(
         }
         catch (JsonException e)
         {
-            await RefuseSettingsAsync(context, $"not JSON: {e.Message}").ConfigureAwait(false);
+            await RefuseAsync(context, $"not JSON: {e.Message}").ConfigureAwait(false);
             return;
         }
         using (document)
         {
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
-                await RefuseSettingsAsync(context, "the settings are a JSON object").ConfigureAwait(false);
+                await RefuseAsync(context, "the settings are a JSON object").ConfigureAwait(false);
                 return;
             }
             var text = document.RootElement.GetRawText();
@@ -271,19 +271,34 @@ public sealed partial class GuiEndpoint(
         }
     }
 
-    private static Task RefuseSettingsAsync(HttpContext context, string message)
+    private static Task RefuseAsync(HttpContext context, string message)
     {
         context.Response.StatusCode = StatusCodes.Status400BadRequest;
         return context.Response.WriteAsync(JsonSerializer.Serialize(new { error = "invalidRequest", message }),
             context.RequestAborted);
     }
 
-    // Each file is polled; what was appended goes out as a `log` event. A
-    // file that shrank was rotated and is read again from its start.
+    // Each file is polled; what was appended goes out as a `log` event with
+    // the file's offset after it. A file that shrank was rotated and is read
+    // again from its start. `?from={"name":offset}` resumes a file there (the
+    // page's Clear, or a reconnect), but never further back than the usual tail.
     private async Task TailAsync(HttpContext context)
     {
         var response = context.Response;
         var stop = context.RequestAborted;
+        Dictionary<string, long>? from = null;
+        if (context.Request.Query["from"] is { Count: > 0 } query)
+        {
+            try
+            {
+                from = JsonSerializer.Deserialize<Dictionary<string, long>>(query.ToString());
+            }
+            catch (JsonException e)
+            {
+                await RefuseAsync(context, $"from is not a JSON object of offsets: {e.Message}").ConfigureAwait(false);
+                return;
+            }
+        }
         response.ContentType = "text/event-stream";
         response.Headers.CacheControl = "no-cache";
         await response.StartAsync(stop).ConfigureAwait(false);
@@ -294,7 +309,14 @@ public sealed partial class GuiEndpoint(
             foreach (var tail in tails)
             {
                 if (File.Exists(tail.Log.Path))
-                    tail.Offset = Math.Max(0, new FileInfo(tail.Log.Path).Length - TailStartBytes);
+                {
+                    var size = new FileInfo(tail.Log.Path).Length;
+                    var start = Math.Max(0, size - TailStartBytes);
+                    // An offset past the end belongs to a file since rotated.
+                    if (from?.TryGetValue(tail.Log.Name, out var offset) == true && offset <= size)
+                        start = Math.Max(start, offset);
+                    tail.Offset = start;
+                }
                 else
                     await SendAsync(response, tail.Log.Name, $"({tail.Log.Path} not found yet)\n", stop).ConfigureAwait(false);
             }
@@ -304,7 +326,7 @@ public sealed partial class GuiEndpoint(
                 foreach (var tail in tails)
                 {
                     if (tail.Read() is { Length: > 0 } text)
-                        await SendAsync(response, tail.Log.Name, text, stop).ConfigureAwait(false);
+                        await SendAsync(response, tail.Log.Name, text, stop, tail.Offset).ConfigureAwait(false);
                 }
             }
         }
@@ -313,8 +335,8 @@ public sealed partial class GuiEndpoint(
         }
     }
 
-    private static Task SendAsync(HttpResponse response, string name, string text, CancellationToken stop) =>
-        response.WriteAsync($"event: log\ndata: {JsonSerializer.Serialize(new { name, text })}\n\n", stop);
+    private static Task SendAsync(HttpResponse response, string name, string text, CancellationToken stop, long? offset = null) =>
+        response.WriteAsync($"event: log\ndata: {JsonSerializer.Serialize(new { name, text, offset })}\n\n", stop);
 
     private sealed class Tail(GuiLog log)
     {

@@ -56,6 +56,7 @@ public sealed record ClientsRequest(IReadOnlyList<string> Clients);
 // Any of the room's settings, sent in this order; at least one. Name is the
 // room's (phase 39), which its client keeps. Equalizer is the whole of it
 // (phase 41). MaxVolumeDb is the level at full volume, 0 for no limit.
+// User (phase 36): who listens in the room, "" for the household.
 public sealed record RoomPatch(
     AudioControl? AudioControl = null,
     ulong? OutputLatencyMs = null,
@@ -67,7 +68,8 @@ public sealed record RoomPatch(
     string? Name = null,
     CoreEqualizer? Equalizer = null,
     double? MaxVolumeDb = null,
-    DriftCorrection? DriftCorrection = null);
+    DriftCorrection? DriftCorrection = null,
+    string? User = null);
 
 // POST rooms/{client}/equalizer/profile: the profile copied into the room.
 public sealed record EqualizerProfileApply(string Profile);
@@ -92,9 +94,8 @@ public sealed record CoreSelectionRequest(string? CoreId);
 
 // A zone's own volume and mute (phase 15), over its rooms' own.
 // Phase 15: the zone's level; phase 26: its AutoFill, a patch of its own.
-// User (phase 36): who is listening in the zone, "" for the household.
-public sealed record ZonePatch(double? Volume = null, bool? Muted = null, AutoFillPatch? AutoFill = null,
-    string? User = null);
+// Its listener follows from its rooms' (RoomPatch.User).
+public sealed record ZonePatch(double? Volume = null, bool? Muted = null, AutoFillPatch? AutoFill = null);
 
 // Folder: the folder it goes in; null or 0 is the top.
 public sealed record PlaylistCreate(string Name, long? Folder = null);

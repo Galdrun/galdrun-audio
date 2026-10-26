@@ -41,8 +41,6 @@ function appendKids(el, kids) {
 // them (those are thrown away): reach them through the event instead.
 function morph(old, now) {
   if (old.nodeName !== now.nodeName || now.nodeName === 'CANVAS') return old.replaceWith(now);
-  // Charts drawn by the shared usage script keep their own DOM.
-  if (now.nodeType === Node.ELEMENT_NODE && now.hasAttribute('data-usage') && old.getAttribute('data-usage') === now.getAttribute('data-usage')) return;
   if (old.nodeType !== Node.ELEMENT_NODE) {
     if (old.nodeValue !== now.nodeValue) old.nodeValue = now.nodeValue;
     return;
@@ -87,7 +85,7 @@ const S = {
   autoFilled: {},          // zone -> the last queue.autoFilled, with when (server phase 26)
   autoMarks: {},           // zone -> {ids, key}: the items a fill added, while the items are as it left them
   playback: null,          // GET settings/playback (server phase 31): {groupBooks}
-  user: store.get('vx.user', ''), // the listener (server phase 36): '' the household, a name, or '*' everyone
+  user: store.get('vx.user', ''), // the header's listener (server phase 36): '' the household or a name
   users: [],               // GET users
 };
 let page = '';             // the page shown, from the hash
@@ -166,7 +164,6 @@ const ICONS = {
   pulse: '<path d="M2 13h5l3-9 4 17 3-10 2 2h3"/>',
   gauge: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   log: '<path d="M4 5h16M4 10h16M4 15h10M4 20h7"/>',
-  terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   play: '<path d="M7 4.5v15l12-7.5z"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
@@ -193,12 +190,13 @@ const ICONS = {
   // A cog: settings, wherever they open.
   setup: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
-  // A client's network link (clientCard): Wi-Fi waves, as many lit as its
+  // A client's network link (clientLink): Wi-Fi waves, as many lit as its
   // signal earns (wifiBars), an RJ45 plug, and a question mark where it is not known.
   linkUnknown: '<path d="M7.5 8.5a4.5 4.5 0 1 1 6.3 4.1c-1.1.5-1.8 1.4-1.8 2.6V16"/><path d="M12 20.5v.01"/>',
   wifi0: wifiArcs(0), wifi1: wifiArcs(1), wifi2: wifiArcs(2), wifi3: wifiArcs(3),
   ethernet: '<rect x="4" y="5" width="16" height="12" rx="1.5"/><path d="M8 17v3h8v-3M8 9v2M11 9v2M13 9v2M16 9v2"/>',
   link: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
+  unlink: '<path d="M14.5 6.5l1-1a3.5 3.5 0 0 1 5 5l-3 3"/><path d="M9.5 17.5l-1 1a3.5 3.5 0 0 1-5-5l3-3"/><path d="M8 2v3M2 8h3M16 22v-3M22 16h-3"/>',
   alert: '<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.01"/>',
   grip: '<circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/>',
   // Where an item comes from, by provider (SOURCE_ICONS).
@@ -249,7 +247,6 @@ flashEl.addEventListener('click', () => { flashEl.hidden = true; });
 // --- the bottom logs ---------------------------------------------------------
 
 const MAX_LINES = 2000;
-const pending = [];
 let filter = '';
 
 function appendLine(container, text, detail, cls = '') {
@@ -263,7 +260,6 @@ function appendLine(container, text, detail, cls = '') {
     });
   }
   line.hidden = Boolean(filter) && !line.dataset.text.includes(filter);
-  if ($('#bottomPause').checked) { pending.push([container, line]); return; }
   insertLine(container, line);
 }
 
@@ -274,9 +270,6 @@ function insertLine(container, line) {
   if (stick) container.scrollTop = container.scrollHeight;
 }
 
-$('#bottomPause').addEventListener('change', (e) => {
-  if (!e.target.checked) for (const [c, l] of pending.splice(0)) insertLine(c, l);
-});
 $('#bottomFilter').addEventListener('input', (e) => {
   filter = e.target.value.toLowerCase();
   for (const line of document.querySelectorAll('.log .line')) line.hidden = Boolean(filter) && !line.dataset.text.includes(filter);
@@ -284,9 +277,10 @@ $('#bottomFilter').addEventListener('input', (e) => {
 $('#bottomClear').addEventListener('click', () => {
   const tab = document.querySelector('#bottom > .tab.on');
   tab.replaceChildren();
-  if (tab.id === 'events') { evCounts.clear(); $('#evCount').textContent = ''; $('#evCountNav').textContent = ''; }
+  if (tab.id === 'events') { evCounts.clear(); $('#evCount').textContent = ''; }
   if (tab.id === 'requests') { reqCount = 0; $('#reqCount').textContent = ''; }
   if (tab.id === 'aiLog') { aiCount = 0; $('#aiCount').textContent = ''; }
+  if (tab.id === 'logs') { logCount = 0; $('#logCount').textContent = ''; store.set('vx.logsCleared', JSON.stringify(logOffsets)); }
 });
 
 // --- the API -----------------------------------------------------------------
@@ -350,7 +344,7 @@ async function api(method, path, body, { quiet = false, timeoutMs, signal } = {}
   }
   const ms = Math.round(performance.now() - t0);
   const ok = status >= 200 && status < 300;
-  if (!quiet || $('#showPolls').checked) {
+  if (!quiet) {
     $('#reqCount').textContent = `(${++reqCount})`;
     const line = `${time()} ${method} ${path} → ${status || 'ERR'} (${ms} ms)${ok ? '' : ` ${data?.error ?? ''}: ${data?.message ?? ''}`}`;
     const detail = { request: init.body instanceof Blob ? `${init.body.type} ${init.body.size} bytes` : init.body ? tryParse(init.body) : null, status, response: data };
@@ -406,7 +400,7 @@ function render(key, container, build) {
   for (const d of container.querySelectorAll('details[data-key]')) if (open.has(d.dataset.key)) d.open = true;
 }
 
-const renderers = { home: () => renderHome(), zones: () => renderZones(), playlistTree: () => renderPlaylistTree(), stationTree: () => stationTree.render(), player: () => renderPlayer(), zoneStatus: () => renderZoneStatus(), rooms: () => renderRooms(), clients: () => renderClients(), folders: () => renderFolders(), system: () => renderSystem(), ai: () => renderAi() };
+const renderers = { home: () => renderHome(), zones: () => renderZones(), playlistTree: () => renderPlaylistTree(), stationTree: () => stationTree.render(), player: () => renderPlayer(), rooms: () => renderRooms(), clients: () => renderClients(), folders: () => renderFolders(), ai: () => renderAi() };
 function flushDirty() {
   setTimeout(() => { for (const key of [...S.dirty]) renderers[key]?.(); }, 0);
 }
@@ -552,7 +546,6 @@ function renderZones() {
   render('zones', $('#zones'), () => (S.zones.length ? S.zones.map(zoneCard) : [h('p', { class: 'muted' }, tt('zones.noZonesYet'))]));
   renderZoneTabs();
   followCurrentItem();
-  renderZoneStatus();
   renderPlayer();
   renderZoneListeners();
   if (page === 'home') renderHome();
@@ -1385,32 +1378,35 @@ function forgetLike(id) {
 }
 
 // --- the listener (server phase 36) -------------------------------------------
-// Whose marks are read: the household's (''), a user's with the household's,
-// or everyone's ('*', each row with its user). A like or favourite made here
-// is the listener's; with '*' it is the household's.
+// Whose marks are read: the household's ('') or a user's own, without the
+// household's (only=true), so a heart shown is one a click on it removes.
+// A like or favourite made here is the listener's. Everyone's are in the
+// library's All roots. Proposals are per listener already (proposalsQuery).
 
-const scopeQuery = (sep = '?') => (S.user ? `${sep}user=${enc(S.user)}` : '');
-const ownerOf = () => (S.user && S.user !== '*' ? { user: S.user } : {});
+const scopeQuery = (sep = '?') => (S.user ? `${sep}user=${enc(S.user)}&only=true` : '');
+const proposalsQuery = () => (S.user ? `?user=${enc(S.user)}` : '');
+const ownerOf = () => (S.user ? { user: S.user } : {});
 const userPill = (user) => (user ? h('span', { class: 'pill small', title: tt('listeners.whose') }, `👤 ${user}`) : null);
 
 async function loadUsers() {
   S.users = await api('GET', 'users', undefined, { quiet: true });
-  if (S.user && S.user !== '*' && !S.users.some((u) => u.name === S.user)) setListener('');
+  if (S.user && !S.users.some((u) => u.name === S.user)) setListener('');
   renderUsers();
 }
 
 function renderUsers() {
+  renderSources(); // the listeners' roots
   renderHeaderListener();
   renderZones(); // the zone cards' listener selects, and the Listeners page
 }
 
 // The header's listener: a people button, the one shown beneath it, and a
-// click lists the household, the users and everyone to pick from.
+// click lists the household and the users to pick from.
 function renderHeaderListener() {
-  const name = (u) => (u === '' ? tt('common.household') : u === '*' ? tt('listeners.everyone') : u);
+  const name = (u) => u || tt('common.household');
   $('#listenerName').textContent = name(S.user);
   $('#listener').setAttribute('aria-label', `${tt('header.listener')}: ${name(S.user)}`);
-  patch($('#listenerPick'), ['', ...S.users.map((u) => u.name), '*'].map((u) => h('button', {
+  patch($('#listenerPick'), ['', ...S.users.map((u) => u.name)].map((u) => h('button', {
     type: 'button', 'aria-pressed': u === S.user ? 'true' : 'false',
     onclick: () => { $('#listenerPick').hidePopover(); if (u !== S.user) setListener(u); },
   }, h('span', { class: 'room-name' }, name(u)))));
@@ -1425,30 +1421,58 @@ function renderUsersTable() {
       h('tr', {}, h('th', {}, tt('listeners.name')), h('th', {}, tt('listeners.listeningIn')), h('th', {}, tt('listeners.added')), h('th', {})),
       S.users.map((u) => h('tr', {},
         h('td', {}, u.name, S.user === u.name && h('span', { class: 'pill good small' }, ` ${tt('listeners.shown')}`)),
-        h('td', {}, S.zones.filter((z) => z.user === u.name).map((z) => z.name ?? z.zone).join(', ') || h('span', { class: 'muted' }, '—')),
+        h('td', {}, S.rooms.filter((r) => r.user === u.name).map((r) => r.name ?? r.client).join(', ') || h('span', { class: 'muted' }, '—')),
         h('td', { class: 'muted' }, new Date(u.added).toLocaleString()),
         h('td', {},
           h('button', { title: tt('listeners.showTheirLikes'), disabled: S.user === u.name, onclick: () => setListener(u.name) }, tt('listeners.showAsListener')),
-          h('button', {
-            class: 'danger', title: `DELETE users/${u.name}`,
-            onclick: () => confirm(tt('listeners.removeTheirLikes', { name: u.name }))
-              && act(() => api('DELETE', `users/${enc(u.name)}`), 'listeners.listenerRemoved').then(() => act(loadUsers)),
-          }, '✕')))))
+          h('button', { class: 'danger', title: `DELETE users/${u.name}`, onclick: () => removeListener(u.name) }, '✕')))))
     : h('p', { class: 'muted' }, tt('listeners.noListenersYet')));
 }
 
-// Each zone and who listens there, set from here as from the zone card.
+// Removing a listener asks what becomes of their likes, favourites, plays
+// and book positions: moved to the household, or deleted with them.
+function removeListener(name) {
+  const remove = (data) => {
+    dialog.close();
+    act(() => api('DELETE', `users/${enc(name)}?data=${data}`), 'listeners.listenerRemoved').then(() => {
+      act(loadUsers);
+      loadLikes().catch(() => {});
+      act(loadFavorites);
+      if (MB.at >= 0) mbLoad();
+    });
+  };
+  const dialog = h('dialog', { class: 'confirm-dialog', 'aria-label': tt('listeners.removeListener', { name }), onclose: () => dialog.remove() },
+    h('div', { class: 'confirm-head' }, h('span', { class: 'confirm-icon' }, icon('people')), h('h2', {}, tt('listeners.removeListener', { name }))),
+    h('p', {}, tt('listeners.removeWhatOfTheirs', { name })),
+    h('div', { class: 'confirm-buttons' },
+      h('button', { type: 'button', onclick: () => dialog.close() }, tt('common.cancel')),
+      h('button', { type: 'button', onclick: () => remove('household') }, tt('listeners.moveToHousehold')),
+      h('button', { type: 'button', class: 'danger', onclick: () => remove('delete') }, tt('listeners.deleteTheirs'))));
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
+// A room's listener (PATCH rooms/{client} {user}): '' the household.
+const setRoomListener = (client, user) => api('PATCH', `rooms/${enc(client)}`, { user });
+const listenerNames = (also) => [...new Set([...S.users.map((u) => u.name), also].filter(Boolean))];
+
+// Each room and who listens there; a zone's listener follows from its rooms'.
 function renderZoneListeners() {
   if (page !== 'listeners') return;
-  patch($('#zoneListeners'), S.zones.length
-    ? h('table', { class: 'small' }, S.zones.filter((z) => 'user' in z).map((z) => h('tr', {},
-      h('td', {}, z.name ?? z.zone),
-      h('td', {}, h('select', {
-        value: z.user, 'aria-label': tt('listeners.listenerIn', { zone: z.name ?? z.zone }),
-        onchange: (e) => act(() => api('PATCH', `zones/${enc(z.zone)}`, { user: e.target.value }), 'listeners.listenerSet'),
-      }, h('option', { value: '' }, tt('common.household')),
-      [...new Set([...S.users.map((u) => u.name), z.user].filter(Boolean))].map((n) => h('option', { value: n }, n)))))))
-    : h('p', { class: 'muted' }, tt('listeners.noZonesYet')));
+  patch($('#zoneListeners'), S.rooms.length
+    ? h('table', { class: 'small' },
+      h('tr', {}, h('th', {}, tt('listeners.room')), h('th', {}, tt('listeners.listener')), h('th', {}, tt('listeners.zoneListener'))),
+      S.rooms.map((r) => {
+        const z = S.zones.find((x) => (x.desired?.clients ?? x.actual?.clients ?? []).includes(r.client));
+        return h('tr', {},
+          h('td', {}, r.name ?? r.client),
+          h('td', {}, h('select', {
+            value: r.user ?? '', 'aria-label': tt('listeners.listenerIn', { zone: r.name ?? r.client }),
+            onchange: (e) => act(() => setRoomListener(r.client, e.target.value), 'listeners.listenerSet'),
+          }, h('option', { value: '' }, tt('common.household')), listenerNames(r.user).map((n) => h('option', { value: n }, n)))),
+          h('td', { class: 'muted' }, z ? `${z.name ?? z.zone}: ${z.user || tt('common.household')}` : '—'));
+      }))
+    : h('p', { class: 'muted' }, tt('listeners.noRoomsYet')));
 }
 
 function setListener(user) {
@@ -1458,7 +1482,9 @@ function setListener(user) {
   loadLikes().catch(() => {});
   act(loadFavorites);
   if (MB.places[MB.at]?.provider === PROPOSALS) mbLoad();
-  if (page === 'aiStatus') act(loadProposals);
+  // Home's plays and proposals are the listener's too.
+  if (page === 'home') act(loadHome);
+  else if (page === 'aiStatus') act(loadProposals);
   renderZones();
 }
 $('#userForm').addEventListener('submit', (e) => {
@@ -1687,10 +1713,12 @@ function zoneCard(z) {
 }
 
 // Who listens here (server phase 36): a click lists the household and the
-// users in a popover, and the one picked is set (PATCH zones/{zone} {user}).
+// users in a popover, and the one picked is set on each of the zone's rooms
+// (PATCH rooms/{client} {user}); the zone's listener follows from them.
 function listenerButton(z) {
   const label = z.user || tt('common.household');
-  const names = [...new Set([...S.users.map((u) => u.name), z.user].filter(Boolean))];
+  const names = listenerNames(z.user);
+  const rooms = z.desired?.clients ?? z.actual?.clients ?? [];
   return h('span', { class: 'listener-pop' },
     h('button', {
       type: 'button', class: 'zone-listener', title: tt('zones.listenerWhosePlays', { name: label }),
@@ -1704,7 +1732,7 @@ function listenerButton(z) {
       type: 'button', 'aria-pressed': n === (z.user ?? '') ? 'true' : 'false',
       onclick: (e) => {
         e.currentTarget.closest('[popover]').hidePopover();
-        if (n !== (z.user ?? '')) act(() => api('PATCH', `zones/${enc(z.zone)}`, { user: n }), 'zones.listenerSet');
+        if (n !== (z.user ?? '')) act(() => Promise.all(rooms.map((c) => setRoomListener(c, n))), 'zones.listenerSet');
       },
     }, h('span', { class: 'room-name' }, n || tt('common.household'))))));
 }
@@ -1794,46 +1822,6 @@ function zoneSetup(z) {
         h('h3', {}, 'AutoFill'),
         h('p', { class: 'help' }, tt('zones.addsSongsWhen')),
         autoFillRow(z.zone, z.autoFill))));
-}
-
-// A zone's status, on the Status page: the core's and the queue's account,
-// a seek by seconds, deleting the zone, and the zone as the server sent it.
-function zoneStatus(z) {
-  const a = z.actual, q = z.queue, np = q?.nowPlaying;
-  const path = `zones/${enc(z.zone)}`;
-  const position = a?.timelineNs != null && np?.timelineNs != null && a.timelineNs >= np.timelineNs
-    ? a.timelineNs - np.timelineNs + np.startOffsetNs : null;
-  return h('div', { class: 'card' },
-    h('h3', {}, z.name ?? z.zone,
-      a ? h('span', { class: 'pill ' + (a.state === 'failed' ? 'bad' : a.transport === 'playing' ? 'good' : ''), title: `core ${a.state}/${a.transport}` }, (a.state === 'failed' ? tt('zones.failed') : tv('state', a.transport)))
-        : h('span', { class: 'pill warn' }, tt('zones.notInCore'))),
-      h('div', { class: 'kv' },
-        kv('zones.zoneId', z.zone),
-        kv('zones.core', a ? `${a.state}/${a.transport}` : tt('zones.notInCore')),
-        kv('zones.queue', q ? q.transport : '—'),
-        a && kv('zones.coreMembers', a.members.join(', ') || '—'),
-        a && kv('zones.coreClients', a.clients.join(', ') || '—'),
-        kv('zones.timeline', fmtNs(a?.timelineNs)),
-        kv('zones.position', position == null ? '—' : fmtNs(position), 'zones.zoneTimelineNow'),
-        kv('zones.source', a?.source ? `${a.source.title ?? ''} (${a.source.sourceId}${a.source.ended ? ', ended' : ''})` : '—'),
-        kv('zones.sourceFormat', fmtFmt(a?.sourceFormat)),
-        kv('zones.staged', a?.staged?.map((s) => `${s.sourceId} ${s.title ?? ''}${s.startOffsetNs ? ` @${fmtNs(s.startOffsetNs)}` : ''}`).join(' | ') || '—'),
-        kv('zones.failedSources', a?.failedSources?.map((f) => `${f.sourceId}: ${f.reason}`).join(' | ') || '—'),
-        kv('zones.startsSentRejoins', a ? `${a.startsSent} / ${a.rejoins}` : '—'),
-        a?.lastError && kv('zones.lastError', h('span', { class: 'bad' }, a.lastError)),
-        z.streamTitle && kv('zones.streamTitle', z.streamTitle),
-        np && kv('zones.nowPlaying', `item ${np.item} · ${np.sourceId} · tl ${fmtNs(np.timelineNs)} · offset ${fmtNs(np.startOffsetNs)}`)),
-      h('form', { class: 'row', onsubmit(e) {
-        e.preventDefault();
-        const seconds = Number(e.target.pos.value);
-        act(() => api('POST', `${path}/seek`, { item: q?.current, positionMs: Math.round(seconds * 1000) }));
-      } }, h('input', { name: 'pos', type: 'number', step: '0.1', min: 0, placeholder: tt('zones.seconds'), class: 'w-sm', 'aria-label': tt('zones.seekToSeconds') }), h('button', {}, tt('zones.seekCurrentItem'))),
-      h('div', { class: 'row' }, h('button', { class: 'danger', onclick: () => confirm(tt('zones.deleteZoneIts', { zone: z.name ?? z.zone })) && act(() => api('DELETE', path), 'zones.zoneDeleted') }, tt('zones.deleteZone'))));
-}
-
-function renderZoneStatus() {
-  if (page !== 'status') return;
-  render('zoneStatus', $('#zoneStatus'), () => (S.zones.length ? S.zones.map(zoneStatus) : [h('p', { class: 'muted' }, tt('zones.noZones'))]));
 }
 
 // AutoFill (server phase 26): the zone's settings as one PATCH, how it stands,
@@ -2138,6 +2126,7 @@ let roomOpen = null; // the client the settings page shows (#/client/<id>)
 
 function renderRooms() {
   renderClients();
+  renderZoneListeners(); // the rooms' listeners
   if (page !== 'client') return;
   const r = S.rooms.find((x) => x.client === roomOpen);
   render('rooms', $('#rooms'), () => [r ? roomSettings(r) : h('p', { class: 'muted' }, tt('clients.noRoomKnown', { name: roomOpen ?? '' }))]);
@@ -2157,7 +2146,11 @@ function renderClients() {
   // Through render, as the zones' sliders: a card's volume being dragged is
   // not redrawn under the pointer by the next discovery tick.
   render('clients', $('#clients'), () => [rows.length
-    ? h('div', { class: 'client-cards' }, rows.map(clientCard))
+    ? h('table', { class: 'client-table' },
+      h('thead', {}, h('tr', {}, h('th', {}), h('th', {}, tt('clients.client')), h('th', { class: 'icon-col' }, tt('clients.state')), h('th', { class: 'icon-col' }, tt('clients.power')),
+        h('th', { class: 'icon-col' }, tt('clients.bitperfect')), h('th', {}, tt('clients.eq')), h('th', { class: 'icon-col' }, tt('clients.network')), h('th', {}, tt('clients.ip')),
+        h('th', {}, tt('clients.version')), h('th', {}, tt('clients.volume')), h('th', { class: 'client-spare' }), h('th', {}))),
+      h('tbody', {}, rows.map(clientRow)))
     : h('p', { class: 'muted' }, tt('clients.noClientHeard'))]);
 }
 
@@ -2179,10 +2172,8 @@ function bitPerfectOf(a) {
   };
 }
 
-// A client as a card, as the Home page's zones: the room's picture, its name
-// and device, what is known of it as pills, its buttons. A room the core does
-// not hear says only whether it is connected.
-function clientCard({ c, r }) {
+// What a client's row shows, worked out from its beacon and its room.
+function clientFacts({ c, r }) {
   const a = r?.actual, id = (c ?? r).client;
   const [state, cls, text] = c ? attachment(c) : a?.connected ? ['here', 'good', tt('clients.attachedHere')] : ['unknown', 'muted', tt('clients.notHeard')];
   const attached = state === 'here' || state === 'pending';
@@ -2196,8 +2187,6 @@ function clientCard({ c, r }) {
   if (stale) link = stale === 'wifi' ? ['wifi3', 'WLAN'] : ['ethernet', 'ETH'];
   link ??= ['linkUnknown', tt('clients.networkLinkUnknown')];
   const eq = r && (r.desired?.equalizer ?? a?.settings?.equalizer);
-  // A key and its value, a row of the card's list; the key is translated here.
-  const info = (key, value, vc = '', title = '') => [h('dt', {}, tt(key)), h('dd', { class: vc, title }, value)];
   const { value: bitPerfect, reason: bitPerfectReason } = bitPerfectOf(a);
   // What the equalizer does, as eqBadge says it on the room's page.
   const core = a?.plan?.equalizer, clipped = core?.clippedSamples > 0 ? `, ${tt('clients.samplesClipped', { n: core.clippedSamples })}` : '';
@@ -2205,53 +2194,82 @@ function clientCard({ c, r }) {
     : core?.active ? [tt('clients.active') + clipped, clipped ? 'bad' : 'good']
       : a?.plan?.bitPerfect ? [tt('clients.onNotApplied'), 'warn']
         : [tt('clients.onNotActive') + clipped, a?.plan ? 'warn' : 'muted', a?.plan ? '' : tt('clients.roomIsNot')];
-  // The device: its own name from its beacon, else what its machine says it is
-  // (GET system) or its platform.
-  const device = c?.host ?? m?.machineModel ?? c?.platform;
+  // A room that announced deep sleep keeps saying so while it is away.
+  const power = [a?.powerState ? powerLabel(a.powerState) : '—', a?.powerState ? (a.powerState === 'on' ? 'good' : 'warn') : 'muted',
+    a?.connected || a?.powerState ? '' : tt('clients.reportedWhileConnected')];
   // Its health as the zone cards name it: the core's unstable (rejoins), the
   // server's degraded (underruns).
   const hl = a?.health ?? S.zones.find((z) => z.actual?.members?.includes(id))?.actual?.health?.[id];
-  const unwell = hl && hl.state !== 'ok' ? hl : null;
-  return h('div', { class: 'client-card' + (attached ? ' attached' : '') },
-    h('span', { class: 'cover-art' }, r ? roomImage(id) : icon('device')),
-    h('div', { class: 'client-card-text' },
-      h('div', { class: 'client-card-device', title: [c?.platform, m?.machineModel].filter(Boolean).join(' · ') }, attached && icon('link'), device ?? '—'),
-      h('div', { class: 'client-card-name' }, r?.name ?? c?.name ?? '—'),
-      h('div', { class: 'client-card-id muted mono' }, id)),
-    unwell && h('span', { class: 'client-card-health ' + (unwell.state === 'unstable' ? 'bad' : 'warn'), title: healthText(unwell),
-      'aria-label': `${tv('state', unwell.state)}: ${healthText(unwell)}`, role: 'img' }, icon('alert')),
-    h('span', { class: 'client-card-link' + (stale ? ' stale' : '') + (link[0] === 'linkUnknown' ? ' unknown' : ''), title: stale ? tt('clients.lastLinkNot', { link: link[1] }) : link[1],
-      'aria-label': stale ? tt('clients.lastLinkNotHeard', { link: link[1] }) : link[1], role: 'img' }, icon(link[0])),
-    h('dl', { class: 'client-card-info' },
-      info('clients.state', text, cls),
-      // A room that announced deep sleep keeps saying so while it is away.
-      info('clients.power', a?.powerState ? powerLabel(a.powerState) : '—', a?.powerState ? (a.powerState === 'on' ? 'good' : 'warn') : 'muted',
-        a?.connected || a?.powerState ? '' : tt('clients.reportedWhileConnected')),
-      info('clients.bitperfect', tt(bitPerfect == null ? 'clients.unknown' : bitPerfect ? 'clients.yes' : 'clients.no'), bitPerfect == null ? 'muted' : bitPerfect ? 'good' : 'warn'),
-      bitPerfect === false && info('clients.reason', bitPerfectReason, 'client-card-reason', bitPerfectReason),
-      info('clients.eq', ...eqInfo),
-      info('clients.ip', c?.address ?? a?.address ?? '—'),
-      info('clients.version', c?.clientVersion ?? '—'),
-      info('clients.seen', c ? (c.present ? tt('clients.sAgo', { n: fmtNum(c.lastSeenMsAgo / 1000, 1) }) : tt('clients.gone')) : '—', c && !c.present ? 'bad' : '')),
-    // Every card has every button, in the same place; one that does not apply is disabled.
-    h('div', { class: 'client-tools' },
-      // The room's own volume and mute, as on its page; none without a room.
-      r && h('div', { class: 'client-volume' }, roomVolumeRow(r)),
-      // A spinner while the call and the re-read that follows it run.
-      h('button', {
-        class: 'attach', disabled: pointing.has(id) || !(c || attached) || Boolean(c && !c.present),
-        'aria-busy': pointing.has(id) ? 'true' : null,
-        onclick: () => (attached ? detachClient(id) : attachClient(id, state)),
-      }, pointing.has(id) ? h('span', { class: 'spinner', 'aria-hidden': 'true' }) : tt(attached ? 'clients.detach' : 'clients.attach')),
-      h('button', {
-        class: 'icon-only danger', disabled: !r || Boolean(a?.connected),
-        title: tt(!r ? 'clients.noRoomTo' : a?.connected ? 'clients.connectedRoomIs' : 'clients.forgetRoom'),
-        'aria-label': tt('clients.forgetName', { name: r?.name ?? id }), onclick: () => forgetRoom(r),
-      }, icon('trash')),
-      h('button', {
-        class: 'icon-only', disabled: !r, title: tt(r ? 'clients.roomSettings' : 'clients.noRoomYet'),
-        'aria-label': tt('clients.settingsOf', { name: r?.name ?? id }), onclick: () => openRoom(id),
-      }, icon('setup'))));
+  return {
+    c, r, a, id, state, cls, text, attached, m, link, stale, eqInfo, power, bitPerfect, bitPerfectReason,
+    // The device: its own name from its beacon, else what its machine says it is
+    // (GET system) or its platform.
+    device: c?.host ?? m?.machineModel ?? c?.platform,
+    unwell: hl && hl.state !== 'ok' ? hl : null,
+    ip: c?.address ?? a?.address ?? '—',
+    version: c?.clientVersion ?? '—',
+  };
+}
+
+const clientPicture = (f) => h('span', { class: 'cover-art' }, f.r ? roomImage(f.id) : icon('device'));
+
+const clientHealth = (f) => f.unwell && h('span', { class: 'client-health ' + (f.unwell.state === 'unstable' ? 'bad' : 'warn'), title: healthText(f.unwell),
+  'aria-label': `${tv('state', f.unwell.state)}: ${healthText(f.unwell)}`, role: 'img' }, icon('alert'));
+
+const clientLink = (f) => h('span', { class: 'client-link' + (f.stale ? ' stale' : '') + (f.link[0] === 'linkUnknown' ? ' unknown' : ''),
+  title: f.stale ? tt('clients.lastLinkNot', { link: f.link[1] }) : f.link[1],
+  'aria-label': f.stale ? tt('clients.lastLinkNotHeard', { link: f.link[1] }) : f.link[1], role: 'img' }, icon(f.link[0]));
+
+// The room's own volume and mute, as on its page; none without a room.
+const clientVolume = (f) => f.r && h('div', { class: 'client-volume' }, roomVolumeRow(f.r));
+
+// Every client has every button, in the same place; one that does not apply is disabled.
+// `iconOnly` shows attach/detach as a link icon, its word as the title.
+function clientButtons({ c, r, a, id, state, attached }, iconOnly = false) {
+  const word = tt(attached ? 'clients.detach' : 'clients.attach');
+  return [
+    // A spinner while the call and the re-read that follows it run.
+    h('button', {
+      class: 'attach' + (iconOnly ? ' icon-only' : ''), disabled: pointing.has(id) || !(c || attached) || Boolean(c && !c.present),
+      'aria-busy': pointing.has(id) ? 'true' : null, title: iconOnly ? word : null, 'aria-label': iconOnly ? word : null,
+      onclick: () => (attached ? detachClient(id) : attachClient(id, state)),
+    }, pointing.has(id) ? h('span', { class: 'spinner', 'aria-hidden': 'true' }) : iconOnly ? icon(attached ? 'unlink' : 'link') : word),
+    h('button', {
+      class: 'icon-only danger', disabled: !r || Boolean(a?.connected),
+      title: tt(!r ? 'clients.noRoomTo' : a?.connected ? 'clients.connectedRoomIs' : 'clients.forgetRoom'),
+      'aria-label': tt('clients.forgetName', { name: r?.name ?? id }), onclick: () => forgetRoom(r),
+    }, icon('trash')),
+    h('button', {
+      class: 'icon-only', disabled: !r, title: tt(r ? 'clients.roomSettings' : 'clients.noRoomYet'),
+      'aria-label': tt('clients.settingsOf', { name: r?.name ?? id }), onclick: () => openRoom(id),
+    }, icon('setup')),
+  ];
+}
+
+// A client as a table row: its facts in columns, state, power and bit-perfect
+// as coloured icons that say themselves on hover.
+function clientRow(row) {
+  const f = clientFacts(row);
+  const { c, r, m } = f;
+  const mark = (name, cls, label) => h('span', { class: 'client-mark ' + cls, title: label, 'aria-label': label, role: 'img' }, icon(name));
+  const bp = f.bitPerfect == null ? tt('clients.unknown') : f.bitPerfect ? tt('clients.yes') : `${tt('clients.no')}: ${f.bitPerfectReason}`;
+  return h('tr', { class: f.attached ? 'attached' : '' },
+    // The picture opens the room's settings, as the gear does.
+    h('td', { class: 'client-pic' }, f.r ? h('button', { class: 'client-pic-open', title: tt('clients.roomSettings'),
+      'aria-label': tt('clients.settingsOf', { name: r.name ?? f.id }), onclick: () => openRoom(f.id) }, clientPicture(f)) : clientPicture(f)),
+    h('td', { class: 'client-who' },
+      h('div', { class: 'client-title' }, h('span', { class: 'client-name', title: r?.name ?? c?.name }, r?.name ?? c?.name ?? '—'), clientHealth(f)),
+      h('div', { class: 'muted small', title: [f.device, f.id, c?.platform, m?.machineModel].filter(Boolean).join(' · ') }, f.device ?? '—', ' · ', h('span', { class: 'mono' }, f.id))),
+    h('td', { class: 'icon-col' }, mark(f.state === 'unknown' ? 'linkUnknown' : 'link', f.cls, `${tt('clients.state')}: ${f.text}`)),
+    h('td', { class: 'icon-col' }, mark('power', f.power[1], `${tt('clients.power')}: ${f.power[0]}${f.power[2] ? ` (${f.power[2]})` : ''}`)),
+    h('td', { class: 'icon-col' }, mark('wave', f.bitPerfect == null ? 'muted' : f.bitPerfect ? 'good' : 'warn', `${tt('clients.bitperfect')}: ${bp}`)),
+    h('td', { class: f.eqInfo[1] ?? '', title: f.eqInfo[2] ?? '' }, f.eqInfo[0]),
+    h('td', { class: 'icon-col' }, clientLink(f)),
+    h('td', { class: 'client-ip' }, f.ip),
+    h('td', {}, f.version),
+    h('td', { class: 'client-vol' }, clientVolume(f)),
+    h('td', { class: 'client-spare' }),
+    h('td', { class: 'client-tools' }, clientButtons(f, true)));
 }
 
 // A room's own volume and mute (PATCH rooms/{client}), on its page and its card.
@@ -2416,7 +2434,6 @@ function roomSettings(r) {
       title,
       zone && h('div', { class: 'room-hero-zone muted' }, zone.name ?? zone.zone),
       h('div', { class: 'room-pills' },
-        zone && 'user' in zone && pill('', zone.user || tt('room.household'), tt('room.listenerOfIts')),
         zoneSelect,
         a?.address && pill('', `IP ${a.address}`),
         h('span', { class: 'pill mono', title: tt('room.clientId') }, r.client)),
@@ -2447,6 +2464,13 @@ function roomSettings(r) {
       h('div', {}, h('h2', {}, tt(heading)), h('p', {}, tt(about)))),
     h('div', { class: 'room-row-content' }, ...content));
   const field = roomField;
+
+  // Who uses the room: its listener (server phase 36), so far.
+  const listening = row('people', 'room.listening', 'room.listeningAbout',
+    field('room.listener', h('select', {
+      value: r.user ?? '', 'aria-label': tt('room.listenerOf', { name }), title: tt('room.listenerOfRoom'),
+      onchange: (e) => act(() => setRoomListener(r.client, e.target.value), 'listeners.listenerSet'),
+    }, h('option', { value: '' }, tt('room.household')), listenerNames(r.user).map((n) => h('option', { value: n }, n)))));
 
   const audio = row('volume', 'room.audioDevice', 'room.outputDeviceIts',
     (a?.audioDevices || offline) && field('room.output', live(a?.audioDevices ? audioDevicePicker(a.audioDevices, patch, path) : unknown())),
@@ -2548,7 +2572,7 @@ function roomSettings(r) {
       cell('room.setting.outputLatencyMs', d.outputLatencyMs, d.outputLatencyMs, s?.outputLatencyMs))));
 
   return h('div', { class: 'room-settings' }, backdrop, hero,
-    h('div', { class: 'room-rows' }, audio, eq, syncRow, device, buttons, capabilities, diagnostics));
+    h('div', { class: 'room-rows' }, audio, listening, eq, syncRow, device, buttons, capabilities, diagnostics));
 }
 
 // The size of the room's own buffer (MATP section 58), as its client reported
@@ -3546,7 +3570,7 @@ function homeDetailView(d) {
 function homeHello() {
   const hour = new Date().getHours();
   const hello = tt(hour < 5 ? 'home.goodNight' : hour < 12 ? 'home.goodMorning' : hour < 18 ? 'home.goodAfternoon' : 'home.goodEvening');
-  const who = S.user && S.user !== '*' ? `, ${S.user}` : '';
+  const who = S.user ? `, ${S.user}` : '';
   const on = S.zones.filter((z) => z.queue?.transport === 'playing').length;
   return h('header', { class: 'home-hello' },
     h('h1', {}, hello, who),
@@ -3580,14 +3604,16 @@ function homeZones() {
 }
 
 // A shelf: its title, "Show all" into its own view, a row of its first covers.
+// Empty, it stays, with one placeholder cover saying how it fills.
+const HOME_EMPTY = { favorites: 'star', liked: 'heart', recent: 'clock' };
 function homeShelf(view, tiles) {
-  if (!tiles.length) return null;
   const [title, about] = HOME_VIEWS[view];
   return h('section', { class: 'home-section home-shelf', 'aria-label': title },
     h('div', { class: 'home-shelf-head' },
       h('h2', {}, title, h('span', { class: 'muted' }, about)),
-      h('a', { href: `#/home/${view}` }, tt('home.showAll'))),
-    h('div', { class: 'shelf-row' }, tiles.slice(0, HOME_SHELF)));
+      tiles.length > 0 && h('a', { href: `#/home/${view}` }, tt('home.showAll'))),
+    h('div', { class: 'shelf-row' }, tiles.length ? tiles.slice(0, HOME_SHELF)
+      : homeTile({ placeholder: HOME_EMPTY[view], title: tt(`home.empty.${view}`), sub: tt(`home.empty.${view}Hint`) })));
 }
 
 // A cover as the library's (its buttons slid up under the pointer), its
@@ -4551,10 +4577,30 @@ function renderSources() {
       class: 'playlist-drop', title: tt('library.dropTracksOr', { name: p.name }),
       ...dropTarget(null, (items) => act(() => dropOnPlaylist(p.id, items)).then(() => act(loadPlaylists))),
     }, link(p.name, PLAYLISTS, [{ node: String(p.id), title: p.name }])))),
-    source(FAVORITES, tt('library.favourites'), 'star'),
-    source(LIKED, tt('library.liked'), 'heart'),
-    source(HISTORY, tt('library.playedLately'), 'clock'),
-    source(PROPOSALS, tt('common.proposals'), 'sparkle'));
+    source(FAVORITES, tt('library.favourites'), 'star', listenerRoots(FAVORITES)),
+    source(LIKED, tt('library.liked'), 'heart', listenerRoots(LIKED)),
+    source(HISTORY, tt('library.playedLately'), 'clock', listenerRoots(HISTORY)),
+    source(PROPOSALS, tt('common.proposals'), 'sparkle', listenerRoots(PROPOSALS)));
+
+  // With listeners, a root each: all of them, the household and each one.
+  function listenerRoots(provider) {
+    if (!S.users.length) return [];
+    return ['*', '', ...S.users.map((u) => u.name)].map((u) => {
+      const title = listenerTitle(u);
+      return h('div', {}, link(title, provider, [{ node: `@${u}`, title }]));
+    });
+  }
+}
+
+// A favourites, liked, played or proposals place under a listener's root
+// ('@' and the name, '@*' all of them) shows strictly theirs; null at the
+// source itself, which follows the header's listener.
+const listenerTitle = (u) => (u === '*' ? tt('listeners.all') : u === '' ? tt('common.household') : u);
+const mbListener = (place) => (place.trail[0]?.node?.startsWith('@') ? place.trail[0].node.slice(1) : null);
+function mbScopeQuery(place, sep = '?') {
+  const u = mbListener(place);
+  if (u === null) return scopeQuery(sep);
+  return `${sep}user=${enc(u)}${u && u !== '*' ? '&only=true' : ''}`;
 }
 
 function mbGo(place) {
@@ -5192,12 +5238,13 @@ async function mbPlaylists(place) {
 // Favourites as the library's tracks are listed. A track goes anywhere as
 // itself; a book or a station as the favourite (a playlist takes neither).
 async function mbFavorites(place) {
-  const favorites = await api('GET', `favorites${scopeQuery()}`);
+  const favorites = await api('GET', `favorites${mbScopeQuery(place)}`);
   return [mbCrumbs(place), favorites.length ? h('table', { class: 'small rows lib-tracks' }, favorites.map((f) => h('tr', dragItem({ favorite: f.id }),
     dragGrip('td'),
     h('td', {}, infoArt(f.item, artSlot(f.item.artworkId, media(f, 'station') ? 'radio' : 'library'))),
     h('td', { class: 'row-text' }, queueLines(f.item)),
     h('td', { class: 'queue-actions' }, h('div', { class: 'row-end' },
+      userPill(f.user),
       h('span', { class: 'num' }, fmtDur(f.item.duration)),
       h('span', { class: 'row-tools' }, refButtons(media(f, 'track') ? { tracks: [f.item] } : { favorite: f.id }, 'row-play'),
         media(f, 'track') && likeButton('track', f.item),
@@ -5210,7 +5257,8 @@ async function mbFavorites(place) {
 // stations as rows, albums and artists as nodes to open; books and songs
 // heard on the radio as the Liked page draws them.
 async function mbLiked(place) {
-  const list = [...likedItems.values()].sort((a, b) => b.id - a.id);
+  const list = (mbListener(place) === null ? [...likedItems.values()] : await api('GET', `likes${mbScopeQuery(place)}`))
+    .sort((a, b) => b.id - a.id);
   const kind = (k) => list.filter((l) => likedKind(l) === k).map((l) => l.item);
   // A radio song found as a track is listed as that track, its heart the song's.
   const radio = new Map(list.filter(foundTrack).map((l) => [l.found.track, l]));
@@ -5219,7 +5267,10 @@ async function mbLiked(place) {
   const rows = list.flatMap((l) => {
     if (rest(l)) return [likedRow(l)];
     const t = likedKind(l) === 'track' ? foundTrack(l) ?? l.item : null;
-    return t && t.providerId !== 'radio-metadata' ? [mbTrackRow(t, radio)] : [];
+    if (!t || t.providerId === 'radio-metadata') return [];
+    const row = mbTrackRow(t, radio);
+    if (l.user) row.querySelector('.row-end').prepend(userPill(l.user));
+    return [row];
   });
   const nodes = list.filter((l) => ['album', 'artist'].includes(likedKind(l))).map(({ item: x }) => ({
     kind: x.kind, providerId: x.providerId, nodeId: x.providerItemId, title: x.title ?? x.name,
@@ -5236,8 +5287,11 @@ async function mbLiked(place) {
 
 // What the house played lately (GET history), newest first.
 async function mbHistory(place) {
-  const plays = await api('GET', `history?limit=${MB_LIMIT}${scopeQuery('&')}`);
-  return [mbCrumbs(place), plays.items.length ? mbTracks(plays.items.map((p) => p.track)) : h('p', { class: 'muted' }, tt('library.nothingPlayedYet'))];
+  const plays = await api('GET', `history?limit=${MB_LIMIT}${mbScopeQuery(place, '&')}`);
+  const rows = plays.items.length ? mbTracks(plays.items.map((p) => p.track)) : null;
+  // Who listened, beside each play.
+  if (rows) plays.items.forEach((p, i) => p.user && rows.querySelectorAll('tr')[i]?.querySelector('.row-end')?.prepend(userPill(p.user)));
+  return [mbCrumbs(place), rows ?? h('p', { class: 'muted' }, tt('library.nothingPlayedYet'))];
 }
 
 // What the AI proposes for the listener (GET ai/proposals): first its kinds
@@ -5246,7 +5300,17 @@ async function mbHistory(place) {
 // Fresh picks asks for a new run; ✕ is not proposed again.
 const PROPOSAL_KINDS = [['tracks', 'library.proposalSongs', 'playlists'], ['artists', 'common.artists', 'rooms'], ['albums', 'common.albums', 'library'], ['audiobooks', 'library.proposalBooks', 'library']]; // titles translated where shown
 async function mbProposals(place) {
-  const v = proposals = await api('GET', `ai/proposals${S.user === '*' ? '' : scopeQuery()}`);
+  const listener = mbListener(place);
+  // All listeners: each one's kinds under their name, opening their list.
+  if (listener === '*') {
+    const scopes = ['', ...S.users.map((u) => u.name)];
+    const views = await Promise.all(scopes.map((u) => api('GET', `ai/proposals?user=${enc(u)}`)));
+    return [mbCrumbs(place), ...scopes.flatMap((u, i) => [h('h4', {}, `👤 ${listenerTitle(u)}`),
+      proposalKinds(views[i], [{ node: `@${u}`, title: listenerTitle(u) }])])];
+  }
+  const v = await api('GET', `ai/proposals${listener !== null ? `?user=${enc(listener)}` : proposalsQuery()}`);
+  if (listener === null) proposals = v;
+  const base = listener === null ? [] : [place.trail[0]];
   const run = v.run, running = run?.state === 'running';
   const dismiss = (p) => h('button', {
     class: 'danger', title: tt('library.notProposedAgain'), 'aria-label': tt('library.dismiss'),
@@ -5274,7 +5338,7 @@ async function mbProposals(place) {
     kind, providerId: x.providerId, nodeId: x.providerItemId, title: x.title ?? x.name,
     subtitle: x.artist, artworkId: x.artworkId, playable: kind === 'album',
   });
-  const kind = place.trail[0]?.node;
+  const kind = place.trail[base.length]?.node;
   if (kind) {
     const list = v[kind] ?? [];
     const items = kind === 'tracks' ? [h('table', { class: 'small rows lib-tracks' }, list.map((p) => why(mbTrackRow(p.item), p)))]
@@ -5282,27 +5346,32 @@ async function mbProposals(place) {
         : [h('div', { class: 'covers' }, list.map(node(kind === 'albums' ? 'album' : 'artist')).map(mbCover))];
     return [mbCrumbs(place), ...(list.length ? items : [h('p', { class: 'muted' }, tt('library.noneProposed'))])];
   }
-  // The kinds as rows that open their list (Books only when there are some).
-  const kinds = PROPOSAL_KINDS.filter(([k]) => k !== 'audiobooks' || v.audiobooks.length).map(([k, text, iconName]) => {
+  const owner = listener === null ? ownerOf() : listener ? { user: listener } : {};
+  const out = [mbCrumbs(place),
+    h('div', { class: 'row' },
+      h('button', {
+        type: 'button', class: 'primary', disabled: running || !v.aiAvailable, title: v.aiAvailable ? tt('library.askAiFor') : tt('library.noAi', { reason: v.reason }),
+        onclick: () => act(() => api('POST', 'ai/proposals/refresh', owner), 'library.aiIsChoosing').then(mbLoad),
+      }, icon('sparkle'), ` ${tt('library.freshPicks')}`),
+      run?.error && h('span', { class: 'bad small' }, run.error)),
+    ...(running ? [h('div', { class: 'proposals-running', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), tt('library.aiIsChoosingProposals'))] : []),
+    proposalKinds(v, base)];
+  if (!PROPOSAL_KINDS.some(([k]) => v[k].length) && !running) out.push(h('p', { class: 'muted' }, tt(v.aiAvailable ? 'library.noProposalsYet' : 'library.noProposalsConnect')));
+  return out;
+}
+
+// A proposals view's kinds as rows that open their list (Books only when
+// there are some), under `trail`: a listener's root, or none.
+function proposalKinds(v, trail) {
+  return h('table', { class: 'small rows lib-tracks' }, PROPOSAL_KINDS.filter(([k]) => k !== 'audiobooks' || v.audiobooks.length).map(([k, text, iconName]) => {
     const title = tt(text);
-    const open = () => mbGo({ provider: PROPOSALS, trail: [{ node: k, title }] });
+    const open = () => mbGo({ provider: PROPOSALS, trail: [...trail, { node: k, title }] });
     return h('tr', { class: 'opens', onclick: open },
       h('td', {}, artSlot(null, iconName)),
       h('td', { class: 'row-text' }, h('div', { class: 'track-lines' },
         h('div', { class: 'line' }, h('a', { href: '#', onclick: (e) => e.preventDefault() }, title)),
         h('div', { class: 'muted line' }, tt('library.proposed', { n: v[k].length })))));
-  });
-  const out = [mbCrumbs(place),
-    h('div', { class: 'row' },
-      h('button', {
-        type: 'button', class: 'primary', disabled: running || !v.aiAvailable, title: v.aiAvailable ? tt('library.askAiFor') : tt('library.noAi', { reason: v.reason }),
-        onclick: () => act(() => api('POST', 'ai/proposals/refresh', ownerOf()), 'library.aiIsChoosing').then(mbLoad),
-      }, icon('sparkle'), ` ${tt('library.freshPicks')}`),
-      run?.error && h('span', { class: 'bad small' }, run.error)),
-    ...(running ? [h('div', { class: 'proposals-running', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), tt('library.aiIsChoosingProposals'))] : []),
-    h('table', { class: 'small rows lib-tracks' }, kinds)];
-  if (!PROPOSAL_KINDS.some(([k]) => v[k].length) && !running) out.push(h('p', { class: 'muted' }, tt(v.aiAvailable ? 'library.noProposalsYet' : 'library.noProposalsConnect')));
-  return out;
+  }));
 }
 
 // --- status ---------------------------------------------------------------------
@@ -5314,201 +5383,21 @@ function renderStatus() {
   if (page === 'services') renderTidalState(st);
   if (page === 'ai') renderAi();
   if (page === 'settings') loadCores().catch(() => {}); // a server before core discovery answers 404
-  if (page !== 'status') return;
-  const text = json(st);
-  if ($('#statusJson').textContent !== text) $('#statusJson').textContent = text;
-  patch($('#providers'), h('table', { class: 'small' },
-    h('tr', {}, h('th', {}, 'id'), h('th', {}, tt('status.state')), h('th', {}, tt('status.capabilities')), h('th', {}, tt('status.detail'))),
-    st.providers.map((p) => h('tr', {},
-      h('td', {}, p.id, p.displayName && h('div', { class: 'muted' }, p.displayName)),
-      h('td', { class: p.state === 'ready' ? 'good' : 'warn' }, tv('state', p.state)),
-      h('td', {}, (p.capabilities ?? []).join(', ')),
-      h('td', {}, linkify(p.detail))))),
-  h('div', { class: 'small' },
-    `server ${st.version} · media ${st.media.baseUri ?? '—'} (${st.media.handles} handles; ${st.media.reachability}) · `,
-    `library schema ${st.library.schemaVersion} · indexer ${json(st.library.indexer)} · `,
-    `event hub ${st.events.subscribers} subs, ${st.events.held} held, ${st.events.dropped} dropped`));
 }
 
-// --- system: the server, the core and every room (server phase 18) ----------------
+// --- system: the machines' figures (server phase 18) -----------------------------
 
-// The clients' charts (/assets/usage-charts.js), one set per machine: its CPU
-// and RAM, and a room's Wi-Fi signal, as the shared script takes them. The
-// last 60 samples are kept per machine, so a chart drawn later starts full.
-const USAGE_SAMPLES = 60;
-const usageHistory = {};   // 'server' | 'core' | 'room:<client>' -> [usage | null]
-const usageCharts = new Map(); // the container's data-usage -> {el, update}
-
-// An ESP32's memory is its own RAM and its PSRAM; any other machine names its total.
-function usageOf(m) {
-  if (!m) return null;
-  const esp = m.internalMemoryTotalBytes != null;
-  const total = esp ? m.internalMemoryTotalBytes + (m.psramTotalBytes ?? 0) : m.systemMemoryTotalBytes;
-  const available = esp ? (m.internalMemoryAvailableBytes == null ? null : m.internalMemoryAvailableBytes + (m.psramAvailableBytes ?? 0))
-    : m.systemMemoryAvailableBytes;
-  const used = total == null || available == null ? null : total - available;
-  return {
-    cpuPercent: m.systemCpuPercent, cpuModel: m.cpuModel, cpuMhz: m.cpuMhz,
-    ramPercent: used == null || !total ? null : (100 * used) / total, ramUsedBytes: used, ramTotalBytes: total,
-    wifiRssiDbm: m.wifiRssiDbm,
-  };
-}
-
+// The client devices' machine models and network links, on the clients page.
 function onSystem(view) {
   S.system = view;
-  const note = (key, m) => {
-    const list = (usageHistory[key] ??= []);
-    list.push(usageOf(m));
-    if (list.length > USAGE_SAMPLES) list.shift();
-    // A chart on the page takes the sample at once; one drawn later replays them.
-    for (const [own, c] of usageCharts) {
-      if (own.split('|')[0] === key && c.el.isConnected && c.el.dataset.usage === own) c.update(list.at(-1));
-    }
-  };
-  note('server', view.server);
-  note('core', view.core);
-  for (const r of view.rooms) note(`room:${r.client}`, r.metrics);
-  renderSystem();
-  if (page === 'rooms') renderClients(); // the client devices' machine models
+  if (page === 'rooms') renderClients();
 }
-
-// The charts' container: morph() leaves its children alone, attachUsageCharts fills it.
-const usageBox = (key, m) => h('div', { class: 'usage-box', 'data-usage': `${key}${m.wifiRssiDbm != null ? '|wifi' : ''}` });
-
-function attachUsageCharts(container) {
-  for (const el of container.querySelectorAll('[data-usage]')) {
-    const own = el.dataset.usage;
-    if (usageCharts.get(own)?.el === el) continue;
-    const charts = h('div', { class: 'usage-charts' });
-    const wifi = own.endsWith('|wifi') ? h('div', { class: 'wifi-chart' }) : null;
-    el.replaceChildren(charts, ...(wifi ? [wifi] : []));
-    const update = createUsageCharts(charts, wifi, SYSTEM_SAMPLE_MS);
-    for (const sample of usageHistory[own.split('|')[0]] ?? []) update(sample);
-    usageCharts.set(own, { el, update });
-  }
-}
-
-// How often the server sends system.metrics.
-const SYSTEM_SAMPLE_MS = 1000;
-
-function systemCard(title, key, m, rows, detail, extra) {
-  return h('div', { class: 'card' },
-    h('h3', {}, title, detail),
-    m && usageBox(key, m),
-    extra,
-    m && h('details', { class: 'sub', 'data-key': `sysFigures:${key}` }, h('summary', {}, tt('system.allFigures')),
-      h('div', { class: 'kv' }, rows.flatMap(([k, v]) => kv(k, v)))));
-}
-
-const usedOf = (total, available) => tt('system.usedOf', { used: total == null || available == null ? '—' : fmtBytes(total - available), total: fmtBytes(total) });
-const machineMemory = (m) => usedOf(m.systemMemoryTotalBytes, m.systemMemoryAvailableBytes);
-
-// An ESP32 splits its memory into its own RAM, which runs out first, and
-// PSRAM: those two rows then stand for the machine's one.
-const memoryRows = (m) => m.internalMemoryTotalBytes == null
-  ? [['system.row.memoryMachine', machineMemory(m)]]
-  : [
-    ['system.row.internalRam', usedOf(m.internalMemoryTotalBytes, m.internalMemoryAvailableBytes)],
-    ['system.row.psram', m.psramTotalBytes == null ? tt('common.none') : usedOf(m.psramTotalBytes, m.psramAvailableBytes)],
-  ];
 
 // Signal strength as people read it. -67 dBm is the usual floor for a link
 // that streams without retries piling up.
 // Lit arcs of the Wi-Fi icon, on wifiSignal's bands: good or better 3, fair 2, weak 1, poor 0.
 const wifiBars = (dbm) => (dbm >= -67 ? 3 : dbm >= -75 ? 2 : dbm >= -82 ? 1 : 0);
 const wifiSignal = (dbm) => `${dbm} dBm (${tt(dbm >= -55 ? 'system.excellent' : dbm >= -67 ? 'system.good' : dbm >= -75 ? 'system.fair' : dbm >= -82 ? 'system.weak' : 'system.poor')})`;
-
-const BYTES_PER_SAMPLE = { int16: 2, int24: 3, int24in32: 4, int32: 4, float32: 4 };
-const fmtMbit = (kbps) => `${(kbps / 1000).toFixed(1)} Mbit/s`;
-
-// What the room's stream needs on the wire, to set beside the link: PCM is
-// a constant rate, and TCP over Wi-Fi gets roughly half the PHY rate.
-function streamKbps(client) {
-  const f = S.rooms.find((x) => x.client === client)?.actual?.plan?.outputFormat;
-  const bytes = f && BYTES_PER_SAMPLE[f.sampleType];
-  return bytes ? (f.sampleRate * f.channels * bytes * 8) / 1000 : null;
-}
-
-const wifiRows = (m, client) => m.wifiRssiDbm == null && m.wifiRxRateKbps == null ? [] : [
-  ['system.row.wiFiSignal', m.wifiRssiDbm == null ? '—' : wifiSignal(m.wifiRssiDbm)],
-  ['system.row.wiFiAccessPoint', [m.wifiBssid, m.wifiChannel != null && tt('system.channel', { n: m.wifiChannel })].filter(Boolean).join(' · ') || '—'],
-  ['system.row.wiFiRxRate', m.wifiRxRateKbps == null ? tt('system.notReportedBy') : fmtMbit(m.wifiRxRateKbps)],
-  client && ['system.row.streamNeeds', streamKbps(client) == null ? tt('system.notPlaying') : fmtMbit(streamKbps(client))],
-].filter(Boolean);
-
-// The same rows for the core and a room: the fields of MATP section 55.
-const matpRows = (m, client) => [
-  ['system.row.machine', m.machineModel ?? '—'],
-  ['system.row.cpu', [m.cpuModel, m.cpuArchitecture, m.cpuCores != null && tt(m.cpuCores === 1 ? 'system.coreCount' : 'system.cores', { n: m.cpuCores }), m.cpuMhz != null && `${m.cpuMhz} MHz`].filter(Boolean).join(' · ') || '—'],
-  ['system.row.cpuProcess', `${fmtNum(m.cpuPercent, 1)} %`],
-  ['system.row.cpuMachine', `${fmtNum(m.systemCpuPercent, 1)} %`],
-  ['system.row.memoryProcess', fmtBytes(m.memoryBytes)],
-  ['system.row.privateMemory', fmtBytes(m.privateMemoryBytes)],
-  ['system.row.threads', m.threads ?? '—'],
-  ['system.row.handles', m.handles ?? '—'],
-  ...memoryRows(m),
-  ['system.row.uptime', fmtUptime(m.uptimeMs)],
-  ['system.row.systemUptime', fmtUptime(m.systemUptimeMs)],
-  ['system.row.temperature', m.temperatureC == null ? '—' : `${fmtNum(m.temperatureC, 1)} °C`],
-  ...wifiRows(m, client),
-];
-
-const roomReasons = { // translated where shown
-  notConnected: 'system.reason.notConnected',
-  noReports: 'system.reason.noReports',
-  coreUnavailable: 'system.reason.coreUnavailable',
-};
-
-// The core's audio memory (its phase 42, in GET system's coreMemory): all
-// zones against the ceiling, then each zone's share, live every second. A
-// zone holds nothing unless it plays; refused blocks mean it hit the ceiling.
-function audioMemoryRows(mem) {
-  if (!mem) return [];
-  const mb = (b) => `${(b / 2 ** 20).toFixed(1)} MB`;
-  return [
-    ['system.row.audioMemory', `${tt('system.of', { used: mb(mem.usedBytes), limit: mb(mem.limitBytes) })} (${Math.round((mem.usedBytes / mem.limitBytes) * 100)} %)`],
-    ...mem.zones.map((z) => [`· ${zoneName(z.zone)}`, h('span', { class: z.blocksRefused ? 'bad' : '' },
-      `${mb(z.bytes)}${z.blocks != null ? ` · ${tt('system.blocks', { n: z.blocks })}` : ''}${z.blocksRefused ? ` · ${tt('system.refused', { n: z.blocksRefused })}` : ''}`)]),
-  ];
-}
-
-function renderSystem() {
-  if (page !== 'system') return;
-  const v = S.system;
-  $('#systemNote').textContent = v ? tt('system.roomSUpdated', { n: v.rooms.length, time: new Date().toLocaleTimeString() }) : '';
-  render('system', $('#system'), () => {
-    if (!v) return [h('p', { class: 'muted' }, tt('system.noFiguresYet'))];
-    const s = v.server;
-    return [
-      systemCard(tt('system.server'), 'server', s, [
-        ...matpRows(s).slice(0, 2), // machine, cpu: named as the core's
-        ['system.row.cpuProcess', `${fmtNum(s.cpuPercent, 1)} %`],
-        ['system.row.cpuMachine', `${fmtNum(s.systemCpuPercent, 1)} %`],
-        ['system.row.workingSet', fmtBytes(s.workingSetBytes)],
-        ['system.row.privateMemory', fmtBytes(s.privateMemoryBytes)],
-        ['system.row.managedHeap', fmtBytes(s.managedHeapBytes)],
-        ['system.row.threads', s.threads],
-        ['system.row.handles', s.handles ?? '—'],
-        ['system.row.gcGenerations', `${s.gen0Collections ?? '—'} / ${s.gen1Collections ?? '—'} / ${s.gen2Collections ?? '—'}`],
-        ['system.row.memoryMachine', machineMemory(s)],
-        ['system.row.dataDriveFree', fmtBytes(s.dataDriveFreeBytes)],
-        ['system.row.uptime', fmtUptime(s.uptimeMs)],
-        ['system.row.systemUptime', fmtUptime(s.systemUptimeMs)],
-      ]),
-      v.core
-        ? systemCard(tt('system.core'), 'core', v.core, matpRows(v.core), null, v.coreMemory && h('div', { class: 'kv small', title: 'GET system: coreMemory' }, audioMemoryRows(v.coreMemory).flatMap(([k, val]) => kv(k, val))))
-        : h('div', { class: 'card' }, h('h3', {}, tt('system.core')), h('p', { class: 'muted' }, tt('system.noFiguresCore'))),
-      ...v.rooms.map((r) => r.metrics
-        ? systemCard(tt('system.room', { name: roomName(r.client) }), `room:${r.client}`, r.metrics, matpRows(r.metrics, r.client),
-          h('span', { class: 'muted small' }, tt('system.reportedSAgo', { n: fmtNum((r.ageMs ?? 0) / 1000, 1) })))
-        : h('div', { class: 'card' }, h('h3', {}, tt('system.room', { name: roomName(r.client) })),
-          h('p', { class: 'muted' }, tt(roomReasons[r.reason] ?? r.reason ?? 'system.noFigures')))),
-    ];
-  });
-  attachUsageCharts($('#system'));
-}
-
-$('#reloadSystem').addEventListener('click', () => act(async () => onSystem(await api('GET', 'system'))));
 
 // --- discovered clients (core discovery.clients, client.attach/detach) ---------------
 
@@ -5567,7 +5456,6 @@ function detachClient(client) {
   pointClient(client, () => api('POST', `clients/${enc(client)}/detach`), tt('clients.detached', { name: client }), false);
 }
 
-$('#reloadStatus').addEventListener('click',() => act(async () => { S.status = await api('GET', 'status'); renderStatus(); }));
 // TIDAL sign-in by device code. The applications it signs in and plays through
 // are the server's config file's (providers.tidal); nothing here sets them.
 let tidalLoginTimer, tidalLoginPopup;
@@ -5914,7 +5802,7 @@ const PROPOSAL_FIELDS = ['intervalHours', 'debounceMinutes', 'maxRunsPerDay', 't
 let proposals = null; // GET ai/proposals
 
 async function loadProposals() {
-  proposals = await api('GET', `ai/proposals${S.user === '*' ? '' : scopeQuery()}`, undefined, { quiet: true });
+  proposals = await api('GET', `ai/proposals${proposalsQuery()}`, undefined, { quiet: true });
   renderProposals();
   renderHome();
   renderAiStatus();
@@ -5923,7 +5811,7 @@ async function loadProposals() {
 // Diagnostics › AI: the proposals' background runs, the last run and the
 // counts since the server started; the lists are in the library.
 function renderAiStatus() {
-  $('#aiStatusScope').textContent = `· ${S.user && S.user !== '*' ? S.user : tt('common.household')}`;
+  $('#aiStatusScope').textContent = S.user || tt('common.household');
   if (!proposals) return;
   const v = proposals, run = v.run, stats = S.status?.ai?.proposals;
   const when = (t) => (t ? new Date(t).toLocaleString() : '—');
@@ -5943,7 +5831,6 @@ function renderAiStatus() {
       run.error && h('div', { class: 'bad' }, run.error))
       : h('p', { class: 'muted small' }, tt('proposals.noRunYet')));
 }
-$('#reloadAiStatus').addEventListener('click', () => { act(loadProposals); act(loadAiUsage); });
 
 function renderProposals() {
   const form = $('#proposalsForm').elements;
@@ -6120,7 +6007,6 @@ $('#aiSettingsForm').addEventListener('submit', (e) => {
 });
 $('#aiSettingsForm').elements.defaultProvider.addEventListener('change', () => renderAi());
 $('#aiSettingsForm').elements.speechProvider.addEventListener('change', () => renderAi());
-$('#reloadAi').addEventListener('click', () => act(loadAi));
 
 // --- assistant: a chat with the agent (server phase 25), kept as ai/chats ----------
 
@@ -6597,131 +6483,6 @@ function onCommandEnded(data) {
   if (data?.conversationId && data.conversationId === CHAT.id && !CHAT.pending) act(() => openChat(CHAT.id));
 }
 
-// --- console --------------------------------------------------------------------
-
-const presets = [
-  ['GET', 'status'], ['GET', 'zones'], ['GET', 'rooms'], ['GET', 'providers'], ['GET', 'cores'], ['GET', 'search?q=a'],
-  ['GET', 'providers/local/browse'], ['GET', 'playlists'], ['GET', 'favorites'],
-  ['PUT', 'zones/test/clients', { clients: [] }, 'an unknown zone: zones are never made by hand'],
-  ['POST', 'zones/test/play', { item: 1 }],
-  ['PATCH', 'zones/test/queue', { repeat: 'all' }],
-  ['PATCH', 'rooms/roomA', { volume: 0.5 }],
-  ['PATCH', 'rooms/roomA/inputs/play', { doubleClick: { action: 'next' } }],
-  ['GET', 'library/folders'],
-  ['POST', 'library/smb/shares', () => nas()],
-  ['POST', 'zones/test/queue/items', { node: { provider: 'local', id: 'album:1' }, replace: true }],
-  ['GET', 'ai/providers'], ['GET', 'ai/settings'], ['GET', 'ai/providers/ollama/models'],
-  ['GET', 'settings/playback'], ['GET', 'search?q=a&mediaType=audiobook'], ['GET', 'providers/local/browse?node=audiobooks'],
-  ['POST', 'zones/test/queue/items', { node: { provider: 'local', id: 'book:1' }, group: false }, 'a book as single tracks'],
-  ['GET', 'core/audio'], ['GET', 'users'], ['GET', 'likes?user=*'], ['GET', 'likes?kind=audiobook'], ['GET', 'history?user=*'],
-  ['POST', 'likes', { node: { provider: 'local', id: 'book:1' } }, 'a book liked by its node'],
-  ['GET', 'ai/proposals'], ['POST', 'ai/proposals/refresh', {}],
-  ['— wrong on purpose —'],
-  ['POST', 'zones/test/play', { itme: 1 }],
-  ['POST', 'zones/test/pause', {}],
-  ['GET', 'search'],
-  ['GET', 'search?q=a&bogus=1'],
-  ['GET', 'zones/nope'],
-  ['PATCH', 'rooms/roomA', {}],
-  ['PATCH', 'rooms/roomA', { volume: 2 }],
-  ['PATCH', 'rooms/roomA/inputs/play', { clockwise: { action: 'next' } }, 'a gesture a button does not have'],
-  ['POST', 'zones/test/queue/items', { tracks: [{ providerId: 'local', providerItemId: 'track:1', titel: 'x' }] }],
-  ['POST', 'playlists', '{"name": '],
-  ['DELETE', 'status'],
-  ['POST', 'library/folders', () => overlapping(), 'overlapping folder'],
-  ['POST', 'library/smb/shares', () => ({ ...nas(), user: 'galdrun', password: 'wrong' }), 'wrong password'],
-  ['POST', 'library/smb/shares', { host: 'no-such-host.invalid' }, 'unknown host'],
-  ['POST', 'library/smb/directories', () => ({ ...nas(), share: 'no-such-share' }), 'share that does not exist'],
-  ['PATCH', 'library/folders/config:0', { enabled: false }, 'config folder edited'],
-  ['POST', 'library/folders', { type: 'local', path: 'relative/music' }, 'relative path'],
-  ['POST', 'library/folders', { type: 'local', path: 'C:/Music', host: 'nas' }, 'smb key on a local folder'],
-  ['GET', 'providers/local/browse?node=artists&sort=bogus', undefined, 'sort a node does not take'],
-  ['GET', 'providers/local/browse?node=years&letter=A', undefined, 'letter on a list without one'],
-  ['POST', 'zones/test/queue/items', { node: { provider: 'local', id: 'albums' } }, 'a list queued'],
-  ['PUT', () => `ai/providers/${aiConfigProvider()}/key`, { key: 'k' }, 'AI key for a config provider'],
-  ['PUT', 'ai/providers/ollama/key', { key: 'k' }, 'AI key for a provider that takes none'],
-  ['PUT', 'ai/providers/openai/key', { key: ' ' }, 'blank AI key'],
-  ['PUT', 'ai/providers/openai/key', { key: 'k', secret: 1 }, 'unknown field beside key'],
-  ['PATCH', 'artwork', {}, 'artwork patch with no switch'],
-  ['PATCH', 'artwork', { discogs: true }, 'unknown artwork source'],
-  ['PUT', 'artwork/fanarttv/key', { key: ' ' }, 'blank fanart.tv key'],
-  ['GET', 'ai/providers/openai/models?refresh=yes', undefined, 'refresh that is no boolean'],
-  ['GET', 'ai/providers/nobody/models', undefined, 'unknown AI provider'],
-  ['PATCH', 'ai/settings', { defaultProvider: 'nobody' }, 'unknown default provider'],
-  ['POST', 'ai/login/complete', { state: 'made-up', code: 'x' }, 'unknown login state'],
-  ['POST', 'ai/providers/groq/login', {}, 'login for a provider without one'],
-  ['POST', 'ai/providers/openrouter/login', { redirectUri: 'not a url' }, 'login to a redirect that is no URL'],
-  ['PUT', 'ai/providers/openai/client', { clientId: 'x' }, 'OAuth client for a provider without a login'],
-  ['POST', 'ai/providers/openai/login', { redirectUri: 'https://gui.example.com/ai-login.html' }, 'ChatGPT sign-in to a redirect that is not loopback'],
-  ['POST', 'ai/commands', { text: 'hi', provider: 'mistral', model: 'x', reasoning: 'low' }, 'reasoning on a provider without it'],
-  ['PATCH', 'ai/settings', { reasoning: { agent: 'extreme' } }, 'reasoning level that does not exist'],
-  ['PATCH', 'ai/settings', { webLookup: 'always' }, 'web lookup setting that does not exist'],
-  ['PATCH', () => `zones/${enc(S.target || 'test')}`, { autoFill: { count: 0 } }, 'AutoFill count 0'],
-  ['PATCH', () => `zones/${enc(S.target || 'test')}`, { autoFill: { source: 'magic' } }, 'AutoFill source that does not exist'],
-  ['PATCH', 'zones/nowhere', { autoFill: { enabled: true } }, 'AutoFill for an unknown zone'],
-  ['GET', 'history?limit=0', undefined, 'history limit 0'],
-  ['PATCH', 'settings/playback', {}, 'playback settings patch without a setting'],
-  ['GET', 'search?q=a&mediaType=podcast', undefined, 'media type that does not exist'],
-  ['GET', 'providers/local/search?q=a&mediaType=music', undefined, 'media type on one provider\'s search'],
-  ['POST', 'favorites', { node: { provider: 'local', id: 'album:1' } }, 'a node that may be no book as a favourite'],
-  ['PATCH', 'library/folders/1', { mediaType: 'radio' }, 'a folder declared radio'],
-  ['PATCH', 'core/audio', { memoryLimitMb: 1 }, 'a memory limit below what the core takes'],
-  ['PATCH', 'core/audio', { memoryLimitMb: -4 }, 'a negative memory limit'],
-  ['PATCH', 'core/audio', { memoryLimitMb: '128' }, 'a memory limit as text'],
-  ['POST', 'likes', () => ({ track: { providerId: 'local', providerItemId: 'track:1', title: 'x' }, user: 'nobody-' + Date.now() }), 'a like for an unknown user'],
-  ['POST', 'users', { name: 'x'.repeat(41) }, 'a user name of 41 characters'],
-  ['POST', 'users', { name: '*' }, 'a user named *'],
-  ['GET', 'likes?user=nobody', undefined, 'likes of an unknown user'],
-  ['PATCH', () => `zones/${enc(S.target || 'test')}`, { user: 'nobody' }, 'an unknown listener'],
-  ['POST', 'likes', { node: { provider: 'local', id: 'artists' } }, 'a node that is no book liked as one'],
-  ['POST', 'ai/proposals/refresh', { user: 'nobody' }, 'proposals for an unknown user'],
-  ['DELETE', 'ai/proposals/999999', undefined, 'dismissal of an unknown proposal'],
-  ['PATCH', 'ai/settings', { proposals: { intervalHours: 0 } }, 'proposals every 0 hours'],
-  ['PATCH', 'ai/settings', { proposals: { tracks: 51 } }, 'proposals of 51 tracks'],
-];
-
-// An AI provider whose key is from the config file, for the preset that tries to change it.
-function aiConfigProvider() {
-  return AI.providers.find((p) => p.origin === 'config')?.id ?? 'openai';
-}
-
-// The first smb folder's NAS, for the presets that talk to one.
-function nas() {
-  const f = S.folders.find((x) => x.type === 'smb');
-  return f ? { host: f.host, ...(f.port && f.port !== 445 ? { port: f.port } : {}) } : { host: 'nas' };
-}
-
-// A folder inside the first folder there is.
-function overlapping() {
-  const f = S.folders[0];
-  if (!f) return { type: 'local', path: 'C:/Music/inside' };
-  if (f.type !== 'smb') return { type: f.type, path: `${f.path}${f.path.includes('\\') ? '\\' : '/'}inside` };
-  return { type: 'smb', ...nas(), share: f.share, path: f.directory ? `${f.directory}/inside` : 'inside' };
-}
-$('#conPreset').append(...presets.map((p, i) => h('option', { value: String(i), disabled: p.length === 1 }, p.length === 1 ? p[0] : `${p[3] ? `${p[3]}: ` : ''}${p[0]} ${typeof p[1] === 'function' ? 'ai/providers/…/key' : p[1]}`)));
-$('#conPreset').addEventListener('change', (e) => {
-  const p = presets[Number(e.target.value)];
-  if (!p || p.length === 1) return;
-  $('#conMethod').value = p[0];
-  $('#conPath').value = typeof p[1] === 'function' ? p[1]() : p[1];
-  const body = typeof p[2] === 'function' ? p[2]() : p[2];
-  $('#conBody').value = body === undefined ? '' : typeof body === 'string' ? body : json(body);
-  e.target.value = '';
-});
-$('#conSend').addEventListener('click', async () => {
-  const body = $('#conBody').value.trim();
-  const out = $('#conOut');
-  try {
-    const r = await api($('#conMethod').value, $('#conPath').value.replace(/^\/+/, ''), body === '' ? undefined : body);
-    out.className = 'json good';
-    out.textContent = r == null ? tt('console.noContent') : json(mask(r));
-  } catch (e) {
-    out.className = 'json bad';
-    out.textContent = `${e.status || 'unreachable'}\n${json(mask(e.data))}`;
-  }
-  refreshSoon();
-});
-
 // --- event stream -----------------------------------------------------------------
 
 const EVENT_TYPES = [
@@ -6735,7 +6496,7 @@ const EVENT_TYPES = [
   'system.metrics', 'rooms.sync',
   'ai.toolCalled', 'ai.commandStarted', 'ai.commandEnded', 'ai.request',
   'queue.autoFilled', 'zone.autoFillChanged', 'zone.metadataChanged', 'settings.playbackChanged', 'like.changed',
-  'favorite.changed', 'zone.userChanged', 'proposals.running', 'proposals.changed', // server phases 36 and 38
+  'favorite.changed', 'zone.userChanged', 'room.userChanged', 'proposals.running', 'proposals.changed', // server phases 36 and 38
   'room.imageChanged', 'room.name', 'room.forgotten', // server phase 39
   'artwork.changed', // server phase 40
 ];
@@ -6766,17 +6527,15 @@ function connectEvents() {
 
 function onEvent(type, e) {
   const data = tryParse(e.data);
-  evCounts.set(type, (evCounts.get(type) ?? 0) + 1);
-  const total = [...evCounts.values()].reduce((a, b) => a + b, 0);
-  $('#evCount').textContent = `(${total})`;
-  $('#evCountNav').textContent = String(total);
-  $('#evCount').title = [...evCounts].map(([t, n]) => `${t}: ${n}`).join('\n');
-  // Every second: logged only with "show background requests", and no refresh.
+  // Every second: not logged or counted, and no refresh.
   if (type === 'system.metrics' || type === 'rooms.sync') {
-    if ($('#showPolls').checked) appendLine($('#events'), `${time()} #${e.lastEventId} ${type}`, data, 'muted');
     if (type === 'system.metrics') onSystem(data); else onRoomsSync(data);
     return;
   }
+  evCounts.set(type, (evCounts.get(type) ?? 0) + 1);
+  const total = [...evCounts.values()].reduce((a, b) => a + b, 0);
+  $('#evCount').textContent = `(${total})`;
+  $('#evCount').title = [...evCounts].map(([t, n]) => `${t}: ${n}`).join('\n');
   const who = [data?.zone, data?.client].filter(Boolean).join(' ');
   appendLine($('#events'), `${time()} #${type === 'events.lost' ? '-' : e.lastEventId} ${type} ${who} ${JSON.stringify(data).slice(0, 220)}`, data,
     type.endsWith('ost') || type === 'zone.sourceFailed' || type === 'room.fellBehind' || type === 'room.leftBehind' || type === 'room.unstable' ? 'bad' : '');
@@ -6833,6 +6592,12 @@ function onEvent(type, e) {
 
 // --- log tail (the proxy's /gui/logs) -----------------------------------------------
 
+let logCount = 0;
+// Each file's offset after what arrived. Clear keeps them (per viewer), so a
+// reload starts behind the cleared lines; a reconnect resumes where it was.
+const logOffsets = {};
+const logsCleared = () => { try { return JSON.parse(store.get('vx.logsCleared', '{}')); } catch { return {}; } };
+
 async function connectLogs() {
   let config;
   try { config = await (await fetch('/gui/config')).json(); } catch { return; }
@@ -6842,14 +6607,19 @@ async function connectLogs() {
     return;
   }
   const partial = {};
-  const es = new EventSource('/gui/logs');
+  const from = encodeURIComponent(JSON.stringify({ ...logsCleared(), ...logOffsets }));
+  const es = new EventSource(`/gui/logs?from=${from}`);
+  // The browser's own retry would ask from the first offsets again.
+  es.onerror = () => { es.close(); setTimeout(connectLogs, 2000); };
   es.addEventListener('log', (e) => {
-    const { name, text } = JSON.parse(e.data);
+    const { name, text, offset } = JSON.parse(e.data);
+    if (offset != null) logOffsets[name] = offset;
     const lines = ((partial[name] ?? '') + text).split(/\r?\n/);
     partial[name] = lines.pop();
     for (const line of lines) {
       const cls = /\b(ERROR|error)\b/.test(line) ? 'bad' : /\b(WARN|warn)\b/.test(line) ? 'warn' : '';
       appendLine(logs, `[${name}] ${line}`, undefined, cls);
+      $('#logCount').textContent = `(${++logCount})`;
       noteIndexLine(line);
     }
   });
@@ -6907,8 +6677,6 @@ const onShow = {
   home: () => { act(loadHome); if (homeDetail) loadHomeDetail(); },
   // Places the track on the picked zone, which may have changed elsewhere.
   zones: () => renderZoneTabs(),
-  status: () => { renderStatus(); renderZoneStatus(); },
-  system: () => renderSystem(),
   client: () => renderRooms(),
   rooms: () => { act(loadDiscovered); if (!S.system) api('GET', 'system', undefined, { quiet: true }).then(onSystem, () => {}); },
   folders: () => { act(loadFolders); act(loadFound); },
@@ -7008,7 +6776,7 @@ document.addEventListener('keydown', (e) => {
 // --- tabs ---------------------------------------------------------------------------
 
 for (const nav of document.querySelectorAll('nav.tabs')) {
-  const panel = nav.parentElement;
+  const panel = document.getElementById(nav.dataset.for);
   nav.addEventListener('click', (e) => {
     const button = e.target.closest('button[data-tab]');
     if (!button || button.parentElement !== nav) return;

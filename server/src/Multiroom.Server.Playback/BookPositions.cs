@@ -28,6 +28,7 @@ public sealed partial class BookPositions : BackgroundService
     private readonly BookPositionStore _store;
     private readonly ILogger _log;
     private readonly TimeProvider _time;
+    private readonly ZoneUsers? _users;
     private readonly Lock _lock = new();
     // Each zone's current book, as last heard.
     private readonly Dictionary<string, Heard> _books = new(StringComparer.Ordinal);
@@ -35,8 +36,9 @@ public sealed partial class BookPositions : BackgroundService
         Channel.CreateBounded<BookPosition>(new BoundedChannelOptions(Capacity) { FullMode = BoundedChannelFullMode.DropOldest });
 
     public BookPositions(QueueEngine queues, BookPositionStore store, ILogger<BookPositions> log,
-        TimeProvider? time = null)
+        TimeProvider? time = null, ZoneUsers? users = null)
     {
+        _users = users;
         _queues = queues;
         _store = store;
         _log = log;
@@ -46,9 +48,10 @@ public sealed partial class BookPositions : BackgroundService
     }
 
     // A book current in a zone: its item, and its part and the offset in it
-    // at the timestamp At, running on from there while Running.
+    // at the timestamp At, running on from there while Running. User is the
+    // zone's listener when the book was first heard: the place is theirs.
     private sealed record Heard(QueueItemId Item, QueueGroup Book, int Part, long OffsetMs, long At, bool Running,
-        QueueTransport Transport);
+        QueueTransport Transport, string User);
 
     // A book's position follows its reference: the node it was queued from,
     // else its first part's track (a book that is one file).
@@ -76,7 +79,10 @@ public sealed partial class BookPositions : BackgroundService
             var now = _time.GetTimestamp();
             Heard next;
             if (state.Part is { PositionMs: { } offset } part && state.NowPlaying?.Item == item.Id)
-                next = new Heard(item.Id, book, part.Index, offset, now, state.Transport == QueueTransport.Playing, state.Transport);
+                next = heard is not null
+                    ? heard with { Book = book, Part = part.Index, OffsetMs = offset, At = now, Running = state.Transport == QueueTransport.Playing, Transport = state.Transport }
+                    : new Heard(item.Id, book, part.Index, offset, now, state.Transport == QueueTransport.Playing, state.Transport,
+                        _users?.Of(state.Zone) ?? UserStore.Household);
             else if (heard is not null)
                 next = heard with { Book = book, OffsetMs = OffsetOf(heard), At = now, Running = false, Transport = state.Transport };
             else
@@ -128,13 +134,13 @@ public sealed partial class BookPositions : BackgroundService
         var finished = leaving && heard.Part == book.Parts.Count - 1 && length is { } l &&
             offset >= (long)(l - FinishedWithin).TotalMilliseconds;
         if (finished)
-            return new BookPosition(reference, book.Title, book.Artist, 0, null, 0, null, duration, true, _time.GetUtcNow());
+            return new BookPosition(reference, book.Title, book.Artist, 0, null, 0, null, duration, true, _time.GetUtcNow(), heard.User);
 
         long? before = 0;
         foreach (var part in book.Parts.Take(heard.Part))
             before = part.Length is { } p ? before + (long)p.TotalMilliseconds : null;
         return new BookPosition(reference, book.Title, book.Artist, heard.Part, ReferenceOf(book.Parts[heard.Part].Track),
-            offset, before + offset, duration, false, _time.GetUtcNow());
+            offset, before + offset, duration, false, _time.GetUtcNow(), heard.User);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
