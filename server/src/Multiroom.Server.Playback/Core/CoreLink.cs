@@ -23,7 +23,7 @@ public sealed record CoreLinkOptions(string Host, int Port);
 //
 // On every connect: events.subscribe, one `status` into the model, then the
 // desired state re-asserted -- only the commands the diff between the two
-// needs. The core's events.lost gets the same resync. A dropped connection is
+// needs -- and the saved log level (LogSettings), which the core does not keep. The core's events.lost gets the same resync. A dropped connection is
 // retried with a backoff, for as long as the server runs.
 //
 // The reader never waits on anyone. Answers and events are applied to the
@@ -89,6 +89,7 @@ public sealed partial class CoreLink : BackgroundService
 
     private readonly CoreLinkOptions _options;
     private readonly CoreDiscovery? _discovery;
+    private readonly LogSettings? _logSettings;
     private volatile string _host;
     private volatile int _port;
     private volatile CancellationTokenSource? _connectionStop;
@@ -112,10 +113,11 @@ public sealed partial class CoreLink : BackgroundService
     // With a discovery, a selected core is connected to wherever its beacon
     // last came from, and a new selection drops the connection to take effect.
     public CoreLink(CoreLinkOptions options, IEnumerable<ICoreEventSubscriber> handlers, ILogger<CoreLink> log,
-        CoreDiscovery? discovery = null, TimeProvider? time = null)
+        CoreDiscovery? discovery = null, TimeProvider? time = null, LogSettings? logSettings = null)
     {
         _options = options;
         _discovery = discovery;
+        _logSettings = logSettings;
         _host = options.Host;
         _port = options.Port;
         if (discovery is not null)
@@ -525,7 +527,9 @@ public sealed partial class CoreLink : BackgroundService
             return false;
         }
 
-        var commands = Desired.Diff(Model.Current);
+        List<CoreCommand> commands = [.. Desired.Diff(Model.Current)];
+        if (_logSettings?.SavedLevel is { } level)
+            commands.Add(new LogConfigure(level));
         foreach (var command in commands)
         {
             var answer = await SendRawAsync(command, cancellationToken).ConfigureAwait(false);

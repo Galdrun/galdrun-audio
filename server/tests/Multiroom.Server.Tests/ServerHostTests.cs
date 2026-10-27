@@ -19,7 +19,7 @@ public sealed class ServerHostTests : IDisposable
     [Fact]
     public async Task The_stop_signal_stops_every_hosted_service_in_reverse_order_and_exits_zero()
     {
-        var config = _dir.Write("server.json", $$"""{ "dataDirectory": "data", "artwork": { "musicBrainz": false }, "core": { "port": {{FreePort()}}, "discoveryPort": 0 }, "media": { "port": 0 }, "api": { "port": 0 }, "gui": { "port": 0 } }""");
+        var config = _dir.Write("server.json", $$"""{ "dataDirectory": "data", "logging": { "level": "info" }, "artwork": { "musicBrainz": false }, "core": { "port": {{FreePort()}}, "discoveryPort": 0 }, "media": { "port": 0 }, "api": { "port": 0 }, "gui": { "port": 0 } }""");
         var builder = ServerHost.CreateBuilder(["--config", config], TextWriter.Null).Value;
         var journal = new ConcurrentQueue<string>();
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -70,7 +70,7 @@ public sealed class ServerHostTests : IDisposable
             TestContext.Current.CancellationToken);
         Assert.Contains($"could not read {saved}", log, StringComparison.Ordinal);
         // Replaced by a readable one when it stopped.
-        Assert.Contains("\"version\":11", await File.ReadAllTextAsync(saved, TestContext.Current.CancellationToken),
+        Assert.Contains("\"version\":12", await File.ReadAllTextAsync(saved, TestContext.Current.CancellationToken),
             StringComparison.Ordinal);
     }
 
@@ -104,7 +104,7 @@ public sealed class ServerHostTests : IDisposable
         Directory.CreateDirectory(music);
         await File.WriteAllBytesAsync(Path.Combine(music, "broken.flac"), [1, 2, 3], Ct);
         var config = _dir.Write("server.json", $$"""
-            { "dataDirectory": "data", "artwork": { "musicBrainz": false }, "core": { "port": {{FreePort()}}, "discoveryPort": 0 }, "media": { "port": 0 }, "api": { "port": 0 }, "gui": { "port": 0 },
+            { "dataDirectory": "data", "logging": { "level": "info" }, "artwork": { "musicBrainz": false }, "core": { "port": {{FreePort()}}, "discoveryPort": 0 }, "media": { "port": 0 }, "api": { "port": 0 }, "gui": { "port": 0 },
               "library": { "folders": [ { "path": "music" } ] } }
             """);
         var builder = ServerHost.CreateBuilder(["--config", config], TextWriter.Null).Value;
@@ -170,7 +170,7 @@ public sealed class ServerHostTests : IDisposable
     private HostApplicationBuilder Builder()
     {
         var config = _dir.Write("server.json",
-            $$"""{ "dataDirectory": "data", "core": { "port": {{FreePort()}}, "discoveryPort": 0 }, "media": { "port": 0 }, "api": { "port": 0 }, "gui": { "port": 0 } }""");
+            $$"""{ "dataDirectory": "data", "logging": { "level": "info" }, "core": { "port": {{FreePort()}}, "discoveryPort": 0 }, "media": { "port": 0 }, "api": { "port": 0 }, "gui": { "port": 0 } }""");
         return ServerHost.CreateBuilder(["--config", config], TextWriter.Null).Value;
     }
 

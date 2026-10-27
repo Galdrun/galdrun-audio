@@ -12,7 +12,7 @@ namespace multiroom {
 namespace log {
 namespace {
 
-std::atomic<int> g_level{static_cast<int>(LogLevel::Info)};
+std::atomic<int> g_level{static_cast<int>(LogLevel::Warn)};
 
 std::mutex& sinkMutex()
 {

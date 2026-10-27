@@ -221,7 +221,7 @@ struct ServerConfig
     // back.
     std::string coreId;
 
-    LogLevel logLevel = LogLevel::Info;
+    LogLevel logLevel = LogLevel::Warn;
 
     // Empty: stderr only. A relative path is the config file's neighbour, not
     // the working directory's -- which for a service is System32 (phase 29).

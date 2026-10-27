@@ -204,7 +204,7 @@ public sealed class LoggingOptions
     public const long DefaultMaxBytes = 10 * 1024 * 1024;
     public const long MinimumMaxBytes = 64 * 1024;
 
-    public LogVerbosity Level { get; set; } = LogVerbosity.Info;
+    public LogVerbosity Level { get; set; } = LogVerbosity.Warn;
 
     // Null: server.log in the data directory. Empty: no file, stderr only.
     // Relative: against the config file, as the core does since its phase 29.

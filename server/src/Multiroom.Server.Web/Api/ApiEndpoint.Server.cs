@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Multiroom.Server.Abstractions;
 using Multiroom.Server.Library;
+using Multiroom.Server.Playback;
+using Multiroom.Server.Playback.Core;
 
 namespace Multiroom.Server.Web.Api;
 
@@ -43,6 +45,28 @@ public sealed partial class ApiEndpoint
             if (after != before)
                 events.Publish("settings.playbackChanged", after);
             return Json(after);
+        }));
+        // The one log level of this server and its core (LogSettings), kept in
+        // logging.json. A change applies to the server at once and is sent to
+        // the core, or asserted when it next connects; it publishes
+        // settings.loggingChanged. A core that refuses it is answered as the
+        // core's error, the server's level changed all the same.
+        app.MapGet("/api/v1/settings/logging", () => Json(logSettings.View));
+        app.MapPut("/api/v1/settings/logging", (Delegate)(async (HttpContext c) =>
+        {
+            var body = await ApiJson.ReadAsync<LogLevelRequest>(c.Request, optional: false, c.RequestAborted)
+                .ConfigureAwait(false);
+            if (!body.IsSuccess)
+                return Error(body.Failure);
+            var set = logSettings.Set(body.Value!.Level);
+            if (!set.IsSuccess)
+                return Error(set.Failure);
+            if (set.Value)
+                events.Publish("settings.loggingChanged", logSettings.View);
+            var core = await link.SendAsync(new LogConfigure(logSettings.Level), c.RequestAborted).ConfigureAwait(false);
+            return core.IsSuccess || core.Failure.Code is CoreError.NotConnected
+                ? Json(logSettings.View)
+                : Error(core.Failure);
         }));
         app.MapMethods("/api/v1/server", [HttpMethods.Patch], (Delegate)((HttpContext c) =>
             WithBody<ServerPatch, ServerView, LibraryError>(c, p =>

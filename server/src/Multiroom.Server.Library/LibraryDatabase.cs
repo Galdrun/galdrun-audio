@@ -32,7 +32,9 @@ public enum LibraryError
 }
 
 // The library's SQLite file, in WAL mode: one writer (the indexer), any
-// number of readers, each on a connection of its own.
+// number of readers, each on a connection of its own. Synchronous is NORMAL,
+// which in WAL mode cannot corrupt the file: a power cut loses at most the
+// last commits, and a commit costs no fsync, which an SD card is spared.
 //
 // The schema is the numbered .sql files in Migrations/, embedded in this
 // assembly. Migrate() applies each one above the version in schema_version,
@@ -55,6 +57,7 @@ public sealed class LibraryDatabase(string path)
         try
         {
             connection.Open();
+            Execute(connection, null, "PRAGMA synchronous = NORMAL");
             return connection;
         }
         catch

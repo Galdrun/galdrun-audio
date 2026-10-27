@@ -85,6 +85,7 @@ const S = {
   autoFilled: {},          // zone -> the last queue.autoFilled, with when (server phase 26)
   autoMarks: {},           // zone -> {ids, key}: the items a fill added, while the items are as it left them
   playback: null,          // GET settings/playback (server phase 31): {groupBooks}
+  logging: null,           // GET settings/logging: {level, saved, levels}
   user: store.get('vx.user', ''), // the header's listener (server phase 36): '' the household or a name
   users: [],               // GET users
 };
@@ -528,6 +529,31 @@ for (const [key, done] of Object.entries(PLAYBACK_TOGGLES)) {
     return S.playback;
   }, (p) => done(p[key])).then(() => e.target.blur()));
 }
+
+// --- log level (one for the server and its core, kept by the server) -----------
+
+async function loadLogging() {
+  try {
+    S.logging = await api('GET', 'settings/logging', undefined, { quiet: true });
+  } catch {
+    S.logging = null; // a server before the setting answers 404
+  }
+  renderLogging();
+}
+
+function renderLogging() {
+  const select = $('#logLevel');
+  const levels = S.logging?.levels ?? [];
+  select.replaceChildren(...levels.map((l) => h('option', { value: l }, tt(`settings.logLevel.${l}`))));
+  select.value = S.logging?.level ?? '';
+  select.disabled = !S.logging;
+  $('#logLevelHint').textContent = S.logging ? tt(S.logging.saved ? 'settings.logLevelSaved' : 'settings.logLevelConfigured') : '';
+}
+
+$('#logLevel').addEventListener('change', (e) => act(async () => {
+  S.logging = await api('PUT', 'settings/logging', { level: e.target.value });
+  return S.logging;
+}, 'settings.saved').finally(renderLogging));
 
 // --- zones ---------------------------------------------------------------------
 
@@ -6495,7 +6521,7 @@ const EVENT_TYPES = [
   'core.synchronised', 'core.eventsLost', 'queue.changed', 'queue.deleted', 'zone.volumeChanged', 'indexer.progress', 'library.folderChanged', 'events.lost',
   'system.metrics', 'rooms.sync',
   'ai.toolCalled', 'ai.commandStarted', 'ai.commandEnded', 'ai.request',
-  'queue.autoFilled', 'zone.autoFillChanged', 'zone.metadataChanged', 'settings.playbackChanged', 'like.changed',
+  'queue.autoFilled', 'zone.autoFillChanged', 'zone.metadataChanged', 'settings.playbackChanged', 'settings.loggingChanged', 'like.changed',
   'favorite.changed', 'zone.userChanged', 'room.userChanged', 'proposals.running', 'proposals.changed', // server phases 36 and 38
   'room.imageChanged', 'room.name', 'room.forgotten', // server phase 39
   'artwork.changed', // server phase 40
@@ -6572,6 +6598,9 @@ function onEvent(type, e) {
   } else if (type === 'settings.playbackChanged') {
     S.playback = data;
     renderPlayback();
+  } else if (type === 'settings.loggingChanged') {
+    S.logging = data;
+    renderLogging();
   } else if (type === 'ai.commandStarted') {
     // The answer to the POST says the same; nothing to re-read.
   } else if (type === 'ai.commandEnded') {
@@ -6686,7 +6715,7 @@ const onShow = {
   assistant: () => { renderChat(); act(loadChats); act(loadChatModels); },
   services: () => { if (S.status) renderTidalState(S.status); act(loadArtwork); },
   // The GUI settings pick up a change made in another browser.
-  settings: () => { loadGuiSettings(); act(loadCores); act(loadCoreAudio); loadPlayback(); },
+  settings: () => { loadGuiSettings(); act(loadCores); act(loadCoreAudio); loadPlayback(); loadLogging(); },
   playlists: () => act(loadPlaylists),
   stations: () => act(loadStations),
 };

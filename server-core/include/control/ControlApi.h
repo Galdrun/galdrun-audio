@@ -193,6 +193,7 @@ private:
     Reply clientSetDriftCorrection(const json::Value& params);
     Reply clientSetInputBindings(const json::Value& params);
     Reply resamplerConfigure(const json::Value& params);
+    Reply logConfigure(const json::Value& params);
     Reply audioSettings();
     Reply audioConfigure(const json::Value& params);
 

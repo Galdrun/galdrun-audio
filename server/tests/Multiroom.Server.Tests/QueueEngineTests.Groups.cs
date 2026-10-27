@@ -214,7 +214,7 @@ public sealed partial class QueueEngineTests
         await store.StartAsync(Ct);
         await store.StopAsync(Ct);
         await _link.StopAsync(Ct);
-        Assert.Contains("\"version\":11", await File.ReadAllTextAsync(path, Ct), StringComparison.Ordinal);
+        Assert.Contains("\"version\":12", await File.ReadAllTextAsync(path, Ct), StringComparison.Ordinal);
 
         _core.StatusBody = FakeCore.EmptyStatus;
         var synchronised = new Synchronised();
@@ -263,7 +263,7 @@ public sealed partial class QueueEngineTests
         await store.StartAsync(Ct);
         settings.Set(groupBooks: false, resumeBooks: true);
         await store.StopAsync(Ct);
-        Assert.Contains("\"version\":11", await File.ReadAllTextAsync(path, Ct), StringComparison.Ordinal);
+        Assert.Contains("\"version\":12", await File.ReadAllTextAsync(path, Ct), StringComparison.Ordinal);
 
         var restored = new PlaybackSettings();
         var again = new PlaybackStore(new PlaybackStoreOptions(path, false), _engine, _link, NullLogger<PlaybackStore>.Instance,

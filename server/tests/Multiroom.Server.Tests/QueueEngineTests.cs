@@ -444,6 +444,47 @@ public sealed partial class QueueEngineTests : IAsyncDisposable
         await restored.StopAsync(Ct);
     }
 
+    // While a queue plays only its place is written, to playback-positions.json
+    // beside the main file; that place is used only with the main file it
+    // was written beside, never with an older or newer one.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_restart_takes_the_place_from_the_positions_file_only_with_its_own_main_file(bool belongs)
+    {
+        await PlayingAsync("A", "B");
+        _time.Advance(TimeSpan.FromSeconds(42));
+        var before = Queue();
+        var path = Path.Combine(_dir.Path, "playback.json");
+        var store = new PlaybackStore(new PlaybackStoreOptions(path, false), _engine, _link,
+            NullLogger<PlaybackStore>.Instance);
+        await store.StartAsync(Ct);
+        await store.StopAsync(Ct);
+        await _link.StopAsync(Ct);
+        var generation = JsonNode.Parse(await File.ReadAllTextAsync(path, Ct))!["generation"]!.GetValue<long>();
+        Assert.True(generation > 0);
+        await File.WriteAllTextAsync(Path.Combine(_dir.Path, "playback-positions.json"), $$"""
+            {"generation":{{(belongs ? generation : generation - 1)}},"queues":[{"zone":"{{Zone}}",
+             "current":{"value":{{before.Current!.Value.Value}}},"part":0,"positionNs":99000000000,"playing":false}]}
+            """, Ct);
+
+        _core.StatusBody = FakeCore.EmptyStatus;
+        var synchronised = new Synchronised();
+        _restartedLink = new CoreLink(new CoreLinkOptions("127.0.0.1", _core.Port), [synchronised],
+            NullLogger<CoreLink>.Instance);
+        var engine = new QueueEngine(_restartedLink, _providers, _media, NullLogger<QueueEngine>.Instance, _time);
+        var restored = new PlaybackStore(new PlaybackStoreOptions(path, false), engine, _restartedLink,
+            NullLogger<PlaybackStore>.Instance);
+        await restored.StartAsync(Ct);
+        await _restartedLink.StartAsync(Ct);
+        await synchronised.Next.Task.WaitAsync(Patience, Ct);
+        Ok(await engine.PlayAsync(Zone, null, Ct));
+        await Until(() => _core.On(2).Any(r => r.Command == "source.stage"));
+        var stage = JsonNode.Parse(_core.On(2).First(r => r.Command == "source.stage").Params)!;
+        Assert.Equal(belongs ? 99_000_000_000UL : 42_000_000_000UL, stage["startOffsetNs"]!.GetValue<ulong>());
+        await restored.StopAsync(Ct);
+    }
+
     [Fact]
     public async Task A_failed_source_is_marked_with_its_reason_and_the_next_one_staged()
     {

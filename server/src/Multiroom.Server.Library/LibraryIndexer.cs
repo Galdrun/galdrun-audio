@@ -123,6 +123,11 @@ public sealed partial class LibraryIndexer : IHostedService, IDisposable
 
     private readonly LibraryFolders _registry;
     private readonly LibraryDatabase _database;
+    // Open while the server runs. Connections are not pooled, and the last
+    // one to close checkpoints the WAL into the file and deletes it: without
+    // this one, every small write -- a book's place, a play -- would rewrite
+    // its pages twice.
+    private SqliteConnection? _keepOpen;
     private readonly ILogger _log;
     private readonly Channel<IndexedFolder> _jobs;
     private readonly CancellationTokenSource _stopping = new();
@@ -176,6 +181,7 @@ public sealed partial class LibraryIndexer : IHostedService, IDisposable
         if (!migrated.IsSuccess)
             throw new InvalidOperationException($"library database: {migrated.Failure}");
         SchemaVersion = migrated.Value;
+        _keepOpen = _database.Open();
         var loaded = _registry.Load();
         if (!loaded.IsSuccess)
             throw new InvalidOperationException($"library database: {loaded.Failure}");
@@ -204,6 +210,8 @@ public sealed partial class LibraryIndexer : IHostedService, IDisposable
             folder.Dispose();
         if (_thread is not null)
             await _stopped.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        _keepOpen?.Dispose();
+        _keepOpen = null;
     }
 
     public void Dispose()
@@ -212,6 +220,7 @@ public sealed partial class LibraryIndexer : IHostedService, IDisposable
         foreach (var folder in Volatile.Read(ref _folders))
             folder.Dispose();
         _stopping.Dispose();
+        _keepOpen?.Dispose();
     }
 
     // A pass of an enabled folder now, as soon as the thread gets to it.

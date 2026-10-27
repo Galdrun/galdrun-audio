@@ -68,6 +68,7 @@ public sealed partial class ApiEndpoint(
     UnifiedSearch search,
     House house,
     EqualizerProfiles equalizerProfiles,
+    LogSettings logSettings,
     LibraryIndexer indexer,
     LibraryFolders folders,
     MediaEndpoint media,

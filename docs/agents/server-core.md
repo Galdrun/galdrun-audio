@@ -63,6 +63,8 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
   every zoned room whose plan changes (`Zone::planOutdated`); untouched
   bitperfect rooms keep playing. A fixed-ratio resampler (`r8brain`) corrects
   no drift except through a client's own clock trim.
+- `log.configure` sets the log level for this run only; the configured
+  `logLevel` applies until the .NET server sends its saved level on connect.
 - BitPerfect forbids sample-changing conversion. Verified client clock trim
   can preserve samples while correcting a grouped room; otherwise correction
   uses a resampled path where permitted. EQ runs on the resampled path.

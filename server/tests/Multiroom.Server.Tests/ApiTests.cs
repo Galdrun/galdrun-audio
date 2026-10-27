@@ -327,6 +327,36 @@ public sealed partial class ApiTests : IAsyncDisposable
     // --- zones, transport, queue ----------------------------------------------
 
     [Fact]
+    public async Task One_log_level_is_kept_for_the_server_and_sent_to_the_core_on_every_connect()
+    {
+        await StartAsync();
+
+        var view = await Ok(HttpMethod.Get, "settings/logging");
+        Assert.Equal(("warn", false), (view["level"]!.GetValue<string>(), view["saved"]!.GetValue<bool>()));
+        Assert.Equal(["error", "warn", "info", "debug", "trace"], view["levels"]!.AsArray().Select(l => l!.GetValue<string>()));
+        Assert.DoesNotContain(_core.All, r => r.Command == "log.configure");
+
+        using (var events = await EventsAsync(null))
+        {
+            view = await Ok(HttpMethod.Put, "settings/logging", """{"level":"debug"}""");
+            Assert.Equal(("debug", true), (view["level"]!.GetValue<string>(), view["saved"]!.GetValue<bool>()));
+            Assert.Contains("debug", (await events.NextAsync(e => e.Type == "settings.loggingChanged")).Data,
+                StringComparison.Ordinal);
+        }
+        Assert.Equal(("log.configure", """{"level":"debug"}"""), (_core.All[^1].Command, _core.All[^1].Params));
+        Assert.Contains("debug", await File.ReadAllTextAsync(Path.Combine(_dir.Path, "data", "logging.json"), Ct),
+            StringComparison.Ordinal);
+
+        // The core does not keep it: a new connection is told again.
+        _core.Drop();
+        await Until(() => Task.FromResult(_core.All.Count(r => r.Command == "log.configure") == 2));
+
+        await Refused(HttpMethod.Put, "settings/logging", """{"level":"loud"}""", HttpStatusCode.BadRequest,
+            "invalidArgument", "level: one of error, warn, info, debug, trace, was loud");
+        await Refused(HttpMethod.Put, "settings/logging", "{}", HttpStatusCode.BadRequest, "invalidRequest");
+    }
+
+    [Fact]
     public async Task A_queue_is_filled_played_edited_and_its_zone_answers_both_halves()
     {
         await StartAsync();

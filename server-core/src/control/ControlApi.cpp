@@ -537,6 +537,8 @@ std::string ControlApi::handleLine(const std::string& line, bool& subscribed)
     else if (command == "resampler.configure")
         reply = onlyKeys(params, {"resampler"}, command, reply) ? resamplerConfigure(params)
                                                                  : reply;
+    else if (command == "log.configure")
+        reply = onlyKeys(params, {"level"}, command, reply) ? logConfigure(params) : reply;
     else if (command == "events.subscribe" || command == "events.unsubscribe")
     {
         // The connection's own business, so it is answered here rather than
@@ -2036,6 +2038,30 @@ ControlApi::Reply ControlApi::clientSetInputBindings(const json::Value& params)
     reply.body["client"] = json::Value(name);
     reply.body["inputId"] = json::Value(inputId);
     reply.body["bindings"] = matp::inputBindingsToJson(input->kind, merged);
+    reply.body["changed"] = json::Value(changed);
+    return reply;
+}
+
+// The level for this run only: the .NET server keeps it and sends it on every
+// connect, so the configured logLevel still applies until it does.
+ControlApi::Reply ControlApi::logConfigure(const json::Value& params)
+{
+    Reply reply;
+    std::string text;
+    if (!requireString(params, "level", text, reply))
+        return reply;
+    LogLevel level{};
+    if (!log::parseLevel(text, level))
+        return Reply::failure(kInvalidArgument, "level must be error, warn, info, debug or trace");
+
+    const bool changed = level != log::currentLevel();
+    if (changed)
+    {
+        MULTIROOM_INFO("control API: log level {} -> {}", log::levelName(log::currentLevel()),
+                       log::levelName(level));
+        log::setLevel(level);
+    }
+    reply.body["level"] = json::Value(text);
     reply.body["changed"] = json::Value(changed);
     return reply;
 }

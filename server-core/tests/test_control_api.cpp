@@ -26,6 +26,7 @@
 #include "net/Socket.h"
 #include "resampler/FakeResampler.h"
 #include "resampler/ResamplerRegistry.h"
+#include "util/Logger.h"
 #include "zone/ZoneManager.h"
 
 #include <algorithm>
@@ -1036,6 +1037,30 @@ MULTIROOM_TEST(control_api_stores_a_room_s_settings_and_reports_why)
     CHECK(drift->find("active") == nullptr); // no plan yet: not known, not false
     CHECK_EQ(text(*drift, "disabledBy"),
              std::string(driftDisabledText(DriftDisabledReason::BitperfectForced)));
+}
+
+MULTIROOM_TEST(control_api_changes_the_log_level_for_this_run)
+{
+    ApiRig rig;
+    LineClient caller(rig.listener->port());
+    const LogLevel before = log::currentLevel();
+
+    json::Value configured =
+        caller.request(R"({"command":"log.configure","params":{"level":"trace"}})");
+    CHECK(isOk(configured));
+    CHECK(log::currentLevel() == LogLevel::Trace);
+    CHECK_EQ(flag(configured, "changed"), before != LogLevel::Trace);
+
+    configured = caller.request(R"({"command":"log.configure","params":{"level":"trace"}})");
+    CHECK(!flag(configured, "changed"));
+
+    CHECK_EQ(errorOf(caller.request(R"({"command":"log.configure","params":{"level":"loud"}})")),
+             std::string("invalidArgument"));
+    CHECK_EQ(errorOf(caller.request(R"({"command":"log.configure","params":{}})")),
+             std::string("invalidArgument"));
+    CHECK(log::currentLevel() == LogLevel::Trace);
+
+    log::setLevel(before);
 }
 
 MULTIROOM_TEST(control_api_changes_the_resampler_and_keeps_it)

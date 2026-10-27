@@ -27,6 +27,7 @@ public sealed class ServerLoggerProvider : ILoggerProvider
     private readonly long _maxBytes;
     private FileStream? _file;
     private long _fileBytes;
+    private volatile int _minimum = (int)LogLevel.Information;
 
     private ServerLoggerProvider(TextWriter console, string? path, long maxBytes, FileStream? file)
     {
@@ -55,6 +56,10 @@ public sealed class ServerLoggerProvider : ILoggerProvider
     }
 
     public ILogger CreateLogger(string categoryName) => new ServerLogger(this, ShortCategory(categoryName));
+
+    // The level a line needs to be written, changed while the server runs
+    // (LogSettings). The factory's own minimum stays at Trace for this.
+    public void SetMinimumLevel(LogLevel level) => _minimum = (int)level;
 
     public void Dispose()
     {
@@ -136,9 +141,10 @@ public sealed class ServerLoggerProvider : ILoggerProvider
         // Scopes are not rendered; the line format has no place for them.
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-        // Levels are filtered by the logger factory (SetMinimumLevel) before a
-        // call reaches this logger.
-        public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
+        // The factory's per-category filters (Kestrel's, the MCP SDK's) come
+        // first; the level that can change at runtime is the provider's.
+        public bool IsEnabled(LogLevel logLevel) =>
+            logLevel != LogLevel.None && (int)logLevel >= provider._minimum;
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
             Func<TState, Exception?, string> formatter)

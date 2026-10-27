@@ -79,6 +79,8 @@ public sealed record EqualizerProfileRequest(double PreampDb, IReadOnlyList<Core
 
 public sealed record ResamplerRequest(string Resampler);
 
+public sealed record LogLevelRequest(string Level);
+
 // Any of the core's live audio settings: the timings in milliseconds and the
 // memory limit in MB; at least one.
 public sealed record CoreAudioPatch(

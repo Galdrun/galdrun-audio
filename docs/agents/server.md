@@ -73,8 +73,14 @@ Keep ownership straight when changing settings:
   else the household. Plays, book positions and AutoFill's seed use the
   zone's. End-user behaviour: [docs/server/Listeners.md](../server/Listeners.md).
 - `<dataDirectory>/playback.json`: queues/positions and desired state, written
-  atomically by `PlaybackStore`; SQLite `library.db`: library and store data;
-  `core.json`: selected core. Inspect each store before changing persistence.
+  atomically by `PlaybackStore` on changes only; while a queue plays, only its
+  place goes to `playback-positions.json` (matched by generation). SQLite
+  `library.db`: library and store data (WAL, `synchronous=NORMAL`, one
+  connection kept open by `LibraryIndexer` so closes do not checkpoint);
+  `core.json`: selected core; `logging.json`: the one log level set through
+  `settings/logging` (`Playback/LogSettings.cs`), applied to the server's
+  `ServerLoggerProvider` and sent to the core (`log.configure`) on every
+  connect. Inspect each store before changing persistence.
 
 ## Media, API and feature changes
 

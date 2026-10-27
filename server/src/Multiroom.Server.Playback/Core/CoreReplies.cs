@@ -152,6 +152,8 @@ public sealed record InputBindingsSet(string Client, string InputId,
 public sealed record ResamplerConfigured(string Resampler, bool VariableRatio, bool Changed,
     IReadOnlyList<string>? Renegotiated = null);
 
+public sealed record LogConfigured(string Level, bool Changed);
+
 public sealed record Subscription(bool Subscribed, bool Changed);
 
 // --- the parts of status, clients and zones --------------------------------

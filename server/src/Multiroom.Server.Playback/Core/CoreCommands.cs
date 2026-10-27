@@ -197,6 +197,9 @@ public sealed record ClientPower(string Client, string Action) : CoreCommand<Cli
 public sealed record ResamplerConfigure(string Resampler)
     : CoreCommand<ResamplerConfigured>("resampler.configure");
 
+// error, warn, info, debug or trace (LogSettings.Levels); not kept by the core.
+public sealed record LogConfigure(string Level) : CoreCommand<LogConfigured>("log.configure");
+
 public sealed record EventsSubscribe() : CoreCommand<Subscription>("events.subscribe");
 
 public sealed record EventsUnsubscribe() : CoreCommand<Subscription>("events.unsubscribe");

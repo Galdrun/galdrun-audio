@@ -28,7 +28,7 @@ public sealed class ConfigLoaderTests : IDisposable
         Assert.Null(settings.ConfigPath);
         Assert.Equal(data, settings.DataDirectory);
         Assert.True(Directory.Exists(data));
-        Assert.Equal(LogVerbosity.Info, settings.LogLevel);
+        Assert.Equal(LogVerbosity.Warn, settings.LogLevel);
         Assert.Equal(Path.Combine(data, "server.log"), settings.LogFile);
         Assert.Equal(LoggingOptions.DefaultMaxBytes, settings.LogMaxBytes);
         Assert.Equal("127.0.0.1", settings.CoreHost);

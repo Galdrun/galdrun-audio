@@ -66,6 +66,7 @@ internal sealed class FakeCore : IAsyncDisposable
         ["client.setPower"] = ["client", "standbyAfterSeconds?", "deepSleepAfterSeconds?"],
         ["client.power"] = ["client", "action"],
         ["resampler.configure"] = ["resampler"],
+        ["log.configure"] = ["level"],
         ["events.subscribe"] = [],
         ["events.unsubscribe"] = [],
     };
@@ -360,6 +361,7 @@ internal sealed class FakeCore : IAsyncDisposable
             ["variableRatio"] = true,
             ["changed"] = true,
         },
+        "log.configure" => p => new JsonObject { ["level"] = Copy(p, "level"), ["changed"] = true },
         "events.subscribe" => _ => new JsonObject { ["subscribed"] = true, ["changed"] = true },
         "events.unsubscribe" => _ => new JsonObject { ["subscribed"] = false, ["changed"] = true },
         _ => throw new InvalidOperationException(command),

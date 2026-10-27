@@ -72,7 +72,19 @@ public static partial class ServerHost
         // and closes the file when the host is disposed.
         var provider = logger.Value;
         builder.Services.AddSingleton<ILoggerProvider>(_ => provider);
-        builder.Logging.SetMinimumLevel(ToLogLevel(settings.LogLevel));
+        // The level set through the API wins over the configured one and
+        // changes while the server runs, so the provider filters it and the
+        // factory lets everything through to it. LogVerbosity is in the order
+        // of LogSettings.Levels.
+        var logSettings = new LogSettings(Path.Combine(settings.DataDirectory, "logging.json"),
+            LogSettings.Levels[(int)settings.LogLevel]);
+        var savedLevel = logSettings.Load();
+        provider.SetMinimumLevel(ToLogLevel(logSettings.Level));
+        logSettings.Changed += (_, level) => provider.SetMinimumLevel(ToLogLevel(level));
+        if (!savedLevel.IsSuccess)
+            provider.Write(LogLevel.Warning, "ServerHost", $"saved log level not used: {savedLevel.Failure}", null);
+        builder.Services.AddSingleton(logSettings);
+        builder.Logging.SetMinimumLevel(LogLevel.Trace);
         // Kestrel's hosting diagnostics log every request at info, and nothing
         // on the media path may log once per request.
         builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
@@ -285,6 +297,8 @@ public static partial class ServerHost
     // for, since SIGTERM already takes the Ctrl+C path.
     private static bool IsSystemdService() =>
         OperatingSystem.IsLinux() && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("INVOCATION_ID"));
+
+    private static LogLevel ToLogLevel(string level) => ToLogLevel(Enum.Parse<LogVerbosity>(level, ignoreCase: true));
 
     private static LogLevel ToLogLevel(LogVerbosity verbosity) => verbosity switch
     {
