@@ -28,8 +28,9 @@ public sealed record RadioStation(string ProviderId, string ProviderItemId, stri
 // A book queued or kept as one item; its parts are the server's.
 public sealed record MediaGroup(string Title, string? Artist = null) : MediaItem;
 public sealed record Audiobook(string Reference, string Title, string? Author = null) : MediaItem;
+// Playlists are a search's only: playable nodes, opened and queued as nodes.
 public sealed record CatalogItems(IReadOnlyList<Track> Tracks, IReadOnlyList<Album> Albums,
-    IReadOnlyList<Artist> Artists, IReadOnlyList<RadioStation> Stations);
+    IReadOnlyList<Artist> Artists, IReadOnlyList<RadioStation> Stations, IReadOnlyList<BrowseNode>? Playlists = null);
 public enum ProviderState { Ready, Unavailable, AuthRequired, Disabled }
 public enum BrowseKind { Folder, Root, Section, Artist, Album, Playlist, Genre, Composer, Year, Stations }
 public enum BrowseLayout { List, Grid }
@@ -44,7 +45,7 @@ public sealed record BrowsePage(IReadOnlyList<BrowseNode> Nodes, CatalogItems It
     BrowseLayout Layout = BrowseLayout.List);
 public sealed record ProviderView(string Id, ProviderState State, string Detail, string? DisplayName = null,
     IReadOnlyList<string>? Capabilities = null, IReadOnlyList<BrowseNode>? Root = null);
-public sealed record SearchSource(string Provider, int Tracks, int Albums, int Artists, int Stations);
+public sealed record SearchSource(string Provider, int Tracks, int Albums, int Artists, int Stations, int Playlists = 0);
 public sealed record SearchFailure(string Provider, string Error, string Message);
 public sealed record SearchResult(string Query, CatalogItems Items, IReadOnlyList<SearchSource> Sources,
     IReadOnlyList<SearchFailure> Failures);
@@ -65,8 +66,12 @@ public sealed record NowPlaying(long Item, string SourceId, ulong? TimelineNs = 
 public sealed record QueueState(string Zone, IReadOnlyList<QueueItem> Items, RepeatMode Repeat, bool Shuffle,
     QueueTransport Transport, long? Current = null, NowPlaying? NowPlaying = null, long? PositionMs = null);
 public sealed record ZoneDesired(IReadOnlyList<string>? Clients = null, double? Volume = null, bool? Muted = null);
+// Zone is the id of every request; Name is what people call it (its rooms' names).
 public sealed record ZoneView(string Zone, ZoneDesired? Desired = null, JsonElement? Actual = null,
-    QueueState? Queue = null, string? StreamTitle = null, Track? RadioTrack = null);
+    QueueState? Queue = null, string? StreamTitle = null, Track? RadioTrack = null, string? Name = null)
+{
+    public string DisplayName => string.IsNullOrEmpty(Name) ? Zone : Name;
+}
 public sealed record RoomDesired(string? Zone = null, string? AudioControl = null,
     double? Volume = null, bool? Muted = null, ulong? OutputLatencyMs = null,
     double? EffectiveVolume = null, bool? EffectiveMuted = null, bool Grouped = false);
@@ -102,11 +107,21 @@ public sealed record Favorite(long Id, DateTimeOffset Added, MediaItem Item)
     [JsonIgnore] public RadioStation? Station => Item as RadioStation;
     public string Title => Item switch { Track t => t.Title, RadioStation s => s.Name, MediaGroup g => g.Title, _ => "Unknown media" };
 }
-public enum LikeKind { Track, Album, Artist, Station }
+public enum LikeKind { Track, Album, Artist, Station, Audiobook }
 public sealed record ItemRef(LikeKind Kind, string ProviderId, string ProviderItemId);
 public sealed record ItemStatus(LikeKind Kind, string ProviderId, string ProviderItemId, bool Liked, bool Favorite,
     long? LikeId = null, long? FavoriteId = null);
-public sealed record LikedItem(long Id, DateTimeOffset Added, MediaItem Item);
+// Found: for a song liked off the radio, the provider track it was found as.
+public sealed record LikedItem(long Id, DateTimeOffset Added, MediaItem Item, FoundTrack? Found = null);
+public sealed record FoundTrack(Track Track, bool Close);
+// AI proposals (server phase 38): the newest good run's items by kind, each with why.
+public enum ProposalRunState { Running, Ok, Partial, Failed }
+public sealed record ProposalRun(long Id, ProposalRunState State);
+public sealed record ProposalItem(long Id, MediaItem Item, string? Reason = null);
+public sealed record ProposalsView(bool AiAvailable, IReadOnlyList<ProposalItem> Tracks, IReadOnlyList<ProposalItem> Albums,
+    IReadOnlyList<ProposalItem> Artists, IReadOnlyList<ProposalItem> Audiobooks, string? Reason = null, ProposalRun? Run = null);
+public sealed record PlayedTrack(long Id, string Zone, Track Track, DateTimeOffset Played);
+public sealed record HistoryPage(IReadOnlyList<PlayedTrack> Items, int Offset, int Total);
 public sealed record RecommendationSource(string AddIn, double Score, string Reason);
 public sealed record RecommendedTrack(Track Track, double Score, IReadOnlyList<RecommendationSource> Sources)
 {

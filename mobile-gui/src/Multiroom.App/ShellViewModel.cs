@@ -34,11 +34,11 @@ public partial class ShellViewModel : ObservableObject
         _preferencesPath = preferencesPath ?? Preferences.DefaultPath;
         _newClient = clientFactory ?? ((address, token) => new MultiroomClient(address, token));
         Playback = new(WriteAsync);
-        Browser = new(ReadAsync, () => Playback.SelectedZone);
-        Collections = new(WriteAsync, () => Playback.SelectedZone);
+        Browser = new(ReadAsync, () => Playback.SelectedZone, Playback.ZoneNameOf);
+        Collections = new(WriteAsync, () => Playback.SelectedZone, Playback.ZoneNameOf);
         Rooms = new(WriteAsync);
         Servers = new(ConnectDiscoveredAsync, _discovery);
-        Home = new(ReadAsync, () => Playback.SelectedZone);
+        Home = new(ReadAsync, () => Playback.SelectedZone, Playback.ZoneNameOf);
         Home.QueueChanged += () => _session?.Refresh();
         Collections.QueueChanged += () => _session?.Refresh();
         Collections.RecommendationsRequested += () => SelectedPage = "Recommendations";
@@ -94,7 +94,17 @@ public partial class ShellViewModel : ObservableObject
     public bool HasError => Error.Length != 0;
     public bool CanBrowseProvider => SelectedProvider is { State: ProviderState.Ready, Capabilities: { } caps } && caps.Contains("browse");
     public bool NoSources => Providers.Count == 0;
-    partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
+    // An error shows as a toast over the page for a few seconds; Error itself stays until the next request.
+    public TimeSpan ErrorShown { get; set; } = TimeSpan.FromSeconds(5);
+    [ObservableProperty] private bool _showError;
+    private IDisposable? _hideError;
+    partial void OnErrorChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasError));
+        _hideError?.Dispose(); _hideError = null;
+        ShowError = value.Length != 0;
+        if (ShowError) _hideError = DispatcherTimer.RunOnce(() => ShowError = false, ErrorShown);
+    }
     partial void OnSelectedProviderChanged(ProviderView? value) => OnPropertyChanged(nameof(CanBrowseProvider));
     partial void OnProvidersChanged(IReadOnlyList<ProviderView> value) => OnPropertyChanged(nameof(NoSources));
     partial void OnIsWideChanged(bool value) => OnPropertyChanged(nameof(ShowSideQueue));
@@ -106,6 +116,7 @@ public partial class ShellViewModel : ObservableObject
             nameof(IsCollections), nameof(IsRooms), nameof(IsDiagnostics), nameof(IsVolume), nameof(IsServers),
             nameof(IsSetup), nameof(ShowZoneBar), nameof(ShowContentHeader), nameof(ShowTopProgress), nameof(ShowArtworkProgress) }) OnPropertyChanged(property);
         if (IsCollections) Collections.Page = value;
+        if (!IsHome) Home.OpenShelf = null;
         if (IsServers && !Servers.IsScanning && Servers.Servers.Count == 0) _ = Servers.ScanAsync();
         if (_session is not null && (IsHome || value is "Playlists" or "Favourites" || IsRooms || IsDiagnostics)) _ = RefreshAsync();
         if (_session is not null && IsNowPlaying) _ = RefreshCurrentMarksAsync();
@@ -164,8 +175,12 @@ public partial class ShellViewModel : ObservableObject
                         if (IsBrowser && !Browser.IsLoading) _ = Browser.RefreshAsync();
                         if (IsNowPlaying) _ = RefreshCurrentMarksAsync();
                     });
-                else if (type == "like.changed")
-                    Dispatch(session, () => { if (IsNowPlaying) _ = RefreshCurrentMarksAsync(); });
+                else if (type is "like.changed" or "favorite.changed" or "proposals.changed" or "proposals.running")
+                    Dispatch(session, () =>
+                    {
+                        if (IsNowPlaying && type is "like.changed" or "favorite.changed") _ = RefreshCurrentMarksAsync();
+                        if (IsHome) _ = Home.RefreshAsync();
+                    });
                 else if (type is "indexer.progress" or "library.folderChanged")
                     Dispatch(session, () => Browser.Notice = "Your library is updating. Refresh for the latest music.");
             };

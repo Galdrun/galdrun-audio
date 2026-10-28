@@ -317,7 +317,7 @@ public sealed class ServersTests
             await vm.InitializeAsync();
             Assert.True(vm.Connected);
             Assert.Equal("Home", vm.SelectedPage);
-            Assert.True(vm.Home.NoFavourites);
+            Assert.True(vm.Home.Favourites.IsEmpty);
             Assert.All(bases, uri => Assert.StartsWith("http://192.0.2.50:4725/api/v1/", uri.AbsoluteUri));
             var saved = await Preferences.LoadAsync(path, TestContext.Current.CancellationToken);
             Assert.Equal((server.Instance, "http://192.0.2.50:4725/api/v1/"), (saved!.ServerId, saved.Address));

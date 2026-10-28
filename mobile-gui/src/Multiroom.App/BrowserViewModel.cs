@@ -9,6 +9,7 @@ public sealed partial class BrowserViewModel : ObservableObject
 {
     private readonly Func<Func<MultiroomClient, CancellationToken, Task>, Task> _execute;
     private readonly Func<string?> _zone;
+    private readonly Func<string, string> _zoneName;
     private readonly Stack<(string Provider, string? Node, string Title)> _history = [];
     private string? _provider;
     private string? _node;
@@ -26,8 +27,9 @@ public sealed partial class BrowserViewModel : ObservableObject
         if (SelectedItem is { } media && (media.Track is not null || (page == "Favourites" && media.Station is not null)))
             CollectionRequested?.Invoke(page, media);
     }
-    public BrowserViewModel(Func<Func<MultiroomClient, CancellationToken, Task>, Task> execute, Func<string?> zone)
-    { _execute = execute; _zone = zone; }
+    public BrowserViewModel(Func<Func<MultiroomClient, CancellationToken, Task>, Task> execute, Func<string?> zone,
+        Func<string, string>? zoneName = null)
+    { _execute = execute; _zone = zone; _zoneName = zoneName ?? (z => z); }
     public ObservableCollection<MediaRow> Items { get; } = [];
     public ObservableCollection<MediaBand> Bands { get; } = [];
     [ObservableProperty] private MediaRow? _selectedItem;
@@ -164,9 +166,9 @@ public sealed partial class BrowserViewModel : ObservableObject
                 var result = await api.SearchAsync(Query, append ? _offset : 0, ct);
                 ct.ThrowIfCancellationRequested();
                 rows = MediaRow.FromSearch(result.Items);
-                Summary = string.Join(" · ", result.Sources.Select(s => $"{s.Provider}: {s.Tracks + s.Albums + s.Artists + s.Stations}"));
+                Summary = string.Join(" · ", result.Sources.Select(s => $"{s.Provider}: {s.Tracks + s.Albums + s.Artists + s.Stations + s.Playlists}"));
                 Notice = string.Join("\n", result.Failures.Select(f => $"{f.Provider}: {f.Error}"));
-                HasMore = result.Sources.Any(s => Math.Max(Math.Max(s.Tracks, s.Albums), Math.Max(s.Artists, s.Stations)) >= 60);
+                HasMore = result.Sources.Any(s => new[] { s.Tracks, s.Albums, s.Artists, s.Stations, s.Playlists }.Max() >= 60);
                 _offset += 60; IsGrid = false; Sorts = []; Letters = []; Filterable = false; Header = null;
             }
             else
@@ -211,7 +213,7 @@ public sealed partial class BrowserViewModel : ObservableObject
             Node: row.Node is { } node ? new(node.ProviderId, node.NodeId) : null,
             Next: placement == "next", Replace: placement == "now");
         var answer = await api.QueueAsync(zone, request, ct);
-        Notice = "Added to " + zone;
+        Notice = "Added to " + _zoneName(zone);
         if (answer is { } json && json.TryGetProperty("refused", out var refused) && refused.GetArrayLength() > 0)
             Notice += $" · {refused.GetArrayLength()} items refused by the server";
         if (answer is { } response && response.TryGetProperty("truncated", out var truncated) && truncated.GetBoolean())
@@ -241,14 +243,17 @@ public sealed record MediaRow(string Title, string Subtitle, BrowseNode? Node = 
         Add("Albums", new([], items.Albums, [], []));
         Add("Artists", new([], [], items.Artists, []));
         Add("Stations", new([], [], [], items.Stations));
+        Add("Playlists", new([], [], [], [], items.Playlists));
         return result;
     }
     public static MediaRow From(BrowseNode n) => new(n.Title, string.Join(" · ", new[] { n.ProviderId, n.Subtitle, n.Unplayable }.Where(s => !string.IsNullOrEmpty(s))), Node: n);
     public static IReadOnlyList<MediaRow> From(CatalogItems items) => [
         ..items.Tracks.Select(t => new MediaRow(t.Title, $"{t.Artist} · {t.ProviderId}", Track: t)),
         ..items.Stations.Select(s => new MediaRow(s.Name, $"{s.Genre} · {s.ProviderId}", Station: s)),
-        ..items.Albums.Select(a => From(new BrowseNode(a.ProviderId, a.ProviderItemId, a.Title, a.ArtworkId, BrowseKind.Album, a.Artist))),
-        ..items.Artists.Select(a => From(new BrowseNode(a.ProviderId, a.ProviderItemId, a.Name, a.ArtworkId, BrowseKind.Artist)))];
+        // An album or artist is its provider's node, queued whole as the server GUI queues it.
+        ..items.Albums.Select(a => From(new BrowseNode(a.ProviderId, a.ProviderItemId, a.Title, a.ArtworkId, BrowseKind.Album, a.Artist, Playable: true))),
+        ..items.Artists.Select(a => From(new BrowseNode(a.ProviderId, a.ProviderItemId, a.Name, a.ArtworkId, BrowseKind.Artist, Playable: true))),
+        ..(items.Playlists ?? []).Select(From)];
 }
 
 public sealed record MediaBand(IReadOnlyList<MediaRow> Cards, int Columns);

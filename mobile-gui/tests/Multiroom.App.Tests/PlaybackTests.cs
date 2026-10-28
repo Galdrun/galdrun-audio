@@ -10,6 +10,17 @@ public sealed class PlaybackTests
         new("kitchen", Queue: new("kitchen", [new(3, new RadioStation("webradio", "station:1", "Radio"))], RepeatMode.Off, false, QueueTransport.Playing, Current: 3), StreamTitle: "Live artist")], []);
 
     [Fact]
+    public void Zones_show_their_names_and_are_selected_by_id()
+    {
+        var vm = new PlaybackViewModel(_ => throw new InvalidOperationException("Unexpected network"));
+        vm.Apply(new([new("zone-1", Name: "Kitchen + Living"), new("zone-2")], []));
+        Assert.Equal("zone-1", vm.SelectedZone); Assert.Equal("Kitchen + Living", vm.ZoneName);
+        Assert.Equal("Zone 1 of 2: Kitchen + Living", vm.ZonePosition);
+        Assert.Equal([new ZoneChoice("zone-1", "Kitchen + Living"), new ZoneChoice("zone-2", "zone-2")], vm.ZoneChoices);
+        Assert.Equal("Kitchen + Living", vm.ZoneNameOf("zone-1"));
+    }
+
+    [Fact]
     public void Zone_switching_is_local_and_live_station_never_seeks()
     {
         var vm = new PlaybackViewModel(_ => throw new InvalidOperationException("Unexpected network"));

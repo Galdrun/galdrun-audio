@@ -15,6 +15,7 @@ for the source directory, generator and options.
 | `scripts/release/package.py` (gitignored, local) | Pack `releases/` into release archives, plus one `galdrun-server-bundle-*` per target with both server and core, using `scripts/release/bundle/` (README, `start.sh`, `start.cmd`/`start.ps1`) |
 | `scripts/copy-server-gui.ps1` | Copy `server-gui/www/` and shared web assets into an existing server release's `gui/`; defaults to `windows-x64`, accepts `-Target <target>` |
 | `scripts/build-mobile-gui.ps1`, `scripts/build-mobile-gui.sh` | Publish the Avalonia desktop app; these scripts do not build Android/iOS |
+| `scripts/start-mobile-gui.ps1` | Start the Avalonia desktop app from the `windows-x64` release at phone size (`-Desktop`: desktop size); does not build |
 | `scripts/setup/windows.ps1`, `scripts/setup/linux.sh` | Helpers sourced by build scripts for tool/dependency setup; not standalone entry points |
 | `scripts/start-local.ps1` | Start core, server and one client from Windows x64 releases with isolated configs/logs under `scripts/.run/` |
 | `scripts/stop-local.ps1` | Graceful stop, then timeout/kill, for this checkout's running release processes |

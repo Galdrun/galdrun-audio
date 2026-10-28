@@ -27,6 +27,9 @@ public sealed partial class MultiroomClient
     public Task<Favorite> AddFavoriteAsync(Track? track, RadioStation? station, CancellationToken ct) =>
         SendTypedAsync<Favorite>(HttpMethod.Post, "favorites", new { track, station }, ct);
     public Task<JsonElement?> RemoveFavoriteAsync(long id, CancellationToken ct) => SendAsync(HttpMethod.Delete, $"favorites/{id}", null, ct);
+    public Task<IReadOnlyList<LikedItem>> LikesAsync(CancellationToken ct) => GetAsync<IReadOnlyList<LikedItem>>("likes", ct);
+    public Task<ProposalsView> ProposalsAsync(CancellationToken ct) => GetAsync<ProposalsView>("ai/proposals", ct);
+    public Task<HistoryPage> HistoryAsync(int limit, CancellationToken ct) => GetAsync<HistoryPage>($"history?limit={limit}", ct);
     public Task<IReadOnlyList<ItemStatus>> ItemStatusesAsync(IReadOnlyList<ItemRef> items, CancellationToken ct) =>
         SendTypedAsync<IReadOnlyList<ItemStatus>>(HttpMethod.Post, "items/status", new { items }, ct);
     public Task<LikedItem> AddLikeAsync(Track track, CancellationToken ct) =>

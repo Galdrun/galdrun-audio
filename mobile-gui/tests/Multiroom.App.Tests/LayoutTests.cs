@@ -18,6 +18,37 @@ public static class TestApp
 
 public sealed class LayoutTests
 {
+    [AvaloniaFact]
+    public async Task Errors_show_as_a_toast_that_never_moves_the_page_and_hides_by_itself()
+    {
+        var view = new MainView(loadPreferences: false);
+        var model = (ShellViewModel)view.DataContext!;
+        model.ErrorShown = TimeSpan.FromMilliseconds(50);
+        var window = new Window { Width = 390, Height = 844, Content = view };
+        try
+        {
+            window.Show(); model.SelectedPage = "Home"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var home = Assert.Single(view.GetVisualDescendants().OfType<HomeView>());
+            var top = home.TranslatePoint(new Point(), view)!.Value.Y;
+            // A request in flight shows the bar over the page's top edge without moving the page.
+            model.IsBusy = true; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var progress = view.FindControl<ProgressBar>("TopProgress")!;
+            Assert.True(progress.IsEffectivelyVisible); Assert.False(progress.IsHitTestVisible);
+            Assert.Equal(top, home.TranslatePoint(new Point(), view)!.Value.Y);
+            model.Error = "The server could not complete the request.";
+            window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            model.IsBusy = false; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var toast = view.FindControl<Border>("ErrorToast")!;
+            Assert.True(model.ShowError); Assert.Contains("shown", toast.Classes); Assert.False(toast.IsHitTestVisible);
+            Assert.Equal(model.Error, view.FindControl<TextBlock>("ErrorText")!.Text);
+            Assert.Equal(top, home.TranslatePoint(new Point(), view)!.Value.Y);
+            for (var i = 0; i < 100 && model.ShowError; i++) { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
+            Assert.False(model.ShowError); Assert.DoesNotContain("shown", toast.Classes);
+            Assert.NotEmpty(model.Error);
+        }
+        finally { window.Close(); }
+    }
+
     [AvaloniaTheory]
     [InlineData(390, 844)] [InlineData(900, 850)] [InlineData(1440, 950)]
     public void Collection_room_and_diagnostics_pages_render_at_all_shell_sizes(int width, int height)

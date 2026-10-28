@@ -6,7 +6,8 @@ namespace Multiroom.App;
 
 public sealed partial class CollectionsViewModel(
     Func<Func<MultiroomClient, CancellationToken, Task>, Task> execute,
-    Func<string?> zone) : ObservableObject
+    Func<string?> zone,
+    Func<string, string>? zoneName = null) : ObservableObject
 {
     private bool _refreshing;
     private int _entriesVersion;
@@ -156,7 +157,7 @@ public sealed partial class CollectionsViewModel(
         if (items is null) return;
         if (zone() is not { } target) throw new ArgumentException("Choose or create a zone before adding music.");
         var answer = await api.QueueAsync(target, items with { Next = placement == "next", Replace = placement == "now" }, ct);
-        Notice = "Added to " + target;
+        Notice = "Added to " + (zoneName?.Invoke(target) ?? target);
         if (answer is { } json && json.TryGetProperty("refused", out var refused)) Notice += $" · {refused.GetArrayLength()} items refused";
         if (placement == "now") await api.TransportAsync(target, "play", null, ct);
         QueueChanged?.Invoke();

@@ -28,6 +28,8 @@ public sealed partial class PlaybackViewModel : ObservableObject
     public ObservableCollection<QueueRow> Items { get; } = [];
     [ObservableProperty] private IReadOnlyList<string> _zones = [];
     [ObservableProperty] private string? _selectedZone;
+    // The zones as people call them, in Zones' order; a picker selects by Zone (the id).
+    [ObservableProperty] private IReadOnlyList<ZoneChoice> _zoneChoices = [];
     [ObservableProperty] private QueueRow? _selectedItem;
     [ObservableProperty] private string _newZone = "";
     [ObservableProperty] private string _title = "Nothing playing";
@@ -55,7 +57,9 @@ public sealed partial class PlaybackViewModel : ObservableObject
     private static string FormatPosition(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
     public bool IsPlaying => Queue?.Transport is QueueTransport.Playing or QueueTransport.Starting;
     public string PlayPauseLabel => IsPlaying ? "Pause" : "Play";
-    public string ZonePosition => $"Zone {Zones.ToList().IndexOf(SelectedZone ?? "") + 1} of {Zones.Count}: {SelectedZone}";
+    public string? ZoneName => _snapshot.Zones.FirstOrDefault(z => z.Zone == SelectedZone)?.DisplayName ?? SelectedZone;
+    public string ZoneNameOf(string zone) => _snapshot.Zones.FirstOrDefault(z => z.Zone == zone)?.DisplayName ?? zone;
+    public string ZonePosition => $"Zone {Zones.ToList().IndexOf(SelectedZone ?? "") + 1} of {Zones.Count}: {ZoneName}";
     public IReadOnlyList<bool> ZoneIndicators => Zones.Select(zone => zone == SelectedZone).ToArray();
     public ZoneDesired? ZoneSettings => _snapshot.Zones.FirstOrDefault(z => z.Zone == SelectedZone)?.Desired;
     public string ZoneVolumeStatus => ZoneSettings?.Volume is { } volume ? $"Zone volume: {volume:P0}" : "Zone volume: unknown";
@@ -98,6 +102,8 @@ public sealed partial class PlaybackViewModel : ObservableObject
         _snapshot = snapshot;
         var names = snapshot.Zones.Select(z => z.Zone).ToArray();
         if (!Zones.SequenceEqual(names)) Zones = names;
+        var choices = snapshot.Zones.Select(z => new ZoneChoice(z.Zone, z.DisplayName)).ToArray();
+        if (!ZoneChoices.SequenceEqual(choices)) ZoneChoices = choices;
         if (_selectWhenAvailable is { } desired && Zones.Contains(desired)) { SelectedZone = desired; _selectWhenAvailable = null; }
         else if (SelectedZone is null || !Zones.Contains(SelectedZone))
             SelectedZone = PreferredZone is { } preferred && Zones.Contains(preferred) ? preferred : Zones.FirstOrDefault();
@@ -151,7 +157,8 @@ public sealed partial class PlaybackViewModel : ObservableObject
         foreach (var room in _snapshot.Rooms)
         {
             var choice = Membership.FirstOrDefault(c => c.Client == room.Client);
-            if (choice is null) Membership.Add(new RoomChoice(room.Client, room.Desired.Zone == SelectedZone));
+            if (choice is null) Membership.Add(new RoomChoice(room.Client, room.Desired.Zone == SelectedZone) { Name = room.DisplayName });
+            else if (choice.Name != room.DisplayName) choice.Name = room.DisplayName;
             else if (!choice.Dirty) choice.Reset(room.Desired.Zone == SelectedZone);
         }
         for (var i = Membership.Count - 1; i >= 0; i--)
@@ -159,7 +166,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
         OnPropertyChanged(nameof(IsEmpty)); OnPropertyChanged(nameof(HasZone));
         OnPropertyChanged(nameof(CurrentArtwork));
         OnPropertyChanged(nameof(CanSeekCurrent)); OnPropertyChanged(nameof(ActualVolume));
-        foreach (var property in new[] { nameof(IsPlaying), nameof(PlayPauseLabel), nameof(ZonePosition), nameof(ZoneIndicators),
+        foreach (var property in new[] { nameof(IsPlaying), nameof(PlayPauseLabel), nameof(ZoneName), nameof(ZonePosition), nameof(ZoneIndicators),
             nameof(ZoneVolumeStatus), nameof(ZoneMuteLabel), nameof(CanSetZoneVolume), nameof(CanMuteZone),
             nameof(TrackLengthSeconds), nameof(ProgressMaximum), nameof(CanScrub), nameof(HasPosition),
             nameof(PositionText), nameof(LengthText), nameof(QueuePosition), nameof(IsRepeatEnabled), nameof(IsRepeatOne) }) OnPropertyChanged(property);
@@ -370,6 +377,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
 public sealed partial class RoomChoice(string client, bool assigned) : ObservableObject
 {
     public string Client { get; } = client;
+    [ObservableProperty] private string _name = client;
     public bool Dirty { get; set; }
     [ObservableProperty] private bool _assigned = assigned;
     partial void OnAssignedChanged(bool value) => Dirty = true;
@@ -384,3 +392,5 @@ public sealed record QueueRow(QueueItem Item, bool IsCurrent)
 }
 
 public sealed record QueueRowMove(QueueRow Row, int Index);
+
+public sealed record ZoneChoice(string Zone, string Name);

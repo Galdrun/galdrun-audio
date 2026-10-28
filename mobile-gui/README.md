@@ -14,6 +14,8 @@ What already works, more or less:
   token is kept for the session only, never saved.
 - **Rooms and zones**: see what plays where, switch zones by swiping.
 - **Now playing, transport and queue**: play, pause, skip, play next, add to queue.
+- **Home**: shelves of what the AI proposes (For you), favourites, likes and
+  what was played lately, as the server's web interface has them.
 - **Browse and search** the server's sources; **collections**: playlists,
   favourites, recommendations.
 
