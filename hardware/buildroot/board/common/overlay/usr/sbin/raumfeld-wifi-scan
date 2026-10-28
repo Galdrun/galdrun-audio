@@ -5,12 +5,16 @@ set -eu
 ulimit -f 128
 state=/run/raumfeld-network
 created=0
+raised=0
 command_pid=
 watchdog_pid=
 cleanup() {
     if [ -n "$watchdog_pid" ]; then kill "$watchdog_pid" 2>/dev/null || :; wait "$watchdog_pid" 2>/dev/null || :; fi
     if [ -n "$command_pid" ]; then kill "$command_pid" 2>/dev/null || :; wait "$command_pid" 2>/dev/null || :; fi
     if [ "$created" = 1 ]; then iw dev galdrunscan0 del 2>/dev/null || :; fi
+    if [ "$raised" = 1 ] && [ ! -f "$state/wpa.pid" ] && [ ! -f "$state/hostapd.pid" ]; then
+        ip link set "$wifi" down 2>/dev/null || :
+    fi
     rm -f "$state/scan.pending" "$state/scan.request"
 }
 trap cleanup EXIT
@@ -28,6 +32,10 @@ if iw dev "$wifi" interface add galdrunscan0 type managed > "$state/scan.error" 
 elif iw dev "$wifi" info | grep -q '^[[:space:]]*type managed$'; then
     # Single-interface drivers can scan their station without replacing it.
     scan_interface=$wifi
+    if ! ip -o link show dev "$wifi" | grep -Eq '<([^>]*,)?UP(,|>)'; then
+        raised=1
+        if ! ip link set "$wifi" up >> "$state/scan.error" 2>&1; then exit 1; fi
+    fi
 else
     exit 1
 fi

@@ -1,0 +1,35 @@
+Subject: [PATCH] ASoC: fsl_sai: quiesce inherited Streamer streams before IRQ setup
+
+The vendor-to-mainline kexec handover left TCSR/RCSR at
+0x90130c01. Several million SAI IRQs delayed startup and competed
+with PCIe firmware initialization before userspace could stop audio.
+Temporarily enable the bus clock and stop the inherited stream before
+requesting its IRQ. Scope this bring-up quirk to the Streamer.
+
+--- a/sound/soc/fsl/fsl_sai.c
++++ b/sound/soc/fsl/fsl_sai.c
+@@ -1494,6 +1494,24 @@
+ 	if (irq < 0)
+ 		return irq;
+ 
++	/* A kexec handover can leave the vendor's TX/RX and error IRQs active.
++	 * Quiesce this board before installing the handler; otherwise the
++	 * inherited stream can interrupt continuously before DAI setup.
++	 */
++	if (of_machine_is_compatible("fsl,imx7d-teufel-streamer")) {
++		ret = clk_prepare_enable(sai->bus_clk);
++		if (ret)
++			return ret;
++		ret = regmap_write(sai->regmap,
++				   FSL_SAI_TCSR(sai->soc_data->reg_offset), 0);
++		if (!ret)
++			ret = regmap_write(sai->regmap,
++					   FSL_SAI_RCSR(sai->soc_data->reg_offset), 0);
++		clk_disable_unprepare(sai->bus_clk);
++		if (ret)
++			return ret;
++	}
++
+ 	ret = devm_request_irq(dev, irq, fsl_sai_isr, IRQF_SHARED,
+ 			       np->name, sai);
+ 	if (ret) {

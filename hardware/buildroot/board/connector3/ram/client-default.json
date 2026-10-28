@@ -1,0 +1,25 @@
+{
+  "active": true,
+  "server": "",
+  "clientId": "",
+  "name": "Connector 3 RAM test",
+  "audioDeviceId": "hw:CARD=Connector3,DEV=0",
+  "audioAccessMode": "exclusive-only",
+  "preferredSampleRate": 48000,
+  "bufferMs": 2500,
+  "standbyAfterSeconds": 0,
+  "deepSleepAfterSeconds": 0,
+  "controlPort": 4720,
+  "controlBindAddress": "0.0.0.0",
+  "inputs": [
+    {"id":"Preset 1","kind":"button","device":"Connector 3 touch buttons","key":"2","bindings":{"click":{"action":"action1"}}},
+    {"id":"Preset 2","kind":"button","device":"Connector 3 touch buttons","key":"3","bindings":{"click":{"action":"action2"}}},
+    {"id":"Preset 3","kind":"button","device":"Connector 3 touch buttons","key":"4","bindings":{"click":{"action":"action3"}}},
+    {"id":"Previous","kind":"button","device":"Connector 3 touch buttons","key":"165","bindings":{"click":{"action":"previous"}}},
+    {"id":"Play/Pause","kind":"button","device":"Connector 3 touch buttons","key":"164","bindings":{"click":{"action":"togglePause"}}},
+    {"id":"Next","kind":"button","device":"Connector 3 touch buttons","key":"163","bindings":{"click":{"action":"next"}}},
+    {"id":"Multipurpose","kind":"button","device":"Connector 3 touch buttons","key":"148","bindings":{"click":{"action":"action4"}}},
+    {"id":"Volume -","kind":"button","device":"Connector 3 touch buttons","key":"114","bindings":{"click":{"action":"volumeDown","scope":"room","step":0.05}}},
+    {"id":"Volume +","kind":"button","device":"Connector 3 touch buttons","key":"115","bindings":{"click":{"action":"volumeUp","scope":"room","step":0.05}}}
+  ]
+}

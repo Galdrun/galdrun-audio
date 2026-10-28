@@ -8,6 +8,7 @@ const browser=launchEdge(9336,path.resolve('client/build/web-preview/edge-networ
  try{
   page=await attachPage(9336);const {send,call,evaluate}=page;
   await call('Page.enable');await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+  await call('Page.addScriptToEvaluateOnNewDocument',{source:"localStorage.setItem('galdrun.lang','en-US')"});
   await call('Page.addScriptToEvaluateOnNewDocument',{source:`const originalFetch=window.fetch;window.networkWrites=[];window.fetch=async(...args)=>{const request=args[1]?.body?JSON.parse(args[1].body):{};if(request.command==='scanNetworks')return new Response(JSON.stringify({ok:true,scan:{pending:true}}));if(request.command==='getNetworks')return new Response(JSON.stringify({ok:true,scan:{pending:false,networks:[{ssid:'Test',bssid:'aa:bb:cc:dd:ee:01',rssi:-40,channel:1,secure:true},{ssid:'Test',bssid:'aa:bb:cc:dd:ee:02',rssi:-65,channel:6,secure:true},{ssid:'Open',bssid:'aa:bb:cc:dd:ee:03',rssi:-70,channel:11,secure:false}]}}));if(request.command==='setNetwork'){networkWrites.push(request.params);return new Response(JSON.stringify({ok:true}),{status:200})}return originalFetch(...args)}`});
   for(const width of [1200,320]){
    await call('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width<600});
@@ -17,8 +18,8 @@ const browser=launchEdge(9336,path.resolve('client/build/web-preview/edge-networ
    assert(await evaluate("!document.getElementById('networkBox').classList.contains('hidden')&&!document.getElementById('wifiScan').disabled"),'Firmware capability did not enable controls');
    assert(await evaluate("document.getElementById('save').disabled"),'Initial form should be clean');
    assert(await evaluate("!document.getElementById('deviceNameBox').classList.contains('hidden')&&!document.getElementById('deviceName').disabled"),'Device name missing on firmware');
-   const clientFields=['room','clientId','deviceName','server','device'];
-   if(await evaluate("!document.getElementById('audioProfileBox').classList.contains('hidden')"))clientFields.splice(4,0,'audioProfile');
+   const clientFields=['room','clientId','deviceName','active','server','device'];
+   if(await evaluate("!document.getElementById('audioProfileBox').classList.contains('hidden')"))clientFields.splice(clientFields.indexOf('device'),0,'audioProfile');
    assert.deepEqual(await evaluate("[...document.getElementById('room').closest('section').querySelectorAll('label')].filter(x=>x.getClientRects().length).map(x=>x.htmlFor)"),clientFields,'Visible client fields must keep Audio board before Output');
    const initialDeviceName=await evaluate("document.getElementById('deviceName').value");
    await evaluate("document.getElementById('deviceName').value='bad name'");

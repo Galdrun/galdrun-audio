@@ -5,7 +5,8 @@ import subprocess
 import tempfile
 
 source = Path(__file__).resolve().parents[1] / "board/common/overlay/usr/sbin/raumfeld-wifi-scan"
-for scenario in ("success", "failed", "timeout", "cancelled", "oversized"):
+for scenario in ("success", "failed", "timeout", "cancelled", "oversized",
+                 "single-down", "single-up", "single-failed", "single-claimed", "missing"):
     with tempfile.TemporaryDirectory(prefix="raumfeld-scan-") as directory:
         root = Path(directory)
         script = root / "scan.sh"
@@ -14,7 +15,15 @@ for scenario in ("success", "failed", "timeout", "cancelled", "oversized"):
         iw = root / "iw"
         iw.write_text('''#!/bin/sh
 case "$*" in
- dev) echo 'Interface mlan0' ;;
+ dev) [ "$SCENARIO" = missing ] || echo 'Interface mlan0' ;;
+ 'dev mlan0 interface add galdrunscan0 type managed')
+  case "$SCENARIO" in single-*) exit 1 ;; esac ;;
+ 'dev mlan0 info') echo ' type managed' ;;
+ 'dev mlan0 scan')
+  [ "$SCENARIO" = single-up ] || [ -f "$SCAN_ROOT/up" ] || { echo 'Network is down' >&2; exit 1; }
+  if [ "$SCENARIO" = single-failed ]; then echo 'driver busy' >&2; exit 1; fi
+  if [ "$SCENARIO" = single-claimed ]; then touch "$SCAN_ROOT/wpa.pid"; fi
+  printf 'BSS aa:bb:cc:dd:ee:01\\n\\tSSID: Test\\n' ;;
  'dev galdrunscan0 scan')
   case "$SCENARIO" in
    success) printf 'BSS aa:bb:cc:dd:ee:01\\n\\tSSID: Test\\n' ;;
@@ -26,7 +35,15 @@ case "$*" in
 esac
 ''')
         ip = root / "ip"
-        ip.write_text("#!/bin/sh\nexit 0\n")
+        ip.write_text('''#!/bin/sh
+case "$*" in
+ '-o link show dev mlan0')
+  if [ "$SCENARIO" = single-up ]; then echo '3: mlan0: <BROADCAST,MULTICAST,UP,LOWER_UP>'
+  else echo '3: mlan0: <BROADCAST,MULTICAST>' ; fi ;;
+ 'link set mlan0 up') touch "$SCAN_ROOT/up" ;;
+ 'link set mlan0 down') touch "$SCAN_ROOT/down" ;;
+esac
+''')
         iw.chmod(0o755)
         ip.chmod(0o755)
         (root / "scan.request").touch()
@@ -40,10 +57,14 @@ esac
                 time.sleep(0.01)
             process.terminate()
         stdout, stderr = process.communicate(timeout=3)
-        assert process.returncode == (0 if scenario == "success" else 1), (stdout, stderr)
-        assert (root / "deleted").exists(), scenario
+        success = scenario in ("success", "single-down", "single-up", "single-claimed")
+        assert process.returncode == (0 if success else 1), (scenario, stdout, stderr)
+        assert (root / "deleted").exists() == (not scenario.startswith("single-") and scenario != "missing"), scenario
+        if scenario.startswith("single-"):
+            assert (root / "up").exists() == (scenario != "single-up"), scenario
+            assert (root / "down").exists() == (scenario not in ("single-up", "single-claimed")), scenario
         assert not (root / "scan.request").exists() and not (root / "scan.pending").exists(), scenario
-        if scenario == "success":
+        if success:
             assert "SSID: Test" in (root / "scan.txt").read_text()
             assert not (root / "scan.error").exists()
         elif scenario != "cancelled":

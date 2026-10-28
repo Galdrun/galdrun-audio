@@ -1,0 +1,39 @@
+Subject: [PATCH] ARM: imx7d: retain the Streamer RMII reference-clock direction
+
+The working Teufel Streamer boot has IOMUXC_GPR1 ENET2_CLK_DIR set
+and provides its LAN87xx RMII PHY with the ENET2 50 MHz reference.
+The generic i.MX7 initialization clears this bit. Keep the observed
+board-specific setting while leaving all other boards unchanged.
+
+This is a board bring-up patch; hardware validation is recorded separately.
+
+--- a/arch/arm/mach-imx/mach-imx7d.c
++++ b/arch/arm/mach-imx/mach-imx7d.c
+@@ -5,6 +5,7 @@
+ #include <linux/irqchip.h>
+ #include <linux/mfd/syscon.h>
+ #include <linux/mfd/syscon/imx7-iomuxc-gpr.h>
++#include <linux/of.h>
+ #include <linux/platform_device.h>
+ #include <linux/phy.h>
+ #include <linux/regmap.h>
+@@ -38,11 +39,18 @@
+ static void __init imx7d_enet_clk_sel(void)
+ {
+ 	struct regmap *gpr;
++	u32 clk_dir = 0;
++
++	/* The Streamer's RMII PHY uses the SoC's 50 MHz reference output.
++	 * Match GPR1 bit 18 in the working vendor boot, not the SDB default.
++	 */
++	if (of_machine_is_compatible("fsl,imx7d-teufel-streamer"))
++		clk_dir = IMX7D_GPR1_ENET2_CLK_DIR_MASK;
+ 
+ 	gpr = syscon_regmap_lookup_by_compatible("fsl,imx7d-iomuxc-gpr");
+ 	if (!IS_ERR(gpr)) {
+ 		regmap_update_bits(gpr, IOMUXC_GPR1, IMX7D_GPR1_ENET_TX_CLK_SEL_MASK, 0);
+-		regmap_update_bits(gpr, IOMUXC_GPR1, IMX7D_GPR1_ENET_CLK_DIR_MASK, 0);
++		regmap_update_bits(gpr, IOMUXC_GPR1, IMX7D_GPR1_ENET_CLK_DIR_MASK, clk_dir);
+ 	} else {
+ 		pr_err("failed to find fsl,imx7d-iomux-gpr regmap\n");
+ 	}

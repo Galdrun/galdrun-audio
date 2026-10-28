@@ -389,8 +389,12 @@ void appendCardDevices(int card, std::vector<AudioDeviceInfo>& devices, bool ful
             device.id = makeDeviceId(cardId, deviceIndex);
 
             const char* pcmName = snd_pcm_info_get_name(pcmInfo);
+            if (pcmName == nullptr || *pcmName == '\0')
+                pcmName = snd_pcm_info_get_id(pcmInfo);
+            const std::string pcmLabel = pcmName != nullptr && *pcmName != '\0' ?
+                                         pcmName : "PCM " + std::to_string(deviceIndex);
             device.name = std::string(cardName != nullptr ? cardName : cardId) + ": " +
-                          (pcmName != nullptr ? pcmName : "PCM");
+                          pcmLabel;
             device.description = cardLongName != nullptr ? cardLongName : "";
 
             // "hw:" is direct hardware access, "plughw:" converts in software.

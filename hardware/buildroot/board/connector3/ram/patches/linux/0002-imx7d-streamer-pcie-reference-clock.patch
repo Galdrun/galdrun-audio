@@ -1,0 +1,33 @@
+Subject: [PATCH] PCI: imx6: retain the Streamer reference-clock selection
+
+The live working vendor GPR12 is 0x300040a0, with bit 5 set.
+Mainline clears it during PHY initialization and reference-clock enable.
+Scope the board-specific selection to the Teufel Streamer compatible.
+Hardware bring-up verification is recorded separately.
+
+--- a/drivers/pci/controller/dwc/pci-imx6.c
++++ b/drivers/pci/controller/dwc/pci-imx6.c
+@@ -411,7 +411,12 @@
+ 
+ static int imx7d_pcie_init_phy(struct imx_pcie *imx_pcie)
+ {
+-	regmap_update_bits(imx_pcie->iomuxc_gpr, IOMUXC_GPR12, IMX7D_GPR12_PCIE_PHY_REFCLK_SEL, 0);
++	u32 refclk = of_machine_is_compatible("fsl,imx7d-teufel-streamer") ?
++		IMX7D_GPR12_PCIE_PHY_REFCLK_SEL : 0;
++
++	/* Preserve the reference source selected by the working Streamer boot. */
++	regmap_update_bits(imx_pcie->iomuxc_gpr, IOMUXC_GPR12,
++			   IMX7D_GPR12_PCIE_PHY_REFCLK_SEL, refclk);
+ 
+ 	return 0;
+ }
+@@ -650,7 +655,8 @@
+ {
+ 	regmap_update_bits(imx_pcie->iomuxc_gpr, IOMUXC_GPR12,
+ 			   IMX7D_GPR12_PCIE_PHY_REFCLK_SEL,
+-			   enable ? 0 : IMX7D_GPR12_PCIE_PHY_REFCLK_SEL);
++			   enable && !of_machine_is_compatible("fsl,imx7d-teufel-streamer") ?
++			   0 : IMX7D_GPR12_PCIE_PHY_REFCLK_SEL);
+ 	return 0;
+ }
+ 

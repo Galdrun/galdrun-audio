@@ -176,6 +176,26 @@ component logs. The server GUI defaults to `4723`, every client's settings page 
 
 ## Pick verification by changed surface
 
+Connector 3 has an experimental SSH/kexec RAM build containing the ARMv7 client;
+see [the Connector 3 guide](../hardware/connector3.md#custom-ram-build).
+The earlier USB diagnostic's FIT signing inputs and host checks remain in
+[the investigation guide](../hardware/raumfeld/connector3.md). Neither is a
+supported persistent client firmware target. Host verification does not establish
+physical boot, SSH reachability or playback. Separately, the 6.12.112 RAM kernel
+has passed a live kexec boot, Ethernet/SSH/client-API checks and audio format
+negotiation. Its hash-bound `hardware-verification.json` records those checks;
+The native MCU UART/uinput driver has packet-parser self-checks and a physical
+UART capture of all nine controls; the real client API exposes all nine bindings.
+WLAN, audible playback and cold boot remain unqualified.
+`hardware/buildroot/scripts/prepare-connector3-vendor-ram.py` prepares the built
+`rootfs.tar.gz` under the beta's `/run`, with private network settings supplied
+separately. Preparation leaves the current network running; the printed start
+command hands networking to the RAM service. The corrected helper has been
+verified on the vendor kernel: nine inputs, distinct ALSA names, live Wi-Fi
+settings and scanning. Its first handover failed because the SSH PATH omitted
+service directories and an enabled WPA helper was missing from a cached build.
+Read the hardware guide for the preflight, recovery limits and current runtime.
+
 Pi image builds are `scripts/build-client.sh rpi1 rpi3 rpi4 rpi5` (Windows: the equivalent
 PowerShell targets). See [the Pi guide](../../hardware/buildroot/board/rpi/README.md).
 Firmware host checks live in `hardware/buildroot/scripts/test-*.py`; in particular

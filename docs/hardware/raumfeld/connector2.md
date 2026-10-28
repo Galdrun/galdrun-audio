@@ -281,7 +281,9 @@ and Ctrl-C repeatedly as soon as `Hit any key` appears.
 
 ## Checklist for a new model (Connector 3 or others)
 
-Nothing about other models has been verified. Start here:
+For Connector 3, first read the [offline findings and experimental RAM SSH
+image](connector3.md). Its i.MX7D signed FIT boot path differs from Connector 2;
+physical boot remains unqualified. Other models have not been verified. Start here:
 
 1. **Find a 3.3 V UART** and dump everything read-only, as in test step 1. Note
    the SoC, RAM, NAND geometry, U-Boot version, the full environment, the

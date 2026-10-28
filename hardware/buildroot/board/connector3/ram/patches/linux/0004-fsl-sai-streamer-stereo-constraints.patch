@@ -1,0 +1,26 @@
+Subject: [PATCH] ASoC: fsl_sai: constrain the Streamer to stereo during probing
+
+The one-data-line Streamer card accepts two-channel streams.
+ALSA test_channels nevertheless advertises wider formats, so a core
+can select eight channels and then fail hw_params indefinitely.
+Publish the board-specific stereo constraint in startup.
+
+--- a/sound/soc/fsl/fsl_sai.c
++++ b/sound/soc/fsl/fsl_sai.c
+@@ -895,6 +895,16 @@
+ 	struct fsl_sai *sai = snd_soc_dai_get_drvdata(cpu_dai);
+ 	bool tx = substream->stream == SNDRV_PCM_STREAM_PLAYBACK;
+ 	int ret;
++
++	/* The Streamer has one stereo data line. Advertise its actual channel
++	 * limit during probing, not only when hw_params rejects a wider stream.
++	 */
++	if (of_machine_is_compatible("fsl,imx7d-teufel-streamer")) {
++		ret = snd_pcm_hw_constraint_minmax(substream->runtime,
++				SNDRV_PCM_HW_PARAM_CHANNELS, 2, 2);
++		if (ret)
++			return ret;
++	}
+ 
+ 	/*
+ 	 * EDMA controller needs period size to be a multiple of

@@ -82,7 +82,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     foreach(function snd_card_next snd_ctl_open snd_ctl_close snd_ctl_card_info
                      snd_ctl_card_info_get_id snd_ctl_card_info_get_name
                      snd_ctl_card_info_get_longname snd_ctl_pcm_next_device
-                     snd_ctl_pcm_info snd_pcm_info_get_name snd_pcm_open snd_mixer_attach)
+                     snd_ctl_pcm_info snd_pcm_info_get_name snd_pcm_info_get_id snd_pcm_open snd_mixer_attach)
         target_link_options(alsa_rescan_tests PRIVATE "-Wl,--wrap=${function}")
     endforeach()
     multiroom_set_warnings(alsa_rescan_tests)

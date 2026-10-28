@@ -99,6 +99,10 @@ desktop CMake and `esp32/main/CMakeLists.txt`. Shared sources added to the
 desktop build may also need adding to ESP-IDF's explicit shared-source list.
 Read [ESP32 notes](../../client/esp32/README.md) or
 [Connector 2 port notes](../hardware/raumfeld/connector2.md) for those targets.
+Connector 3's experimental RAM userland, native MCU UART/uinput driver,
+vendor-kernel D-Bus bridge and
+network-manager qualification limits are in
+[its hardware guide](../hardware/connector3.md#touch-buttons-audio-names-and-network-settings).
 
 Pi firmware uses the same network/SSH/standby services, with MAC-based Wi-Fi
 radio selection/hotplug and AP fallback. `getAudioProfile`/`setAudioProfile`

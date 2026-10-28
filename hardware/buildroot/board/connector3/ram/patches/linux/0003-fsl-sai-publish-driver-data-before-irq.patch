@@ -1,0 +1,26 @@
+Subject: [PATCH] ASoC: fsl_sai: publish driver data before requesting IRQ
+
+A pending SAI interrupt during a kexec handover can invoke fsl_sai_isr
+as soon as devm_request_irq succeeds. Its regmap callbacks obtain sai
+through dev_get_drvdata; publishing it later produces a NULL dereference
+in fsl_sai_readable_reg. Set it after initializing soc_data, before
+regmap creation and IRQ registration.
+
+--- a/sound/soc/fsl/fsl_sai.c
++++ b/sound/soc/fsl/fsl_sai.c
+@@ -1418,6 +1418,7 @@
+ 
+ 	sai->pdev = pdev;
+ 	sai->soc_data = of_device_get_match_data(dev);
++	platform_set_drvdata(pdev, sai);
+ 
+ 	sai->is_lsb_first = of_property_read_bool(np, "lsb-first");
+ 
+@@ -1547,7 +1548,6 @@
+ 
+ 	sai->pinctrl = devm_pinctrl_get(&pdev->dev);
+ 
+-	platform_set_drvdata(pdev, sai);
+ 	pm_runtime_enable(dev);
+ 	if (!pm_runtime_enabled(dev)) {
+ 		ret = fsl_sai_runtime_resume(dev);

@@ -5,6 +5,14 @@ installation, supported driver catalogue and hardware qualification limits are
 in [the Raspberry Pi guide](board/rpi/README.md). The instructions below describe
 the Connector 2 NAND/USB firmware.
 
+For the **Connector 3 / Teufel Streamer**, see the
+[verified vendor SSH procedure and experimental kexec RAM build](../../docs/hardware/connector3.md).
+The source-built 6.12.112 kernel has booted via kexec with working Ethernet,
+key-only SSH and the client API. WLAN, MCU control, audible playback and cold
+boot remain unqualified; this is not a persistent firmware/install target.
+Earlier USB diagnostic work is in the
+[investigation notes](../../docs/hardware/raumfeld/connector3.md).
+
 Buildroot external tree that turns a Teufel Raumfeld **Connector 2** into a Galdrun
 client. Board target: **`connector2`**. The build produces a modern Linux firmware
 with the Galdrun client preinstalled and a USB stick image that installs it through

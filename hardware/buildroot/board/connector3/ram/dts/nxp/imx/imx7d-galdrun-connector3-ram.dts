@@ -1,0 +1,235 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/dts-v1/;
+#include "imx7d.dtsi"
+
+/* Preserve the working vendor GPIO output-data register levels. The debugfs
+ * pad-level readback reports low even for some driven-high outputs.
+ * Wiring: Teufel's published S810 DTS and this unit's live, fixed-up DTB. */
+/ {
+    model = "Galdrun Connector 3 RAM test";
+    compatible = "fsl,imx7d-teufel-streamer", "fsl,imx7d";
+    aliases { ethernet0 = &fec2; };
+    chosen { stdout-path = "serial0:115200n8"; };
+    memory@80000000 {
+        device_type = "memory";
+        reg = <0x80000000 0x1fc00000>;
+    };
+
+    /* Keep the failed boot's console in RAM across a warm reboot. This lies
+     * inside the vendor's CMA pool, away from its early kernel allocations.
+     * Recovery is best effort: vendor firmware may reuse it after reboot. */
+    reserved-memory {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges;
+        ramoops@9d000000 {
+            compatible = "ramoops";
+            reg = <0x9d000000 0x100000>;
+            record-size = <0x20000>;
+            console-size = <0x80000>;
+            mem-type = <1>;
+        };
+    };
+
+    wifi_supply: regulator-wifi {
+        compatible = "regulator-fixed";
+        regulator-name = "wifi-3v3-preserved";
+        regulator-min-microvolt = <3300000>;
+        regulator-max-microvolt = <3300000>;
+        regulator-boot-on;
+        regulator-always-on;
+    };
+
+    audio_out: audio-output {
+        compatible = "linux,spdif-dit";
+        #sound-dai-cells = <0>;
+    };
+
+    sound {
+        compatible = "simple-audio-card";
+        simple-audio-card,name = "Connector3";
+        simple-audio-card,format = "i2s";
+        simple-audio-card,bitclock-master = <&audio_cpu>;
+        simple-audio-card,frame-master = <&audio_cpu>;
+        simple-audio-card,mclk-fs = <512>;
+        assigned-clocks = <&clks IMX7D_AUDIO_MCLK_ROOT_SRC>,
+                          <&clks IMX7D_AUDIO_MCLK_ROOT_CLK>;
+        assigned-clock-parents = <&clks IMX7D_PLL_AUDIO_POST_DIV>;
+        assigned-clock-rates = <0>, <24576000>;
+        audio_cpu: simple-audio-card,cpu {
+            sound-dai = <&sai1>;
+            clocks = <&clks IMX7D_SAI1_ROOT_CLK>;
+            dai-tdm-slot-num = <2>;
+            dai-tdm-slot-width = <32>;
+        };
+        simple-audio-card,codec { sound-dai = <&audio_out>; };
+    };
+};
+
+&cpu1 { status = "disabled"; };
+
+/* The vendor DT disables this block. Probing it from the RAM
+ * kernel faults at 0x30900004 before userspace can start. */
+&crypto { status = "disabled"; };
+
+&gpio1 {
+    carrier-idle {
+        gpio-hog;
+        gpios = <8 GPIO_ACTIVE_HIGH>;
+        output-high;
+        line-name = "carrier-vendor-idle";
+    };
+};
+
+&gpio4 {
+    wifi-disable-idle {
+        gpio-hog;
+        gpios = <20 GPIO_ACTIVE_HIGH>;
+        output-high;
+        line-name = "wifi-disable-vendor-idle";
+    };
+};
+
+&gpio5 {
+    wifi-power-idle {
+        gpio-hog;
+        gpios = <2 GPIO_ACTIVE_HIGH>;
+        output-high;
+        line-name = "wifi-power-vendor-idle";
+    };
+    ethernet-assert {
+        gpio-hog;
+        gpios = <11 GPIO_ACTIVE_HIGH>;
+        output-low;
+        line-name = "ethernet-vendor-assert";
+    };
+};
+
+&pcie {
+    /* Let the DesignWare host map inbound Wi-Fi DMA into system RAM. */
+    dma-ranges = <0x02000000 0 0x80000000 0x80000000 0 0x20000000>;
+    vpcie-supply = <&wifi_supply>;
+    /* GPIO4 DR bit 23 is high with vendor Wi-Fi working: reset is active low. */
+    reset-gpios = <&gpio4 23 GPIO_ACTIVE_LOW>;
+    status = "okay";
+};
+
+&uart1 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_uart1>;
+    assigned-clocks = <&clks IMX7D_UART1_ROOT_SRC>;
+    assigned-clock-parents = <&clks IMX7D_OSC_24M_CLK>;
+    status = "okay";
+};
+
+/* The front-panel MCU uses serial2 in the vendor DT. */
+&uart3 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_uart3>;
+    assigned-clocks = <&clks IMX7D_UART3_ROOT_SRC>;
+    assigned-clock-parents = <&clks IMX7D_OSC_24M_CLK>;
+    status = "okay";
+};
+
+&fec2 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_enet2>;
+    clocks = <&clks IMX7D_ENET2_IPG_ROOT_CLK>,
+             <&clks IMX7D_ENET_AXI_ROOT_CLK>,
+             <&clks IMX7D_ENET2_TIME_ROOT_CLK>,
+             <&clks IMX7D_PLL_ENET_MAIN_125M_CLK>,
+             <&clks IMX7D_ENET2_REF_ROOT_DIV>;
+    assigned-clocks = <&clks IMX7D_ENET2_TIME_ROOT_SRC>,
+                      <&clks IMX7D_ENET2_TIME_ROOT_CLK>,
+                      <&clks IMX7D_ENET2_REF_ROOT_SRC>,
+                      <&clks IMX7D_ENET2_REF_ROOT_DIV>;
+    assigned-clock-parents = <&clks IMX7D_PLL_ENET_MAIN_100M_CLK>, <0>,
+                            <&clks IMX7D_PLL_ENET_MAIN_50M_CLK>, <0>;
+    assigned-clock-rates = <0>, <100000000>, <0>, <50000000>;
+    phy-mode = "rmii";
+    phy-handle = <&ethphy>;
+    status = "okay";
+    mdio {
+        #address-cells = <1>;
+        #size-cells = <0>;
+        /* GPIO4 DR bit 22 is high while vendor Ethernet is up. */
+        reset-gpios = <&gpio4 22 GPIO_ACTIVE_LOW>;
+        reset-delay-us = <10000>;
+        reset-post-delay-us = <30000>;
+        ethphy: ethernet-phy@0 { reg = <0>; };
+    };
+};
+
+&sai1 {
+    #sound-dai-cells = <0>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_sai1 &pinctrl_sai1_mclk>;
+    assigned-clocks = <&clks IMX7D_PLL_AUDIO_POST_DIV>,
+                      <&clks IMX7D_SAI1_ROOT_SRC>,
+                      <&clks IMX7D_SAI1_ROOT_CLK>;
+    assigned-clock-parents = <0>, <&clks IMX7D_PLL_AUDIO_POST_DIV>;
+    assigned-clock-rates = <884736000>, <0>, <24576000>;
+    fsl,sai-mclk-direction-output;
+    status = "okay";
+};
+
+&iomuxc {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_preserved_gpio &pinctrl_32khz>;
+    pinctrl_preserved_gpio: preserved-gpiogrp {
+        fsl,pins = <
+            MX7D_PAD_GPIO1_IO08__GPIO1_IO8 0x14
+            MX7D_PAD_ECSPI2_SCLK__GPIO4_IO20 0x14
+            MX7D_PAD_ECSPI2_MISO__GPIO4_IO22 0x80000000
+            MX7D_PAD_ECSPI2_SS0__GPIO4_IO23 0x14
+            MX7D_PAD_SD1_RESET_B__GPIO5_IO2 0x14
+            MX7D_PAD_SD2_RESET_B__GPIO5_IO11 0x80000000
+        >;
+    };
+    pinctrl_32khz: clko2grp {
+        fsl,pins = <MX7D_PAD_SD1_WP__CCM_CLKO2 0x14>;
+    };
+    pinctrl_uart1: uart1grp {
+        fsl,pins = <
+            MX7D_PAD_UART1_TX_DATA__UART1_DCE_TX 0x79
+            MX7D_PAD_UART1_RX_DATA__UART1_DCE_RX 0x79
+        >;
+    };
+    pinctrl_uart3: uart3grp {
+        fsl,pins = <
+            MX7D_PAD_UART3_RX_DATA__UART3_DCE_RX 0x60
+            MX7D_PAD_UART3_TX_DATA__UART3_DCE_TX 0x60
+        >;
+    };
+    pinctrl_enet2: enet2grp {
+        fsl,pins = <
+            MX7D_PAD_GPIO1_IO14__ENET2_MDIO 0x03
+            MX7D_PAD_GPIO1_IO15__ENET2_MDC 0x03
+            MX7D_PAD_EPDC_GDRL__ENET2_RGMII_TX_CTL 0x01
+            MX7D_PAD_EPDC_SDCE2__ENET2_RGMII_TD0 0x01
+            MX7D_PAD_EPDC_SDCE3__ENET2_RGMII_TD1 0x01
+            MX7D_PAD_EPDC_SDCE0__ENET2_RGMII_RX_CTL 0x01
+            MX7D_PAD_EPDC_SDCLK__ENET2_RGMII_RD0 0x01
+            MX7D_PAD_EPDC_SDLE__ENET2_RGMII_RD1 0x01
+            MX7D_PAD_EPDC_SDCE1__ENET2_RX_ER 0x01
+            MX7D_PAD_EPDC_BDR0__CCM_ENET_REF_CLK2 0x40000001
+        >;
+    };
+    pinctrl_sai1: sai1grp {
+        fsl,pins = <
+            MX7D_PAD_ENET1_RX_CLK__SAI1_TX_BCLK 0x1f
+            MX7D_PAD_SAI1_TX_SYNC__SAI1_TX_SYNC 0x1f
+            MX7D_PAD_ENET1_COL__SAI1_TX_DATA0 0x1f
+            MX7D_PAD_SAI1_RX_DATA__SAI1_RX_DATA0 0x1f
+            MX7D_PAD_ENET1_RGMII_TX_CTL__SAI1_RX_SYNC 0x1f
+            MX7D_PAD_ENET1_RGMII_TXC__SAI1_RX_BCLK 0x1f
+            MX7D_PAD_SAI1_RX_SYNC__SAI1_RX_SYNC 0x1f
+        >;
+    };
+};
+
+&iomuxc_lpsr {
+    pinctrl_sai1_mclk: sai1-mclkgrp {
+        fsl,pins = <MX7D_PAD_LPSR_GPIO1_IO01__SAI1_MCLK 0x14>;
+    };
+};

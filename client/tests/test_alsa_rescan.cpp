@@ -15,6 +15,8 @@ bool cardPresent = true;
 int exclusiveResult = -EBUSY;
 int sharedResult = -EBUSY;
 int defaultResult = -EBUSY;
+const char* pcmName = "Test PCM";
+const char* pcmId = "I2S dit-hifi-1";
 }
 
 extern "C" int __wrap_snd_card_next(int* card)
@@ -39,7 +41,8 @@ extern "C" int __wrap_snd_ctl_pcm_next_device(snd_ctl_t*, int* device)
     return 0;
 }
 extern "C" int __wrap_snd_ctl_pcm_info(snd_ctl_t*, snd_pcm_info_t*) { return 0; }
-extern "C" const char* __wrap_snd_pcm_info_get_name(const snd_pcm_info_t*) { return "Test PCM"; }
+extern "C" const char* __wrap_snd_pcm_info_get_name(const snd_pcm_info_t*) { return pcmName; }
+extern "C" const char* __wrap_snd_pcm_info_get_id(const snd_pcm_info_t*) { return pcmId; }
 extern "C" int __wrap_snd_mixer_attach(snd_mixer_t*, const char*) { return -ENODEV; }
 extern "C" int __real_snd_pcm_open(snd_pcm_t**, const char*, snd_pcm_stream_t, int);
 extern "C" int __wrap_snd_pcm_open(snd_pcm_t** pcm, const char* name, snd_pcm_stream_t stream, int mode)
@@ -98,6 +101,17 @@ int main()
     assert(device->buffer.minBufferFrames == 123 && device->buffer.maxBufferFrames == 456);
     assert(device->name == "Test card: Test PCM");
     assert(cache.findById("default") && cache.findById("default")->sharedFormats == defaultDevice.sharedFormats);
+
+    pcmName = "";
+    cache = scan();
+    assert(cache.findById(hardware.id)->name == "Test card: I2S dit-hifi-1");
+    pcmId = "I2S dit-hifi-3";
+    cache = scan();
+    assert(cache.findById(hardware.id)->name == "Test card: I2S dit-hifi-3");
+    pcmId = nullptr;
+    cache = scan();
+    assert(cache.findById(hardware.id)->name == "Test card: PCM 0");
+    pcmName = "Test PCM";
 
     sharedResult = defaultResult = 0;
     cache = scan();
