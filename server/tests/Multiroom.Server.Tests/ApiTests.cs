@@ -90,7 +90,7 @@ public sealed partial class ApiTests : IAsyncDisposable
         // The self-check: the media endpoint answered its probe, and the
         // database is at the latest schema.
         Assert.Equal($"reachable at {baseUri}", status["media"]!["reachability"]!.GetValue<string>());
-        Assert.Equal(29, status["library"]!["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(30, status["library"]!["schemaVersion"]!.GetValue<int>());
         Assert.NotNull(status["library"]!["indexer"]!["queueDepth"]);
         Assert.Equal(["local", "webradio", "tidal", "fake", "slow"],
             status["providers"]!.AsArray().Select(p => p!["id"]!.GetValue<string>()));
@@ -415,18 +415,18 @@ public sealed partial class ApiTests : IAsyncDisposable
         await Ok(HttpMethod.Post, "zones/living/queue/items", $$"""{"tracks":[{{Json(tracks[0])}},{{Json(tracks[1])}}]}""");
         var queued = await Ok(HttpMethod.Post, "zones/living/queue/items", $$"""{"station":{{Json(station)}}}""");
 
+        // The station is kept as an entry, as the tracks are.
         var saved = await Ok(HttpMethod.Post, "zones/living/queue/save", """{"name":" Evening "}""");
-        Assert.Equal(("Evening", 2, 1), (saved["playlist"]!["name"]!.GetValue<string>(),
+        Assert.Equal(("Evening", 3, 0), (saved["playlist"]!["name"]!.GetValue<string>(),
             saved["playlist"]!["count"]!.GetValue<int>(), saved["skipped"]!.GetValue<int>()));
         var id = saved["playlist"]!["id"]!.GetValue<long>();
-        Assert.Equal(["A", "B"], (await Ok(HttpMethod.Get, $"playlists/{id}/entries")).AsArray()
-            .Select(e => e!["item"]!["title"]!.GetValue<string>()));
+        Assert.Equal(["A", "B", "Radio"], Entries(await Ok(HttpMethod.Get, $"playlists/{id}/entries")));
 
         await Refused(HttpMethod.Post, "zones/living/queue/save", """{"name":"evening"}""", HttpStatusCode.Conflict,
             "alreadyExists", "a playlist named evening is already there");
         await Ok(HttpMethod.Delete, $"zones/living/queue/items/{queued["items"]![0]!["id"]!.GetValue<long>()}");
         var overwritten = await Ok(HttpMethod.Post, "zones/living/queue/save", """{"name":"evening","overwrite":true}""");
-        Assert.Equal((id, 1), (overwritten["playlist"]!["id"]!.GetValue<long>(), overwritten["playlist"]!["count"]!.GetValue<int>()));
+        Assert.Equal((id, 2), (overwritten["playlist"]!["id"]!.GetValue<long>(), overwritten["playlist"]!["count"]!.GetValue<int>()));
         Assert.Single((await Ok(HttpMethod.Get, "playlists")).AsArray());
 
         // Names are per folder: the same one in a folder is a new playlist there.
@@ -806,6 +806,34 @@ public sealed partial class ApiTests : IAsyncDisposable
         await Refused(HttpMethod.Post, "zones/living/queue/items", """{"playlist":999}""", HttpStatusCode.NotFound, "notFound");
         await Refused(HttpMethod.Post, "zones/living/queue/items", """{"playlist":999,"index":0,"next":true}""",
             HttpStatusCode.BadRequest, "invalidRequest");
+    }
+
+    [Fact]
+    public async Task A_station_is_a_playlist_entry_that_queues_as_a_station()
+    {
+        await StartAsync();
+        var a = _fake.AddTrack(_dir.Write("a.flac", "a"), "A");
+        var radio = _fake.AddStation("Radio", [1]);
+        var id = (await Ok(HttpMethod.Post, "playlists", """{"name":"Mixed"}"""))["id"]!.GetValue<long>();
+        await Ok(HttpMethod.Post, $"playlists/{id}/entries", $$"""{"tracks":[{{Json(a)}}]}""");
+
+        var entries = await Ok(HttpMethod.Post, $"playlists/{id}/entries", $$"""{"station":{{Json(radio)}},"index":0}""");
+        Assert.Equal(["Radio", "A"], Entries(entries));
+        var item = entries[0]!["item"]!;
+        Assert.Equal(("station", "fake", radio.ProviderItemId), (item["kind"]!.GetValue<string>(),
+            item["providerId"]!.GetValue<string>(), item["providerItemId"]!.GetValue<string>()));
+        Assert.Equal(["Radio", "A"], Entries(await Ok(HttpMethod.Get, $"playlists/{id}/entries")));
+
+        // Queued, the station is a station item: it plays until skipped.
+        var queued = await Ok(HttpMethod.Post, "zones/living/queue/items", $$"""{"playlist":{{id}}}""");
+        Assert.Equal(["Radio", "A"], Titles(queued["queue"]!));
+        Assert.Equal("station", queued["queue"]!["items"]![0]!["item"]!["kind"]!.GetValue<string>());
+        Assert.Empty(queued["refused"]!.AsArray());
+
+        await Refused(HttpMethod.Post, $"playlists/{id}/entries", $$"""{"station":{{Json(radio)}},"tracks":[{{Json(a)}}]}""",
+            HttpStatusCode.BadRequest, "invalidRequest", "exactly one of tracks, node or station");
+        await Refused(HttpMethod.Post, $"playlists/{id}/entries", """{"station":{"providerId":"","providerItemId":"","name":"X"}}""",
+            HttpStatusCode.BadRequest, "invalidArgument");
     }
 
     [Fact]
@@ -1823,8 +1851,9 @@ public sealed partial class ApiTests : IAsyncDisposable
     private static List<string> Titles(JsonNode queue) =>
         [.. queue["items"]!.AsArray().Select(i => i!["title"]!.GetValue<string>())];
 
+    // A station names itself by its name, every other item by its title.
     private static List<string> Entries(JsonNode entries) =>
-        [.. entries.AsArray().Select(e => e!["item"]!["title"]!.GetValue<string>())];
+        [.. entries.AsArray().Select(e => (e!["item"]!["title"] ?? e["item"]!["name"])!.GetValue<string>())];
 
     private async Task<EventReader> EventsAsync(long? lastEventId)
     {

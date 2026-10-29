@@ -122,7 +122,7 @@ public sealed class ServerHostTests : IDisposable
 
         Assert.Equal(0, exit);
         var log = await ReadLog();
-        Assert.Contains($"library database {Path.Combine(_dir.Path, "data", "library.db")} at schema 29", log,
+        Assert.Contains($"library database {Path.Combine(_dir.Path, "data", "library.db")} at schema 30", log,
             StringComparison.Ordinal);
         Assert.Contains($"not indexed {Path.Combine(music, "broken.flac")}", log, StringComparison.Ordinal);
     }

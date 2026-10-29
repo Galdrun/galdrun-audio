@@ -11,7 +11,25 @@
       <ListBox x:Name="PagePicker" ItemsSource="{Binding Pages}" SelectedItem="{Binding SelectedPage}" MinWidth="220" MaxHeight="420" SelectionChanged="PagePicked" AutomationProperties.Name="Choose page" />
      </Flyout></Button.Flyout>
     </Button>
-    <TextBlock Grid.Column="1" Text="{Binding Heading}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" Margin="6,0,12,0" TextTrimming="CharacterEllipsis" />
+    <!-- Requests in flight: a dot pulsing after the title, shown only when a request takes a moment. -->
+    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Margin="6,0,12,0" ClipToBounds="True">
+     <TextBlock Text="{Binding Heading}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+     <Ellipse x:Name="BusyDot" Width="8" Height="8" Fill="#CBEC97" VerticalAlignment="Center" IsVisible="{Binding ShowTopProgress}"
+      IsHitTestVisible="False" AutomationProperties.Name="Loading">
+      <Ellipse.Styles>
+       <Style Selector="Ellipse#BusyDot"><Setter Property="Opacity" Value="0" /></Style>
+       <Style Selector="Ellipse#BusyDot[IsVisible=True]">
+        <Style.Animations>
+         <Animation Duration="0:0:1.1" IterationCount="INFINITE" Easing="SineEaseInOut">
+          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0.25" /></KeyFrame>
+          <KeyFrame Cue="50%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.25" /></KeyFrame>
+         </Animation>
+        </Style.Animations>
+       </Style>
+      </Ellipse.Styles>
+     </Ellipse>
+    </StackPanel>
     <Border x:Name="ToolbarDivider" Grid.Column="2" Background="#4A5450" IsHitTestVisible="False" />
     <StackPanel Grid.Column="3" Orientation="Horizontal">
      <Button x:Name="SearchButton" Command="{Binding NavigateCommand}" CommandParameter="Search" Background="Transparent" CornerRadius="0" Padding="0" Width="48" Height="48" AutomationProperties.Name="Search" ToolTip.Tip="Search">
@@ -172,9 +190,103 @@
       </Border>
      </Grid>
     <vm:ZoneBar Grid.Row="2" x:Name="BottomZoneBar" IsVisible="{Binding ShowZoneBar}" />
-    <!-- Requests in flight: a thin bar along the top edge of the page, over it, never moving it. -->
-    <ProgressBar x:Name="TopProgress" Grid.Row="1" IsIndeterminate="True" IsVisible="{Binding ShowTopProgress}" IsHitTestVisible="False"
-     VerticalAlignment="Top" Height="3" MinHeight="3" />
+    <!-- An item's sheet: slides up over the whole page; the dimmed rest closes it. -->
+    <Grid x:Name="ItemSheet" Grid.RowSpan="3" RowDefinitions="*,Auto" Classes.open="{Binding Home.IsSheetOpen}">
+     <Grid.Styles>
+      <Style Selector="Grid#ItemSheet"><Setter Property="IsHitTestVisible" Value="False" /></Style>
+      <Style Selector="Grid#ItemSheet.open"><Setter Property="IsHitTestVisible" Value="True" /></Style>
+      <Style Selector="Border#SheetScrim">
+       <Setter Property="Opacity" Value="0" />
+       <Setter Property="Transitions"><Transitions><DoubleTransition Property="Opacity" Duration="0:0:0.22" /></Transitions></Setter>
+      </Style>
+      <Style Selector="Grid#ItemSheet.open Border#SheetScrim"><Setter Property="Opacity" Value="1" /></Style>
+      <Style Selector="Border#SheetPanel">
+       <Setter Property="RenderTransform" Value="translateY(900px)" /><Setter Property="IsEnabled" Value="False" />
+       <Setter Property="Transitions"><Transitions><TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.22" Easing="CubicEaseOut" /></Transitions></Setter>
+      </Style>
+      <Style Selector="Grid#ItemSheet.open Border#SheetPanel"><Setter Property="RenderTransform" Value="translateY(0px)" /><Setter Property="IsEnabled" Value="True" /></Style>
+      <Style Selector="Border#SheetPanel Button.sheet">
+       <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Left" />
+       <Setter Property="MinHeight" Value="50" /><Setter Property="Padding" Value="18,8" /><Setter Property="Background" Value="#252D30" />
+       <Setter Property="FontSize" Value="15" />
+      </Style>
+      <Style Selector="Border#SheetPanel Button.mark">
+       <Setter Property="Background" Value="Transparent" /><Setter Property="CornerRadius" Value="24" /><Setter Property="Padding" Value="12" />
+       <Setter Property="Width" Value="48" /><Setter Property="Height" Value="48" />
+      </Style>
+     </Grid.Styles>
+     <Border x:Name="SheetScrim" Grid.RowSpan="2" Background="#A6000000" Tapped="SheetScrimTapped" />
+     <Border x:Name="SheetPanel" Grid.Row="1" Background="#1B2123" CornerRadius="16,16,0,0" Padding="16,18,16,24" MaxWidth="640">
+      <StackPanel Spacing="14">
+       <Grid ColumnDefinitions="72,*,Auto">
+        <vm:ArtworkView Reference="{Binding Home.SheetItem.Artwork, FallbackValue={x:Null}}" Cache="{Binding Browser.Artwork}" Width="72" Height="72" VerticalAlignment="Top" />
+        <StackPanel Grid.Column="1" Margin="14,0,8,0" Spacing="4" VerticalAlignment="Center">
+         <Border Background="#101315" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left"
+          IsVisible="{Binding Home.SheetItem.Kind, Converter={x:Static StringConverters.IsNotNullOrEmpty}, FallbackValue=False}">
+          <TextBlock Text="{Binding Home.SheetItem.Kind, FallbackValue=''}" FontSize="10" FontWeight="SemiBold" Foreground="#CBEC97" />
+         </Border>
+         <TextBlock x:Name="SheetTitle" Text="{Binding Home.SheetItem.Title, FallbackValue=''}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+         <TextBlock Text="{Binding Home.SheetItem.Subtitle, FallbackValue=''}" Classes="muted" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+         <Button x:Name="SheetLike" Classes="mark" IsVisible="{Binding Home.CanLike}" Command="{Binding Home.ToggleLikeCommand}"
+          AutomationProperties.Name="I like it" ToolTip.Tip="I like it">
+          <Grid Width="22" Height="22">
+           <Path Data="M 12,21 L 3,12 C -3,4 7,-1 12,6 C 17,-1 27,4 21,12 Z" Stroke="#EEF1ED" StrokeThickness="1.7" Stretch="Uniform" IsVisible="{Binding !Home.IsLiked}" />
+           <Path Data="M 12,21 L 3,12 C -3,4 7,-1 12,6 C 17,-1 27,4 21,12 Z" Fill="#CBEC97" Stretch="Uniform" IsVisible="{Binding Home.IsLiked}" />
+          </Grid>
+         </Button>
+         <Button x:Name="SheetFavorite" Classes="mark" IsVisible="{Binding Home.CanFavorite}" Command="{Binding Home.ToggleFavoriteCommand}"
+          AutomationProperties.Name="Favourite" ToolTip.Tip="Favourite">
+          <Grid Width="22" Height="22">
+           <Path Data="M 12,2 L 15,8.5 L 22,9.5 L 17,14.5 L 18,22 L 12,18.5 L 6,22 L 7,14.5 L 2,9.5 L 9,8.5 Z" Stroke="#EEF1ED" StrokeThickness="1.7" Stretch="Uniform" IsVisible="{Binding !Home.FavoriteSaved}" />
+           <Path Data="M 12,2 L 15,8.5 L 22,9.5 L 17,14.5 L 18,22 L 12,18.5 L 6,22 L 7,14.5 L 2,9.5 L 9,8.5 Z" Fill="#CBEC97" Stretch="Uniform" IsVisible="{Binding Home.FavoriteSaved}" />
+          </Grid>
+         </Button>
+        </StackPanel>
+       </Grid>
+       <Border Height="1" Background="#2E3638" />
+       <StackPanel x:Name="SheetActions" Spacing="8" IsVisible="{Binding Home.IsActionsStep}">
+        <Button Classes="sheet" Content="Play in a room" Command="{Binding Home.ChooseZoneCommand}" />
+        <Button Classes="sheet" Content="Play next" Command="{Binding Home.PlayNextCommand}" CommandParameter="{Binding Home.SheetItem}" />
+        <Button Classes="sheet" Content="Add to queue" Command="{Binding Home.QueueCommand}" CommandParameter="{Binding Home.SheetItem}" />
+        <Button Classes="sheet" Content="Add to playlist" Command="{Binding Home.ChoosePlaylistCommand}" IsVisible="{Binding Home.CanAddToPlaylist}" />
+       </StackPanel>
+       <StackPanel x:Name="SheetZones" Spacing="8" IsVisible="{Binding Home.IsZonesStep}">
+        <Grid ColumnDefinitions="*,Auto">
+         <TextBlock Text="Play in a room" Classes="section" FontSize="16" VerticalAlignment="Center" />
+         <Button Grid.Column="1" Content="Back" Command="{Binding Home.SheetBackCommand}" Background="Transparent" />
+        </Grid>
+        <TextBlock Text="No zones yet. Create one under Zones." Classes="muted" IsVisible="{Binding !Playback.ZoneChoices.Count}" />
+        <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Hidden">
+         <ItemsControl ItemsSource="{Binding Playback.ZoneChoices}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:ZoneChoice">
+           <Button Classes="sheet" Content="{Binding Name}" CommandParameter="{Binding Zone}"
+            Command="{Binding $parent[vm:MainView].((vm:ShellViewModel)DataContext).Home.PlayInCommand}" />
+          </DataTemplate></ItemsControl.ItemTemplate>
+         </ItemsControl>
+        </ScrollViewer>
+       </StackPanel>
+       <StackPanel x:Name="SheetPlaylists" Spacing="8" IsVisible="{Binding Home.IsPlaylistsStep}">
+        <Grid ColumnDefinitions="*,Auto">
+         <TextBlock Text="Add to playlist" Classes="section" FontSize="16" VerticalAlignment="Center" />
+         <Button Grid.Column="1" Content="Back" Command="{Binding Home.SheetBackCommand}" Background="Transparent" />
+        </Grid>
+        <TextBlock Text="No playlists yet. Create one under Playlists." Classes="muted" IsVisible="{Binding !Home.Playlists.Count}" />
+        <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Hidden">
+         <ItemsControl ItemsSource="{Binding Home.Playlists}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate><DataTemplate x:DataType="api:Playlist">
+           <Button Classes="sheet" Content="{Binding Name}" CommandParameter="{Binding}"
+            Command="{Binding $parent[vm:MainView].((vm:ShellViewModel)DataContext).Home.AddToPlaylistCommand}" />
+          </DataTemplate></ItemsControl.ItemTemplate>
+         </ItemsControl>
+        </ScrollViewer>
+       </StackPanel>
+      </StackPanel>
+     </Border>
+    </Grid>
     <!-- Errors: a toast over the page's bottom that fades out by itself, never moving the page. -->
     <Border x:Name="ErrorToast" Grid.Row="1" Classes.shown="{Binding ShowError}" IsHitTestVisible="False"
      HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="16,0,16,16" MaxWidth="480"

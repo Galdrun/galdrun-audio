@@ -19,6 +19,12 @@ public sealed partial class MultiroomClient
     public Task<IReadOnlyList<PlaylistEntry>> EntriesAsync(long id, CancellationToken ct) => GetAsync<IReadOnlyList<PlaylistEntry>>($"playlists/{id}/entries", ct);
     public Task<JsonElement?> AddEntriesAsync(long id, IReadOnlyList<Track> tracks, CancellationToken ct) =>
         SendAsync(HttpMethod.Post, $"playlists/{id}/entries", new { tracks }, ct);
+    // A node (an album) is expanded by its provider on the server.
+    public Task<JsonElement?> AddEntriesAsync(long id, NodeReference node, CancellationToken ct) =>
+        SendAsync(HttpMethod.Post, $"playlists/{id}/entries", new { node }, ct);
+    // A station is one entry; it plays until skipped.
+    public Task<JsonElement?> AddEntriesAsync(long id, RadioStation station, CancellationToken ct) =>
+        SendAsync(HttpMethod.Post, $"playlists/{id}/entries", new { station }, ct);
     public Task<JsonElement?> MoveEntryAsync(long id, long entry, int index, CancellationToken ct) =>
         SendAsync(HttpMethod.Patch, $"playlists/{id}/entries/{entry}", new { index }, ct);
     public Task<JsonElement?> RemoveEntryAsync(long id, long entry, CancellationToken ct) =>

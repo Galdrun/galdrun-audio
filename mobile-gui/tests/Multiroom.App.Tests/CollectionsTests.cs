@@ -106,6 +106,7 @@ public sealed class CollectionsTests
         }));
         var vm = new CollectionsViewModel(a => a(api, Ct), () => "living / room")
         { Page = page, SelectedPlaylist = Playlist, SelectedFavorite = new(9, DateTimeOffset.UnixEpoch, Track), SelectedRecommendation = new(Track, 1, []) };
+        var warnings = new List<string>(); vm.Warned += warnings.Add;
         paths.Clear(); bodies.Clear(); await vm.QueueCommand.ExecuteAsync(placement);
         Assert.Equal("/api/v1/zones/living%20%2F%20room/queue/items", paths[0]);
         using var body = JsonDocument.Parse(bodies[0]!);
@@ -114,7 +115,7 @@ public sealed class CollectionsTests
         Assert.Equal(placement == "now", body.RootElement.GetProperty("replace").GetBoolean());
         Assert.Equal(placement == "now" ? 2 : 1, paths.Count);
         if (placement == "now") { Assert.EndsWith("/play", paths[1]); Assert.Null(bodies[1]); }
-        Assert.Contains("1 items refused", vm.Notice);
+        Assert.Equal("1 items refused by living / room", Assert.Single(warnings));
     }
 
     [Fact]

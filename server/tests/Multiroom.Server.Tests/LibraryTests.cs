@@ -454,7 +454,7 @@ public sealed class LibraryTests : IAsyncDisposable
             command.ExecuteNonQuery();
         }
 
-        Assert.Equal(29, _database.Migrate().Value);
+        Assert.Equal(30, _database.Migrate().Value);
 
         Assert.Equal(7, Count("SELECT track_id FROM library_file WHERE path = 'C:\\m\\one.wav'"));
         Assert.Equal(3, Count("SELECT artist_id FROM track WHERE id = 7"));
@@ -464,10 +464,49 @@ public sealed class LibraryTests : IAsyncDisposable
     }
 
     [Fact]
+    public void Playlist_entries_and_a_books_parts_survive_the_rebuild_that_lets_a_station_in()
+    {
+        using (var connection = _database.Open())
+        {
+            // The schema as it was before stations (0029), with a book and a track in a playlist.
+            var assembly = typeof(LibraryDatabase).Assembly;
+            var before = assembly.GetManifestResourceNames().Where(n => n.StartsWith("migrations/", StringComparison.Ordinal))
+                .Order(StringComparer.Ordinal).TakeWhile(n => !n.StartsWith("migrations/0030", StringComparison.Ordinal))
+                .Select(n => new StreamReader(assembly.GetManifestResourceStream(n)!).ReadToEnd());
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA foreign_keys = OFF;" + string.Join(Environment.NewLine, before) + """
+
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version VALUES (29);
+                INSERT INTO playlist (id, name, position, created) VALUES (1, 'Evening', 0, 0);
+                INSERT INTO playlist_item (id, playlist_id, position, provider_id, provider_item_id, title, kind)
+                    VALUES (5, 1, 0, 'local', 'book:3', 'The Book', 'group'),
+                           (6, 1, 1, 'local', 'track:1', 'Song', 'track');
+                INSERT INTO playlist_item_part (item_id, position, provider_id, provider_item_id, title)
+                    VALUES (5, 0, 'local', 'track:2', 'Part One'), (5, 1, 'local', 'track:3', 'Part Two');
+                PRAGMA foreign_keys = ON;
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        Assert.Equal(30, _database.Migrate().Value);
+
+        var store = new PlaylistStore(_database);
+        var entries = store.Entries(1).Value;
+        Assert.Equal([(5L, "The Book"), (6L, "Song")], entries.Select(e => (e.Id, e.Title)));
+        Assert.Equal(["Part One", "Part Two"], entries[0].Group!.Parts.Select(p => p.Track.Title));
+        var station = new RadioStation("webradio", "fip", "FIP");
+        Assert.Equal(station, store.AddStation(1, station, 1).Value[1].Station);
+        Assert.Equal(2, Count("SELECT COUNT(*) FROM playlist_item_part WHERE item_id = 5"));
+        Assert.Equal(1, Count("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'playlist_item_playlist'"));
+        Assert.Equal(1, Count("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'playlist_item_ref'"));
+    }
+
+    [Fact]
     public async Task Migrating_twice_changes_nothing_and_a_newer_schema_is_refused()
     {
-        Assert.Equal(29, _database.Migrate().Value);
-        Assert.Equal(29, _database.Migrate().Value);
+        Assert.Equal(30, _database.Migrate().Value);
+        Assert.Equal(30, _database.Migrate().Value);
 
         await using (var connection = _database.Open())
         {

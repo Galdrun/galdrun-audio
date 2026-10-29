@@ -284,6 +284,30 @@ public sealed class PlaylistTests : IAsyncDisposable
     }
 
     [Fact]
+    public void A_station_is_kept_as_an_entry_beside_tracks_and_books_and_saved_from_a_queue()
+    {
+        var station = new RadioStation("webradio", "fip", "FIP", "Jazz");
+        var playlist = Ok(_store.CreatePlaylist("Mixed"));
+        Ok(_store.AddEntries(playlist.Id, [new Track("local", "track:1", "Song")], null));
+        var entries = Ok(_store.AddStation(playlist.Id, station, 0));
+        Assert.Equal(["FIP", "Song"], Titles(entries));
+        // Kept as a favourite station is: its identity and its name.
+        Assert.Equal(new RadioStation("webradio", "fip", "FIP"), Ok(new PlaylistStore(_database).Entries(playlist.Id))[0].Station);
+        Assert.Equal(new RadioStation("webradio", "fip", "FIP"), entries[0].Item);
+
+        Assert.Equal(["Song", "FIP"], Titles(Ok(_store.MoveEntry(playlist.Id, entries[0].Id, 1))));
+        Assert.Equal(["Song"], Titles(Ok(_store.RemoveEntry(playlist.Id, entries[0].Id))));
+        Assert.Equal(LibraryError.InvalidArgument, _store.AddStation(playlist.Id, station with { ProviderItemId = "" }, null).Failure.Code);
+        Assert.Equal(LibraryError.NotFound, _store.AddStation(999, station, null).Failure.Code);
+        Assert.Equal(LibraryError.InvalidArgument, _store.AddStation(playlist.Id, station, 5).Failure.Code);
+
+        QueueItem[] queue = [new(new(1), new Track("local", "track:2", "Other"), null), new(new(2), null, station)];
+        var saved = Ok(_store.SaveAs("Saved", queue, overwrite: false));
+        Assert.Equal(["Other", "FIP"], Titles(Ok(_store.Entries(saved.Id))));
+        Assert.Equal(LibraryError.InvalidArgument, _store.SaveAs("Empty", [], overwrite: false).Failure.Code);
+    }
+
+    [Fact]
     public async Task With_books_not_grouped_a_node_a_playlists_book_and_a_favourite_book_go_in_part_by_part()
     {
         var (book, _) = await BooksAsync();

@@ -149,8 +149,9 @@ public sealed partial class ApiEndpoint
     // A folder as the API names it: 0 (or none) is the top.
     private static long? Folder(long? folder) => folder is null or 0 ? null : folder;
 
-    // Tracks as they are given, or a node expanded by its provider: a book
-    // (phase 31) is one group entry, its parts stored as they are now.
+    // Tracks as they are given, a station, or a node expanded by its
+    // provider: a book (phase 31) is one group entry, its parts stored as
+    // they are now.
     private async Task<IResult> AddEntriesAsync(long playlist, HttpContext context)
     {
         var body = await ApiJson.ReadAsync<EntriesRequest>(context.Request, optional: false, context.RequestAborted)
@@ -158,10 +159,12 @@ public sealed partial class ApiEndpoint
         if (!body.IsSuccess)
             return Error(body.Failure);
         var r = body.Value!;
-        if ((r.Tracks is null) == (r.Node is null))
-            return Error(Result.Fail(ApiRequestError.InvalidRequest, "exactly one of tracks or node"));
+        if (new object?[] { r.Tracks, r.Node, r.Station }.Count(x => x is not null) != 1)
+            return Error(Result.Fail(ApiRequestError.InvalidRequest, "exactly one of tracks, node or station"));
         if (r.Tracks is { } tracks)
             return Answer(playlists.AddEntries(playlist, tracks, r.Index));
+        if (r.Station is { } station)
+            return Answer(playlists.AddStation(playlist, station, r.Index));
 
         var expanded = await player.ExpandAsync(r.Node!.Provider, r.Node.Id, r.Group ?? player.Settings.GroupBooks,
                 context.RequestAborted)

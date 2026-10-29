@@ -112,6 +112,13 @@ public sealed partial class BrowserViewModel : ObservableObject
         _search = false; ResetOptions(); UpdateBreadcrumb();
         return LoadAsync(false);
     }
+    // Opens a node from elsewhere (Home) as a fresh page, without history.
+    public Task OpenNodeAsync(NodeReference node, string title)
+    {
+        _history.Clear(); _provider = node.Provider; _node = node.Id; Title = title;
+        _search = false; ResetOptions(); UpdateBreadcrumb();
+        return LoadAsync(false);
+    }
     private void CancelRequest() => _request?.Cancel();
     public void Cancel() { CancelRequest(); _debounce?.Cancel(); IsLoading = false; }
     public void Reset()

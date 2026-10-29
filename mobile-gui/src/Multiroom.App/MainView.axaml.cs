@@ -27,4 +27,5 @@ public partial class MainView : UserControl
     {
         if (e.AddedItems.Count > 0) HamburgerButton.Flyout?.Hide();
     }
+    private void SheetScrimTapped(object? sender, Avalonia.Input.TappedEventArgs e) => _model.Home.CloseSheet();
 }

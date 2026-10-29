@@ -19,15 +19,17 @@ public sealed record Playlist(long Id, string Name, int Position, DateTimeOffset
 // same; Parent is the folder it lies in, null at the top.
 public sealed record CollectionFolder(long Id, string Name, long? Parent);
 
-// One entry of one playlist, in playlist order: a track, or a group (phase
-// 31: a book kept as one entry, its parts stored as they were). Id is never
-// reused, so the same track added twice is two entries.
-public sealed record PlaylistEntry(long Id, Track? Track, QueueGroup? Group = null) : IMediaEntry
+// One entry of one playlist, in playlist order: a track, a group (phase
+// 31: a book kept as one entry, its parts stored as they were), or a station,
+// which plays until skipped. Id is never reused, so the same track added
+// twice is two entries.
+public sealed record PlaylistEntry(long Id, Track? Track, QueueGroup? Group = null, RadioStation? Station = null)
+    : IMediaEntry
 {
-    public string Title => Track?.Title ?? Group!.Title;
+    public string Title => Track?.Title ?? Group?.Title ?? Station!.Name;
 
     [JsonIgnore]
-    public MediaItem Item => (MediaItem?)Track ?? Group!;
+    public MediaItem Item => (MediaItem?)Track ?? (MediaItem?)Group ?? Station!;
 }
 
 // A liked track, album, artist, station or audiobook (phase 37), exactly one

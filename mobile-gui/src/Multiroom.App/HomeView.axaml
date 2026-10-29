@@ -1,41 +1,57 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:vm="using:Multiroom.App" x:Class="Multiroom.App.HomeView" x:DataType="vm:ShellViewModel">
  <UserControl.Resources>
-  <!-- A cover: tap plays it now, the context menu queues it. -->
+  <!-- A cover: tap opens an album, artist or book in Browse and a track or station's sheet;
+   a long press or right-click opens the sheet for every cover. -->
   <DataTemplate x:Key="Cover" x:DataType="vm:HomeItem">
-   <Button Tag="{Binding}" Click="PlayItem" Width="120" Padding="0" Background="Transparent"
-    HorizontalContentAlignment="Stretch" AutomationProperties.Name="{Binding Title}"
-    ToolTip.Tip="{Binding Reason, TargetNullValue='Play now'}">
-    <Button.ContextMenu><ContextMenu>
-     <MenuItem Header="Add to queue" Tag="{Binding}" Click="QueueItem" />
-    </ContextMenu></Button.ContextMenu>
+   <Button Classes="cover" Tag="{Binding}" Click="OpenItem" ContextRequested="RequestActions" Width="120" Padding="0" Background="Transparent"
+    HorizontalContentAlignment="Stretch" AutomationProperties.Name="{Binding Title}" ToolTip.Tip="{Binding Reason}">
     <StackPanel Spacing="7">
      <Grid Width="120" Height="120">
       <vm:ArtworkView Reference="{Binding Artwork}" Width="120" Height="120"
        Cache="{Binding $parent[vm:HomeView].((vm:ShellViewModel)DataContext).Browser.Artwork}" />
-      <Border Background="#D9101315" CornerRadius="18" Width="36" Height="36" Margin="8"
-       HorizontalAlignment="Right" VerticalAlignment="Bottom" IsHitTestVisible="False">
-       <Path Data="M 0,0 L 0,14 L 11,7 Z" Fill="#EEF1ED" Width="11" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center" />
+      <!-- What it is, its title and subtitle over the artwork's bottom, on a shade that keeps them readable. -->
+      <Border VerticalAlignment="Bottom" CornerRadius="0,0,8,8" Padding="8,26,8,7" IsHitTestVisible="False">
+       <Border.Background>
+        <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+         <GradientStop Offset="0" Color="#00101315" /><GradientStop Offset="0.45" Color="#C0101315" /><GradientStop Offset="1" Color="#F0101315" />
+        </LinearGradientBrush>
+       </Border.Background>
+       <StackPanel Spacing="1">
+        <Border Classes="kind" IsVisible="{Binding Kind, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+         <TextBlock Text="{Binding Kind}" />
+        </Border>
+        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding Subtitle}" Classes="muted" TextTrimming="CharacterEllipsis" FontSize="11" />
+       </StackPanel>
       </Border>
      </Grid>
-     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-     <TextBlock Text="{Binding Subtitle}" Classes="muted" TextTrimming="CharacterEllipsis" FontSize="12" />
     </StackPanel>
    </Button>
   </DataTemplate>
  </UserControl.Resources>
+ <UserControl.Styles>
+  <!-- What the cover is (Track, Radio, Album, Artist, Book), above its title: a tab from the artwork's
+   left edge, its text where the title starts (the shade's padding). -->
+  <Style Selector="Border.kind">
+   <Setter Property="Background" Value="#40CBEC97" /><Setter Property="CornerRadius" Value="0,4,4,0" /><Setter Property="Padding" Value="8,2,6,2" />
+   <Setter Property="Margin" Value="-8,0,0,3" /><Setter Property="HorizontalAlignment" Value="Left" />
+   <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style Selector="Border.kind TextBlock">
+   <Setter Property="FontSize" Value="10" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="#CBEC97" />
+  </Style>
+ </UserControl.Styles>
  <Grid>
   <ScrollViewer x:Name="HomeScroll" IsVisible="{Binding !Home.IsShelfOpen}" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden">
    <StackPanel Spacing="16" Margin="0,0,0,16">
-    <TextBlock Text="Loading…" IsVisible="{Binding Home.IsLoading}" Classes="muted" />
-    <TextBlock Text="{Binding Home.Notice}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding Home.Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
     <ItemsControl x:Name="Shelves" ItemsSource="{Binding Home.Shelves}">
      <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="16" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
      <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:HomeShelf">
       <StackPanel Spacing="6">
        <Grid ColumnDefinitions="*,Auto">
-        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-         <Path Data="{Binding Icon}" Stroke="#CBEC97" StrokeThickness="1.8" StrokeJoin="Round" StrokeLineCap="Round" Stretch="Uniform" Width="20" Height="20" VerticalAlignment="Center" />
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+         <Path Data="{Binding Icon}" Stroke="#CBEC97" StrokeThickness="1.8" StrokeJoin="Round" StrokeLineCap="Round" Width="24" Height="24" VerticalAlignment="Center" />
          <TextBlock Text="{Binding Title}" Classes="section" VerticalAlignment="Center" />
         </StackPanel>
         <Button Grid.Column="1" Content="See all" IsVisible="{Binding !IsEmpty}" CommandParameter="{Binding}"
@@ -62,8 +78,8 @@
   <!-- "See all": a fixed header (the shelf's icon and title, back on the right) over every cover of the shelf. -->
   <Grid x:Name="ShelfPage" IsVisible="{Binding Home.IsShelfOpen}" RowDefinitions="Auto,Auto,*">
    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
-    <Path Data="{Binding Home.OpenShelf.Icon, FallbackValue={x:Null}}" Stroke="#CBEC97" StrokeThickness="1.8" StrokeJoin="Round" StrokeLineCap="Round" Stretch="Uniform" Width="20" Height="20" VerticalAlignment="Center" />
-    <TextBlock Grid.Column="1" Text="{Binding Home.OpenShelf.Title, FallbackValue=''}" Classes="section" VerticalAlignment="Center" Margin="10,0,0,0" TextTrimming="CharacterEllipsis" />
+    <Path Data="{Binding Home.OpenShelf.Icon, FallbackValue={x:Null}}" Stroke="#CBEC97" StrokeThickness="1.8" StrokeJoin="Round" StrokeLineCap="Round" Width="24" Height="24" VerticalAlignment="Center" />
+    <TextBlock Grid.Column="1" Text="{Binding Home.OpenShelf.Title, FallbackValue=''}" Classes="section" VerticalAlignment="Center" Margin="8,0,0,0" TextTrimming="CharacterEllipsis" />
     <Button x:Name="ShelfBack" Grid.Column="2" Content="Back" Command="{Binding Home.CloseShelfCommand}" Background="Transparent"
      VerticalAlignment="Center" AutomationProperties.Name="Back to home" />
    </Grid>

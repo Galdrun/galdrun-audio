@@ -103,6 +103,11 @@ Connector 3's experimental RAM userland, native MCU UART/uinput driver,
 vendor-kernel D-Bus bridge and
 network-manager qualification limits are in
 [its hardware guide](../hardware/connector3.md#touch-buttons-audio-names-and-network-settings).
+Its RAM image's ASoC machine driver is
+`hardware/buildroot/board/connector3/ram/galdrun-connector3-audio.c` (from the
+repository root), integrated by `hardware/buildroot/external.mk`; it selects
+the S810 PLL/MCLK family for native 44.1/48 kHz audio. See the hardware guide's
+latest handoff for build and hardware qualification status.
 
 Pi firmware uses the same network/SSH/standby services, with MAC-based Wi-Fi
 radio selection/hotplug and AP fallback. `getAudioProfile`/`setAudioProfile`

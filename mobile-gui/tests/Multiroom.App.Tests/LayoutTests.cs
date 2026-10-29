@@ -23,16 +23,25 @@ public sealed class LayoutTests
     {
         var view = new MainView(loadPreferences: false);
         var model = (ShellViewModel)view.DataContext!;
-        model.ErrorShown = TimeSpan.FromMilliseconds(50);
+        model.ErrorShown = TimeSpan.FromMilliseconds(50); model.BusyDelay = TimeSpan.Zero;
         var window = new Window { Width = 390, Height = 844, Content = view };
         try
         {
             window.Show(); model.SelectedPage = "Home"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             var home = Assert.Single(view.GetVisualDescendants().OfType<HomeView>());
             var top = home.TranslatePoint(new Point(), view)!.Value.Y;
-            // A request in flight shows the bar over the page's top edge without moving the page.
+            // A quick request shows nothing; one taking a moment pulses a dot after the title without moving the page.
+            var dot = view.FindControl<Avalonia.Controls.Shapes.Ellipse>("BusyDot")!;
+            model.BusyDelay = TimeSpan.FromMilliseconds(40);
+            model.IsBusy = true; Dispatcher.UIThread.RunJobs(); Assert.False(dot.IsVisible);
+            model.IsBusy = false; await Task.Delay(80); Dispatcher.UIThread.RunJobs(); Assert.False(dot.IsVisible);
+            model.IsBusy = true;
+            for (var i = 0; i < 100 && !dot.IsVisible; i++) { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
+            Assert.True(dot.IsVisible);
+            model.IsBusy = false; Dispatcher.UIThread.RunJobs(); Assert.False(dot.IsVisible);
+            model.BusyDelay = TimeSpan.Zero;
             model.IsBusy = true; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-            var progress = view.FindControl<ProgressBar>("TopProgress")!;
+            var progress = view.FindControl<Avalonia.Controls.Shapes.Ellipse>("BusyDot")!;
             Assert.True(progress.IsEffectivelyVisible); Assert.False(progress.IsHitTestVisible);
             Assert.Equal(top, home.TranslatePoint(new Point(), view)!.Value.Y);
             model.Error = "The server could not complete the request.";

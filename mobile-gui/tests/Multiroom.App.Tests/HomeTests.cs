@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Multiroom.App.Api;
@@ -32,6 +34,7 @@ public sealed class HomeTests
         Assert.Equal("An artist", home.Favourites.Items[0].Subtitle);
         Assert.Equal(Song.Item.ArtworkId, home.Favourites.Items[0].Artwork);
         Assert.Equal("Jazz", home.Favourites.Items[1].Subtitle);
+        Assert.Equal(["Track", "Radio"], home.Favourites.Items.Select(item => item.Kind));
         Assert.False(home.Favourites.IsEmpty);
         // A server without proposals, likes or history still shows its favourites.
         Assert.True(home.ForYou.IsEmpty); Assert.True(home.Liked.IsEmpty); Assert.True(home.Recent.IsEmpty);
@@ -66,14 +69,17 @@ public sealed class HomeTests
         Assert.Equal("You like this", home.ForYou.Items[0].Reason);
         Assert.Equal(new NodeReference("tidal", "album:7"), home.ForYou.Items[1].Items.Node);
         Assert.Equal(new NodeReference("local", "book:3"), home.ForYou.Items[2].Items.Node);
+        Assert.Equal(["Track", "Album", "Book"], home.ForYou.Items.Select(i => i.Kind));
         Assert.Equal(["Singer", "Found it"], home.Liked.Items.Select(i => i.Title));
+        Assert.Equal(["Artist", "Track"], home.Liked.Items.Select(i => i.Kind));
         Assert.Equal("Band · Kitchen", Assert.Single(home.Recent.Items).Subtitle);
     }
 
     [Theory]
-    [InlineData(true)] [InlineData(false)]
-    public async Task Favourite_actions_queue_the_stored_reference_and_play_after_replace(bool play)
+    [InlineData("now")] [InlineData("next")] [InlineData("end")]
+    public async Task Favourite_actions_queue_the_stored_reference_and_play_after_replace(string placement)
     {
+        var play = placement == "now";
         var requests = new List<string>();
         using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (request, ct) =>
         {
@@ -83,14 +89,14 @@ public sealed class HomeTests
                 using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
                 Assert.Equal(9, body.RootElement.GetProperty("favorite").GetInt64());
                 Assert.Equal(play, body.RootElement.GetProperty("replace").GetBoolean());
+                Assert.Equal(placement == "next", body.RootElement.GetProperty("next").GetBoolean());
                 Assert.False(body.RootElement.TryGetProperty("tracks", out _));
             }
             else Assert.Null(request.Content);
             return FakeHttp.Json("{}");
         }));
         var home = new HomeViewModel(action => action(api, TestContext.Current.CancellationToken), () => "living / room");
-        if (play) await home.PlayCommand.ExecuteAsync(HomeItem.From(Song));
-        else await home.QueueCommand.ExecuteAsync(HomeItem.From(Song));
+        await (placement switch { "now" => home.PlayCommand, "next" => home.PlayNextCommand, _ => home.QueueCommand }).ExecuteAsync(HomeItem.From(Song));
         Assert.Equal("/api/v1/zones/living%20%2F%20room/queue/items", requests[0]);
         Assert.Equal(play ? 2 : 1, requests.Count);
         if (play) Assert.EndsWith("/play", requests[1]);
@@ -153,6 +159,10 @@ public sealed class HomeTests
             Assert.DoesNotContain(view.GetVisualDescendants().OfType<TextBlock>(), label => label.IsEffectivelyVisible && label.Text == "GALDRUN");
             Assert.DoesNotContain(view.GetVisualDescendants().OfType<Button>(), button => button.IsEffectivelyVisible && Equals(button.Content, "Refresh"));
             var more = Assert.Single(home.GetVisualDescendants().OfType<Button>(), button => button.IsVisible && Equals(button.Content, "See all"));
+            // The label sits on the shelf title's centre line, not at the top of the button.
+            double Middle(Visual v) => v.TranslatePoint(new Point(0, v.Bounds.Height / 2), home)!.Value.Y;
+            Assert.Equal(Middle(home.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "Favourites")),
+                Middle(more.GetVisualDescendants().OfType<TextBlock>().Single()), 1);
             more.Command!.Execute(more.CommandParameter);
             window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             // "See all" shows the shelf's covers as a grid on Home under a fixed header with back on its right.
@@ -194,6 +204,113 @@ public sealed class HomeTests
             window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             Assert.False(home.IsEffectivelyVisible);
             Assert.Contains(view.GetVisualDescendants().OfType<Button>(), button => button.IsEffectivelyVisible && Equals(button.Content, "Refresh"));
+        }
+        finally { window.Close(); }
+    }
+
+    [Fact]
+    public async Task Sheet_reads_marks_likes_plays_in_a_room_and_adds_to_a_playlist()
+    {
+        var requests = new List<string>(); var bodies = new List<string>(); var liked = false;
+        var playlist = new Playlist(4, "Evening", 0, DateTimeOffset.UnixEpoch, 0);
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (request, ct) =>
+        {
+            var route = $"{request.Method} {request.RequestUri!.AbsolutePath}"; requests.Add(route);
+            if (request.Content is not null) bodies.Add(await request.Content.ReadAsStringAsync(ct));
+            if (route == "POST /api/v1/likes") liked = true;
+            return route switch
+            {
+                "POST /api/v1/items/status" => BrowserTests.Reply(new[] { new ItemStatus(LikeKind.Track, "fourth", "song:1", liked, true, liked ? 7 : null, 9) }),
+                "POST /api/v1/likes" => BrowserTests.Reply(new LikedItem(7, DateTimeOffset.UnixEpoch, Song.Item)),
+                "GET /api/v1/playlists" => BrowserTests.Reply(new[] { playlist }),
+                _ => FakeHttp.Json(route.StartsWith("GET", StringComparison.Ordinal) ? "[]" : "{}")
+            };
+        }));
+        var home = new HomeViewModel(action => action(api, TestContext.Current.CancellationToken), () => "living");
+        string? playedIn = null; home.PlayedIn += zone => playedIn = zone;
+        await home.OpenSheetCommand.ExecuteAsync(HomeItem.From(Song));
+        Assert.True(home.IsSheetOpen); Assert.True(home.IsActionsStep);
+        Assert.True(home.CanLike); Assert.True(home.CanFavorite); Assert.True(home.CanAddToPlaylist);
+        Assert.False(home.IsLiked); Assert.True(home.FavoriteSaved);
+        await home.ToggleLikeCommand.ExecuteAsync(null);
+        Assert.Contains("POST /api/v1/likes", requests); Assert.True(home.IsLiked);
+        // Play in a room: the chosen zone's queue is replaced and played, and the app follows it.
+        home.ChooseZoneCommand.Execute(null); Assert.True(home.IsZonesStep);
+        requests.Clear(); await home.PlayInCommand.ExecuteAsync("kitchen");
+        Assert.Equal(["POST /api/v1/zones/kitchen/queue/items", "POST /api/v1/zones/kitchen/play"], requests);
+        Assert.Equal("kitchen", playedIn); Assert.False(home.IsSheetOpen);
+        // Add to playlist lists the playlists, then adds the track.
+        await home.OpenSheetCommand.ExecuteAsync(HomeItem.From(Song));
+        await home.ChoosePlaylistCommand.ExecuteAsync(null);
+        Assert.True(home.IsPlaylistsStep); Assert.Equal(playlist, Assert.Single(home.Playlists));
+        requests.Clear(); await home.AddToPlaylistCommand.ExecuteAsync(playlist);
+        Assert.Equal(["POST /api/v1/playlists/4/entries"], requests); Assert.False(home.IsSheetOpen);
+        // Albums have no marks; the server adds an album's tracks from its node.
+        await home.OpenSheetCommand.ExecuteAsync(HomeItem.From(new ProposalItem(1, new Album("tidal", "album:7", "Night", "Band"))));
+        Assert.False(home.CanLike); Assert.False(home.CanFavorite); Assert.True(home.CanAddToPlaylist); Assert.True(home.IsActionsStep);
+        await home.ChoosePlaylistCommand.ExecuteAsync(null);
+        requests.Clear(); bodies.Clear(); await home.AddToPlaylistCommand.ExecuteAsync(playlist);
+        Assert.Equal(["POST /api/v1/playlists/4/entries"], requests);
+        using (var body = JsonDocument.Parse(Assert.Single(bodies)))
+        {
+            Assert.False(body.RootElement.TryGetProperty("tracks", out _));
+            Assert.Equal("album:7", body.RootElement.GetProperty("node").GetProperty("id").GetString());
+        }
+        // A station is one entry.
+        await home.OpenSheetCommand.ExecuteAsync(HomeItem.From(Station));
+        Assert.True(home.CanAddToPlaylist);
+        await home.ChoosePlaylistCommand.ExecuteAsync(null);
+        requests.Clear(); bodies.Clear(); await home.AddToPlaylistCommand.ExecuteAsync(playlist);
+        Assert.Contains("POST /api/v1/playlists/4/entries", requests);
+        Assert.Contains(bodies, b => JsonDocument.Parse(b).RootElement.TryGetProperty("station", out var s)
+            && s.GetProperty("providerItemId").GetString() == "station:1");
+        // Artists are not added to playlists.
+        await home.OpenSheetCommand.ExecuteAsync(HomeItem.From(new ProposalItem(2, new Artist("local", "artist:1", "Singer"))));
+        Assert.False(home.CanAddToPlaylist);
+    }
+
+    [AvaloniaFact]
+    public void Covers_open_the_item_sheet_and_albums_in_browse()
+    {
+        var view = new MainView(loadPreferences: false);
+        var model = (ShellViewModel)view.DataContext!;
+        model.Home.Favourites.Set([HomeItem.From(Station), HomeItem.From(new ProposalItem(1, new Album("tidal", "album:7", "Night", "Band")))]);
+        var window = new Window { Width = 390, Height = 844, Content = view };
+        try
+        {
+            window.Show(); model.SelectedPage = "Home"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var home = Assert.Single(view.GetVisualDescendants().OfType<HomeView>());
+            var covers = home.GetVisualDescendants().OfType<Button>().Where(b => b.Classes.Contains("cover") && b.IsEffectivelyVisible).ToArray();
+            Assert.Equal(2, covers.Length);
+            var sheet = view.FindControl<Grid>("ItemSheet")!;
+            void Click(Visual target, MouseButton button = MouseButton.Left)
+            {
+                var at = target.TranslatePoint(new Point(target.Bounds.Width / 2, target.Bounds.Height / 2), window)!.Value;
+                window.MouseDown(at, button); window.MouseUp(at, button); Dispatcher.UIThread.RunJobs();
+            }
+            // Closed, the sheet takes no input.
+            Assert.False(sheet.IsHitTestVisible); Assert.False(view.FindControl<Border>("SheetPanel")!.IsEffectivelyEnabled);
+            // No "⋯" on the covers.
+            Assert.DoesNotContain(home.GetVisualDescendants().OfType<Button>(), b => b.Classes.Contains("more"));
+            // Right-click opens the album's sheet without opening the album; the rest of the page closes it.
+            Click(covers[1], MouseButton.Right);
+            Assert.True(model.Home.IsSheetOpen); Assert.Same(model.Home.Favourites.Items[1], model.Home.SheetItem);
+            Assert.Equal("Home", model.SelectedPage); Assert.True(sheet.IsHitTestVisible);
+            Assert.Equal("Night", view.FindControl<TextBlock>("SheetTitle")!.Text);
+            Assert.Equal(["Play in a room", "Play next", "Add to queue", "Add to playlist"], view.FindControl<StackPanel>("SheetActions")!.Children
+                .OfType<Button>().Where(b => b.IsVisible).Select(b => b.Content));
+            var scrim = view.FindControl<Border>("SheetScrim")!;
+            var top = scrim.TranslatePoint(new Point(scrim.Bounds.Width / 2, 40), window)!.Value;
+            window.MouseDown(top, MouseButton.Left); window.MouseUp(top, MouseButton.Left); Dispatcher.UIThread.RunJobs();
+            Assert.False(model.Home.IsSheetOpen); Assert.False(sheet.IsHitTestVisible);
+            // No play badge on the artwork any more.
+            Assert.DoesNotContain(covers[0].GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>(), path => path.Data?.ToString()?.Contains("L 11,7") == true);
+            // An album's tap opens it in Browse (without a server the shell then asks for one).
+            var pages = new List<string>();
+            model.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(model.SelectedPage)) pages.Add(model.SelectedPage); };
+            Click(covers[1].GetVisualDescendants().OfType<ArtworkView>().Single());
+            Assert.Equal("Browse", pages[0]); Assert.Equal("Night", model.Browser.Title); Assert.False(model.Browser.CanBack);
+            Assert.False(model.Home.IsSheetOpen);
         }
         finally { window.Close(); }
     }

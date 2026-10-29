@@ -2,7 +2,7 @@
 /dts-v1/;
 #include "imx7d.dtsi"
 
-/* Preserve the working vendor GPIO output-data register levels. The debugfs
+/* Match the working vendor GPIO levels and sequence radio power/reset. The debugfs
  * pad-level readback reports low even for some driven-high outputs.
  * Wiring: Teufel's published S810 DTS and this unit's live, fixed-up DTB. */
 / {
@@ -33,11 +33,16 @@
 
     wifi_supply: regulator-wifi {
         compatible = "regulator-fixed";
-        regulator-name = "wifi-3v3-preserved";
+        regulator-name = "wifi-power-enable";
         regulator-min-microvolt = <3300000>;
         regulator-max-microvolt = <3300000>;
-        regulator-boot-on;
-        regulator-always-on;
+        /* The vendor driver first drives GPIO5_2 low, then enables power
+         * before releasing PERST#. Holding it high across kexec leaves the
+         * radio's firmware/reset state dependent on the preceding kernel. */
+        gpio = <&gpio5 2 GPIO_ACTIVE_HIGH>;
+        enable-active-high;
+        startup-delay-us = <100000>;
+        off-on-delay-us = <100000>;
     };
 
     audio_out: audio-output {
@@ -46,23 +51,19 @@
     };
 
     sound {
-        compatible = "simple-audio-card";
-        simple-audio-card,name = "Connector3";
-        simple-audio-card,format = "i2s";
-        simple-audio-card,bitclock-master = <&audio_cpu>;
-        simple-audio-card,frame-master = <&audio_cpu>;
-        simple-audio-card,mclk-fs = <512>;
+        compatible = "galdrun,connector3-audio";
+        audio-cpu = <&sai1>;
+        audio-codec = <&audio_out>;
+        /* Mainline leaves AUDIO_MCLK_ROOT_CLK unregistered; use its actual
+         * divider. Retune the main PLL, not its rate-gated post-divider. */
+        clocks = <&clks IMX7D_PLL_AUDIO_MAIN>,
+                 <&clks IMX7D_AUDIO_MCLK_ROOT_DIV>,
+                 <&clks IMX7D_SAI1_ROOT_CLK>;
+        clock-names = "pll", "mclk", "sai";
         assigned-clocks = <&clks IMX7D_AUDIO_MCLK_ROOT_SRC>,
-                          <&clks IMX7D_AUDIO_MCLK_ROOT_CLK>;
+                          <&clks IMX7D_AUDIO_MCLK_ROOT_DIV>;
         assigned-clock-parents = <&clks IMX7D_PLL_AUDIO_POST_DIV>;
         assigned-clock-rates = <0>, <24576000>;
-        audio_cpu: simple-audio-card,cpu {
-            sound-dai = <&sai1>;
-            clocks = <&clks IMX7D_SAI1_ROOT_CLK>;
-            dai-tdm-slot-num = <2>;
-            dai-tdm-slot-width = <32>;
-        };
-        simple-audio-card,codec { sound-dai = <&audio_out>; };
     };
 };
 
@@ -91,12 +92,6 @@
 };
 
 &gpio5 {
-    wifi-power-idle {
-        gpio-hog;
-        gpios = <2 GPIO_ACTIVE_HIGH>;
-        output-high;
-        line-name = "wifi-power-vendor-idle";
-    };
     ethernet-assert {
         gpio-hog;
         gpios = <11 GPIO_ACTIVE_HIGH>;

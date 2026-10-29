@@ -100,6 +100,15 @@ public sealed record Playlist(long Id, string Name, int Position, DateTimeOffset
 public sealed record PlaylistEntry(long Id, MediaItem Item)
 {
     [JsonIgnore] public Track? Track => Item as Track;
+    [JsonIgnore] public string Title => Item switch { Track t => t.Title, RadioStation s => s.Name, MediaGroup g => g.Title, _ => "Unknown media" };
+    // Who made it, or what it is when nobody did: a station plays live.
+    [JsonIgnore] public string Subtitle => Item switch
+    {
+        Track t => string.Join(" · ", new[] { t.Artist, t.ProviderId }.Where(s => !string.IsNullOrEmpty(s))),
+        RadioStation s => string.Join(" · ", new[] { s.Genre, "Radio" }.Where(x => !string.IsNullOrEmpty(x))),
+        MediaGroup g => g.Artist ?? "Book",
+        _ => ""
+    };
 }
 public sealed record Favorite(long Id, DateTimeOffset Added, MediaItem Item)
 {

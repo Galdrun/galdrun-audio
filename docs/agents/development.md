@@ -187,7 +187,19 @@ has passed a live kexec boot, Ethernet/SSH/client-API checks and audio format
 negotiation. Its hash-bound `hardware-verification.json` records those checks;
 The native MCU UART/uinput driver has packet-parser self-checks and a physical
 UART capture of all nine controls; the real client API exposes all nine bindings.
-WLAN, audible playback and cold boot remain unqualified.
+WLAN initialization, DHCP and Wi-Fi-only SSH/traffic have since been verified
+under 6.12.112 with this device's local 15.87.19.p14 radio firmware. The generic
+upstream radio firmware still fails. The optional second argument to
+`hardware/buildroot/scripts/build-connector3-ram.sh` selects that hash-checked
+local file and writes private artifacts under `private/connector3/ram-local/`.
+See the hardware guide's [session handoff](../hardware/connector3.md#wlan-fix-and-session-handoff-2026-10-29)
+for evidence and the final build's hash-bound hardware verification. Audible playback
+and cold boot remain unqualified. Firmware selection/cache isolation is checked
+by `python3 hardware/buildroot/scripts/test-connector3-wifi-firmware.py`.
+`python3 hardware/buildroot/scripts/test-connector3-ram-init.py` checks missing/
+existing SSH host keys and the address/SSH recovery guard without hardware.
+The guard requires an SSH process as well as an IPv4 address; it cannot recover
+a kernel hang before userspace. See the hardware guide's dated retest status.
 `hardware/buildroot/scripts/prepare-connector3-vendor-ram.py` prepares the built
 `rootfs.tar.gz` under the beta's `/run`, with private network settings supplied
 separately. Preparation leaves the current network running; the printed start

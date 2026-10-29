@@ -268,7 +268,7 @@ public sealed class NowPlayingTests
     [AvaloniaFact]
     public void Busy_now_playing_uses_an_artwork_spinner_without_moving_the_layout_or_blocking_swipes()
     {
-        var view = new MainView(loadPreferences: false); var model = (ShellViewModel)view.DataContext!;
+        var view = new MainView(loadPreferences: false); var model = (ShellViewModel)view.DataContext!; model.BusyDelay = TimeSpan.Zero;
         model.Playback.Apply(Snapshot()); model.SelectedPage = "Now Playing";
         var window = new Window { Width = 390, Height = 844, Content = view };
         try
@@ -278,7 +278,7 @@ public sealed class NowPlayingTests
             var coverSpace = page.FindControl<Viewbox>("CoverSpace")!; var bounds = coverSpace.Bounds;
             var overlay = page.FindControl<Border>("ArtworkProgress")!;
             var spinner = page.FindControl<Avalonia.Controls.Shapes.Path>("LoadingSpinner")!;
-            var topProgress = view.FindControl<ProgressBar>("TopProgress")!;
+            var topProgress = view.FindControl<Avalonia.Controls.Shapes.Ellipse>("BusyDot")!;
             Assert.False(overlay.IsVisible); Assert.False(topProgress.IsVisible);
             model.IsBusy = true; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             Assert.True(overlay.IsEffectivelyVisible); Assert.True(spinner.IsEffectivelyVisible);

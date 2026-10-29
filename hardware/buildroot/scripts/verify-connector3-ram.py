@@ -3,7 +3,9 @@ from pathlib import Path
 import gzip
 import hashlib
 import json
+import os
 import struct
+import subprocess
 import sys
 
 
@@ -12,10 +14,34 @@ def verify(output, project):
     for option in ("MTD", "MMC", "ATA", "SCSI", "USB_SUPPORT", "MODULES"):
         if f"# CONFIG_{option} is not set" not in config:
             raise ValueError(f"Persistent storage access must be absent: {option}")
-    for option in ("FEC", "SMSC_PHY", "PCI_IMX6_HOST", "MWIFIEX_PCIE",
-                   "SND_SOC_FSL_SAI", "SND_SIMPLE_CARD", "INET", "DEVTMPFS"):
+    for option in ("FEC", "SMSC_PHY", "PCI_IMX6_HOST", "PCIEPORTBUS", "MWIFIEX_PCIE",
+                   "SND_SOC_FSL_SAI", "SND_SOC_GALDRUN_CONNECTOR3", "INET", "DEVTMPFS"):
         if f"CONFIG_{option}=y" not in config:
             raise ValueError(f"Required built-in driver missing: {option}")
+    cmdline = next(line for line in config.splitlines() if line.startswith("CONFIG_CMDLINE="))
+    if "earlycon=ec_imx6q,0x30860000,115200" not in cmdline:
+        raise ValueError("Early UART1 console missing")
+    if "ignore_loglevel" in cmdline or "mwifiex.debug_mask=0x7" not in cmdline:
+        raise ValueError("Verbose Wi-Fi logging can saturate the serial console")
+
+    fdtget = output / "host/bin/fdtget"
+    dtb = output / "images/imx7d-galdrun-connector3-ram.dtb"
+    def dt_property(name):
+        return subprocess.check_output([str(fdtget), '-t', 's', str(dtb), '/sound', name], text=True).strip()
+    if dt_property('compatible') != 'galdrun,connector3-audio':
+        raise ValueError('Connector 3 clock-switching audio driver must own the card')
+    if dt_property('clock-names') != 'pll mclk sai':
+        raise ValueError('Connector 3 requires the PLL and both audio root clocks')
+    clock_header = (output / 'build/linux-6.12.112/include/dt-bindings/clock/imx7d-clock.h').read_text()
+    clock_ids = {parts[1]: int(parts[2]) for line in clock_header.splitlines()
+                 if (parts := line.split()) and len(parts) == 3 and parts[0] == '#define'
+                 and parts[2].isdigit()}
+    audio_clocks = subprocess.check_output(
+        [str(fdtget), '-t', 'u', str(dtb), '/sound', 'clocks'], text=True).split()
+    expected_clocks = [clock_ids[name] for name in (
+        'IMX7D_PLL_AUDIO_MAIN', 'IMX7D_AUDIO_MCLK_ROOT_DIV', 'IMX7D_SAI1_ROOT_CLK')]
+    if len(audio_clocks) != 6 or list(map(int, audio_clocks[1::2])) != expected_clocks:
+        raise ValueError('Connector 3 must use registered, programmable mainline audio clocks')
 
     archive = gzip.decompress((output / "images/rootfs.cpio.gz").read_bytes())
     files = {}
@@ -45,6 +71,11 @@ def verify(output, project):
             raise ValueError(f"Missing RAM payload: {name}")
     if "etc/wpa_supplicant.conf" in files:
         raise ValueError("Generic image must not contain home Wi-Fi credentials")
+    radio_source = os.environ.get("GALDRUN_CONNECTOR3_WIFI_FIRMWARE")
+    expected_radio = Path(radio_source) if radio_source else output / "build/linux-firmware-20250211/mrvl/pcie8897_uapsta.bin"
+    radio_hash = hashlib.sha256(files["lib/firmware/mrvl/pcie8897_uapsta.bin"][1]).hexdigest()
+    if radio_hash != hashlib.sha256(expected_radio.read_bytes()).hexdigest():
+        raise ValueError("Archived Wi-Fi firmware differs from the selected source")
     network = files["etc/galdrun-network.conf"][1].decode().splitlines()
     if "WIFI_SSID=" not in network or "WIFI_PASSWORD=" not in network:
         raise ValueError("Generic network settings must not contain home credentials")
@@ -80,6 +111,9 @@ def verify(output, project):
         raise ValueError("kexec must be static to run on the old vendor libc")
     result = {"storage_drivers_absent": True, "network_drivers_built_in": True,
               "wifi_and_sdma_firmware_present": True, "home_wifi_credentials_present": False,
+              "wifi_firmware_source": "local-device" if radio_source else "linux-firmware",
+              "wifi_firmware_sha256": radio_hash,
+              "audio_clock_families": [44100, 48000],
               "key_only_ssh": True, "arm_client_matches_release": True,
               "static_kexec": True, "uncompressed_initramfs_bytes": len(archive),
               "hardware_boot_verified": False, "audio_verified": False}

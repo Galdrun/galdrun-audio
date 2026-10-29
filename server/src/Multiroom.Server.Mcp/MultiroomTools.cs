@@ -385,25 +385,28 @@ public sealed class MultiroomTools
         Add(McpTier.Modify, "create_playlist", "Creates an empty stored playlist.",
             (string name) => Ok(playlists.CreatePlaylist(name)));
 
-        Add(McpTier.Modify, "save_queue_as_playlist", "Saves a zone's queue (its tracks and books, in order; stations " +
-            "are left out) as a stored playlist, in a folder or at the top level. A name in use there is refused unless overwrite, " +
+        Add(McpTier.Modify, "save_queue_as_playlist", "Saves a zone's queue (its tracks, books and stations, in order) " +
+            "as a stored playlist, in a folder or at the top level. A name in use there is refused unless overwrite, " +
             "which replaces that playlist's entries.",
             ([Description(ZoneParameter)] string zone, string name, bool overwrite = false, long? folder = null) =>
                 Ok(playlists.SaveAs(name, Ok(queues.GetQueue(zone)).Items, overwrite, folder)));
 
-        Add(McpTier.Modify, "add_to_playlist", "Adds tracks, or a playable browse node, to a stored playlist, at the end " +
-            "or at an index. A node of audiobook tracks is one entry (the book), its parts kept in order.",
+        Add(McpTier.Modify, "add_to_playlist", "Adds tracks, a station, or a playable browse node, to a stored playlist, " +
+            "at the end or at an index: exactly one of the three. A node of audiobook tracks is one entry (the book), its " +
+            "parts kept in order. A station plays until skipped.",
             async (long playlist, Track[]? tracks = null, NodeRef? node = null, int? index = null,
-                CancellationToken cancellationToken = default) =>
+                RadioStation? station = null, CancellationToken cancellationToken = default) =>
             {
-                if ((tracks is null) == (node is null))
-                    throw Refused("invalidArgument", "exactly one of tracks or node");
+                if (new object?[] { tracks, node, station }.Count(x => x is not null) != 1)
+                    throw Refused("invalidArgument", "exactly one of tracks, node or station");
                 if (tracks is not null)
                 {
                     return tracks.Length == 0
                         ? throw Refused("invalidArgument", "tracks is empty")
                         : Ok(playlists.AddEntries(playlist, tracks, index));
                 }
+                if (station is not null)
+                    return Ok(playlists.AddStation(playlist, station, index));
                 var expanded = Ok(await player.ExpandAsync(node!.Provider, node.Id, player.Settings.GroupBooks,
                     cancellationToken).ConfigureAwait(false));
                 return Ok(expanded.Group is { } book

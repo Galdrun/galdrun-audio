@@ -1,5 +1,207 @@
 # Connector 3 / Teufel Streamer: SSH access and experimental RAM build
 
+**Latest findings (2026-10-29): WLAN works under our source-built Linux
+6.12.112**, using this device's radio firmware and the corrected Wi-Fi power
+sequence. SSH over Wi-Fi, DHCP, routing and five gateway pings with zero loss
+were verified with Ethernet administratively down. COM5 receives the early
+UART1 console. The final clean rebuild has passed artifact verification and
+the same WLAN-only hardware retest. A later audio-fix RAM load did not regain
+SSH; the user power-cycled it and beta SSH is verified again at .58. The installed
+**2.12-snapshot-7 / 4.1.45** beta remains unchanged. See the
+[session handoff](#wlan-fix-and-session-handoff-2026-10-29) before another test.
+Earlier runtime descriptions below refer to their dated experiments.
+
+## WLAN fix and session handoff (2026-10-29)
+
+**Playback follow-up (21:29 onward):** the final WLAN image rejects the core's
+44.1 kHz stereo stream. The user confirmed **RCA analog output** for this test.
+The kernel reports
+`failed to derive required Tx rate: 2822400`.
+The PLL is fixed to 884.736 MHz; requesting 22.5792 MHz MCLK rounds to
+22.1184 MHz. ALSA's advertised rate test did not catch the later hw_params
+failure. A direct three-second silent 48 kHz hardware playback completed with
+ALSA `RUNNING` and advancing hw_ptr; 44.1 kHz failed as a control. Evidence:
+`reference/connector3-ssh-archive/audio-rate-test-results.txt` and
+`audio-playback-failure.txt`. An initial fixed-48-kHz DTS correction was built,
+but the subsequent loader test did not regain SSH. The first Ethernet upload
+failed before kexec. A Wi-Fi retry uploaded/readback/hashed all files and
+requested kexec but has no successful boot evidence; COM5 captured no retry
+boot output. Do not call that image hardware-qualified. A normal power cycle
+restored the unchanged beta: SSH at .58 reports 4.1.45; .74 is currently
+unreachable. Avoid another loader retry until the native-clock build passes.
+
+**Native dual-family root cause confirmed in vendor source:** extracted
+`reference/connector3/vendor-audio/imx-s810.c` from the already CRC-verified
+Teufel GPL archive. Its `imx_s810_common_hw_params` retunes **the same audio
+PLL** to **812851200 Hz** for the 44.1 kHz family or **884736000 Hz** for the
+48 kHz family, then sets MCLK to **22579200 / 24576000 Hz**. Connector 2 uses
+Si5351A to select those same MCLK families; this is not evidence of two discrete
+crystals on Connector 3. The 48-kHz-only workaround has been replaced in source
+by `board/connector3/ram/galdrun-connector3-audio.c`, a small ASoC machine driver
+following the existing Connector 2 integration in `external.mk`. It retunes
+PLL, carrier MCLK and SAI root before SAI hw_params and preserves stereo/32-bit
+slots. The source/build verifier now require that driver. The first compile
+found that 6.12 lacks `devm_clk_bulk_get_enabled`; the source now uses
+`devm_clk_bulk_get`, `clk_bulk_prepare_enable` and a managed cleanup action,
+following Connector 2. **Build/live dual-family tests are pending.** Preserve the earlier hash-bound WLAN success
+below as history; do not apply it to rebuilt audio artifacts. Next: rebuild
+with the existing two-argument local-firmware command, boot from beta, test
+44.1/48/44.1 kHz ALSA with advancing hardware pointers, then actual Galdrun
+playback. No new driver playback success is claimed yet. Current loader/evidence
+helpers remain ignored under `reference/connector3-ssh-archive/`.
+
+The native-driver kernel then built and booted successfully with Ethernet SSH
+and WLAN firmware initialization. Its first real ALSA test exposed a further
+DT mapping issue: mainline `clk-imx7d.c` does not register the old
+`IMX7D_AUDIO_MCLK_ROOT_CLK` ID (330); the real divider is
+`IMX7D_AUDIO_MCLK_ROOT_DIV` (333). Live readback showed the requested carrier
+clock still disabled and the machine driver's exact-clock check rejected it.
+The DTS now uses ID 333 and the programmable `IMX7D_PLL_AUDIO_MAIN`, rather
+than trying to change the prepared/rate-gated PLL post-divider. That DTB rebuild
+and artifact verifier passed; `wifi-ram-test.py native-audio-clock-ids --boot
+--local-image` is the current retest. The reusable bounded hardware check is
+`scripts/test-connector3-audio.sh` under `hardware/buildroot/` (execute on the
+Streamer, not the host); it plays silence at all eight advertised rates and
+checks RUNNING plus advancing hardware pointers, including 44.1/48/44.1
+switching, then restores the client.
+
+The corrected clock-ID image booted and the client successfully prepared
+**48 kHz S32_LE stereo**, with ALSA RUNNING and advancing hardware pointers.
+Native 44.1 kHz returned **EBUSY (-16)** because prepared post-divider clocks
+rate-protect their entire PLL parent tree. The driver now releases its private
+clock references before retuning and re-enables them before SAI hw_params;
+cleanup tracks whether enabling succeeded. This revision is building now;
+its dual-family live test is pending. The preceding image was normally
+rebooted to beta after saving settings (no user power cycle required).
+Driver source is copied by a pre-build hook and included in the reconfigure
+fingerprint, so further C-only corrections can rebuild incrementally. Kconfig/
+Makefile integration and kernel patches still trigger a clean source rebuild.
+
+The first command timeout, `HostCmd_CMD_PCIE_DESC_DETAILS` (`0xfa`), was resolved
+with the radio firmware from the working beta, **15.87.19.p14**, 673220 bytes:
+
+```text
+b2c5e7f4f88b061b92be8113ddd5ec688da94729c3a5d07bec9e334335499538
+```
+
+The generic `linux-firmware-20250211` file is **W15.68.19.p21**, 723540 bytes.
+It downloads and reports firmware active but times out on `0xfa`. The older
+public Teufel GPL archive's **W15.68.7.p77** also failed. Do not substitute either
+for the verified local file or claim the generic image has working WLAN.
+The working bytes are saved privately as
+`hardware/buildroot/private/connector3/pcie8897-working-reference.bin`.
+
+The DTS also had a real power-sequencing omission: GPIO5_2 was hogged high.
+It now supplies a GPIO-controlled fixed regulator, initially off, with 100 ms
+startup/off-on delays. This models the vendor's power cycle before releasing
+PCIe reset GPIO4_23. `CONFIG_PCIEPORTBUS=y` is enabled, but root/endpoint MSI
+were already enabled in the failing test; MSI alone was not the fix.
+An experimental mwifiex diagnostic patch was removed before the final rebuild.
+
+Keep `mwifiex.debug_mask=0x7` and omit `ignore_loglevel`: verbose firmware logs
+flooded the 115200-baud console and distorted traffic tests. Early UART logging
+remains enabled. **COM5, 115200 8N1, adapter RXD plus GND only** receives UART1
+(`/dev/ttymxc0`), including all five transmitted test markers. Leave the wiring
+as it is. The physical pad number and board UART RX remain unidentified;
+UART3 (`/dev/ttymxc2`) is the separate MCU connection.
+
+Verified before the final clean rebuild: our kernel **6.12.112**, `mlan0`
+associated on 5 GHz, DHCP address **10.0.0.58/24**, default route via
+**10.0.0.254 dev mlan0**, Ethernet down, successful key-authenticated SSH over
+Wi-Fi, **5/5 gateway pings, 0% loss**, RTT min/avg/max 1.878/2.374/3.409 ms.
+Evidence: ignored
+`reference/connector3-ssh-archive/wifi-verified-wireless-traffic-console.txt`
+and `wifi-power-sequence-reference-console.txt` under `hardware/buildroot/`.
+These are functional checks, not throughput or long-running qualification.
+
+Reproduce the final local build in WSL from the repository root:
+
+```bash
+bash hardware/buildroot/scripts/build-connector3-ram.sh \
+  hardware/buildroot/private/connector3/id_ed25519.pub \
+  hardware/buildroot/private/connector3/pcie8897-working-reference.bin
+```
+
+This build completed successfully. Output is
+`hardware/buildroot/private/connector3/ram-local/`, including `SHA256SUMS` and
+`ram-verification.json`. The verifier checks the selected firmware hash, quiet
+UART command line, key-only SSH, built-in network drivers and absence of storage
+drivers/home credentials. Its `hardware_boot_verified:false` and
+`audio_verified:false` describe the host verifier's scope; live results belong
+in the separate `hardware-verification.json` described below.
+The one-argument build still uses the generic upstream radio firmware. The
+post-build hook explicitly restores the selected radio file on every build so
+cached local firmware cannot leak into the generic image.
+
+**Final rebuild hardware retest passed:** key-authenticated SSH over Ethernet,
+then Wi-Fi at .58 with eth0 administratively down, a WLAN default route and
+5/5 gateway pings, 0% loss, RTT min/avg/max 1.442/2.711/4.086 ms. The live
+kernel command line has debug mask 0x7 and no `ignore_loglevel`; the live radio
+file matches the pinned working hash. Evidence is saved in
+`reference/connector3-ssh-archive/wifi-final-wireless-verified-console.txt`.
+`private/connector3/ram-local/hardware-verification.json` binds these results
+to the final base artifacts and the exact private DTB/initramfs uploaded:
+
+```text
+20478986f6340d1766392e138f47616ccbf170d165c66f506b7343b7469ee060  zImage
+23a5a57c5ab95575caca5eaacc9256935dbbb4dcd11229d2754260f624837373  rootfs.cpio.gz
+efa831f8cb8da2054cad7dc05ac6bc44761f65d753cad3cd569bcfc1c793e4f5  connector3.dtb
+```
+
+The build-time `ram-verification.json` deliberately remains a host-only report;
+use the separate hardware manifest for live evidence. Do not reuse either
+manifest after rebuilding.
+
+**Final runtime:** automatic restoration completed; SSH at **10.0.0.74**
+confirms **6.12.112**, eth0 `UP,LOWER_UP`, carrier 1, the default route over eth0,
+and the original `ETH_INTERFACE=eth0` board setting restored. Both known
+addresses briefly failed during restoration before Ethernet/DHCP recovered;
+no power cycle was needed. This transition still needs robustness testing.
+Evidence: `reference/connector3-ssh-archive/wifi-final-restored-runtime.txt`.
+The device is left on our own RAM kernel, with normal Ethernet preference.
+Rebooting or removing power returns to the installed beta. Next work is the
+remaining hardware checklist and a qualified persistent boot/install path;
+do not overwrite NAND merely because this RAM test passed.
+
+To repeat the local orchestration:
+
+```bash
+python3 hardware/buildroot/reference/connector3-ssh-archive/wifi-ram-test.py final-local --boot --local-image
+python3 hardware/buildroot/reference/connector3-ssh-archive/wifi-ram-test.py final-managed --wifi-managed-test
+# Allow DHCP to complete, then:
+python3 hardware/buildroot/reference/connector3-ssh-archive/wifi-ram-test.py final-wireless --wifi-only
+```
+
+The boot helper requires the installed beta at .58 or .74 and Ethernet carrier,
+uploads/readbacks/hashes all files in `/run`, injects private network/client
+settings and a deterministic host key, and performs RAM-only kexec. No NAND or
+U-Boot writes were made. UART capture helper: ignored
+`reference/connector3-ssh-archive/capture-com5.ps1 -Seconds 120 -Name com5-final-local`.
+The managed WLAN test temporarily changes the RAM board network configuration
+to simulate absent Ethernet, with automatic restoration after 150 seconds.
+Simply lowering eth0 is insufficient: the DHCP hook can raise it again and the
+normal manager then prefers Ethernet. Restore the saved board configuration
+and Ethernet after the test; leave a known reachable runtime and document it.
+
+The RAM kernel cannot kexec itself. Use the helper's `--return-vendor` to save
+private live settings and reboot normally, then load subsequent tests from the
+beta. Vendor SSH uses `private/connector3/known_hosts`, root without a password,
+and `HostKeyAlias=10.0.0.58` for either address. RAM SSH uses the private
+`id_ed25519`, `known_hosts_wifi_test`, and `HostKeyAlias=10.0.0.74` for Wi-Fi .58.
+Copy the client private key into a Linux temporary file with mode 600.
+Never publish the keys, network configuration or private overlays.
+
+Host regressions passed:
+`python3 hardware/buildroot/scripts/test-connector3-ram-init.py` and
+`python3 hardware/buildroot/scripts/test-connector3-wifi-firmware.py`.
+The isolated final-rootfs ARM SSH smoke check also passed with
+`sudo python3 hardware/buildroot/scripts/test-connector3-ssh.py ~/.cache/raumfeld-buildroot/connector3-ram`;
+it generates/checks keys and sshd configuration without opening a listener.
+Final clean image build, artifact verifier and rebuilt-image WLAN hardware test
+passed. Audible audio, reconnect/setup AP, long-running traffic, cold boot and persistent
+installation still require qualification. Preserve concurrent unrelated
+`mobile-gui/` work; no commit was requested.
+
 Verified on the test Streamer on **2026-10-28**, without working UART or Ethernet.
 USB configuration connected it to home Wi-Fi, and a direct UPnP update request
 installed the archived beta without completing phone-app setup.
@@ -655,18 +857,19 @@ two-LED capability merely because the physical indicators work under hardwared.
 See also the manufacturer's
 [LED-strip recovery description](https://support.teufel.de/hc/en-us/articles/360011716460).
 
-The PCIe issue belongs specifically to the experimental **6.12.112 kernel**:
-its internal link to the Marvell Wi-Fi chip never comes up, before Wi-Fi
-association can begin. The currently running **4.1.45 vendor kernel** has a
-working PCIe/Wi-Fi driver and working WLAN. Keeping that kernel avoids this
-specific blocker; it does not require solving the mainline port first.
+The unresolved Wi-Fi issue belongs specifically to the experimental
+**6.12.112 kernel**. Attempt 7 established the PCIe link and detected the Marvell
+chip, superseding the earlier link failures. Firmware download completes, but
+the first initialization command times out before association can begin.
+The **4.1.45 vendor kernel** has a working PCIe/Wi-Fi driver and working WLAN.
 
 The requested final image uses our own kernel, like Connector 2. The vendor
 kernel remains a working hardware reference and recovery environment. Bring up
 Ethernet in the source-built RAM kernel first, then resolve PCIe Wi-Fi, MCU
 support and actual audio/mute/volume behavior before preparing and qualifying
-the persistent USB installer. The current button bridge still depends on the
-vendor MCU daemon and is not a standalone MCU implementation. The complete RAM
+the persistent USB installer. The older vendor-kernel button bridge depends on
+the vendor MCU daemon; the native UART implementation described below removes
+that dependency for the custom kernel. The complete RAM
 bundle also does not fit the existing 12 MiB diagnostic FIT slot unchanged.
 No persistent custom installation has been performed. A successful kexec RAM
 boot does not qualify cold boot, NAND installation, or rollback.
@@ -721,6 +924,10 @@ separate from the earlier raw UART capture.
 
 ### Scanning with Ethernet connected
 
+The driver-failure notes in this subsection describe the earlier investigation.
+The [latest WLAN handoff](#wlan-fix-and-session-handoff-2026-10-29) records the
+subsequent successful firmware/power-sequence fix and final-image retest.
+
 Ethernet preference disables association and routing, not the ability to scan.
 The scan helper can use a temporary managed interface. For drivers supporting
 only one managed interface, it now temporarily raises a down interface, then
@@ -745,6 +952,59 @@ removed. Each subsequent test is loaded by the unchanged vendor beta instead.
 The static `kexec` binary in the artifact is for that vendor-side loader, not
 evidence that the running RAM kernel can load another kernel. A normal reboot
 returns to the installed beta. Live settings must be saved privately first.
+
+## Remaining work and retest (2026-10-29)
+
+This checklist distinguishes implemented source from qualified hardware behavior.
+It describes the custom-kernel RAM profile, not the installed vendor beta.
+
+| Area | Remaining work |
+| --- | --- |
+| Power | Standby/deep sleep, wake behavior, PMIC integration and CPU power management. Suspend, CPU idle and frequency scaling are disabled; only CPU0 is enabled. |
+| Wi-Fi | Initialization, scan, association, DHCP and WLAN-only SSH/traffic verified with the local 15.87.19.p14 radio firmware, including the final clean rebuilt image. Reconnect, setup-AP fallback and sustained traffic remain unqualified. Generic upstream radio firmware still times out on `0xfa`. |
+| Ethernet | Previously verified at 100 Mbit/s full duplex under both kernels. Repeated boot/link acquisition still needs qualification; transient no-carrier does not establish a cable fault. |
+| Audio | Verify audible RCA and optical playback, MCU mute/volume behavior, sample rates and sustained/grouped playback. The custom DTS describes SAI1 only; the vendor's SAI2 digital playback path and simultaneous output are missing. Format negotiation alone is not an audio test. |
+| Touch controls | Native UART/uinput implementation and nine bindings exist. Verify physical events through the final native daemon and client, including hold/retry behavior. The earlier vendor bridge's physical test is separate. |
+| Indicators | Implement MCU LED-strip/Bluetooth-indicator patterns and brightness; the two-GPIO-LED implementation does not apply. |
+| Other hardware | Bluetooth and USB support are disabled in this RAM profile. These are separate bring-up tasks if required for the finished firmware. |
+| Installation | Persistent root filesystem/settings, a qualified USB installer/update/rollback path and cold boot. MTD/MMC/storage drivers are deliberately absent from the RAM kernel. The existing diagnostic FIT slot cannot contain the full bundle unchanged. |
+| Recovery | Qualify failed-start recovery, including failures before `/init` or SSH. The software guard cannot recover a hung kernel. |
+
+### Earlier failed tests before the COM5 console was established
+
+The following attempts preceded the successful WLAN test recorded at the top
+of this guide; they explain the two user-assisted power cycles.
+
+Read-only checks on 2026-10-29 confirmed the beta's Marvell `11ab:2b38`, driver
+`mwifiex_pcie`, firmware `15.87.19.p14`, working WLAN and increasing MSI
+interrupt counters. Ethernet initially returned `carrier=0` after interface
+enable, but a later retry returned `carrier=1`. A RAM test subsequently replied
+to Ethernet pings at `10.0.0.74` with MAC `50:1e:2d:3b:77:f4`; SSH and the client
+API were unavailable. Its private diagnostic overlay supplied a host key while
+startup unconditionally ran `ssh-keygen`, which could wait for overwrite input.
+
+RAM init now reuses an existing host key without prompting, generates missing
+keys with stdin closed, and checks for an SSH process as well as an IPv4 address
+before allowing a failed test to remain running. The host check
+`python3 hardware/buildroot/scripts/test-connector3-ram-init.py` covers both key
+paths and all address/SSH recovery combinations. This is a startup fix, not a
+Wi-Fi-driver fix or proof of successful hardware recovery.
+
+A second RAM test using the corrected init did not regain either known network
+address or recover automatically within five minutes. No console was available
+to identify its failure stage. Both tests were cleared by user power cycles;
+the installed beta then returned with working Wi-Fi. The final power cycle left
+no valid ramoops console, so no new firmware-response/interrupt diagnosis was
+established. A final beta retry brought up Ethernet with `carrier=1`,
+`100Mb/s`, full duplex, address `10.0.0.74` and the default route over `eth0`;
+Wi-Fi remained available at `10.0.0.58`. The RAM image was rebuilt and passed
+its artifact verifier, the startup regression check and the isolated ARM SSH
+smoke check. This rebuilt image was not booted on the device.
+Do not report either attempt as a successful custom-kernel boot or
+reuse an earlier hardware-verification manifest for rebuilt artifacts. Local
+test scripts, upload hashes and vendor observations are in ignored
+`reference/connector3-ssh-archive/wifi-*`; private overlays and keys remain under
+`private/connector3/`.
 
 ## Local evidence and references
 

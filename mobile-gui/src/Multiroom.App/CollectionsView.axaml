@@ -1,7 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:vm="using:Multiroom.App" xmlns:api="using:Multiroom.App.Api" x:Class="Multiroom.App.CollectionsView" x:DataType="vm:CollectionsViewModel">
  <Grid RowDefinitions="Auto,*,Auto,Auto">
-  <TextBlock Text="{Binding Notice}" TextWrapping="Wrap" Classes="muted" Margin="0,0,0,8" />
   <Grid Grid.Row="1" IsVisible="{Binding IsPlaylists}" RowDefinitions="Auto,Auto,*,Auto">
    <ComboBox ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}" PlaceholderText="Choose a playlist" HorizontalAlignment="Stretch" AutomationProperties.Name="Playlist">
     <ComboBox.ItemTemplate><DataTemplate x:DataType="api:Playlist"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
@@ -22,7 +21,7 @@
    </Expander>
    <ListBox Grid.Row="2" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry}" Background="Transparent" AutomationProperties.Name="Playlist entries">
     <ListBox.ItemTemplate><DataTemplate x:DataType="api:PlaylistEntry"><StackPanel Spacing="4">
-     <TextBlock Text="{Binding Track.Title}" /><TextBlock Text="{Binding Track.Artist}" Classes="muted" /><TextBlock Text="{Binding Track.ProviderId}" Classes="muted" />
+     <TextBlock Text="{Binding Title}" /><TextBlock Text="{Binding Subtitle}" Classes="muted" />
     </StackPanel></DataTemplate></ListBox.ItemTemplate>
    </ListBox>
    <TextBlock Grid.Row="2" Text="Choose a playlist. Add tracks from Browse or Search using Save / discover." IsVisible="{Binding NoEntries}" TextWrapping="Wrap" Classes="muted" VerticalAlignment="Center" Margin="8" />

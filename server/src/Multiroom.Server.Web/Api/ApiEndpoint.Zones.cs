@@ -249,7 +249,7 @@ public sealed partial class ApiEndpoint
         var items = queue.Value.Items;
         var saved = playlists.SaveAs(name, items, overwrite, folder);
         return saved.IsSuccess
-            ? new QueueSaved(saved.Value, items.Count(i => i.Track is null && i.Group is null))
+            ? new QueueSaved(saved.Value, items.Count(i => i.Track is null && i.Station is null && i.Group is not { Parts.Count: > 0 }))
             : saved.Failure;
     }
 }

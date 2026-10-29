@@ -110,16 +110,17 @@ public sealed record FolderPatch(string? Name = null, long? Parent = null);
 // A queue saved as a playlist; overwrite replaces one of that name.
 public sealed record QueueSaveRequest(string Name, bool Overwrite = false, long? Folder = null);
 
-// The playlist, and how many of the queue's items (stations) it could not hold.
+// The playlist, and how many of the queue's items it could not hold (a book left without parts).
 public sealed record QueueSaved(Playlist Playlist, int Skipped);
 
 // Folder 0 moves it to the top, null leaves it where it is.
 public sealed record PlaylistPatch(string? Name = null, int? Position = null, long? Folder = null);
 
-// Exactly one of tracks or a node; a node of audiobook tracks is one group
-// entry (phase 31) when `Group` is true; null is the house's groupBooks.
+// Exactly one of tracks, a node or a station; a node of audiobook tracks is
+// one group entry (phase 31) when `Group` is true; null is the house's
+// groupBooks.
 public sealed record EntriesRequest(IReadOnlyList<Track>? Tracks = null, int? Index = null, NodeReference? Node = null,
-    bool? Group = null);
+    bool? Group = null, RadioStation? Station = null);
 
 // The house's playback settings: null keeps.
 public sealed record PlaybackSettingsPatch(bool? GroupBooks = null, bool? ResumeBooks = null, bool? FindRadioLikes = null);

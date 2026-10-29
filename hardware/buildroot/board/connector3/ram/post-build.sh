@@ -34,6 +34,10 @@ rm -f "$target/etc/init.d/S50hostapd" "$target/etc/init.d/S80dnsmasq" "$target/e
 "$HOST_DIR/bin/arm-linux-g++" -std=c++17 -Os -Wall -Wextra -Werror \
     "$project/board/common/captive-portal.cpp" -o "$target/usr/sbin/raumfeld-captive-portal"
 firmware="$BUILD_DIR/linux-firmware-20250211"
+# Install explicitly on every build so changing the local radio input cannot
+# leak a previous build's firmware into the generic image through the cache.
+install -D -m 0644 "${GALDRUN_CONNECTOR3_WIFI_FIRMWARE:-$firmware/mrvl/pcie8897_uapsta.bin}" \
+    "$target/lib/firmware/mrvl/pcie8897_uapsta.bin"
 install -D -m 0644 "$firmware/imx/sdma/sdma-imx7d.bin" \
     "$target/lib/firmware/imx/sdma/sdma-imx7d.bin"
 install -D -m 0644 "$firmware/LICENSE.sdma_firmware" \

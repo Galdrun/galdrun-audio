@@ -7,7 +7,7 @@
     <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="#9BA6A3" /></Style>
     <Style Selector="TextBlock.title"><Setter Property="FontSize" Value="32" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
     <Style Selector="TextBlock.section"><Setter Property="FontSize" Value="20" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
-    <Style Selector="Button"><Setter Property="MinHeight" Value="44" /><Setter Property="Padding" Value="16,8" /><Setter Property="CornerRadius" Value="8" /></Style>
+    <Style Selector="Button"><Setter Property="MinHeight" Value="44" /><Setter Property="Padding" Value="16,8" /><Setter Property="CornerRadius" Value="8" /><Setter Property="VerticalContentAlignment" Value="Center" /></Style>
     <Style Selector="Button.accent"><Setter Property="Background" Value="#CBEC97" /><Setter Property="Foreground" Value="#182316" /></Style>
     <Style Selector="TextBox"><Setter Property="MinHeight" Value="44" /></Style>
     <Style Selector="ComboBox"><Setter Property="MinHeight" Value="44" /></Style>

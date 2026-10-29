@@ -206,21 +206,42 @@ public sealed class PlaylistStore(LibraryDatabase database)
         });
     }
 
-    // A queue saved as a playlist: its tracks and groups, in order, under the
-    // name in the folder (null: at the top) -- a new playlist, or, with
-    // overwrite, the first of that name (in any case) in that folder emptied
-    // and filled again. Stations are not playlist entries
-    // and are left out; a list with nothing else is refused.
+    // A station as one entry, at index or at the end: its identity and name.
+    public Result<IReadOnlyList<PlaylistEntry>, LibraryError> AddStation(long playlist, RadioStation station, int? index)
+    {
+        if (station.ProviderId.Length == 0 || station.ProviderItemId.Length == 0)
+            return Result.Fail(LibraryError.InvalidArgument, $"{station.Name} has no provider-scoped id");
+        return Write((c, t) =>
+        {
+            if (!Exists(c, t, playlist))
+                return NoPlaylist(playlist);
+            var count = EntryCount(c, t, playlist);
+            var at = index ?? count;
+            if (at < 0 || at > count)
+                return OutOfRange(at, count);
+            Shift(c, t, "playlist_item", "playlist_id = $scope", at, int.MaxValue, 1, playlist);
+            InsertStation(c, t, playlist, at, station);
+            return EntriesOf(c, t, playlist);
+        });
+    }
+
+    // A queue saved as a playlist: its tracks, groups and stations, in order,
+    // under the name in the folder (null: at the top) -- a new playlist, or,
+    // with overwrite, the first of that name (in any case) in that folder
+    // emptied and filled again; an empty queue is refused.
     public Result<Playlist, LibraryError> SaveAs(string name, IReadOnlyList<QueueItem> items, bool overwrite, long? folder = null)
     {
         if (Trimmed(name) is not { } trimmed)
             return NoName();
-        var kept = items.Where(i => i.Track is not null || i.Group is { Parts.Count: > 0 }).ToList();
+        var kept = items.Where(i => i.Track is not null || i.Station is not null || i.Group is { Parts.Count: > 0 }).ToList();
         if (kept.Count == 0)
-            return Result.Fail(LibraryError.InvalidArgument, "nothing to save: a playlist holds tracks and books, not stations");
-        if (kept.SelectMany(i => i.Track is { } track ? [track] : i.Group!.Parts.Select(p => p.Track))
+            return Result.Fail(LibraryError.InvalidArgument, "nothing to save: the queue is empty");
+        if (kept.SelectMany(i => i.Track is { } track ? [track] : i.Group?.Parts.Select(p => p.Track) ?? [])
                 .FirstOrDefault(t => t.ProviderId.Length == 0 || t.ProviderItemId.Length == 0) is { } unnamed)
             return Result.Fail(LibraryError.InvalidArgument, $"{unnamed.Title} has no provider-scoped id");
+        if (kept.Select(i => i.Station).OfType<RadioStation>()
+                .FirstOrDefault(s => s.ProviderId.Length == 0 || s.ProviderItemId.Length == 0) is { } nameless)
+            return Result.Fail(LibraryError.InvalidArgument, $"{nameless.Name} has no provider-scoped id");
         return Write((c, t) =>
         {
             if (folder is { } f && !FolderExists(c, t, f))
@@ -252,6 +273,8 @@ public sealed class PlaylistStore(LibraryDatabase database)
             {
                 if (item.Track is { } track)
                     InsertTrack(c, t, playlist, at, track);
+                else if (item.Station is { } station)
+                    InsertStation(c, t, playlist, at, station);
                 else
                     InsertGroup(c, t, playlist, at, item.Group!);
             }
@@ -271,6 +294,15 @@ public sealed class PlaylistStore(LibraryDatabase database)
             ("$album", track.Album), ("$duration", (long?)track.Duration?.TotalMilliseconds),
             ("$mediaType", LibraryCatalog.NameOf(track.MediaType)),
             .. LibraryCatalog.FormatValues(track.Format)]);
+
+    // As a favourite station is kept: its identity, and its name in title.
+    private static void InsertStation(SqliteConnection c, SqliteTransaction t, long playlist, int position,
+        RadioStation station) =>
+        Execute(c, t, """
+            INSERT INTO playlist_item (playlist_id, position, provider_id, provider_item_id, title, kind)
+            VALUES ($playlist, $position, $provider, $item, $title, 'station')
+            """, ("$playlist", playlist), ("$position", position), ("$provider", station.ProviderId),
+            ("$item", station.ProviderItemId), ("$title", station.Name));
 
     // Its node and snapshot as one entry, and its parts as they are now.
     private static void InsertGroup(SqliteConnection c, SqliteTransaction t, long playlist, int at, QueueGroup group)
@@ -498,20 +530,24 @@ public sealed class PlaylistStore(LibraryDatabase database)
         if (!Exists(c, t, playlist))
             return NoPlaylist(playlist);
         var rows = Rows(c, t, EntryColumns + " ORDER BY position", r => (Id: r.GetInt64(0), Track: ReadTrack(r, 1),
-            Group: r.GetString(13) == GroupKind), ("$playlist", playlist));
-        var parts = rows.Any(e => e.Group)
+            Kind: r.GetString(13)), ("$playlist", playlist));
+        var parts = rows.Any(e => e.Kind == GroupKind)
             ? Rows(c, t, PartColumns + " " + """
                   WHERE item_id IN (SELECT id FROM playlist_item WHERE playlist_id = $playlist AND kind = 'group')
                   ORDER BY item_id, position
                   """, r => (Entry: r.GetInt64(0), Part: ReadPart(r)), ("$playlist", playlist))
                 .ToLookup(p => p.Entry, p => p.Part)
             : null;
-        return List([.. rows.Select(e => e.Group
-            ? new PlaylistEntry(e.Id, null, new QueueGroup(e.Track.Title, e.Track.Artist, null,
+        return List([.. rows.Select(e => e.Kind switch
+        {
+            GroupKind => new PlaylistEntry(e.Id, null, new QueueGroup(e.Track.Title, e.Track.Artist, null,
                 e.Track.MediaType ?? MediaType.Audiobook,
                 e.Track.ProviderId.Length == 0 ? null : $"{e.Track.ProviderId}:{e.Track.ProviderItemId}",
-                [.. parts![e.Id]]))
-            : new PlaylistEntry(e.Id, e.Track))]);
+                [.. parts![e.Id]])),
+            StationKind => new PlaylistEntry(e.Id, null, Station: new RadioStation(e.Track.ProviderId, e.Track.ProviderItemId,
+                e.Track.Title)),
+            _ => new PlaylistEntry(e.Id, e.Track),
+        })]);
     }
 
     private static Favorite? FavoriteBy(SqliteConnection c, SqliteTransaction? t, string where,

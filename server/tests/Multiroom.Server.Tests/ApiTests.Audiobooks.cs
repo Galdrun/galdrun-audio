@@ -88,7 +88,7 @@ public sealed partial class ApiTests
         var entry = Assert.Single(entries.AsArray())!;
         Assert.Equal(("The Book", 3), (entry["title"]!.GetValue<string>(), entry["item"]!["parts"]!.AsArray().Count));
         await Refused(HttpMethod.Post, $"playlists/{playlist}/entries", "{}", HttpStatusCode.BadRequest, "invalidRequest",
-            "exactly one of tracks or node");
+            "exactly one of tracks, node or station");
         var replayed = await Ok(HttpMethod.Post, "zones/living/queue/items", $$"""{"playlist":{{playlist}},"replace":true}""");
         Assert.Equal(["The Book"], Titles(replayed["queue"]!));
 

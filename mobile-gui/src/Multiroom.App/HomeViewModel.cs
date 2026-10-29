@@ -6,17 +6,22 @@ using Multiroom.App.Api;
 
 namespace Multiroom.App;
 
-// One cover as a home shelf shows it: artwork, title, subtitle, why it is
-// proposed, and what queues it.
-public sealed record HomeItem(string Title, string Subtitle, string? Artwork, AddItems Items, string? Reason = null)
+// One cover as a home shelf shows it: artwork, title, subtitle, what it is
+// (its badge), why it is proposed, and what queues it.
+public sealed record HomeItem(string Title, string Subtitle, string? Artwork, AddItems Items, MediaItem Media, string? Reason = null)
 {
+    public string Kind => Media switch
+    {
+        Track => "Track", RadioStation => "Radio", Album => "Album", Artist => "Artist", MediaGroup or Audiobook => "Book", _ => ""
+    };
+
     public static HomeItem From(Favorite favorite) => new(favorite.Title, favorite.Item switch
     {
         Track track => track.Artist ?? track.Album ?? "",
         RadioStation station => station.Genre ?? "Station",
         MediaGroup group => group.Artist ?? "Book",
         _ => ""
-    }, favorite.Item.ArtworkId, new(Favorite: favorite.Id));
+    }, favorite.Item.ArtworkId, new(Favorite: favorite.Id), favorite.Item);
 
     // A song liked off the radio plays as the track it was found as; until
     // one is found it has nothing to play.
@@ -32,12 +37,12 @@ public sealed record HomeItem(string Title, string Subtitle, string? Artwork, Ad
     // reference is "provider:node".
     private static HomeItem? Of(MediaItem item, string? reason = null) => item switch
     {
-        Track t => new(t.Title, t.Artist ?? t.Album ?? "", t.ArtworkId, new(Tracks: [t]), reason),
-        RadioStation s => new(s.Name, s.Genre ?? "Station", s.ArtworkId, new(Station: s), reason),
-        Album a => new(a.Title, a.Artist ?? "Album", a.ArtworkId, new(Node: new(a.ProviderId, a.ProviderItemId)), reason),
-        Artist a => new(a.Name, "Artist", a.ArtworkId, new(Node: new(a.ProviderId, a.ProviderItemId)), reason),
+        Track t => new(t.Title, t.Artist ?? t.Album ?? "", t.ArtworkId, new(Tracks: [t]), t, reason),
+        RadioStation s => new(s.Name, s.Genre ?? "Station", s.ArtworkId, new(Station: s), s, reason),
+        Album a => new(a.Title, a.Artist ?? "Album", a.ArtworkId, new(Node: new(a.ProviderId, a.ProviderItemId)), a, reason),
+        Artist a => new(a.Name, "Artist", a.ArtworkId, new(Node: new(a.ProviderId, a.ProviderItemId)), a, reason),
         Audiobook b when b.Reference.IndexOf(':') is var at and > 0 =>
-            new(b.Title, b.Author ?? "Book", b.ArtworkId, new(Node: new(b.Reference[..at], b.Reference[(at + 1)..])), reason),
+            new(b.Title, b.Author ?? "Book", b.ArtworkId, new(Node: new(b.Reference[..at], b.Reference[(at + 1)..])), b, reason),
         _ => null
     };
 }
@@ -87,17 +92,45 @@ public sealed partial class HomeViewModel : ObservableObject
         "What plays in your rooms shows up here.");
     public IReadOnlyList<HomeShelf> Shelves { get; }
     public event Action? QueueChanged;
-    [ObservableProperty] private string _notice = "";
+    // An album, artist or book opens in Browse; the shell switches there.
+    public event Action<NodeReference, string>? OpenRequested;
+    // Played in a zone from the sheet; the shell selects that zone.
+    public event Action<string>? PlayedIn;
     [ObservableProperty] private bool _isLoading;
     // The shelf whose "See all" grid shows in place of the shelves.
     [ObservableProperty, NotifyPropertyChangedFor(nameof(IsShelfOpen))] private HomeShelf? _openShelf;
     public bool IsShelfOpen => OpenShelf is not null;
 
+    // The item sheet: one item's actions, sliding up over the page. Step is "actions",
+    // "zones" (Play in a room) or "playlists" (Add to playlist). The item stays while
+    // the sheet slides out.
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanAddToPlaylist))] private HomeItem? _sheetItem;
+    [ObservableProperty] private bool _isSheetOpen;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsActionsStep), nameof(IsZonesStep), nameof(IsPlaylistsStep))] private string _sheetStep = "actions";
+    // The sheet item's like and favourite, once read; tracks can be liked, tracks and stations saved.
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanLike), nameof(CanFavorite), nameof(IsLiked), nameof(FavoriteSaved))] private ItemStatus? _marks;
+    [ObservableProperty] private IReadOnlyList<Playlist> _playlists = [];
+    private int _sheetVersion;
+    public bool IsActionsStep => SheetStep == "actions";
+    public bool IsZonesStep => SheetStep == "zones";
+    public bool IsPlaylistsStep => SheetStep == "playlists";
+    public bool CanAddToPlaylist => SheetItem?.Media is Track or Album or RadioStation;
+    public bool CanLike => Marks is not null && SheetItem?.Media is Track;
+    public bool CanFavorite => Marks is not null && SheetItem?.Media is Track or RadioStation;
+    public bool IsLiked => Marks?.Liked == true;
+    public bool FavoriteSaved => Marks?.Favorite == true;
+    private static ItemRef? MarkItem(HomeItem? item) => item?.Media switch
+    {
+        Track t => new(LikeKind.Track, t.ProviderId, t.ProviderItemId),
+        RadioStation s => new(LikeKind.Station, s.ProviderId, s.ProviderItemId),
+        _ => null
+    };
+
     public void Reset()
     {
         foreach (var shelf in Shelves) shelf.Set([]);
-        OpenShelf = null;
-        Notice = ""; IsLoading = false;
+        OpenShelf = null; CloseSheet();
+        IsLoading = false;
     }
 
     // Proposals, likes and history are optional: a server without them still shows its favourites.
@@ -143,24 +176,107 @@ public sealed partial class HomeViewModel : ObservableObject
     [RelayCommand] private void CloseShelf() => OpenShelf = null;
 
     [RelayCommand]
+    private Task OpenSheet(HomeItem? item)
+    {
+        if (item is null) return Task.CompletedTask;
+        var version = ++_sheetVersion;
+        SheetItem = item; SheetStep = "actions"; Marks = null; IsSheetOpen = true;
+        return MarkItem(item) is { } mark ? ReadMarksAsync(mark, version) : Task.CompletedTask;
+    }
+    [RelayCommand] public void CloseSheet() { _sheetVersion++; IsSheetOpen = false; }
+    [RelayCommand] private void SheetBack() => SheetStep = "actions";
+    [RelayCommand] private void ChooseZone() => SheetStep = "zones";
+    [RelayCommand]
+    private Task ChoosePlaylist()
+    {
+        SheetStep = "playlists";
+        var version = _sheetVersion;
+        return execute(async (api, ct) =>
+        {
+            var playlists = await api.PlaylistsAsync(ct);
+            if (version == _sheetVersion) Playlists = playlists;
+        });
+    }
+
+    private Task ReadMarksAsync(ItemRef mark, int version) => execute(async (api, ct) =>
+    {
+        var status = (await api.ItemStatusesAsync([mark], ct)).SingleOrDefault();
+        if (version == _sheetVersion && status is not null && status.Kind == mark.Kind && status.ProviderId == mark.ProviderId
+            && status.ProviderItemId == mark.ProviderItemId) Marks = status;
+    });
+
+    [RelayCommand] private Task ToggleLikeAsync() => ChangeMarkAsync(favorite: false);
+    [RelayCommand] private Task ToggleFavoriteAsync() => ChangeMarkAsync(favorite: true);
+    private async Task ChangeMarkAsync(bool favorite)
+    {
+        if (!IsSheetOpen || SheetItem is not { } item || Marks is not { } marks || MarkItem(item) is not { } mark) return;
+        var version = _sheetVersion;
+        await execute(async (api, ct) =>
+        {
+            if (favorite && marks.Favorite) await api.RemoveFavoriteAsync(marks.FavoriteId!.Value, ct);
+            else if (favorite) await api.AddFavoriteAsync(item.Media as Track, item.Media as RadioStation, ct);
+            else if (marks.Liked) await api.RemoveLikeAsync(marks.LikeId!.Value, ct);
+            else if (item.Media is Track track) await api.AddLikeAsync(track, ct);
+        });
+        if (version == _sheetVersion) await ReadMarksAsync(mark, version);
+        // The Favourites and Liked shelves show the change.
+        await RefreshAsync();
+    }
+
+    // Plays the sheet's item now in a zone: its queue is replaced.
+    [RelayCommand]
+    private Task PlayInAsync(string? target)
+    {
+        var item = SheetItem;
+        CloseSheet();
+        return execute(async (api, ct) =>
+        {
+            if (item is null || target is null) return;
+            await api.QueueAsync(target, item.Items with { Replace = true }, ct);
+            await api.TransportAsync(target, "play", null, ct);
+            PlayedIn?.Invoke(target);
+            QueueChanged?.Invoke();
+        });
+    }
+
+    [RelayCommand]
+    private Task AddToPlaylistAsync(Playlist? playlist)
+    {
+        var item = SheetItem;
+        CloseSheet();
+        return execute(async (api, ct) =>
+        {
+            if (playlist is null) return;
+            if (item?.Media is Track track) await api.AddEntriesAsync(playlist.Id, [track], ct);
+            else if (item?.Media is RadioStation station) await api.AddEntriesAsync(playlist.Id, station, ct);
+            else if (item is { Media: Album, Items.Node: { } node }) await api.AddEntriesAsync(playlist.Id, node, ct);
+        });
+    }
+
+    [RelayCommand]
     private Task PlayAsync(HomeItem? item) => execute(async (api, ct) =>
     {
         if (item is null) return;
         if (zone() is not { } target) throw new ArgumentException("Choose or create a zone before playing music.");
         await api.QueueAsync(target, item.Items with { Replace = true }, ct);
         await api.TransportAsync(target, "play", null, ct);
-        Notice = $"Playing in {zoneName(target)}";
         QueueChanged?.Invoke();
     });
 
-    // Queues the item at the end of the selected zone's queue.
-    [RelayCommand]
-    private Task QueueAsync(HomeItem? item) => execute(async (api, ct) =>
+    [RelayCommand] private void Open(HomeItem? item) { if (item?.Items.Node is { } node) OpenRequested?.Invoke(node, item.Title); }
+
+    // Queues the item at the end of the selected zone's queue, or right after what plays.
+    [RelayCommand] private Task QueueAsync(HomeItem? item) => AddAsync(item, next: false);
+    [RelayCommand] private Task PlayNextAsync(HomeItem? item) => AddAsync(item, next: true);
+    private Task AddAsync(HomeItem? item, bool next)
     {
-        if (item is null) return;
-        if (zone() is not { } target) throw new ArgumentException("Choose or create a zone before adding music.");
-        await api.QueueAsync(target, item.Items, ct);
-        Notice = $"Added to {zoneName(target)}";
-        QueueChanged?.Invoke();
-    });
+        CloseSheet();
+        return execute(async (api, ct) =>
+        {
+            if (item is null) return;
+            if (zone() is not { } target) throw new ArgumentException("Choose or create a zone before adding music.");
+            await api.QueueAsync(target, item.Items with { Next = next }, ct);
+            QueueChanged?.Invoke();
+        });
+    }
 }

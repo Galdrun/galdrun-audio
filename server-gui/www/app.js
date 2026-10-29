@@ -1149,11 +1149,11 @@ const queueDrop = (zone) => listDrop(`queue:${zone}`, (moves) => act(async () =>
   }
 }, 'common.moved'), (items, index) => dropQueued(zone, items, index));
 
-// Library items dropped on a playlist, as on a queue. A playlist keeps tracks
-// and nodes (POST playlists/{id}/entries); stations, playlists and
-// favourites are left out, and said so.
+// Library items dropped on a playlist, as on a queue. A playlist keeps tracks,
+// stations and nodes (POST playlists/{id}/entries); playlists and favourites
+// are left out, and said so.
 async function dropOnPlaylist(id, items, index = null) {
-  const kept = items.filter((b) => b.tracks || b.node);
+  const kept = items.filter((b) => b.tracks || b.node || b.station);
   if (!kept.length) throw new Error(tt('drag.playlistTakesTracks'));
   await postBodies(`playlists/${id}/entries`, mergeTracks(kept), index);
   const left = items.length - kept.length;
@@ -4144,11 +4144,13 @@ async function renderPlaylistEntries() {
           infoArt(en.item, artSlot(en.item.artworkId)),
           h('div', { class: 'grow' }, queueLines(en.item)))),
         h('td', { class: 'queue-actions' }, h('div', { class: 'row-end' },
-          h('span', { class: 'num' }, fmtDur(en.item.duration)),
+          media(en, 'station') ? h('span', { class: 'muted' }, tt('library.live')) : h('span', { class: 'num' }, fmtDur(en.item.duration)),
           h('span', { class: 'row-tools' },
             media(en, 'track') && likeButton('track', en.item),
-            favoriteButton(media(en, 'group') ? `book|${en.item.source}` : likeKey('track', en.item),
-              () => (media(en, 'group') ? addBookFavorite(en.item.source) : addFavorite(en.item)), Boolean(media(en, 'group'))),
+            media(en, 'station')
+              ? favoriteButton(likeKey('station', en.item), () => addFavorite(null, en.item))
+              : favoriteButton(media(en, 'group') ? `book|${en.item.source}` : likeKey('track', en.item),
+                () => (media(en, 'group') ? addBookFavorite(en.item.source) : addFavorite(en.item)), Boolean(media(en, 'group'))),
             h('button', { class: 'danger', title: tt('playlists.removeFromPlaylistTitle'), 'aria-label': tt('playlists.removeFromPlaylist'), onclick: () => removeEntries(id, list, entries, en.id) }, icon('trash')))))))),
     !entries.length && h('p', { class: 'muted small' }, tt('playlists.emptyDragTracks')),
     h('p', { class: 'muted small pl-no-match', hidden: true }, tt('playlists.noTrackMatches')),
@@ -4159,6 +4161,7 @@ async function renderPlaylistEntries() {
 // An entry as the bodies it is added by elsewhere: a book by the node it came
 // from (none when it names none).
 function entryBody(en) {
+  if (media(en, 'station')) return [{ station: en.item }];
   const book = media(en, 'group');
   if (!book) return [{ tracks: [en.item] }];
   const at = book.source?.indexOf(':') ?? -1;

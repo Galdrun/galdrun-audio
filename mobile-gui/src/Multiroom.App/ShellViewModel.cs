@@ -40,7 +40,10 @@ public partial class ShellViewModel : ObservableObject
         Servers = new(ConnectDiscoveredAsync, _discovery);
         Home = new(ReadAsync, () => Playback.SelectedZone, Playback.ZoneNameOf);
         Home.QueueChanged += () => _session?.Refresh();
+        Home.PlayedIn += zone => Playback.SelectedZone = zone;
+        Home.OpenRequested += (node, title) => { SelectedPage = "Browse"; _ = Browser.OpenNodeAsync(node, title); };
         Collections.QueueChanged += () => _session?.Refresh();
+        Collections.Warned += message => Error = message;
         Collections.RecommendationsRequested += () => SelectedPage = "Recommendations";
         Browser.CollectionRequested += (page, media) =>
         {
@@ -79,7 +82,7 @@ public partial class ShellViewModel : ObservableObject
     public bool IsZones => SelectedPage == "Zones";
     public bool IsNowPlaying => SelectedPage == "Now Playing";
     public bool ShowContentHeader => !IsHome && !IsNowPlaying;
-    public bool ShowTopProgress => IsBusy && !IsNowPlaying;
+    public bool ShowTopProgress => IsBusy && _busyShown && !IsNowPlaying;
     public bool ShowArtworkProgress => IsBusy && IsNowPlaying;
     public bool IsVolume => SelectedPage == "Volume";
     // The chooser pages are pure pickers/forms: the bottom bar never shows
@@ -105,6 +108,17 @@ public partial class ShellViewModel : ObservableObject
         ShowError = value.Length != 0;
         if (ShowError) _hideError = DispatcherTimer.RunOnce(() => ShowError = false, ErrorShown);
     }
+    // The busy dot shows once a request takes a moment, so quick ones never flash it.
+    public TimeSpan BusyDelay { get; set; } = TimeSpan.FromMilliseconds(300);
+    private bool _busyShown;
+    private IDisposable? _showBusy;
+    partial void OnIsBusyChanged(bool value)
+    {
+        _showBusy?.Dispose(); _showBusy = null;
+        void Show(bool shown) { _busyShown = shown; OnPropertyChanged(nameof(ShowTopProgress)); }
+        if (value && BusyDelay > TimeSpan.Zero) _showBusy = DispatcherTimer.RunOnce(() => Show(true), BusyDelay);
+        else Show(value);
+    }
     partial void OnSelectedProviderChanged(ProviderView? value) => OnPropertyChanged(nameof(CanBrowseProvider));
     partial void OnProvidersChanged(IReadOnlyList<ProviderView> value) => OnPropertyChanged(nameof(NoSources));
     partial void OnIsWideChanged(bool value) => OnPropertyChanged(nameof(ShowSideQueue));
@@ -116,7 +130,7 @@ public partial class ShellViewModel : ObservableObject
             nameof(IsCollections), nameof(IsRooms), nameof(IsDiagnostics), nameof(IsVolume), nameof(IsServers),
             nameof(IsSetup), nameof(ShowZoneBar), nameof(ShowContentHeader), nameof(ShowTopProgress), nameof(ShowArtworkProgress) }) OnPropertyChanged(property);
         if (IsCollections) Collections.Page = value;
-        if (!IsHome) Home.OpenShelf = null;
+        if (!IsHome) { Home.OpenShelf = null; Home.CloseSheet(); }
         if (IsServers && !Servers.IsScanning && Servers.Servers.Count == 0) _ = Servers.ScanAsync();
         if (_session is not null && (IsHome || value is "Playlists" or "Favourites" || IsRooms || IsDiagnostics)) _ = RefreshAsync();
         if (_session is not null && IsNowPlaying) _ = RefreshCurrentMarksAsync();

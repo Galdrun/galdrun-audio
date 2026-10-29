@@ -15,8 +15,8 @@ ip link set lo up
 # There is no usable UART yet. Recover the installed beta if networking fails.
 (
     sleep 120
-    if ! ip -4 -o addr show scope global | grep -q ' inet '; then
-        echo 'RAM test has no network address; returning to installed firmware.' >/dev/kmsg
+    if ! ip -4 -o addr show scope global | grep -q ' inet ' || ! pidof sshd >/dev/null; then
+        echo 'RAM test has no network address or SSH service; returning to installed firmware.' >/dev/kmsg
         for log in /run/system.log /run/sshd.log; do
             [ -r "$log" ] || continue
             while IFS= read -r line; do
@@ -47,7 +47,8 @@ mount -t debugfs debugfs /sys/kernel/debug
 ) &
 
 mkdir -p /run/sshd
-ssh-keygen -q -t ed25519 -N '' -f /etc/ssh/ssh_host_ed25519_key
+[ -s /etc/ssh/ssh_host_ed25519_key ] ||
+    ssh-keygen -q -t ed25519 -N '' -f /etc/ssh/ssh_host_ed25519_key </dev/null
 /usr/sbin/sshd -E /run/sshd.log
 
 cp /opt/galdrun-client/client-default.json /run/client.json

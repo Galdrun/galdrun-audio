@@ -15,6 +15,8 @@ public sealed partial class CollectionsViewModel(
     private long? _seedPlaylist;
     public event Action? QueueChanged;
     public event Action? RecommendationsRequested;
+    // A warning for the shell's toast, such as items the zone refused.
+    public event Action<string>? Warned;
     [ObservableProperty] private string _page = "Playlists";
     [ObservableProperty] private IReadOnlyList<Playlist> _playlists = [];
     [ObservableProperty] private Playlist? _selectedPlaylist;
@@ -25,7 +27,6 @@ public sealed partial class CollectionsViewModel(
     [ObservableProperty] private IReadOnlyList<RecommendedTrack> _recommendations = [];
     [ObservableProperty] private RecommendedTrack? _selectedRecommendation;
     [ObservableProperty] private string _name = "";
-    [ObservableProperty] private string _notice = "";
     [ObservableProperty] private string _recommendationStatus = "Choose a track or playlist and select More like this.";
     [ObservableProperty] private MediaRow? _pendingMedia;
     public bool IsPlaylists => Page == "Playlists";
@@ -37,7 +38,7 @@ public sealed partial class CollectionsViewModel(
     public bool NoEntries => Entries.Count == 0;
     public bool NoFavorites => Favorites.Count == 0;
     partial void OnPageChanged(string value)
-    { foreach (var p in new[] { nameof(IsPlaylists), nameof(IsFavorites), nameof(IsRecommendations) }) OnPropertyChanged(p); Notice = ""; }
+    { foreach (var p in new[] { nameof(IsPlaylists), nameof(IsFavorites), nameof(IsRecommendations) }) OnPropertyChanged(p); }
     partial void OnPendingMediaChanged(MediaRow? value) { OnPropertyChanged(nameof(CanAddTrack)); OnPropertyChanged(nameof(CanFavorite)); }
     partial void OnSelectedPlaylistChanged(Playlist? value)
     {
@@ -78,7 +79,7 @@ public sealed partial class CollectionsViewModel(
         _entriesVersion++; _refreshing = true;
         Playlists = []; SelectedPlaylist = null; Entries = []; SelectedEntry = null;
         Favorites = []; SelectedFavorite = null; Recommendations = []; SelectedRecommendation = null;
-        PendingMedia = null; _seedTrack = null; _seedPlaylist = null; Notice = "";
+        PendingMedia = null; _seedTrack = null; _seedPlaylist = null;
         RecommendationStatus = "Choose a track or playlist and select More like this."; _refreshing = false;
     }
     [RelayCommand] private Task CreateAsync() => execute(async (api, ct) =>
@@ -108,7 +109,7 @@ public sealed partial class CollectionsViewModel(
     [RelayCommand] private Task AddTrackAsync() => execute(async (api, ct) =>
     {
         if (SelectedPlaylist is not { } p || PendingMedia?.Track is not { } track) return;
-        await api.AddEntriesAsync(p.Id, [track], ct); await ReloadAsync(api, ct); Notice = "Track added.";
+        await api.AddEntriesAsync(p.Id, [track], ct); await ReloadAsync(api, ct);
     });
     [RelayCommand] private Task RemoveEntryAsync() => execute(async (api, ct) =>
     { if (SelectedPlaylist is { } p && SelectedEntry is { } e) { await api.RemoveEntryAsync(p.Id, e.Id, ct); await ReloadAsync(api, ct); } });
@@ -123,7 +124,7 @@ public sealed partial class CollectionsViewModel(
     {
         if (!CanFavorite) return;
         await api.AddFavoriteAsync(PendingMedia!.Track, PendingMedia.Station, ct);
-        await ReloadAsync(api, ct); Notice = "Favourite saved.";
+        await ReloadAsync(api, ct);
     });
     [RelayCommand] private Task RemoveFavoriteAsync() => execute(async (api, ct) =>
     { if (SelectedFavorite is { } f) { await api.RemoveFavoriteAsync(f.Id, ct); await ReloadAsync(api, ct); } });
@@ -157,8 +158,8 @@ public sealed partial class CollectionsViewModel(
         if (items is null) return;
         if (zone() is not { } target) throw new ArgumentException("Choose or create a zone before adding music.");
         var answer = await api.QueueAsync(target, items with { Next = placement == "next", Replace = placement == "now" }, ct);
-        Notice = "Added to " + (zoneName?.Invoke(target) ?? target);
-        if (answer is { } json && json.TryGetProperty("refused", out var refused)) Notice += $" · {refused.GetArrayLength()} items refused";
+        if (answer is { } json && json.TryGetProperty("refused", out var refused) && refused.GetArrayLength() is var count and > 0)
+            Warned?.Invoke($"{count} items refused by {zoneName?.Invoke(target) ?? target}");
         if (placement == "now") await api.TransportAsync(target, "play", null, ct);
         QueueChanged?.Invoke();
     });

@@ -81,13 +81,14 @@ public sealed class PlaylistPlayer(PlaylistStore store, IQueueEngine queues, Pro
                 if (parts.Count > 0)
                     queue.AddRange(Book(group with { Parts = parts }, fromStart, zone));
             }
-            else if (Unplayable(entry.Track, null) is { } reason)
+            else if (Unplayable(entry.Track, entry.Station) is { } reason)
             {
                 refused.Add(new PlaylistRefusal(entry, reason));
             }
             else
             {
-                queue.Add(new QueueEntry(entry.Track));
+                // A station plays until skipped, as one queued by itself does.
+                queue.Add(new QueueEntry(entry.Track, entry.Station));
             }
         }
         if (queue.Count == 0)
