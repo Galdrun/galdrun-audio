@@ -41,10 +41,10 @@
     <label for="wifiAp" data-i18n="wifi.accessPoint"></label>
     <select id="wifiAp"></select>
     <p class="hint" data-i18n="wifi.scanToList"></p>
-    <details id="wifiAdvanced" class="hidden" style="grid-column:1 / -1"><summary data-i18n="wifi.advancedWiFi"></summary><div class="fields">
+    <details id="wifiAdvanced" class="hidden" style="grid-column:1 / -1"><summary data-i18n="wifi.advancedWiFi"></summary><div class="fields" style="margin-top:16px">
       <label for="wifiCountry" data-i18n="wifi.country"></label><input id="wifiCountry" maxlength="2" pattern="[A-Z]{2}" autocomplete="off" placeholder="AT">
       <span class="field-label" data-i18n="wifi.openNetwork"></span><label><input id="wifiClearPassword" type="checkbox"> <span data-i18n="wifi.clearSavedPassword"></span></label>
-      <p class="hint" data-i18n="wifi.ethernetTakesPrecedence"></p>
+      <p id="wifiEthernetPriority" class="hint" data-i18n="wifi.ethernetTakesPrecedence"></p>
     </div></details>
     <div id="wifiChart" class="wifi-chart" data-i18n-aria-label="wifi.wiFiSignal"></div>
   </div>
@@ -136,7 +136,7 @@
       <p id="audioFormatsEmpty" class="hidden" data-i18n="audio.noDirectHardware"></p>
     </div>
     <div id="driftBox" class="hidden"><h3 data-i18n="audio.clockSynchronization"></h3><div class="fields"><label for="driftCorrection" data-i18n="audio.driftCorrection"></label><select id="driftCorrection" aria-describedby="driftHint driftNow"><option value="auto" data-i18n="common.automatic"></option><option value="resampling" data-i18n="audio.serverResampling"></option><option value="hardwareClock" data-i18n="audio.hardwareClock"></option></select><p class="hint" id="driftHint" data-i18n="audio.howThisRoom"></p><p class="hint" id="driftNow"></p></div></div>
-    <div id="dacBox" class="hidden"><h3 id="dacName" data-i18n="audio.dacSettings"></h3><p class="hint" data-i18n="audio.saveAppliesChanged"></p><div id="dacControls" class="fields"></div><div class="row" style="margin-top:20px"><button type="button" id="dacReload" data-i18n="audio.reloadCurrentDac"></button><button type="button" id="dacReset" data-i18n="audio.resetDefaultDac"></button></div></div>
+    <div id="dacBox" class="hidden"><h3 id="dacName" data-i18n="audio.dacSettings"></h3><p class="hint" data-i18n="audio.saveAppliesChanged"></p><div id="dacControls" class="fields"></div><div class="form-actions" style="margin-top:20px"><button type="button" id="dacReload" data-i18n="audio.reloadCurrentDac"></button><button type="button" id="dacReset" data-i18n="audio.resetDefaultDac"></button></div></div>
   </div>
 </section>
 

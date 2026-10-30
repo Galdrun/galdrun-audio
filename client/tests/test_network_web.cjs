@@ -16,6 +16,9 @@ const browser=launchEdge(9336,path.resolve('client/build/web-preview/edge-networ
    for(let i=0;i<50;i++){if(await evaluate("!document.body.classList.contains('page-loading')&&!!document.getElementById('wifiScan')"))break;await sleep(100)}
    assert(await evaluate("!document.body.classList.contains('page-loading')"),'Page failed to load');
    assert(await evaluate("!document.getElementById('networkBox').classList.contains('hidden')&&!document.getElementById('wifiScan').disabled"),'Firmware capability did not enable controls');
+   assert(await evaluate("!document.getElementById('wifiAdvanced').classList.contains('hidden')"),'Advanced Wi-Fi settings missing on managed firmware');
+   await evaluate("document.getElementById('wifiAdvanced').open=true");
+   assert(await evaluate("document.getElementById('wifiCountry').getBoundingClientRect().top-document.querySelector('#wifiAdvanced summary').getBoundingClientRect().bottom>=16"),'Advanced Wi-Fi heading needs spacing');
    assert(await evaluate("document.getElementById('save').disabled"),'Initial form should be clean');
    assert(await evaluate("!document.getElementById('deviceNameBox').classList.contains('hidden')&&!document.getElementById('deviceName').disabled"),'Device name missing on firmware');
    const clientFields=['room','clientId','deviceName','active','server','device'];
@@ -47,10 +50,12 @@ const browser=launchEdge(9336,path.resolve('client/build/web-preview/edge-networ
    await evaluate("document.getElementById('ethMode').value='static';document.getElementById('ethMode').dispatchEvent(new Event('change',{bubbles:true}))");
    assert(await evaluate("!document.getElementById('ethStatic').classList.contains('hidden')&&!document.getElementById('ethIp').disabled&&document.getElementById('ethIp').required"),'Static fields not enabled');
    await evaluate("document.getElementById('ethIp').value='10.0.0.38';document.getElementById('ethGateway').value='10.0.0.254';document.getElementById('form').dispatchEvent(new Event('input',{bubbles:true}))");
+   await evaluate("document.getElementById('wifiCountry').value='DE';document.getElementById('wifiClearPassword').checked=true;document.getElementById('form').dispatchEvent(new Event('input',{bubbles:true}))");
    assert(await evaluate("!document.getElementById('save').disabled"),'Network edit not tracked');
    await evaluate("document.getElementById('save').click()");
    for(let i=0;i<20;i++){if(await evaluate("networkWrites.length===1&&document.getElementById('save').disabled"))break;await sleep(100)}
    const writes=await evaluate('networkWrites');assert.equal(writes.length,1);assert.equal(writes[0].device.name,'kitchen-connector');assert.equal(writes[0].ethernet.ipMode,'static');assert.equal(writes[0].ethernet.ip,'10.0.0.38');assert.equal(writes[0].wifi.bssid,'aa:bb:cc:dd:ee:02');
+   assert.equal(writes[0].wifi.country,'DE');assert.equal(writes[0].wifi.clearPassword,true);
    assert(await evaluate("document.getElementById('msg').textContent.includes('Network reconnects')&&document.getElementById('save').disabled"),'Saved state/reconnect message missing');
    if(width===1200){await call('Page.navigate',{url});await sleep(1500);await evaluate("window.scrollTo({top:document.getElementById('networkBox').offsetTop-160,behavior:'instant'})");await sleep(100);const shot=await call('Page.captureScreenshot',{format:'png'});require('node:fs').writeFileSync('client/build/web-preview/raumfeld-network-scan.png',Buffer.from(shot.data,'base64'))}
    await call('Page.navigate',{url});await sleep(1500);
@@ -63,6 +68,7 @@ const browser=launchEdge(9336,path.resolve('client/build/web-preview/edge-networ
   await call('Page.addScriptToEvaluateOnNewDocument',{source:`const previousFetch=window.fetch;window.fetch=async(...args)=>{if(args[1]?.body&&JSON.parse(args[1].body).command==='getNetwork')return new Response(JSON.stringify({ok:true,supported:false}),{status:200});return previousFetch(...args)}`});
   await call('Page.navigate',{url});await sleep(1000);
   assert(await evaluate("document.getElementById('networkBox').classList.contains('hidden')&&document.getElementById('wifiScan').disabled&&!document.body.classList.contains('page-loading')"),'OS-managed devices must hide network controls');
+  assert(await evaluate("document.getElementById('wifiAdvanced').classList.contains('hidden')"),'OS-managed devices must hide advanced Wi-Fi settings');
   assert(await evaluate("document.getElementById('deviceNameBox').classList.contains('hidden')&&document.getElementById('deviceName').disabled"),'OS-managed devices must hide device name');
   console.log('PASS: unsupported firmware hides and disables network controls');
   await send('Browser.close');

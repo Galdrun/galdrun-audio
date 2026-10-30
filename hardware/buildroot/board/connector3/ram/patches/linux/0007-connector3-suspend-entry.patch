@@ -1,0 +1,34 @@
+From: Galdrun <galdrun@localhost>
+Subject: [PATCH] ARM: imx7d: connect the opt-in Connector 3 suspend port
+
+The RAM profile supplies the board-specific sources. Other i.MX7 machines
+do not install mappings or suspend operations.
+
+--- a/arch/arm/mach-imx/mach-imx7d.c
++++ b/arch/arm/mach-imx/mach-imx7d.c
+@@ -17,6 +17,9 @@
+ 
+ #include "common.h"
+ 
++void connector3_pm_map_io(void);
++void connector3_pm_init(void);
++
+ static int bcm54220_phy_fixup(struct phy_device *dev)
+ {
+ 	/* enable RXC skew select RGMII copper mode */
+@@ -84,6 +87,7 @@ static void __init imx7d_init_late(void)
+ {
+ 	if (IS_ENABLED(CONFIG_ARM_IMX_CPUFREQ_DT))
+ 		platform_device_register_simple("imx-cpufreq-dt", -1, NULL, 0);
++	connector3_pm_init();
+ }
+ 
+ static void __init imx7d_init_irq(void)
+@@ -104,6 +108,7 @@ static const char *const imx7d_dt_compat[] __initconst = {
+ 
+ DT_MACHINE_START(IMX7D, "Freescale i.MX7 Dual (Device Tree)")
+ 	.smp            = smp_ops(imx7_smp_ops),
++	.map_io         = connector3_pm_map_io,
+ 	.init_irq	= imx7d_init_irq,
+ 	.init_machine	= imx7d_init_machine,
+ 	.init_late      = imx7d_init_late,

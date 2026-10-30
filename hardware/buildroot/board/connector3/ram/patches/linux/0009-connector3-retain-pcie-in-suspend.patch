@@ -1,0 +1,36 @@
+From: Galdrun <galdrun@localhost>
+Subject: [PATCH] PCI: imx6: retain Connector 3 PCIe link across CPU-only suspend
+
+This RAM profile retains the Mega/Fast peripheral domain. Device-only
+suspend/resume restores WLAN, while resetting the host during the noirq
+phase loses the radio firmware/DMA state and breaks reinitialization.
+Keep this board's link and power supply running; other boards are unchanged.
+
+--- a/drivers/pci/controller/dwc/pci-imx6.c
++++ b/drivers/pci/controller/dwc/pci-imx6.c
+@@ -1271,6 +1271,12 @@
+ 	if (!(imx_pcie->drvdata->flags & IMX_PCIE_FLAG_SUPPORTS_SUSPEND))
+ 		return 0;
+ 
++	/* The Connector 3 suspend port retains the peripheral domain.
++	 * Its 88W8897 survives device host-sleep, but not a root-port reset
++	 * underneath the retained firmware/DMA state. Keep the link intact. */
++	if (of_machine_is_compatible("fsl,imx7d-teufel-streamer"))
++		return 0;
++
+ 	imx_pcie_msi_save_restore(imx_pcie, true);
+ 	if (imx_check_flag(imx_pcie, IMX_PCIE_FLAG_BROKEN_SUSPEND)) {
+ 		/*
+@@ -1296,6 +1302,12 @@
+ 	struct dw_pcie_rp *pp = &imx_pcie->pci->pp;
+ 
+ 	if (!(imx_pcie->drvdata->flags & IMX_PCIE_FLAG_SUPPORTS_SUSPEND))
++		return 0;
++
++	/* The Connector 3 suspend port retains the peripheral domain.
++	 * Its 88W8897 survives device host-sleep, but not a root-port reset
++	 * underneath the retained firmware/DMA state. Keep the link intact. */
++	if (of_machine_is_compatible("fsl,imx7d-teufel-streamer"))
+ 		return 0;
+ 
+ 	if (imx_check_flag(imx_pcie, IMX_PCIE_FLAG_BROKEN_SUSPEND)) {

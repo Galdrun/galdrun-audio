@@ -88,6 +88,14 @@ capability probes; `--rescan-audio` rebuilds it. See `src/app/CommandLine.cpp`
 for exact flags and `src/config/ClientConfig.cpp` for defaults/validation.
 Use explicit `--config` and `--audio-cache` paths for experiments.
 
+Advanced Wi-Fi controls are shared by managed Linux appliances and ESP32.
+Linux uses `NetworkSettings.cpp`; ESP32's `WifiSettings` persists/validates
+country selection and `WebUi.cpp` handles explicit password clearing. Empty
+ESP32 country keeps the SDK's automatic/world-safe policy; `app_main.cpp`
+applies the choice through `esp_wifi_set_country_code`. OS-managed network
+settings remain hidden. Verify `test_wifi_settings.cpp`, the ESP32 board builds,
+and both WebGui backends without applying live WLAN changes.
+
 Tests in `tests/` follow the component names: `test_stream_playback.cpp`,
 `test_matp_session.cpp`, `test_matp_audio_stream.cpp`, `test_timeline_source.cpp`,
 `test_drift_estimator.cpp`, `test_client_command_handler.cpp`, and
@@ -103,11 +111,60 @@ Connector 3's experimental RAM userland, native MCU UART/uinput driver,
 vendor-kernel D-Bus bridge and
 network-manager qualification limits are in
 [its hardware guide](../hardware/connector3.md#touch-buttons-audio-names-and-network-settings).
+Connector 3's clean installer must exclude OEM runtime files. The user's final
+2026-10-30 decision explicitly approves the working Marvell `15.87.19.p14`
+hardware blob and accepts the available licence's version mismatch; do not
+continue replacement-firmware research as a prerequisite. Read
+[the next-day handover](../hardware/connector3-handover-2026-10-31.md) first:
+work is stopped and the board is back on its original beta. The current radio
+hash guard still needs the approved exception; it must retain OEM-runtime
+rejection. `hardware/buildroot/scripts/connector3_content.py` checks unpacked content
+against source/license metadata; `test-connector3-content.py` runs its guards.
+The standalone RAM image omits the old vendor D-Bus bridge. The explicit
+`prepare-connector3-vendor-ram.py` test now builds/uploads that bridge separately.
+`build-connector3-storage-check.sh` and `verify-connector3-storage-check.py`
+implement the separate RAM-only NAND/USB qualification profile with a
+controller-level write refusal guard and read-only MTD partitions. They are
+not a persistent installer. Default generic RAM builds run the clean-content
+audit; private device-radio builds are explicitly marked ineligible for release.
 Its RAM image's ASoC machine driver is
 `hardware/buildroot/board/connector3/ram/galdrun-connector3-audio.c` (from the
 repository root), integrated by `hardware/buildroot/external.mk`; it selects
-the S810 PLL/MCLK family for native 44.1/48 kHz audio. See the hardware guide's
-latest handoff for build and hardware qualification status.
+the S810 PLL/MCLK family for native 44.1/48 kHz audio. It also exposes the
+stock-sign `Drift compensator` (-500..500 ppm; positive slows). The board file
+opts into the existing hardware clock path. `test-connector3-audio.sh` checks
+native rates and live trim readback while PCM stays RUNNING. See the hardware
+guide's latest handoff for build and hardware qualification status.
+Its CPU page reuses `CpuSettings.cpp` and the shared WebGui: the RAM board opts
+into `cpuFrequency`, mainline i.MX cpufreq reads the speed fuse, and the DTS
+connects the AXP152 DCDC4 supply (small regulator patch under that board's
+`patches/linux/`). Only 792/996 MHz are exposed. The selected speed is stored in
+`/etc/galdrun-cpu.conf`; RAM deployments must preserve it in their private
+overlay. `test_connector3_cpu_power_web.cjs <url>` is an explicit hardware
+integration check that changes/restores speed and standby. Suspend-to-idle
+being present does not qualify deep sleep: no Connector 3 suspend helper is
+shipped until a platform deep-suspend and wake path works.
+`connector3-pm.c` / `connector3-suspend.S` port CPU-off/DDR self-refresh using
+reserved OCRAM and retain the peripheral domain. The kernel port requires an
+explicit `galdrun,experimental-suspend` root DT property (or boot parameter
+`connector3_suspend=1`). The normal image does not enable it. The explicit
+hardware diagnostic is `hardware/buildroot/scripts/test-connector3-suspend.sh`;
+read the current hardware checkpoint before running it.
+Connector 3's `board/connector3/ram/mcu-buttons.cpp` (under
+`hardware/buildroot/`) also owns audio MCU initialization and its root-only
+`/run/galdrun-connector3-mcu.sock`. `Connector3Mcu.cpp` shares that service between
+`AlsaMixer.cpp` (room hardware volume/mute, card `Connector3` only) and
+`AlsaDacSettings.cpp` when
+the board enables `mcuAudioControls`, reusing the existing DAC page and
+card-specific persistence for hardware output level/mute. These two MCU values
+are read-only in DAC settings: API writes are rejected and reset preserves them;
+firmware restoration remains internal. The MCU reports 0..100 raw level with
+no dB calibration; no dB scale is invented. Clock trim is transient and belongs
+to synchronization; soundbar DSP commands are not exposed. MCU volume/mute API
+readbacks passed, but their audible effect remains a pending hardware test,
+explicitly deferred by the user; both RCA channels playing are confirmed.
+Run the MCU helper's `--self-test` and the RAM
+startup check, then verify power/mute readback and real RCA playback on hardware.
 
 Pi firmware uses the same network/SSH/standby services, with MAC-based Wi-Fi
 radio selection/hotplug and AP fallback. `getAudioProfile`/`setAudioProfile`

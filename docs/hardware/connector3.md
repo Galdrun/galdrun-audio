@@ -1,5 +1,665 @@
 # Connector 3 / Teufel Streamer: SSH access and experimental RAM build
 
+## End of day — 2026-10-30
+
+**Stopped at the user's request. Read [tomorrow's handover](connector3-handover-2026-10-31.md)
+first.** The final user decision is to **use the working Marvell hardware blob
+15.87.19.p14**, accepting the available licence's version mismatch. Do not keep
+searching for a replacement or treat extraction from the device as proof of
+Raumfeld authorship. Raumfeld OS/apps/daemons/libraries remain excluded. The
+current radio-hash guard and private-build classification need updating for
+this explicit exception tomorrow. That exception has not yet been implemented;
+no further hardware experiments were started after the stop request.
+
+Final verified state: original beta `2.12-snapshot-7` / `4.1.45`, trusted SSH at
+`10.0.0.58` over WLAN. No custom installation. All RAM experiments ended, UART
+capture stopped, and local Galdrun/build processes stopped. The detailed notes
+below describe earlier checkpoints, **not an active overnight RAM test**.
+
+## Detailed checkpoint — 2026-10-30, clean Wi-Fi qualification
+
+**User requirements:** produce a persistent USB installer comparable to
+Connector 2, with **no Raumfeld/OEM root filesystem, applications, daemons or
+libraries**. The user explicitly chose **clean, independently sourced and
+verified Wi-Fi before installation**; an Ethernet-only first install is not
+accepted. No custom NAND installation has taken place. The installed beta
+`2.12-snapshot-7` / kernel `4.1.45`, bootloader, environment and constants remain
+unchanged. Never reuse the older private `ram-local` payload as a clean release:
+its qualified radio firmware was extracted from the original device. **The
+later user decision above approves that specific hardware blob; rebuild the
+cleaned packaging rather than copying the whole older bundle.**
+
+**Active experiment at this checkpoint:** NXP public firmware **V15.68.7.p154**
+has been RAM-booted with the previously qualified source-built audio kernel.
+UART reports the exact 843828-byte download and `WLAN FW is active`, but the
+SSH readout then proved **initialization fails on command `0xfa`, action
+`0x3000`**, at about 15 seconds. `iw dev` is empty. Ethernet/SSH remains working
+at 100 Mbps/full duplex. **Wi-Fi is not qualified.** Scanning, association,
+DHCP, traffic and reconnect cannot pass without a working interface. No
+listening or hardware-volume result is inferred. The user
+deferred audible volume/mute qualification earlier; preserve that pending item.
+
+A second RAM boot used the same kernel/rootfs/firmware with only the PCIe DMA
+range changed from identity mapping to bus `0..0x1fffffff` -> CPU
+`0x80000000..0x9fffffff`. **It failed with the same `0xfa`/`0x3000` timeout and
+no wireless interface.** This did not establish a DMA-aperture fix. Its uploaded
+DTB hash is `e3ed34e7abc7517c81939271721a55221baa6b56d17d353882d8c37f59d32381`.
+The board is currently on that second RAM boot, Ethernet/SSH still working.
+Do not promote the test DMA range into the reusable base DT.
+
+Current p154 test files are under
+`hardware/buildroot/output/connector3-clean-wifi-p154/`:
+
+```text
+f9ef8e2f3fdb35372e74869b839fa1da9da1baafa2de9ceaba3bb909de70f044  zImage
+509edfb11dbcfe0d2d41843e6a7d2252e98f92b4fd28194268b8fcd15ad1e9cd  rootfs.cpio.gz
+d0a680e4cb66ea19e9395eb277dcc9ce9c03cc0db1ffd1962ab91b16b6c45d21  connector3.dtb (generic)
+f7d236e7dafdc0a9a0f3e40b8f6ac0d234c841a1eceea70db130988442814631  connector3.dtb (uploaded MAC overlay)
+c0ac6903dbc27b352887da6b871b6e0d38836bddd83ebc27506168396119a12b  kexec
+```
+
+The new SSH host key was generated at boot and is enrolled specifically for
+this p154 boot in `private/connector3/known_hosts_clean_radio_p154_20261030`.
+`reference/connector3-ssh-archive/clean-radio-command.py` uses that file with
+strict checking and the existing local diagnostic client key. Ethernet is
+reachable at `10.0.0.74`, MAC
+`50:1e:2d:3b:77:f4`. Verify the current UART boot and MAC, then use a separate
+strict known-hosts file for this experiment. Do not overwrite the beta's or
+previous RAM images' trusted host keys. The kernel has no persistent-storage
+drivers. The RAM client has generic settings; previous Galdrun settings/identity
+are saved privately and must not be mistaken for default release settings.
+Local core/server were already stopped; no playback test was started.
+
+For the **currently active DMA-zero boot**, use
+`clean-radio-dma-zero-command.py` and
+`private/connector3/known_hosts_clean_radio_p154_dma_zero_20261030`, not the
+first p154 host-key file. Its state is saved in
+`clean-radio-p154-dma-zero-state-20261030.txt`; its hashes are in
+`clean-radio-p154-dma-zero-boot-artifacts-20261030.json`.
+
+Receive-only UART capture is running on **COM5, 115200**, PID **35136**, started
+with an eight-hour window. Log:
+`hardware/buildroot/private/connector3/clean-wifi-qualification-20261030.log`.
+Check capture liveness rather than assuming it survived a long gap. Earlier
+capture PID 39016 was intentionally replaced; its log remains saved.
+
+### Clean-image build and firmware provenance
+
+`scripts/connector3_content.py` under `hardware/buildroot/` checks the actual
+unpacked image and requires a Buildroot source/license manifest. It rejects
+known OEM paths/libraries/daemons, the vendor-dependent
+`galdrun-connector3-buttons` bridge, vendor package/source URLs and the known
+device-extracted radio hash. These guards supplement source-build/provenance
+review; a filename scan alone is not proof of arbitrary binary ownership.
+Galdrun-owned legacy `raumfeld-network` helper names are also used on Connector
+2 and are not OEM runtime code.
+
+The standalone RAM post-build no longer packages that D-Bus bridge and removes
+stale cached copies. `prepare-connector3-vendor-ram.py` compiles/uploads it only
+when that explicit historical vendor-kernel test is invoked. The standalone
+image uses Galdrun's direct MCU UART service instead. Both diagnostic and
+generic RAM verifiers now run the content guards. Explicit private/device-radio
+RAM builds are marked ineligible for the clean installer.
+
+The freshly rebuilt **generic** RAM image in `output/connector3-ram/` passed:
+22 source packages, 81 ELF files, no OEM runtime bridge and no saved home Wi-Fi
+credentials. It uses upstream `linux-firmware` radio bytes, not the device blob:
+
+```text
+573f5cb44db54e3f06f0cf5baf0b7146bd1e40ee69785ad4bbc0012129f56dc9  rootfs.cpio.gz
+0a893270b75cd328f4055bbe8cd83ffda159aba63a18261980445c7b837094d0  rootfs.tar.gz
+cf4f51f41bd7ef4d7fe65fb76b8a2a0897bc70a0742bc4aea13d93b03fffd03a  upstream default radio
+```
+
+Its default radio previously timed out on command `0xfa`; do not claim generic
+Wi-Fi is qualified. The earlier working **device-extracted** radio is
+`b2c5e7f4f88b061b92be8113ddd5ec688da94729c3a5d07bec9e334335499538`
+(15.87.19.p14), kept privately for comparison only. A negative check proved that
+the clean-image guard rejects those exact bytes.
+
+Three different candidates were downloaded directly from immutable commits in
+[NXP's firmware repository](https://github.com/NXP/mwifiex-firmware), with their
+`LICENCE.Marvell`, `WHENCE` entry and source manifest retained:
+
+| Candidate | NXP commit | Firmware SHA256 |
+| --- | --- | --- |
+| p154, 843828 bytes; active RAM test | `5446916b53de395245d89400dea566055ec4502c` | `749524a74f33fb2b0cb96ca53996c3222ceb3ba5268d2ab383df5c90fb14d808` |
+| p119, 836540 bytes; not tested | `11db1311bff6fed84d11b03fbfb142209c1239ab` | `e6a1117d1aa6a5ae79fe8c4d8576507a1dcc737181b327767859a01930d668d4` |
+| WHENCE says p53, 816772 bytes; not tested | `a96efa0b60ca46acafa03960f45f84b96b12a73c` | `45996004293e0d013c2c95973384bc470c9bd38f4a81d8a728713fce8cedf7e0` |
+
+Sources and manifests are in ignored
+`downloads/connector3-upstream-radio/<commit>/`. Older inspected NXP i.MX
+firmware release trees contained no 8897 candidate; do not invent an upstream
+source for the device-extracted bytes. The p154 RAM image was built from the
+audited generic tar, replacing only the radio and adding its license/source
+records. Its complete CPIO audit passed, including the source-built client hash
+and console node. A first packing attempt lacked `/dev/console` because
+Buildroot adds it only to CPIO, not tar; that was caught and fixed **before
+booting** with a fakeroot-created character device, major/minor 5/1.
+
+### Storage and USB results already verified
+
+The signed USB diagnostic **cold-booted successfully with Ethernet DHCP and
+key-only SSH** at `10.0.0.74`, 100 Mbps/full duplex. Its hash is
+`1e117314f90c1692df5c9f274ba34f3e608aac2ca66c54d9c57592bdf188bdb2`.
+It contains eight source packages, 27 ELF files and no hardware firmware blobs
+inside its root filesystem. The separate OP-TEE loadable is built from source.
+Source/license evidence is in `output/connector3-diagnostic/licenses/` and the
+bound hardware report is `hardware-verification.json`. A normal software reboot
+returned to the original beta; the old SSH transport may time out during reboot
+even when UART shows successful recovery.
+
+The source-built read-only storage profile is
+`board/connector3/storage-check/`, built with
+`bash hardware/buildroot/scripts/build-connector3-storage-check.sh` after the
+audited diagnostic build. It reuses the diagnostic userspace and a separate
+cached kernel clone, not any vendor root filesystem. **All six NAND partitions
+are read-only**, and `readonly-nand.patch` rejects SEQIN/RNDIN/PAGEPROG/
+CACHEDPROG/ERASE1/ERASE2 commands at the GPMI controller entry point, including
+internal BBT writes. Do not test this guard by issuing destructive commands.
+`fsl,use-minimum-ecc` produces the required BCH8/512 layout on this NAND.
+
+The original kernel and the new protected kernel agree:
+
+| Item | Verified value |
+| --- | --- |
+| NAND | Toshiba TC58NVG2S0H, 512 MiB SLC |
+| Page / OOB / eraseblock | 4096 / 256 / 262144 bytes |
+| ECC | 8 bits per 512 bytes |
+| Partitions | 8 MiB bootloader; 512 KiB env; 512 KiB constants; 128 MiB settings; 12 MiB FIT; 363 MiB rootfs |
+| Protected MTD flags | `0x0` for all six partitions |
+| UBI | VID offset 4096; data offset 8192; LEB 253952 |
+| Bad PEBs | 6: two bad blocks plus four BBT-reserved blocks |
+| Readback | Original env/constants/FIT SHA256 match under the new kernel; zero uncorrectable ECC errors |
+
+`attach-readonly.c` is a small source-built reader helper; it refuses attaching
+MTD5 unless geometry matches and its writeable flag is clear. UBI attached with
+`ro_mode=1`; the original UBIFS root mounted **read-only**, then unmounted.
+No original files were copied into an image or executed. An initial diagnostic
+script stopped on missing `stat` after the successful mount; the subsequent
+cleanup verified the read-only mount, unmounted it and rechecked hashes/ECC.
+Modern UBI warns `reserved 25, need 34` for the old volume allocation: leave
+adequate bad-block reserve when creating the new UBI layout. Do not copy the
+vendor UBI/rootfs image as a workaround.
+
+Original env/constants/FIT reference backups are private under
+`private/connector3/storage-reference-20261030/`, with a manifest. They are
+rollback/reference data, **never image inputs**. `fw_printenv` reported a bad CRC
+using its installed configuration; it was read-only and no environment repair
+was attempted. Boot arguments and MTD sysfs supply the verified layout.
+
+The same protected kernel was extended with USB OTG1 host, GPIO1_5 VBUS, SCSI
+storage and FAT32. It read the user's 16 GB Verbatim stick, mounted it `ro`,
+hashed `connect3.img` to the qualified USB image hash, and unmounted it. NAND
+hashes/ECC stayed unchanged. These storage/USB tests were **kexec RAM tests**;
+they do not yet qualify storage cold boot, erase/program or a persistent install.
+
+```text
+787fab9557bd749853646555627683a8a8decf0370e04a02ce2446df73a79d71  initial protected NAND zImage
+03be47997fb47136184bb5542020474df3d350c9fde8c35d6e03641d334acb9b  protected NAND + USB zImage
+0dadd010a9ba6c486126c270d4c48bf4ed19bbf27665dafbbe96346f31b4cec8  protected NAND + USB generic DTB
+```
+
+The storage profile's frozen diagnostic archive inherited an outdated banner
+claiming no storage drivers. Its actual kernel, MTD flags and controller guard
+are checked explicitly. The diagnostic source banner has now been corrected to
+`no flash installer`; the qualified USB binary itself was not silently rebuilt.
+
+### Evidence, next work and recovery
+
+Ignored evidence/helpers under `reference/connector3-ssh-archive/`:
+
+- `usb-cold-boot-rmii-fixed-qualification-20261030.json` and matching runtime/UART logs;
+- `vendor-storage-inventory-20261030.txt`, `storage-ro-qualification-20261030.json`,
+  `storage-ro-ubi-finished-20261030.txt`, `storage-usb-ro-read-20261030.txt`;
+- `clean-radio-candidate-sources-20261030.json`, `clean-radio-p154-boot-artifacts-20261030.json`,
+  `clean-radio-p154-initial-state-20261030.txt` (the actual `0xfa` failure and empty wireless interface list);
+- `pack-clean-radio.sh`, `audit-clean-radio-candidate.py`, `boot-clean-radio.py`;
+- `usb-diagnostic-command.py`, `storage-command.py`, `storage-usb-command.py`
+  use separate strict known-hosts files for their respective boots. Their keys
+  do not automatically trust the current p154 boot;
+- `storage-ro-first-build-20261030/` preserves the initial qualified protected
+  kernel/DT/report; `output/connector3-storage-check/` now holds the USB variant.
+
+Immediate next step: compare the first-command DMA/IRQ/firmware behavior behind
+the common `0xfa` failure, keeping Ethernet recovery available. The DMA-zero
+experiment already failed and must not be presented as a fix.
+The other independently sourced firmware candidates remain untested.
+Do not fall back to the extracted radio for the requested clean installer.
+Preserve the existing client identity/settings from private backups when
+restoring the normal RAM client. Current active p154 RAM boot has not received
+an audible playback confirmation.
+
+Still required before a permanent installer: clean Wi-Fi qualification;
+standalone persistent rootfs/settings; source/license bundle; signed FIT and
+USB payload assembly; cold boot with storage; preflight/check mode;
+erase/program/readback and rollback qualification. The source-built OP-TEE
+diagnostic printed `No DTB`, an initcall failure and a zero-seed warning on
+cold boot. Its handoff works, but service/entropy setup remains unqualified for
+production. Upstream RNGB support in this pinned source defines only i.MX6
+bases, not i.MX7: do not blindly enable it or invent an RNG address. No secure
+monitor configuration change was made during that investigation.
+
+For normal recovery, reboot the RAM image normally, or disconnect power,
+remove the USB stick and power on **without Reset**. Beta returns on WLAN
+`10.0.0.58` with its original trusted host key; it can take roughly a minute.
+Holding Reset with an install image is a different operation. No writable
+Connector 3 installer has been created or run. Preserve all existing dirty
+workspace changes; no commit/reset was requested.
+
+## USB installer preparation — 2026-10-30
+
+**A persistent Galdrun overwrite installer is not ready.** The current working
+image boots through kexec; its compressed root filesystem alone is about 15 MB.
+The factory bootloader loads at most 12 MiB from USB and the installed FIT
+partition has the same limit. A persistent build needs a separate root filesystem,
+NAND geometry/ECC qualification, settings persistence, installation readback and
+cold-boot/rollback testing. Connector 2's unsigned image and partition layout
+cannot be reused. No NAND or bootloader writes were performed for this step.
+
+The first signed USB check **cold-booted Linux 6.12.112 and reached `/init` and
+the UART shell** on this board. Ethernet failed: `MDIO device at address 0 is
+missing`, then `Unable to connect to phy`. The diagnostic profile lacked the
+working RAM kernel's `0001-imx7d-streamer-rmii-reference-clock.patch`; generic
+i.MX7 initialization cleared the ENET2 reference-clock output direction.
+The diagnostic now reuses that exact patch through `BR2_LINUX_KERNEL_PATCH`.
+The verifier refuses an unpatched kernel; a negative regression check passed.
+
+The rebuilt **RAM-only USB boot check** is available at
+`hardware/buildroot/output/connector3-diagnostic/connect3.img`:
+
+```text
+1e117314f90c1692df5c9f274ba34f3e608aac2ca66c54d9c57592bdf188bdb2  connect3.img
+```
+
+The signed FIT is 8,717,448 bytes, padded to 12,582,912 bytes for the USB file.
+It incorporates the Ethernet IPG/reference-clock consumers, MDIO reset sequence,
+carrier/PHY GPIO levels and disabled CAAM block verified during the RAM-client
+bring-up, plus the working early UART console. Host verification passed:
+RSA4096 signature, FIT size, actual signed DTB, Ethernet clocks/reset, disabled
+CAAM, the RMII clock-direction patch, key-only SSH, absence of host private keys
+and disabled storage drivers. The control DT requires the RSA4096 configuration
+signature; a deliberately corrupted signature was rejected by `fit_check_sign`.
+The signing files stay in the ignored private directory and are not packaged.
+This build contains no Galdrun client, audio test or flash installer.
+
+**USB cold boot, Ethernet DHCP and key-only SSH passed on this rebuilt image.**
+The user replaced the earlier `connect3.img` (SHA256
+`c4625692f2a6a02b1f560f5fb556838a494c03303c2d7771110567e14981c9b5`)
+on the stick with this rebuild. To repeat the check, copy only this `connect3.img` into
+the root of a FAT32 stick, insert it with power disconnected, hold Reset while
+connecting power and keep holding Reset for 10 seconds. Ethernet DHCP hostname
+is `connector3-diag`; the image accepts the existing local diagnostic SSH public
+key. Capture COM5 at 115200 during this check. Linux cannot access persistent
+storage in this profile. To return to the installed beta, disconnect power,
+remove the stick and power up normally without Reset. Earlier failed USB trials
+do not qualify this newly built image. A successful Ethernet/SSH cold boot is the
+next prerequisite for the persistent installer, not proof that NAND installation works.
+
+First-boot evidence is in ignored
+`hardware/buildroot/reference/connector3-ssh-archive/usb-cold-boot-first-20261030.{log,json}`.
+The monitor handed off to Linux but printed `No DTB`, an initcall failure and
+`Warning: seeding RNG with zeroes`; OP-TEE service/entropy initialization remains
+unqualified for a production image. This does not establish a defect in Linux's
+separate SSH key generation. Keep the diagnostic separate from a release.
+
+Rebuild with `hardware/buildroot/scripts/build-connector3-diagnostic.sh`; see
+[the diagnostic build procedure](raumfeld/connector3.md#build-and-checks).
+The later clean-image/storage/Wi-Fi checkpoint above supersedes the runtime
+state at this earlier USB preparation stage. The qualified USB diagnostic file
+remains unchanged; it is not a writable installer.
+
+## Hardware clock, room volume and suspend port — 2026-10-30
+
+**Final runtime verified:** after the user's normal power cycle, beta returned
+over Wi-Fi and the final normal RAM image booted successfully. It is running
+at **10.0.0.74 over Ethernet (100 Mbps/full duplex)**, with the normal network
+supervisor managing the wired default route; WLAN is down while Ethernet is
+preferred. Saved WLAN settings remain intact. CPU speed restored to **792 MHz**.
+The failed peripheral-PLL suspend variant was rolled back. The live DT has no
+experimental suspend property, `/sys/power/mem_sleep` is `[s2idle]`, and the
+client reports **`deepSleep:false`**. Current verified base hashes:
+
+```text
+f9ef8e2f3fdb35372e74869b839fa1da9da1baafa2de9ceaba3bb909de70f044  zImage
+9b95cf075645fe14d7fb15ec16528e11e4fcbbac1b992e90c9960dea655e5240  rootfs.cpio.gz
+d0a680e4cb66ea19e9395eb277dcc9ce9c03cc0db1ffd1962ab91b16b6c45d21  connector3.dtb
+```
+
+The stock `imx-s810.c` implements a real **-500..500 ppm** fractional audio
+PLL trim; positive values slow the DAC. The RAM machine driver now exposes
+the same `Drift compensator` control and the board file opts into Galdrun's
+existing hardware-clock path. A board-scoped clock patch permits changing the
+PLL while its post-dividers are prepared; the dividers stay fixed during trim.
+All eight native rates, repeated 44.1/48 kHz switching, and live +/-500/100/0
+ppm writes passed with the PCM RUNNING and exact PLL rate readback.
+Repeat with `hardware/buildroot/scripts/test-connector3-audio.sh` over SSH.
+
+The stock kernel exposes no DAC playback-volume mixer. The verified MCU UART
+service provides Output Level (0..100), mute and audio power. `AlsaMixer.cpp`
+now connects that service to the existing room hardware-volume interface for
+`hw:CARD=Connector3,DEV=0`; `Connector3Mcu.cpp` also serves the existing locked
+DAC page. Real MATP volume/mute changes and readback passed with streamed
+44.1 kHz music, zero underruns and hardware clock correction selected. Raw MCU
+level has no dB calibration; the exact attenuation stage and audible level
+curve have not been qualified. The CPU still supplies I2S data and clocks;
+MCU control ownership does not establish the MCU-to-DAC physical wiring.
+
+**Listening/test status:** the user confirmed that **both RCA channels play**
+on the final image. **Audible hardware volume and mute effects still need a
+listening test; the user explicitly deferred that qualification.** The longer
+67 -> 10 -> 67 comparison completed with matching MCU readback, but no audible
+volume result was confirmed. Do not describe attenuation or mute as audibly
+verified. Output Level is restored to **67**, unmuted. Final streamed `Bloke`
+(existing queue item 730, 44.1 kHz stereo S16_LE) has hardware volume and hardware
+clock paths active, with **zero underruns and zero recoveries** at the final
+check. All eight native rates and live trim passed again on this final image.
+
+`connector3-pm.c` and `connector3-suspend.S` port the stock CPU-off/DDR
+self-refresh path using reserved OCRAM, retaining the peripheral domain.
+The private diagnostic DT opts in with `galdrun,experimental-suspend` on `/`;
+the reusable base DT does not. RTC wake passed repeatedly, including explicit
+`CPU-off resume=1` evidence. Retaining this board's PCIe link across noirq
+suspend fixed the observed radio reinitialization failure; WLAN reconnects
+after CPU-off resume. **Ethernet magic-packet wake is still under investigation;
+Deep Sleep remains hidden in the appliance UI.** The explicit hardware
+diagnostic is `hardware/buildroot/scripts/test-connector3-suspend.sh`.
+
+Ethernet is now **100 Mbps/full duplex at 10.0.0.74** after the user's cable/
+port change. A matching 102-byte magic packet was received specifically on
+`eth0` UDP 9. WOL arm/readback works, but tests so far woke through the RTC
+fallback (IRQ 36), not Ethernet. The MAC's magic/sleep flags and wake mask were
+correct; its magic interrupt was not recorded during sleep. Qualification
+found no working Ethernet wake configuration. Keeping peripheral PLLs outside
+the stock suspend override sequence also prevented RTC resume and required a
+normal power cycle; that variant was rolled back. No NAND or U-Boot writes.
+
+All six rebuilt Linux client CTest suites passed (53.44 s), including the MCU
+room-volume adapter check. ARM client and RAM-image build/verifier passed;
+RAM startup and local/generic Wi-Fi firmware selection regressions passed.
+Runtime evidence is under ignored `hardware/buildroot/reference/connector3-ssh-archive/`:
+`hardware-controls-native-trim-20261030.txt`, `hardware-controls-room-volume-20261030.json`,
+`hardware-controls-cpu-off-rtc-wifi-20261030.txt`, `hardware-controls-fec-no-magic-20261030.txt`
+and `hardware-controls-magic-packet-delivery.txt`. The RTC/CPU-off evidence is
+from diagnostic builds with the explicit private DT property; it does not
+qualify deep sleep on a newly rebuilt base image.
+
+Final-image evidence is `hardware-controls-final-verification.json`,
+`hardware-controls-final-runtime-20261030.txt`,
+`hardware-controls-final-native-trim-20261030.txt`,
+`hardware-controls-room-volume-20261030.json` and
+`wifi-hardware-controls-final-recovered-20261030-artifacts.json`. The final
+report checks the upload's kernel hash, live client/release hash, MCU helper
+and board-file hashes against the packaged rootfs, CPU speed, PCM, hardware
+actuators and disabled Deep Sleep. UART capture is
+`hardware/buildroot/private/connector3/hardware-controls-final-recovered-20261030.log`.
+The installed beta, NAND image and U-Boot remain unchanged. Local core/server
+are running with the existing configurations; no queue entries were added or
+removed and no persistent room-volume preference was changed.
+
+## Earlier checkpoint — 2026-10-30 CPU, RCA playback and hardware controls
+
+**CPU follow-up implemented and verified; Deep Sleep remains open:** the new
+CPU-enabled RAM image is running at **10.0.0.58 over WLAN**, with **792 MHz**
+saved in `/etc/galdrun-cpu.conf` and a measured **1.0 V** CPU rail. Both the
+status clock and CPU selector work. Actual 792/996 MHz save/readback, usage
+clock display, manual standby/wake and capability gating passed at **1200/320
+px**, on both the diagnostic boot and final base-image reload. The saved
+792 MHz setting restored after the RAM-to-RAM reload. All eight native audio
+rates and repeated 44.1 → 48 → 44.1 kHz switching passed on the final image.
+Real streamed `Bloke` (Republica), native 44.1 kHz stereo S16_LE, passed at
+792 MHz with advancing hardware pointers and zero underruns before that reload.
+The new image has not received a fresh user listening confirmation.
+Final runtime evidence is `reference/connector3-ssh-archive/cpu-power-verification.json`
+and `cpu-final-client-status.json`. A later check after the disruptive native/
+standby tests found an empty buffer with accumulated underruns. A graceful
+client restart and explicit existing queue item 730 / `fromStart:true` restored
+44.1 kHz music at 792 MHz with a filled buffer and fresh zero-underrun counters.
+Do not treat the earlier counters or this recovery as sustained-playback
+qualification; that remains open. No hardware wake test was run.
+
+Root cause: the earlier bring-up kernel explicitly disabled cpufreq/suspend
+and its board file omitted `cpuFrequency`. The fix enables mainline i.MX
+speed-grade/cpufreq support, connects the stock I2C4 pins and AXP152 DCDC4 CPU
+supply, and adds a small regulator patch using standard regmap voltage ops.
+Other PMIC rails, enable bits and switching frequency remain untouched. Only
+normal 792/996 MHz are exposed; optional 1.2 GHz overdrive is excluded.
+
+**Do not enable or claim Deep Sleep yet.** Even with `CONFIG_SUSPEND=y`,
+`/sys/power/mem_sleep` contains only `[s2idle]`, with no `deep` state. An
+optional private PSCI probe returned `0xffffffff` for PSCI_VERSION (Linux
+misprints this as `65535.65535`). The running final base DT has **no PSCI
+node**; the probe was removed by a successful RAM-to-RAM kexec. Deep sleep
+requires usable secure firmware or a mainline port of the stock NXP
+OCRAM/GPC/DDR suspend implementation. The published stock `pm-imx7.c` and
+`imx7-cpufreq.c` were extracted under ignored `reference/connector3/` for
+investigation. No Connector 3 suspend helper is installed; the UI/API correctly
+report `deepSleep:false`. Existing manual/automatic audio standby stays available.
+
+**Historical Ethernet state:** the earlier cable had no carrier. The user has
+since requested wake testing and replaced the cable/port; the current link and
+wake qualification status are in the hardware-controls checkpoint above.
+
+Current base artifacts (the private overlay preserves network/client/DAC/CPU
+settings; no NAND, U-Boot or beta changes):
+
+```text
+eadea62e72a66291691083687b0885f1a9ce5958bccac9e73e46881c6de4e9d7  zImage
+83478c42fe54a7572e6826cfb5b8be43aa7257f73317c4ca92af6a4ef32a1029  rootfs.cpio.gz
+d316e300077ab20851d800c30601b94b8564652cda62bd864e2377e9abd9209a  connector3.dtb
+```
+
+Build/artifact verifier passed. Runtime evidence under ignored
+`reference/connector3-ssh-archive/`: `cpu-power-before.txt`,
+`cpu-power-check.txt`, `cpu-power-792mhz.txt`, `cpu-music-792mhz.txt`,
+`cpu-final-ethernet.txt`, `cpu-final-native-rates-20261030.txt`, and
+`wifi-cpu-final-ram-reload-20261030-{artifacts.json,console.txt}`.
+UART captures are `private/connector3/cpu-power-20261030.log` and
+`cpu-final-ram-reload-20261030.log`. Repeat the browser check explicitly with
+`node client/tests/test_connector3_cpu_power_web.cjs http://10.0.0.58:4720/`;
+it changes/restores CPU speed and standby. Run it after, not during, the native
+rate test, which temporarily stops the client.
+
+Local core/server were restarted hidden using the existing `.run` configs.
+They must run outside the restricted process sandbox: otherwise provider token
+and AI settings reads fail with access denied and Tidal appears unauthorized.
+Restarting with normal host permissions restored the existing login; no new
+authentication was needed. Playback uses existing queue item 730 with explicit
+`fromStart:true` after a stack restart. No queue entries were added or removed.
+
+**Advanced WLAN follow-up complete:** shared Advanced Wi-Fi controls now
+include a 16 px gap below the summary. Managed Linux clients retain country/
+password-clear settings; ESP32 gains validated country persistence, SDK startup
+application and explicit password clearing. Unsupported OS-managed clients hide
+the section. Both ESP32 board builds, Linux/ARM builds, the RAM image verifier
+and all five Linux CTest suites (53.48 s) passed. Browser checks covered managed
+Linux, unsupported clients, and a mocked ESP32 backend at desktop/mobile widths,
+including country/automatic and password-clear save payloads. Live WLAN settings
+were not changed; ESP32 hardware application is not yet physically qualified.
+The updated client is deployed to the existing Connector 3 RAM runtime.
+On restarting the local stack, the saved position for current queue item 730
+was 411999 ms, beyond that source's length (`OffsetOutOfRange`). Normal resume
+failed; explicitly selecting `item:730` with `fromStart:true` reset its offset
+to zero and restored playback. Feature verification is recorded in ignored
+`reference/connector3-ssh-archive/advanced-wifi-verification.json`.
+No queue entries or network settings were changed.
+
+**DAC action alignment follow-up complete:** the shared `client-settings.html` now uses
+the existing right-aligned, wrapping `form-actions` class for Reload/Restore.
+This markup is shared by every client WebGui. Client/RAM-image builds and artifact
+verification passed. The updated client is applied to the running RAM session;
+English/German browser checks at 1200/320 px passed right alignment and wrapping
+without overflow. Screenshots: `private/connector3/dac-actions-<width>-<language>.png`.
+The rebuilt rootfs has not been booted again; audio behavior is unchanged.
+
+**DAC-lock follow-up complete:** Output Level and Output Switch are now visible
+but locked in the live WebGui. Both MCU controls have `readOnly:true`; inputs
+and reset are disabled, `setDac` is rejected, and API reset preserves the current
+hardware values. Saved firmware settings still restore internally. Desktop/mobile
+checks at 1200/320 px passed metadata, disabled controls, exclusion from saves,
+direct-write rejection, reset and reload. All five rebuilt Linux CTest suites
+passed again (53.05 s). Linux/ARM builds and the updated RAM-image artifact
+verifier passed. The updated client was hash-verified and applied to the existing
+RAM runtime; **the rebuilt rootfs itself has not been booted again**.
+
+The earlier DAC/Advanced-Wi-Fi-only `rootfs.cpio.gz` hash was
+`4c15a88e97b53e6ca22f50436ba407ade1effeb1622c48e1bb985da25f67189f`
+(superseded by the CPU-enabled build above).
+`hardware-verification.previous.json` preserves the playback-qualified prior
+image described below. Current build checks remain in `ram-verification.json`;
+do not run the old `record-rca-verification.py` against these new base artifacts
+without updating its boot-attempt evidence and actually booting that image.
+Client patch evidence: `reference/connector3-ssh-archive/rca-dac-lock-runtime.json`;
+screenshots: `private/connector3/rca-locked-controls-{1200,320}.png`.
+
+**Earlier RCA-qualified runtime (superseded by the CPU build above):** the rebuilt **Linux 6.12.112 RAM image** ran
+at **10.0.0.58 over WLAN**, with the Galdrun client, automatic MCU audio wake,
+and hardware DAC settings enabled. Local core and .NET server are running hidden
+with the existing `scripts/.run/config/` configs and playback store. Connector 3
+is `c170ac6d4af8eddd`, zone `zone-d57b26ea`. Music was started from the existing
+queue (`For Love`, Lush, native 44.1 kHz stereo S16_LE). **The user confirmed
+clean music on both RCA/chinch channels on this final artifact.** The user
+previously confirmed both RCA channels with a direct 48 kHz tone after MCU wake.
+NAND, U-Boot and installed beta remain unchanged; this is still a RAM image.
+
+**Final-image verification passed:** all eight advertised native rates with
+RUNNING and advancing hardware pointers, including 44.1 → 48 → 44.1 kHz;
+real MATP music playback with a correctly scheduled start in **301 ms**, advancing
+hardware pointers and **zero underruns**; WLAN routing and SSH; live client,
+MCU helper and board-file hashes matching the built artifacts; no diagnostic
+preload. The DAC page passed real desktop/mobile checks at 1200/320 px, hardware
+volume/mute write and readback, restore-initial-settings, and rejection of
+invalid ranges, stale card identity and unsupported DSP controls. Hardware
+settings were restored to **Output Level 67, Output Switch 1 (unmuted)**.
+The settings and baseline also survived the private-overlay RAM reload.
+
+Playback-qualified base artifacts before the DAC-lock follow-up (current built
+artifacts are listed in `hardware/buildroot/private/connector3/ram-local/SHA256SUMS`):
+
+```text
+92f0e4a57dd2e7192a1c8f720ed52bed930a62b3459af16c5750696f391046c1  zImage
+a1d1253ac09ce8b53f8a2bc1a012536719838457852974ed04b5e8f1995c2b56  rootfs.cpio.gz
+e61f4a07afaf15b7861246a526132d2deb27ff9c83013d7035f6c8e98a2a771c  connector3.dtb
+```
+
+`SHA256SUMS` also covers `rootfs.tar.gz` and `kexec`. The separate, hash-bound
+`hardware-verification.previous.json` records successful boot, rates, streamed music,
+WebGui and hardware controls; **`audible_rca_music_verified:true` records the
+user's listening confirmation**. The build-only `ram-verification.json` deliberately keeps
+`hardware_boot_verified:false` / `audio_verified:false`; do not change its scope.
+Exact private DTB/initramfs upload hashes are in
+`reference/connector3-ssh-archive/wifi-rca-final-image-20261030-artifacts.json`.
+
+**Fixed analog silence:** ALSA RUNNING did not power the carrier DAC. The MCU
+was in power **2 (Standby)** with mute **1**. Verified vendor enumeration and
+actual replies establish Set/Get/Notify types 0/1/2; PowerState `0x0050`
+(0 On, 1 Suspend, 2 Standby), Mute `0x0010`, Volume `0x0011`. Native
+`board/connector3/ram/mcu-buttons.cpp` now sets On/unmuted and verifies readback
+at startup, then owns the root-only `/run/galdrun-connector3-mcu.sock` for audio
+requests while retaining touch-button handling. Requests drain UART TX and wait
+100 ms between commands: immediate back-to-back GETs caused MCU ACK status 2
+(out of memory). Mute ramps asynchronously, so `setAudio` waits up to two seconds
+for applied-state GET readback, rather than treating ACK as completion.
+Startup on the final image confirmed `MCU audio power On: 1; unmuted: 1`.
+Hardware ID is `0x00000600`, MCU firmware `0x000417b8`, input source `0x100`.
+
+**Fixed playback timing:** this ARM ALSA combination returned elapsed audio time
+from the driver timestamp getter, while the status timestamp was correctly
+monotonic. A diagnostic showed CPU/status ~1818 s but driver/audio ~0.4 s;
+this caused repeated `cannot start timeline 0 ns: the start is 98 s away`.
+`client/src/audio/linux/AlsaBackend.cpp` now accepts the driver timestamp only
+within one hardware buffer of status time, otherwise using status time. The
+final client reports `clock.quality:estimated` with the correct monotonic epoch
+and schedules playback normally. The ARM client dynamically links the image's
+ALSA 1.2.13; its cross-toolchain headers use 1.2.4. Temporary diagnostic
+`LD_PRELOAD=/run/alsa-stamp-trace.so` is **absent from the final runtime/image**.
+
+**Hardware WebGui controls:** `AlsaDacSettings.cpp` reuses the existing
+`getDac`/`setDac`/`resetDac` page, validation, rollback and card-specific storage
+for the MCU's Output Level (0..100) and Output Switch. Board capabilities are
+`dacControls`, `selectedCardDacControls`, `mcuAudioControls`; init waits for the
+MCU socket. Settings are `/etc/galdrun-dac.json.Connector3`, initial baseline is
+that path plus `.defaults`. English/German hints distinguish hardware output
+level from the room's software volume. SampleRate, AudioMode, balance and
+3BandEq queries were rejected by this MCU; do not expose soundbar DSP commands
+or Connector 2's CS4271 controls. The vendor `*-alsa.xml` files configure its
+software EQ/routing chain, rather than describing these hardware controls.
+
+**Checks completed:** Linux and ARM client builds; all five freshly rebuilt
+Linux CTest suites (53.47 s), including the new elapsed-timestamp regression;
+native and ARM-emulated MCU self-tests, including delayed mute readback and
+rejected commands; RAM init regression; final image build/artifact verifier;
+final-image hardware rates and real WebGui/API checks. COM5 captured **30829
+bytes** including beta recovery, final kernel startup and WLAN initialization:
+`private/connector3/com5-rca-final-image-20261030.{bin,log}`. Keep RXD/GND wiring.
+
+**Evidence/helpers (ignored, relative to `hardware/buildroot/`):** final rate,
+music and client-status evidence are
+`reference/connector3-ssh-archive/rca-final-{native-rates,music-runtime,client-status}-20261030.*`.
+`record-rca-verification.py` checks live hashes/state and writes the hardware
+manifest (it initializes audible confirmation to pending; update that field
+only after the user confirms). `test-rca-controls.cjs` exercises the actual page;
+screenshots are `private/connector3/rca-controls-{1200,320}.png`.
+`ram-command.py` accepts `CONNECTOR3_HOST=10.0.0.58` with strict host-key alias .74.
+
+To load another build, normally return to beta with
+`wifi-ram-test.py <attempt> --return-vendor --wifi-only`, then use
+`wifi-ram-test.py <attempt> --boot --local-image --wifi-boot`. This private helper
+preserves network/client/DAC settings and the initial DAC baseline. `--wifi-boot`
+uses `ETH_INTERFACE=wifi-test-no-ethernet` only in the private board overlay,
+avoiding mainline's false Ethernet carrier/preference, and waits for SSH at .58.
+Capture COM5 before reboot/loading. Rebuild with the existing two-argument local
+Wi-Fi firmware command below. WSL/device access needs execution-tool escalation;
+some automatic reviews timed out, and the permitted single retries succeeded.
+Never print network configs, keys or provider secrets. No commit was requested.
+
+**This playback/WebGui task is complete.** The device is left running the final
+RAM image with music playing, hardware level 67 and output enabled. Cold boot,
+persistent installation, optical output and long-running/grouped playback remain separate
+qualification tasks. This checkpoint supersedes current-runtime/next-action
+statements in the older dated history below.
+
+**Resume checkpoint (2026-10-30, after the session limit):** SSH currently
+confirms the installed **beta 2.12-snapshot-7 / Linux 4.1.45 at 10.0.0.58**.
+Ethernet .74 is unreachable. No power cycle or new RAM load was requested in
+this resumed check. The previous tool process IDs have expired. Source changes
+are already present in existing commit `b9a3717`; the working tree was clean
+before this handoff update. Do not discard that commit or rebuild older code.
+
+The **latest native audio fix completed its build and artifact verifier**.
+It releases private clock references before retuning the PLL, addressing the
+earlier EBUSY. Its RAM load was uploaded, read back and hashed; COM5 captured
+kernel/userspace startup in `private/connector3/com5-native-audio-rate-gate.log`.
+There is **no completed native-rate playback test or audible RCA verification
+for that revision**. The device is now on beta; do not describe it as currently
+running the custom image or infer that playback passed from the UART log.
+
+Latest local build: `hardware/buildroot/private/connector3/ram-local/`:
+
+```text
+92f0e4a57dd2e7192a1c8f720ed52bed930a62b3459af16c5750696f391046c1  zImage
+4ea49bea4bc7e2c38dd8d62da27fae99031e07fc2e60e47daafa4ef88338bfed  rootfs.cpio.gz
+e61f4a07afaf15b7861246a526132d2deb27ff9c83013d7035f6c8e98a2a771c  connector3.dtb
+```
+
+The uploaded private overlay hashes are in
+`reference/connector3-ssh-archive/wifi-native-audio-rate-gate-artifacts.json`.
+Keep the build-time report's `hardware_boot_verified:false` and
+`audio_verified:false` separate from the earlier WLAN hardware report.
+
+**Next action:** retry beta Ethernet using the existing `ethernet-retry.py`,
+then load this completed local build with `wifi-ram-test.py <new-attempt>
+--boot --local-image` (capture COM5 first). Avoid `--wifi-loader`: the earlier
+attempt with Ethernet down did not regain access. Once RAM SSH at .74 is
+verified, execute `hardware/buildroot/scripts/test-connector3-audio.sh` on the
+device using `reference/connector3-ssh-archive/ram-command.py`. It bounds each
+silent ALSA test, checks advancing hardware pointers at all advertised rates,
+tests 44.1/48/44.1 switching and restores the client. Then resume the user's
+existing Connector 3 queue and inspect MATP readiness/ALSA state; the user is
+testing **RCA**, not optical. Record a new hash-bound hardware manifest only
+after the actual checks pass. The earlier failed native-rate log is not a
+result for this latest revision. NAND/U-Boot remain unchanged.
+
 **Latest findings (2026-10-29): WLAN works under our source-built Linux
 6.12.112**, using this device's radio firmware and the corrected Wi-Fi power
 sequence. SSH over Wi-Fi, DHCP, routing and five gateway pings with zero loss
@@ -70,8 +730,8 @@ The corrected clock-ID image booted and the client successfully prepared
 Native 44.1 kHz returned **EBUSY (-16)** because prepared post-divider clocks
 rate-protect their entire PLL parent tree. The driver now releases its private
 clock references before retuning and re-enables them before SAI hw_params;
-cleanup tracks whether enabling succeeded. This revision is building now;
-its dual-family live test is pending. The preceding image was normally
+cleanup tracks whether enabling succeeded. This revision subsequently built;
+its dual-family live test is pending (see the 2026-10-30 checkpoint above). The preceding image was normally
 rebooted to beta after saving settings (no user power cycle required).
 Driver source is copied by a pre-build hook and included in the reconfigure
 fingerprint, so further C-only corrections can rebuild incrementally. Kconfig/
@@ -946,12 +1606,10 @@ The next diagnostic kernel disables PCIe link power transitions and enables
 targeted firmware-start logging. A scan-worker fix cannot replace a working
 radio driver.
 
-The RAM kernel deliberately disables suspend/PM. ARM SMP consequently does not
-offer `KEXEC`; the previously requested Kconfig symbol was ineffective and was
-removed. Each subsequent test is loaded by the unchanged vendor beta instead.
-The static `kexec` binary in the artifact is for that vendor-side loader, not
-evidence that the running RAM kernel can load another kernel. A normal reboot
-returns to the installed beta. Live settings must be saved privately first.
+The earlier bring-up kernel disabled suspend and consequently lacked ARM SMP
+`KEXEC`. The CPU follow-up at the top enables suspend support and has verified
+RAM-to-RAM kexec. Its base DT still lacks platform deep suspend; only s2idle
+is available. Save live RAM settings privately before any reload or reboot.
 
 ## Remaining work and retest (2026-10-29)
 
@@ -960,7 +1618,7 @@ It describes the custom-kernel RAM profile, not the installed vendor beta.
 
 | Area | Remaining work |
 | --- | --- |
-| Power | Standby/deep sleep, wake behavior, PMIC integration and CPU power management. Suspend, CPU idle and frequency scaling are disabled; only CPU0 is enabled. |
+| Power | CPU clock/792–996 MHz selection, voltage transitions and saved-speed restore verified. The opt-in CPU-off/DDR self-refresh port passed RTC wake on diagnostic builds; Ethernet wake remains unqualified and appliance Deep Sleep stays hidden. CPU idle remains disabled and only CPU0 is enabled. See the latest checkpoint above. |
 | Wi-Fi | Initialization, scan, association, DHCP and WLAN-only SSH/traffic verified with the local 15.87.19.p14 radio firmware, including the final clean rebuilt image. Reconnect, setup-AP fallback and sustained traffic remain unqualified. Generic upstream radio firmware still times out on `0xfa`. |
 | Ethernet | Previously verified at 100 Mbit/s full duplex under both kernels. Repeated boot/link acquisition still needs qualification; transient no-carrier does not establish a cable fault. |
 | Audio | Verify audible RCA and optical playback, MCU mute/volume behavior, sample rates and sustained/grouped playback. The custom DTS describes SAI1 only; the vendor's SAI2 digital playback path and simultaneous output are missing. Format negotiation alone is not an audio test. |

@@ -25,11 +25,11 @@ install -m 0600 "$common/etc/galdrun-network.conf" "$target/etc/galdrun-network.
 install -m 0600 "$board/network.conf" "$target/etc/raumfeld-network.conf"
 # Only the network supervisor starts these services.
 rm -f "$target/etc/init.d/S50hostapd" "$target/etc/init.d/S80dnsmasq" "$target/etc/init.d/S50wpa_supplicant"
+# The standalone image talks directly to the MCU. The old D-Bus bridge depends
+# on the vendor OS and is built separately by its explicit vendor-test helper.
+rm -f "$target/usr/sbin/galdrun-connector3-buttons"
 "$HOST_DIR/bin/arm-linux-g++" -std=c++17 -Os -Wall -Wextra -Werror \
-    -I"$STAGING_DIR/usr/include/dbus-1.0" -I"$STAGING_DIR/usr/lib/dbus-1.0/include" \
-    "$board/buttons.cpp" -ldbus-1 -o "$target/usr/sbin/galdrun-connector3-buttons"
-"$HOST_DIR/bin/arm-linux-g++" -std=c++17 -Os -Wall -Wextra -Werror \
-    "$board/mcu-buttons.cpp" -o "$target/usr/sbin/galdrun-connector3-mcu"
+    "$board/mcu-buttons.cpp" -pthread -o "$target/usr/sbin/galdrun-connector3-mcu"
 # The existing network service launches this helper for setup AP mode.
 "$HOST_DIR/bin/arm-linux-g++" -std=c++17 -Os -Wall -Wextra -Werror \
     "$project/board/common/captive-portal.cpp" -o "$target/usr/sbin/raumfeld-captive-portal"

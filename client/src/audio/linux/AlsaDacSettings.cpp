@@ -7,6 +7,7 @@
 #include <vector>
 #include <cctype>
 #include <climits>
+#include "Connector3Mcu.h"
 
 namespace multiroom::dac_settings {
 namespace {
@@ -32,6 +33,8 @@ std::string roomVolumeElement;
 bool genericAvailable = false;
 
 bool generic() { return board_config::enabled(board_config::current(), "selectedCardDacControls"); }
+bool mcuAudio() { return board_config::enabled(board_config::current(), "mcuAudioControls"); }
+
 
 std::string settingsPath(const std::string& path)
 {
@@ -60,6 +63,7 @@ struct Control {
 
 struct Card {
     snd_ctl_t* handle = nullptr;
+    bool mcu = false;
     ~Card() { if (handle != nullptr) snd_ctl_close(handle); }
 };
 
@@ -72,6 +76,24 @@ bool failed(int result, std::string& error)
 
 bool readControls(Card& card, std::vector<Control>& controls, std::string& error)
 {
+    if (mcuAudio() && selectedCard == "Connector3")
+    {
+        long mute = 0, volume = 0;
+        if (!connector3McuRequest("get", mute, volume, error)) return false;
+        card.mcu = true;
+        Control level;
+        level.name = "Output Level";
+        level.type = SND_CTL_ELEM_TYPE_INTEGER;
+        level.maximum = 100;
+        level.values = {volume};
+        controls.push_back(std::move(level));
+        Control enabled;
+        enabled.name = "Output Switch";
+        enabled.type = SND_CTL_ELEM_TYPE_BOOLEAN;
+        enabled.values = {1 - mute};
+        controls.push_back(std::move(enabled));
+        return true;
+    }
     const std::string device = generic() ? "hw:CARD=" + selectedCard : "hw:Connector2";
     if (generic() && selectedCard.empty()) { error = "Select an ALSA output first"; return false; }
     if (failed(snd_ctl_open(&card.handle, device.c_str(), SND_CTL_NONBLOCK), error)) return false;
@@ -177,6 +199,16 @@ json::Value valuesJson(const std::vector<long>& values)
 
 bool writeControl(Card& card, const Control& control, const std::vector<long>& values, std::string& error)
 {
+    if (card.mcu)
+    {
+        const bool isSwitch = control.name == "Output Switch";
+        long mute = 0, volume = 0;
+        if (!connector3McuRequest(std::string(isSwitch ? "mute " : "volume ") +
+                        std::to_string(isSwitch ? 1 - values[0] : values[0]), mute, volume, error)) return false;
+        if (values[0] != (isSwitch ? 1 - mute : volume))
+        { error = "MCU audio readback differs from requested value"; return false; }
+        return true;
+    }
     snd_ctl_elem_value_t* value;
     snd_ctl_elem_value_alloca(&value);
     snd_ctl_elem_value_set_numid(value, control.id);
@@ -300,6 +332,7 @@ bool load(json::Value& settings, std::string& error)
         entry["max"] = json::Value(static_cast<int32_t>(control.maximum));
         entry["step"] = json::Value(static_cast<int32_t>(control.step));
         entry["values"] = valuesJson(control.values);
+        if (card.mcu) entry["readOnly"] = json::Value(true);
         entry["items"] = json::Value::makeArray();
         for (const auto& item : control.items) entry["items"].pushBack(json::Value(item));
         settings["controls"].pushBack(std::move(entry));
@@ -310,6 +343,8 @@ bool load(json::Value& settings, std::string& error)
 bool save(const json::Value& changes, json::Value& settings, std::string& error, const std::string& path)
 {
     error.clear();
+    if (mcuAudio() && selectedCard == "Connector3")
+    { error = "Connector 3 hardware output settings are read-only"; return false; }
     const std::string selectedPath = settingsPath(path);
     return apply(changes, &selectedPath, error) && load(settings, error);
 }
@@ -332,6 +367,7 @@ bool isRoomVolumeControl(const std::string& name)
 bool reset(json::Value& settings, std::string& error, bool keepRoomVolume, const std::string& path)
 {
     error.clear();
+    if (mcuAudio() && selectedCard == "Connector3") return load(settings, error);
     Card card;
     std::vector<Control> controls;
     if (!readControls(card, controls, error)) return false;

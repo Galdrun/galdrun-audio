@@ -66,6 +66,7 @@ if(WIN32)
 elseif(UNIX AND NOT APPLE)
     list(APPEND MULTIROOM_CORE_SOURCES src/audio/linux/AlsaBackend.cpp
                                     src/audio/linux/AlsaMixer.cpp
+                                    src/audio/linux/Connector3Mcu.cpp
                                     src/audio/linux/AlsaDacSettings.cpp
                                     src/net/NetworkSettings.cpp
                                     src/config/CpuSettings.cpp

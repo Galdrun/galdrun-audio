@@ -8,8 +8,10 @@ from pathlib import Path
 import hashlib
 import ipaddress
 import json
+import os
 import subprocess
 import sys
+import tempfile
 
 project = Path(__file__).resolve().parents[1]
 host = str(ipaddress.IPv4Address(sys.argv[1]))
@@ -19,6 +21,17 @@ archive = project / "output/connector3-ram/rootfs.tar.gz"
 root = "/run/galdrun-connector3"
 ssh = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
        "-o", f"UserKnownHostsFile={known_hosts}", "-o", "ConnectTimeout=5", f"root@{host}"]
+
+# Keep this vendor-dependent diagnostic bridge out of standalone image files.
+work = Path(os.environ.get("RAUMFELD_BUILD_DIR",
+            str(Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "raumfeld-buildroot")))
+sdk = work / "connector3-ram"
+with tempfile.TemporaryDirectory(prefix="connector3-vendor-bridge-") as directory:
+    bridge = Path(directory) / "buttons"
+    subprocess.run([str(sdk / "host/bin/arm-linux-g++"), "-std=c++17", "-Os", "-Wall", "-Wextra", "-Werror",
+        f"-I{sdk}/staging/usr/include/dbus-1.0", f"-I{sdk}/staging/usr/lib/dbus-1.0/include",
+        str(project / "board/connector3/ram/buttons.cpp"), "-ldbus-1", "-o", str(bridge)], check=True)
+    vendor_bridge = bridge.read_bytes()
 
 
 def remote(command, **kwargs):
@@ -50,6 +63,7 @@ upload(f"{root}.tar.gz", blob)
 if hashlib.sha256(remote(f"cat {root}.tar.gz")).digest() != hashlib.sha256(blob).digest():
     raise SystemExit("RAM archive readback hash mismatch")
 remote(f"zcat {root}.tar.gz | tar xf - -C {root}; chmod 700 {root}")
+upload(f"{root}/usr/sbin/galdrun-connector3-buttons", vendor_bridge, "700")
 remote(f"mkdir -p {root}/run/dbus; "
        f"mount -o bind /dev {root}/dev; mount -o bind /proc {root}/proc; "
        f"mount -o bind /sys {root}/sys; mount -o bind /var/run/dbus {root}/run/dbus")

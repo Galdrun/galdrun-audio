@@ -7,7 +7,7 @@ mount -t tmpfs tmpfs /run
 mount -t tmpfs tmpfs /tmp
 exec 0</dev/console 1>/dev/console 2>/dev/console
 hostname connector3-diag
-echo 'GALDRUN CONNECTOR 3 RAM DIAGNOSTICS - no storage drivers or installer'
+echo 'GALDRUN CONNECTOR 3 RAM DIAGNOSTICS - no flash installer'
 ip link set lo up
 
 # Network startup must not delay SSH key generation. Retry DHCP until linked.

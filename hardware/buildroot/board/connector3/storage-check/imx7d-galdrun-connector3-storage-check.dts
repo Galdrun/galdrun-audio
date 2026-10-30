@@ -1,0 +1,71 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "imx7d-galdrun-connector3-diag.dts"
+
+/ {
+    model = "Galdrun Connector 3 read-only storage check";
+    storage_usb_vbus: regulator-usb-vbus {
+        compatible = "regulator-fixed";
+        regulator-name = "usb-otg1-vbus";
+        pinctrl-names = "default";
+        pinctrl-0 = <&pinctrl_storage_usb_vbus>;
+        regulator-min-microvolt = <5000000>;
+        regulator-max-microvolt = <5000000>;
+        gpio = <&gpio1 5 GPIO_ACTIVE_HIGH>;
+        enable-active-high;
+    };
+};
+
+&usbotg1 {
+    vbus-supply = <&storage_usb_vbus>;
+    dr_mode = "host";
+    status = "okay";
+};
+
+&iomuxc_lpsr {
+    pinctrl_storage_usb_vbus: storage-usb-vbus-grp {
+        fsl,pins = <MX7D_PAD_LPSR_GPIO1_IO05__GPIO1_IO5 0x14>;
+    };
+};
+
+&gpmi {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_storage_nand>;
+    status = "okay";
+    galdrun,read-only;
+    nand-on-flash-bbt;
+    fsl,use-minimum-ecc;
+
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+        partition@0 { label = "u-boot"; reg = <0 0x800000>; read-only; };
+        partition@800000 { label = "u-boot-env"; reg = <0x800000 0x80000>; read-only; };
+        partition@880000 { label = "constants"; reg = <0x880000 0x80000>; read-only; };
+        partition@900000 { label = "settings"; reg = <0x900000 0x8000000>; read-only; };
+        partition@8900000 { label = "fit"; reg = <0x8900000 0xc00000>; read-only; };
+        partition@9500000 { label = "rootfs"; reg = <0x9500000 0x16b00000>; read-only; };
+    };
+};
+
+&iomuxc {
+    pinctrl_storage_nand: storage-nand-grp {
+        fsl,pins = <
+            MX7D_PAD_SD3_DATA0__NAND_DATA00 0x71
+            MX7D_PAD_SD3_DATA1__NAND_DATA01 0x71
+            MX7D_PAD_SD3_DATA2__NAND_DATA02 0x71
+            MX7D_PAD_SD3_DATA3__NAND_DATA03 0x71
+            MX7D_PAD_SD3_DATA4__NAND_DATA04 0x71
+            MX7D_PAD_SD3_DATA5__NAND_DATA05 0x71
+            MX7D_PAD_SD3_DATA6__NAND_DATA06 0x71
+            MX7D_PAD_SD3_DATA7__NAND_DATA07 0x71
+            MX7D_PAD_SD3_CLK__NAND_CLE 0x71
+            MX7D_PAD_SD3_CMD__NAND_ALE 0x71
+            MX7D_PAD_SD3_STROBE__NAND_RE_B 0x71
+            MX7D_PAD_SD3_RESET_B__NAND_WE_B 0x71
+            MX7D_PAD_SAI1_MCLK__NAND_WP_B 0x71
+            MX7D_PAD_SAI1_TX_BCLK__NAND_CE0_B 0x71
+            MX7D_PAD_SAI1_TX_DATA__NAND_READY_B 0x74
+        >;
+    };
+};

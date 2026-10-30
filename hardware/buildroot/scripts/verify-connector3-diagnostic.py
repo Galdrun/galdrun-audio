@@ -2,10 +2,12 @@
 from pathlib import Path
 import hashlib
 import json
+import re
 import subprocess
 import struct
 import sys
 import tempfile
+from connector3_content import audit_files
 
 
 def verify(output):
@@ -18,6 +20,14 @@ def verify(output):
     for option in ("FEC", "INET", "DEVTMPFS", "SERIAL_IMX_CONSOLE"):
         if f"CONFIG_{option}=y" not in kernel:
             raise ValueError(f"CONFIG_{option} must be built in")
+    if "earlycon=ec_imx6q,0x30860000,115200" not in kernel:
+        raise ValueError("The USB boot check needs the verified early UART console")
+    clock_setup = (output / "build/linux-6.12.112/arch/arm/mach-imx/mach-imx7d.c").read_text()
+    for required in ('of_machine_is_compatible("fsl,imx7d-teufel-streamer")',
+                     "clk_dir = IMX7D_GPR1_ENET2_CLK_DIR_MASK;",
+                     "IMX7D_GPR1_ENET_CLK_DIR_MASK, clk_dir);"):
+        if required not in clock_setup:
+            raise ValueError("The USB kernel is missing the Streamer RMII clock-direction patch")
     image = images / "diagnostic.itb"
     tee = (images / "tee.elf").read_bytes()
     if tee[:6] != b"\x7fELF\x01\x01" or struct.unpack_from("<I", tee, 24)[0] != 0x9FD00000:
@@ -35,6 +45,35 @@ def verify(output):
                     "-k", str(images / "diagnostic-control.dtb")], check=True)
     # fit_check_sign loads kernel/FDT/ramdisk; also check the secure loadable.
     with tempfile.TemporaryDirectory(prefix="connector3-fit-") as directory:
+        dtb = Path(directory) / "board.dtb"
+        subprocess.run([str(output / "host/bin/dumpimage"), "-T", "flat_dt", "-p", "1",
+                        "-o", str(dtb), str(image)], check=True, capture_output=True)
+        if dtb.read_bytes() != (images / "diagnostic.dtb").read_bytes():
+            raise ValueError("The signed device tree differs from the checked USB board")
+
+        def property_value(node, name, kind="s"):
+            return subprocess.run([str(output / "host/bin/fdtget"), "-t", kind,
+                                   str(dtb), node, name], check=True,
+                                  capture_output=True, text=True).stdout.strip()
+
+        bus = "/soc/aips-bus@30800000"
+        if property_value(bus + "/crypto@30900000", "status") != "disabled":
+            raise ValueError("CAAM must stay disabled to avoid the verified early boot fault")
+        ethernet = bus + "/ethernet@30bf0000"
+        clocks = [int(value) for value in property_value(ethernet, "clocks", "u").split()]
+        header = (output / "build/linux-6.12.112/include/dt-bindings/clock/imx7d-clock.h").read_text()
+        clock_ids = dict(re.findall(r"#define\s+(IMX7D_\w+)\s+(\d+)", header))
+        required = [int(clock_ids[name]) for name in (
+            "IMX7D_ENET2_IPG_ROOT_CLK", "IMX7D_ENET_AXI_ROOT_CLK",
+            "IMX7D_ENET2_TIME_ROOT_CLK", "IMX7D_PLL_ENET_MAIN_125M_CLK",
+            "IMX7D_ENET2_REF_ROOT_DIV")]
+        if clocks[1::2] != required:
+            raise ValueError("USB Ethernet must use the clock consumers verified on the RAM client")
+        mdio = ethernet + "/mdio"
+        reset = [int(value) for value in property_value(mdio, "reset-gpios", "u").split()]
+        if reset[1:] != [22, 1] or property_value(mdio, "reset-post-delay-us", "u") != "30000":
+            raise ValueError("USB Ethernet needs the verified MDIO PHY reset sequence")
+        property_value(mdio + "/ethernet-phy@0", "reg", "u")
         extracted = Path(directory) / "tee.bin"
         subprocess.run([str(output / "host/bin/dumpimage"), "-T", "flat_dt", "-p", "2",
                         "-o", str(extracted), str(image)], check=True, capture_output=True)
@@ -87,8 +126,12 @@ def verify(output):
                     "AuthenticationMethods publickey", "PermitRootLogin prohibit-password"):
         if setting not in config.splitlines():
             raise ValueError(f"Missing SSH restriction: {setting}")
+    content_audit = audit_files(files, output / "legal-info/manifest.csv")
     result = {"fit_bytes": image.stat().st_size, "signature_verified": True,
               "storage_drivers_disabled": True, "ssh_key_only": True,
+              "ethernet_dt_checked": True, "caam_disabled": True,
+              "rmii_clock_direction_patched": True,
+              "content_audit": content_audit,
               "hardware_boot_tested": False}
     (images / "diagnostic-verification.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result))

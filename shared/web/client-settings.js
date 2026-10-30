@@ -398,6 +398,8 @@ async function loadLeds() {
 }
 
 const dacHints = {
+  'Output Level': 'dac.hint.outputLevel',
+  'Output Switch': 'dac.hint.outputSwitch',
   'Master Playback Volume': 'dac.hint.masterPlaybackVolume',
   'Master Playback Switch': 'dac.hint.masterPlaybackSwitch',
   'Master Capture Switch': 'dac.hint.masterCaptureSwitch',
@@ -424,9 +426,12 @@ let dacCard = '';
 function dacRoomOwned(control) {
   return dacRoomVolume && dacRoomControls.includes(control.name);
 }
+function dacLocked(control) {
+  return !!control.readOnly || dacRoomOwned(control);
+}
 
 function dacSettings() {
-  return Object.fromEntries(dacControls.flatMap((c, i) => dacRoomOwned(c) ? [] :
+  return Object.fromEntries(dacControls.flatMap((c, i) => dacLocked(c) ? [] :
     [[c.name, c.values.map((_, ch) => Number($('dac-' + i + '-' + ch).value))]]));
 }
 
@@ -438,6 +443,7 @@ function renderDac(r) {
   dacResetSource = dac.resetSource || 'firmware defaults';
   $('dacReset').textContent = tt(dacResetSource === 'initial card settings' ? 'dac.restoreInitialCard' : 'dac.resetDefaultDac');
   dacControls = dac.controls;
+  $('dacReset').disabled = dacControls.every(dacLocked);
   $('dacName').textContent = tt('dac.dacSettings', {codec: dac.codec});
   $('dacControls').replaceChildren();
   dacControls.forEach((c, i) => {
@@ -459,12 +465,12 @@ function renderDac(r) {
       }
       input.id = id;
       input.value = v;
-      input.disabled = dacRoomOwned(c);
+      input.disabled = dacLocked(c);
       $('dacControls').append(label, input);
     });
     const hint = document.createElement('p');
     hint.className = 'hint';
-    hint.textContent = dacRoomOwned(c)
+    hint.textContent = c.readOnly ? tt('dac.readOnly') : dacRoomOwned(c)
       ? tt('dac.setByRoom')
       : tt(dacHints[c.name] || '');
     $('dacControls').append(hint);
@@ -612,6 +618,7 @@ function networkSettings() {
 async function loadNetwork() {
   const n = await api('getNetwork');
   networkEnabled = n.supported;
+  show('wifiAdvanced', networkEnabled);
   show('wifiRadioBox', networkEnabled);
   for (const id of ['networkBox', 'ethAddressBox', 'wifiAddressBox', 'deviceNameBox']) {
     show(id, networkEnabled);
@@ -702,7 +709,6 @@ async function controlLoad() {
   $('room').required = true;
   show('rescan', true);
   show('formatsBox', true);
-  show('wifiAdvanced', true);
   const st = (await api('status')).status;
   saved.room = st.name || '';
   saved.clientId = savedClientId = st.clientId;
@@ -832,6 +838,7 @@ function describeCodec(formats) {
 function boardBody() {
   const body = {
     ssid: $('wifiSsid').value, bssid: $('wifiAp').value, server: $('server').value.trim(), audioDeviceId: $('device').value,
+    country: $('wifiCountry').value.trim(), clearPassword: $('wifiClearPassword').checked,
     active: $('active').value === 'true',
     name: $('room').value.trim(), clientId: $('clientId').value.trim(), deviceName: $('deviceName').value.trim(),
     ipMode: $('wifiMode').value, ip: $('wifiIp').value.trim(), netmask: $('wifiMask').value.trim(),
@@ -860,7 +867,8 @@ async function boardLoad(response) {
   const s = await boardJson(response);
   setup = s.setupMode;
   show('restart', true);
-  for (const id of ['networkBox', 'wifiAddressBox', 'deviceNameBox', 'i2sClockBox', 'i2sAudioBox', 'hardwareBox']) show(id, true);
+  for (const id of ['networkBox', 'wifiAdvanced', 'wifiAddressBox', 'deviceNameBox', 'i2sClockBox', 'i2sAudioBox', 'hardwareBox']) show(id, true);
+  show('wifiEthernetPriority', false);
   $('wifiSsid').required = true;
   $('deviceName').disabled = false;
   $('buffer').disabled = false;
@@ -874,6 +882,9 @@ async function boardLoad(response) {
     ? 'board.setupModeThis'
     : 'board.savingDeviceSettings');
   $('wifiSsid').value = s.ssid;
+  $('wifiCountry').value = s.country || '';
+  $('wifiCountry').placeholder = tt('common.automatic');
+  $('wifiClearPassword').checked = false;
   $('wifiPassword').placeholder = s.passwordSet ? tt('common.unchanged') : '';
   savedBssid = s.bssid || '';
   connectedBssid = s.connectedBssid || '';

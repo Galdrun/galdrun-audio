@@ -18,10 +18,13 @@ define GALDRUN_CONNECTOR3_LINUX_PATCH
 		printf '\nconfig SND_SOC_GALDRUN_CONNECTOR3\n\tbool "Galdrun Connector 3 audio"\n\tdepends on SND_SOC && SOC_IMX7D\n\tselect SND_SOC_FSL_SAI\n\tselect SND_SOC_SPDIF\n' >> $(@D)/sound/soc/fsl/Kconfig
 	grep -q galdrun-connector3-audio.o $(@D)/sound/soc/fsl/Makefile || \
 		printf '\nobj-$$(CONFIG_SND_SOC_GALDRUN_CONNECTOR3) += galdrun-connector3-audio.o\n' >> $(@D)/sound/soc/fsl/Makefile
+	grep -q connector3-pm.o $(@D)/arch/arm/mach-imx/Makefile || \
+		printf '\nobj-$$(CONFIG_SOC_IMX7D) += connector3-pm.o connector3-suspend.o\n' >> $(@D)/arch/arm/mach-imx/Makefile
 endef
 LINUX_POST_PATCH_HOOKS += GALDRUN_CONNECTOR3_LINUX_PATCH
 define GALDRUN_CONNECTOR3_AUDIO_SOURCE
 	$(INSTALL) -m 0644 $(BR2_EXTERNAL_RAUMFELD_PATH)/board/connector3/ram/galdrun-connector3-audio.c $(@D)/sound/soc/fsl/galdrun-connector3-audio.c
+	$(INSTALL) -m 0644 $(BR2_EXTERNAL_RAUMFELD_PATH)/board/connector3/ram/connector3-pm.c $(BR2_EXTERNAL_RAUMFELD_PATH)/board/connector3/ram/connector3-suspend.S $(@D)/arch/arm/mach-imx/
 endef
 LINUX_PRE_BUILD_HOOKS += GALDRUN_CONNECTOR3_AUDIO_SOURCE
 endif

@@ -1,10 +1,24 @@
 # Teufel Streamer / Connector 3: experimental SSH diagnostics
 
+**2026-10-30:** a new signed USB RAM diagnostic incorporates the Ethernet and
+early-boot fixes established with the working kexec client. Physical USB boot
+reached Linux and its UART shell, but Ethernet failed because the USB kernel
+lacked the RAM kernel's RMII clock-direction patch. A rebuild now reuses it and
+passed physical Ethernet DHCP and key-only SSH cold boot. Subsequent protected
+RAM tests also passed NAND/UBI/UBIFS reads and USB/FAT32 reads. A permanent
+installer is not ready. The user's final decision is to use the working Marvell
+`15.87.19.p14` blob and accept the available licence's version mismatch while
+excluding OEM runtime software. Work is stopped and the board is back on beta;
+read [the next-day handover](../connector3-handover-2026-10-31.md) before resuming.
+See [the current build and test checkpoint](../connector3.md#usb-installer-preparation--2026-10-30)
+for the artifact hash and next step. UART now works on COM5 at 115200. The failed
+trials and missing-UART observations below describe the earlier images.
+
 For the **verified vendor beta update and successful SSH access on 2026-10-28**,
 see [the Connector 3 procedure](../connector3.md). The RAM diagnostic below
 remains unqualified; success with the vendor beta does not validate that image.
 
-This is an **unqualified USB RAM boot**, not a Galdrun firmware installer. UART
+The following is the **historical 2026-10-27 unqualified USB RAM boot**, not a Galdrun firmware installer. UART
 on the test device has not produced readable output. Nothing here establishes
 that the physical device boots this image or that Ethernet works on it.
 

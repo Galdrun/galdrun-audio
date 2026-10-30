@@ -8,8 +8,18 @@ the Connector 2 NAND/USB firmware.
 For the **Connector 3 / Teufel Streamer**, see the
 [verified vendor SSH procedure and experimental kexec RAM build](../../docs/hardware/connector3.md).
 The source-built 6.12.112 kernel has booted via kexec with working Ethernet,
-key-only SSH and the client API. WLAN, MCU control, audible playback and cold
-boot remain unqualified; this is not a persistent firmware/install target.
+WLAN, key-only SSH, MCU control, RCA playback and hardware audio-clock trim.
+Audible volume/mute qualification, Ethernet wake and persistent cold boot remain pending;
+this is not a persistent firmware/install target. A signed RAM-only USB diagnostic
+has cold-booted with Ethernet DHCP and SSH. Protected RAM tests also read NAND,
+UBI/UBIFS and USB/FAT32 successfully. The user's final 2026-10-30 decision
+approves the working Marvell `15.87.19.p14` hardware blob and accepts the
+available licence's version mismatch. Read [the next-day handover](../../docs/hardware/connector3-handover-2026-10-31.md)
+before resuming; the radio-hash guard still needs its approved exception.
+The standalone image omits the
+vendor-dependent D-Bus bridge and its verifier runs source/content guards.
+See the linked guide's latest resume checkpoint for the active firmware test,
+current hashes, recovery steps and remaining installer work.
 Earlier USB diagnostic work is in the
 [investigation notes](../../docs/hardware/raumfeld/connector3.md).
 

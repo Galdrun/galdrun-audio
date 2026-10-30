@@ -1,7 +1,14 @@
-# Preserve the running vendor OS's CPU/PMIC state during the first RAM test.
-# CONFIG_CPU_FREQ is not set
+# Use the stock board's CPU supply and normal 792/996 MHz operating points.
+CONFIG_CPU_FREQ=y
+CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE=y
+CONFIG_CPUFREQ_DT=y
+CONFIG_ARM_IMX_CPUFREQ_DT=y
+CONFIG_MFD_AXP20X_I2C=y
+CONFIG_REGULATOR_AXP20X=y
 # CONFIG_CPU_IDLE is not set
-# CONFIG_SUSPEND is not set
+CONFIG_SUSPEND=y
+CONFIG_PM_DEBUG=y
+CONFIG_PM_SLEEP_DEBUG=y
 # CONFIG_MODULES is not set
 # CONFIG_MTD is not set
 # CONFIG_MMC is not set
@@ -48,8 +55,8 @@ CONFIG_SECCOMP=y
 CONFIG_SECCOMP_FILTER=y
 CONFIG_HW_RANDOM=y
 CONFIG_HW_RANDOM_IMX_RNGC=y
-# Kexec needs PM_SLEEP_SMP on ARM SMP. Keep PM disabled for this bring-up;
-# the installed vendor kernel loads each test image instead.
+# System suspend is available for qualification, but deep sleep additionally
+# needs a platform firmware suspend implementation. Do not advertise it yet.
 CONFIG_INPUT_EVDEV=y
 CONFIG_INPUT_UINPUT=y
 CONFIG_PSTORE=y

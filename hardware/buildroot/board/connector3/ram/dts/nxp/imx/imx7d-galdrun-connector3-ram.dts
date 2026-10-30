@@ -69,6 +69,40 @@
 
 &cpu1 { status = "disabled"; };
 
+/* Reserved for the CPU-off suspend trampoline and its translation table.
+ * The mmio-sram driver excludes reserved children from its allocation pool. */
+&ocram {
+    suspend-reserved@0 { reg = <0 0x4000>; };
+};
+
+&cpu0 { cpu-supply = <&vdd_arm>; };
+
+/* The stock firmware uses 792 and 996 MHz. Do not expose its optional
+ * 1.2 GHz overdrive point, even if this chip's speed fuse allows it. */
+&cpu0_opp_table { /delete-node/ opp-1200000000; };
+
+&i2c4 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_i2c4>;
+    clock-frequency = <100000>;
+    status = "okay";
+    pmic: pmic@32 {
+        compatible = "x-powers,axp152";
+        reg = <0x32>;
+        interrupt-parent = <&gpc>;
+        interrupts = <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>;
+        regulators {
+            vdd_arm: dcdc4 {
+                regulator-name = "vdd_arm";
+                regulator-min-microvolt = <950000>;
+                regulator-max-microvolt = <1100000>;
+                regulator-boot-on;
+                regulator-always-on;
+            };
+        };
+    };
+};
+
 /* The vendor DT disables this block. Probing it from the RAM
  * kernel faults at 0x30900004 before userspace can start. */
 &crypto { status = "disabled"; };
@@ -127,6 +161,7 @@
 };
 
 &fec2 {
+    fsl,magic-packet;
     pinctrl-names = "default";
     pinctrl-0 = <&pinctrl_enet2>;
     clocks = <&clks IMX7D_ENET2_IPG_ROOT_CLK>,
@@ -171,6 +206,12 @@
 &iomuxc {
     pinctrl-names = "default";
     pinctrl-0 = <&pinctrl_preserved_gpio &pinctrl_32khz>;
+    pinctrl_i2c4: i2c4grp {
+        fsl,pins = <
+            MX7D_PAD_ENET1_RGMII_TD2__I2C4_SCL 0x4000007f
+            MX7D_PAD_ENET1_RGMII_TD3__I2C4_SDA 0x4000007f
+        >;
+    };
     pinctrl_preserved_gpio: preserved-gpiogrp {
         fsl,pins = <
             MX7D_PAD_GPIO1_IO08__GPIO1_IO8 0x14

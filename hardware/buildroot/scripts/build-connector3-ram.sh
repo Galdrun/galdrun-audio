@@ -31,7 +31,7 @@ output="$work/connector3-ram"
 # Static kexec can run on the old vendor libc. Other packages stay dynamic.
 args=(-C "$work/buildroot-2025.02.18" "O=$output" "BR2_EXTERNAL=$work/external"
       "BR2_DL_DIR=$project/downloads" 'KEXEC_CONF_ENV=LDFLAGS=-static')
-inputs=$(find "$board" -type f \( -name '*.dts' -o -name '*.fragment' -o -name '*.c' -o -name defconfig \) \
+inputs=$(find "$board" -type f \( -name '*.dts' -o -name '*.fragment' -o -name '*.c' -o -name '*.S' -o -name defconfig \) \
     -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
 patches=$(find "$board/patches" "$work/external/external.mk" -type f -print0 | sort -z | \
     xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)

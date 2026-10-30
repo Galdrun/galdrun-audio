@@ -225,6 +225,7 @@ esp_err_t handleGetSettings(httpd_req_t* request)
     body["passwordSet"] = json::Value(!wifi.password.empty());
     body["deviceName"] = json::Value(wifi.deviceName);
     body["bssid"] = json::Value(wifi.bssid);
+    body["country"] = json::Value(wifi.country);
     // The access point the board is on now, so the page can mark it.
     wifi_ap_record_t current = {};
     if (esp_wifi_sta_get_ap_info(&current) == ESP_OK)
@@ -380,6 +381,14 @@ esp_err_t handlePostSettings(httpd_req_t* request)
         wifi.password = password;
     }
     wifi.ssid = ssid;
+    if (root.find("country") != nullptr && !json::getString(root, "country", wifi.country))
+        return sendError(request, "400 Bad Request", "country must be a string");
+    if (!wifi_settings::validateCountry(wifi.country, error))
+        return sendError(request, "400 Bad Request", error);
+    bool clearPassword = false;
+    if (root.find("clearPassword") != nullptr && !json::getBool(root, "clearPassword", clearPassword))
+        return sendError(request, "400 Bad Request", "clearPassword must be a boolean");
+    if (clearPassword) wifi.password.clear();
 
     // An empty device name keeps the esp32-<mac> default.
     std::string deviceName;

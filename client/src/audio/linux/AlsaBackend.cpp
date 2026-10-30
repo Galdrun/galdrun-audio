@@ -1052,17 +1052,20 @@ AudioClockSnapshot AlsaBackend::clockSnapshot()
     }
 #endif
 
-    // Prefer the driver timestamp when it has subsecond precision; a driver
-    // that does not fill it leaves it at zero, so pair the position with the
-    // status timestamp instead.
+    // Some 32-bit ALSA compatibility paths return elapsed audio time in the
+    // driver getter. It must share the status timestamp's monotonic epoch:
+    // otherwise a scheduled start is displaced by the PCM's trigger time.
+    const uint64_t statusNs = readHtstampNs(snd_pcm_status_get_htstamp, impl_->status);
     stampNs = readHtstampNs(snd_pcm_status_get_driver_htstamp, impl_->status);
-    if (stampNs % 1000000000ULL != 0)
+    const uint64_t gapNs = stampNs > statusNs ? stampNs - statusNs : statusNs - stampNs;
+    const uint64_t bufferNs = uint64_t(bufferFrames_) * 1000000000ULL / format_.sampleRate;
+    if (stampNs % 1000000000ULL != 0 && statusNs != 0 && gapNs <= bufferNs)
     {
         snapshot.quality = AudioClockQuality::Driver;
     }
     else
     {
-        stampNs = readHtstampNs(snd_pcm_status_get_htstamp, impl_->status);
+        stampNs = statusNs;
         snapshot.quality = AudioClockQuality::Estimated;
     }
 

@@ -1,4 +1,9 @@
 {
   "board": "connector3-ram",
-  "networkSettings": true
+  "networkSettings": true,
+  "cpuFrequency": true,
+  "hardwareClockControl": "Drift compensator",
+  "dacControls": true,
+  "selectedCardDacControls": true,
+  "mcuAudioControls": true
 }

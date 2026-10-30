@@ -264,6 +264,8 @@ void startWifi(const WifiSettings& settings)
     ESP_ERROR_CHECK(esp_wifi_init(&init));
     // wifi.json is the one copy of the credentials; the driver keeps none.
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    ESP_ERROR_CHECK(esp_wifi_set_country_code(settings.country.empty() ? "01" : settings.country.c_str(),
+                                               settings.country.empty()));
     ESP_ERROR_CHECK(
         esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &onWifiEvent, nullptr));
     ESP_ERROR_CHECK(
@@ -362,7 +364,9 @@ extern "C" void app_main()
     }
     const bool forced = setupButtonHeld();
 
-    startWifi(forced ? WifiSettings() : wifi);
+    WifiSettings initialWifi = forced ? WifiSettings() : wifi;
+    initialWifi.country = wifi.country;
+    startWifi(initialWifi);
     web_ui::start();
 
     if (forced || wifi.ssid.empty())

@@ -80,6 +80,14 @@ channel and signal and marks the one in use. A fixed access point is useful
 when one of them cannot carry the stream (see the roadmap's phase 25 notes); if
 it is switched off, the board cannot join and opens setup mode as below.
 
+*Advanced Wi-Fi settings* provides a country code and an explicit option to
+clear the saved password for an open network. `country` in `wifi.json` is empty
+for the SDK's automatic/world-safe policy, or an uppercase code supported by
+ESP-IDF's `esp_wifi_set_country_code`. Unsupported codes are rejected before
+saving. The chosen country also applies when the setup button is held.
+The HTTP settings API accepts `country` and boolean `clearPassword`; neither
+changes the stored credentials unless explicitly requested.
+
 Setup mode also starts when
 
 - the board's setup button (KEY1 on the `esp32-a1s`, BOOT on the

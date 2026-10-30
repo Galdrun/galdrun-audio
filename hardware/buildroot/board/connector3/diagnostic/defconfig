@@ -12,6 +12,8 @@ BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_RAUMFELD_PATH)/board/connector3/dia
 BR2_LINUX_KERNEL=y
 BR2_LINUX_KERNEL_CUSTOM_VERSION=y
 BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="6.12.112"
+# Reuse the working RAM kernel's board-specific RMII reference-clock direction.
+BR2_LINUX_KERNEL_PATCH="$(BR2_EXTERNAL_RAUMFELD_PATH)/board/connector3/ram/patches/linux/0001-imx7d-streamer-rmii-reference-clock.patch"
 BR2_LINUX_KERNEL_USE_DEFCONFIG=y
 BR2_LINUX_KERNEL_DEFCONFIG="imx_v6_v7"
 BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_RAUMFELD_PATH)/board/connector3/diagnostic/linux.fragment"

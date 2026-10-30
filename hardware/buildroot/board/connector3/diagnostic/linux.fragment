@@ -33,5 +33,5 @@ CONFIG_SECCOMP=y
 CONFIG_SECCOMP_FILTER=y
 CONFIG_HW_RANDOM=y
 CONFIG_HW_RANDOM_IMX_RNGC=y
-CONFIG_CMDLINE="console=ttymxc0,115200n8 rdinit=/init clk_ignore_unused maxcpus=1 panic=0"
+CONFIG_CMDLINE="console=ttymxc0,115200n8 earlycon=ec_imx6q,0x30860000,115200 rdinit=/init clk_ignore_unused maxcpus=1 panic=0"
 CONFIG_CMDLINE_FORCE=y

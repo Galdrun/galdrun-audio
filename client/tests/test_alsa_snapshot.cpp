@@ -21,6 +21,7 @@ bool holdWrite = false;
 bool enteredWrite = false;
 bool timedOut = false;
 bool requestedAudioPriority = false;
+bool elapsedDriverTimestamp = false;
 
 bool await(std::unique_lock<std::mutex>& lock, unsigned count)
 {
@@ -93,6 +94,12 @@ extern "C" snd_pcm_sframes_t __wrap_snd_pcm_status_get_delay(const snd_pcm_statu
 extern "C" void __wrap_snd_pcm_status_get_driver_htstamp(const snd_pcm_status_t*,
                                                          snd_htimestamp_t* stamp)
 {
+    stamp->tv_sec = elapsedDriverTimestamp ? 2 : 100;
+    stamp->tv_nsec = 1;
+}
+
+extern "C" void __wrap_snd_pcm_status_get_htstamp(const snd_pcm_status_t*, snd_htimestamp_t* stamp)
+{
     stamp->tv_sec = 100;
     stamp->tv_nsec = 1;
 }
@@ -120,6 +127,11 @@ int main()
     const bool rejectsCompletedWrite = !backend.clockSnapshot().isValid();
     const auto stable = backend.clockSnapshot();
     const bool acceptsStablePair = stable.isValid() && stable.deviceFramePosition == 441;
+    elapsedDriverTimestamp = true;
+    const auto elapsed = backend.clockSnapshot();
+    const bool rejectsElapsedTimestamp = elapsed.isValid() && elapsed.monotonicTimeNs == 100000000001ULL &&
+                                        elapsed.quality == multiroom::AudioClockQuality::Estimated;
+    elapsedDriverTimestamp = false;
     {
         std::unique_lock<std::mutex> lock(mutex);
         holdWrite = true;
@@ -141,6 +153,7 @@ int main()
     std::printf("completed-write race rejected: %d; stable pair accepted: %d; "
                 "in-flight write rejected: %d; timeout: %d\n",
                 rejectsCompletedWrite, acceptsStablePair, rejectsInFlightWrite, timedOut);
-    return requestedAudioPriority && rejectsCompletedWrite && acceptsStablePair &&
+    std::printf("elapsed audio timestamp replaced with monotonic status time: %d\n", rejectsElapsedTimestamp);
+    return requestedAudioPriority && rejectsElapsedTimestamp && rejectsCompletedWrite && acceptsStablePair &&
            rejectsInFlightWrite && !timedOut ? 0 : 1;
 }

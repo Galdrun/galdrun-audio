@@ -1,4 +1,5 @@
 #include "audio/linux/AlsaMixer.h"
+#include "Connector3Mcu.h"
 
 #include "config/BoardConfig.h"
 #include "util/Json.h"
@@ -64,6 +65,7 @@ private:
 bool isPlaybackVolume(snd_mixer_elem_t* element)
 {
     return element != nullptr && snd_mixer_selem_is_active(element) != 0 &&
+           std::string(snd_mixer_selem_get_name(element)) != "Drift compensator" &&
            snd_mixer_selem_has_playback_volume(element) != 0;
 }
 
@@ -247,10 +249,62 @@ private:
     snd_mixer_elem_t* element_ = nullptr; // owned by mixer_
 };
 
+bool connector3Volume(const std::string& cardId)
+{
+    return cardId == "Connector3" &&
+           board_config::enabled(board_config::current(), "mcuAudioControls");
+}
+
+class Connector3HardwareVolume final : public IHardwareVolume
+{
+public:
+    bool set(double gain, bool muted, std::string& error) override
+    {
+        const long requested = static_cast<long>(std::floor(hardware_volume::clampGain(gain) * 100));
+        long mute = 0, volume = 0;
+        // Mute before changing level; unmute only after the new level is applied.
+        if (muted && !setMute(true, error)) return false;
+        if (!connector3McuRequest("volume " + std::to_string(requested), mute, volume, error)) return false;
+        if (volume != requested) { error = "MCU volume readback differs from requested value"; return false; }
+        return muted || setMute(false, error);
+    }
+
+    bool setMute(bool muted, std::string& error) override
+    {
+        long mute = 0, volume = 0;
+        if (!connector3McuRequest(std::string("mute ") + (muted ? "1" : "0"), mute, volume, error))
+            return false;
+        if (mute != (muted ? 1 : 0)) { error = "MCU mute readback differs from requested value"; return false; }
+        return true;
+    }
+
+    bool read(HardwareVolumeState& out, std::string& error) override
+    {
+        long mute = 0, volume = 0;
+        if (!connector3McuRequest("get", mute, volume, error)) return false;
+        out = {};
+        out.gain = static_cast<double>(volume) / 100;
+        out.muted = mute != 0;
+        return true;
+    }
+};
+
 } // namespace
 
 bool detectAlsaHardwareVolume(const std::string& cardId, HardwareVolumeInfo& out)
 {
+    if (connector3Volume(cardId))
+    {
+        long mute = 0, volume = 0;
+        std::string error;
+        if (!connector3McuRequest("get", mute, volume, error)) return false;
+        out = {};
+        out.available = true;
+        out.control = "Output Level";
+        out.maxStep = 100;
+        out.hasMute = true;
+        return true;
+    }
     const std::string controlName = "hw:CARD=" + cardId;
     MixerHandle mixer;
     std::string error;
@@ -420,6 +474,9 @@ std::unique_ptr<IHardwareClock> openAlsaHardwareClock(const AudioDeviceInfo& dev
 
 std::unique_ptr<IHardwareVolume> openAlsaHardwareVolume(const AudioDeviceInfo& device)
 {
+    if (device.id == "hw:CARD=Connector3,DEV=0" && connector3Volume("Connector3") &&
+        device.hardwareVolume.available && device.hardwareVolume.control == "Output Level")
+        return std::make_unique<Connector3HardwareVolume>();
     std::string controlName;
     if (!device.hardwareVolume.available || !controlNameForDevice(device.id, controlName))
         return nullptr;

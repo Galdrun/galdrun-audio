@@ -26,6 +26,7 @@ chmod 755 "$board/init.sh" "$board/post-build.sh"
 output="$work/connector3-diagnostic"
 make_args=(-C "$work/buildroot-2025.02.18" "O=$output" "BR2_EXTERNAL=$work/external" "BR2_DL_DIR=$project/downloads")
 make "${make_args[@]}" "BR2_DEFCONFIG=$board/defconfig" defconfig
+make "${make_args[@]}" legal-info >"$project/logs/connector3-diagnostic-licenses.log" 2>&1
 # OP-TEE's build variables are part of the bootloader handoff contract. Reapply
 # them even when Buildroot has a cached .stamp_built from an earlier attempt.
 make "${make_args[@]}" -j"$jobs" optee-os-rebuild
@@ -90,8 +91,14 @@ printf '/dts-v1/; / {};\n' | dtc -I dts -O dtb -o diagnostic-control.dtb -
 mkimage -f diagnostic.its -k "$signing" -K diagnostic-control.dtb -r diagnostic.itb
 python3 "$project/scripts/verify-connector3-diagnostic.py" "$output"
 destination="$project/output/connector3-diagnostic"
+if [[ -f "$destination/hardware-verification.json" ]]; then
+    mv -f "$destination/hardware-verification.json" "$destination/hardware-verification.previous.json"
+fi
 cp diagnostic.itb "$destination/connect3.img"
 cp diagnostic-verification.json "$destination/"
+mkdir -p "$destination/licenses"
+rsync -a --delete "$output/legal-info/licenses/" "$destination/licenses/"
+cp "$output/legal-info/manifest.csv" "$destination/licenses/manifest.csv"
 # The bootloader reads at most 12 MiB; no ext2 recovery/installer payload follows.
 truncate -s 12582912 "$destination/connect3.img"
 cd "$destination"

@@ -32,6 +32,8 @@ add_executable(multiroom_tests
     test_text_util.cpp
     test_timeline_source.cpp
     test_volume_control.cpp
+    test_wifi_settings.cpp
+    ../esp32/main/WifiSettings.cpp
 )
 
 target_link_libraries(multiroom_tests PRIVATE multiroom_core)
@@ -61,7 +63,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(alsa_snapshot_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
     target_link_libraries(alsa_snapshot_tests PRIVATE multiroom_core)
     foreach(function snd_pcm_wait snd_pcm_writei snd_pcm_status
-                     snd_pcm_status_get_delay snd_pcm_status_get_driver_htstamp
+                     snd_pcm_status_get_delay snd_pcm_status_get_driver_htstamp snd_pcm_status_get_htstamp
                      pthread_setschedparam)
         target_link_options(alsa_snapshot_tests PRIVATE "-Wl,--wrap=${function}")
     endforeach()
@@ -88,4 +90,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     multiroom_set_warnings(alsa_rescan_tests)
     add_test(NAME alsa_rescan_tests COMMAND alsa_rescan_tests)
     set_tests_properties(alsa_rescan_tests PROPERTIES TIMEOUT 10)
+    add_executable(connector3_volume_tests test_connector3_volume.cpp)
+    target_include_directories(connector3_volume_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+    target_link_libraries(connector3_volume_tests PRIVATE multiroom_core)
+    multiroom_set_warnings(connector3_volume_tests)
+    add_test(NAME connector3_volume_tests COMMAND connector3_volume_tests)
 endif()

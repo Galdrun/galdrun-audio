@@ -10,6 +10,7 @@ cleanup() {
     trap - EXIT INT TERM
     [ -z "$runner" ] || kill "$runner" 2>/dev/null || :
     [ -z "$watchdog" ] || kill "$watchdog" 2>/dev/null || :
+    amixer -q -c Connector3 cset name='Drift compensator' 0 || :
     if [ "$result" != 0 ]; then cat /run/aplay-native.log >&2; fi
     if [ "$restart_client" = 1 ]; then
         export LD_LIBRARY_PATH=/opt/galdrun-client/lib
@@ -27,7 +28,7 @@ if [ -n "$pid" ]; then
 fi
 for rate in 44100 48000 44100 22050 32000 88200 96000 176400 192000; do
     echo "Testing native $rate Hz stereo S16_LE (silence)"
-    aplay -D hw:CARD=Connector3,DEV=0 -t raw -f S16_LE -c 2 -r "$rate" -d 3 \
+    aplay -D hw:CARD=Connector3,DEV=0 -t raw -f S16_LE -c 2 -r "$rate" -d 6 \
         /dev/zero >/run/aplay-native.log 2>&1 &
     runner=$!
     (sleep 8; kill "$runner" 2>/dev/null || :) &
@@ -40,6 +41,15 @@ for rate in 44100 48000 44100 22050 32000 88200 96000 176400 192000; do
     after=$(awk '/hw_ptr/ {print $3}' /proc/asound/card0/pcm0p/sub0/status)
     test "$after" -gt "$before"
     echo "hw_ptr $before -> $after"
+    case "$rate" in 22050|44100|88200|176400) nominal=812851200 ;; *) nominal=884736000 ;; esac
+    for ppm in 500 -500 100 -100 0; do
+        amixer -q -c Connector3 -- cset name='Drift compensator' "$ppm"
+        expected=$((nominal - nominal * ppm / 1000000))
+        actual=$(awk '$1 == "pll_audio_main" {print $5}' /sys/kernel/debug/clk/clk_summary)
+        test "$actual" = "$expected"
+        grep -q '^state: RUNNING' /proc/asound/card0/pcm0p/sub0/status
+        echo "PLL trim $ppm ppm: $actual Hz (expected $expected)"
+    done
     grep -E 'pll_audio_main |audio_mclk_post_div|sai1_post_div' /sys/kernel/debug/clk/clk_summary
     wait "$runner"
     runner=
