@@ -179,6 +179,9 @@ component logs. The server GUI defaults to `4723`, every client's settings page 
 
 Connector 3 has an experimental SSH/kexec RAM build containing the ARMv7 client;
 see [the Connector 3 guide](../hardware/connector3.md#custom-ram-build).
+The separate USB-profile MTD4-only updater is checked without hardware by
+`python3 hardware/buildroot/scripts/test-connector3-fit-update.py`; deployment
+requires the pinned backups and physical boot steps in the current hardware handover.
 The earlier USB diagnostic's FIT signing inputs and host checks remain in
 [the investigation guide](../hardware/raumfeld/connector3.md). Neither is a
 supported persistent client firmware target. Host verification does not establish
@@ -212,6 +215,35 @@ Read the hardware guide for the preflight, recovery limits and current runtime.
 Pi image builds are `scripts/build-client.sh rpi1 rpi3 rpi4 rpi5` (Windows: the equivalent
 PowerShell targets). See [the Pi guide](../../hardware/buildroot/board/rpi/README.md).
 Firmware host checks live in `hardware/buildroot/scripts/test-*.py`; in particular
+`test-connector3-content.py` checks OEM-runtime rejection and the approved
+Connector 3 radio's required manufacturer notice/source record. Both generic
+and explicit local-radio RAM builds run the content audit. The read-only storage
+builder accepts an optional FIT signing-key directory to produce
+`output/connector3-storage-check/connect3.img` for storage cold-boot qualification;
+see [the current hardware checkpoint](../hardware/connector3.md#approved-radio-and-storage-usb-check--2026-10-31).
+`build-connector3-persistent-rootfs.sh --release` assembles the clean persistent
+UBI filesystem. `build-connector3-persistent.sh <FIT-signing-directory>` builds
+  that filesystem plus the normal kernel/FIT, protecting MTD0–MTD4. It synchronizes
+  the shared RAM DTS/sleep-clock patch and embeds the approved radio firmware
+  because built-in WLAN probes before the NAND root mounts. Shared storage
+DT definitions live in `board/connector3/imx7d-galdrun-connector3-storage.dtsi`.
+`build-connector3-monitor.sh --production` builds the limited monitor/PSCI candidate
+with CAAM, TAs and RNG services disabled; standard TEE requests are rejected.
+`build-connector3-installer.sh <SSH-public-key> <FIT-signing-directory>` builds
+the all-NAND-read-only USB check/backup image; `--write` is gated on hardware
+  monitor qualification and a matching persistent FIT. NAND install/readback,
+  rollback/readback and normal cold boot passed. The MTD4-only Wi-Fi FIT update
+  also passed exact readback, factory/MTD5 preservation and physical NAND cold
+  boot, including automatic firmware loading and the enabled 32768 Hz sleep
+  clock. See the hardware guide's current checkpoint for Wi-Fi-only qualification.
+`test-connector3-persistent-init.py`, `test-connector3-installer.py` and
+`test-connector3-monitor-only.py` check persistence seeding, installer protections
+and limited-monitor service/configuration refusals without hardware.
+The earlier `test-connector3-monitor.py <patched-OP-TEE-source>` checks the
+abandoned CAAM candidate's RNG self-test; it does not qualify the limited monitor.
+`source-bundle-connector3.py <build-cache> <destination>` collects corresponding
+sources/licences and the current local source snapshot; verify the resulting
+archive with `test-connector3-source-bundle.py <destination>`.
 `test-server-image.py` checks final server-image metadata. Server image assembly
 builds ICU and its dependencies in `<board>-server-deps` beside the client build
 cache; it preserves the client filesystem and config. The assembled image's

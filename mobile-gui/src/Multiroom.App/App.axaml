@@ -12,6 +12,22 @@
     <Style Selector="TextBox"><Setter Property="MinHeight" Value="44" /></Style>
     <Style Selector="ComboBox"><Setter Property="MinHeight" Value="44" /></Style>
     <Style Selector="Border.panel"><Setter Property="Background" Value="#1B2123" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Padding" Value="20" /></Style>
+    <!-- A spinning ring laid over a round button while its request is pending. -->
+    <Style Selector="Arc.busy">
+      <Setter Property="StartAngle" Value="0" /><Setter Property="SweepAngle" Value="90" />
+      <Setter Property="Stroke" Value="#CBEC97" /><Setter Property="StrokeThickness" Value="3" /><Setter Property="StrokeLineCap" Value="Round" />
+      <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+      <Setter Property="RenderTransform"><Template><RotateTransform /></Template></Setter>
+    </Style>
+    <Style Selector="Arc.busy[IsVisible=True]">
+      <Style.Animations>
+        <Animation Duration="0:0:0.8" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="360" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
     <Style Selector="ListBoxItem"><Setter Property="MinHeight" Value="64" /><Setter Property="Padding" Value="8" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style>
   </Application.Styles>
 </Application>

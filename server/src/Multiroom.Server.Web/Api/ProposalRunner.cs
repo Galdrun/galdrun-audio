@@ -494,6 +494,11 @@ public sealed partial class ProposalRunner : BackgroundService, IProposals
                     items.Add((ProposalKind.Track, t.ProviderId, t.ProviderItemId));
                     keys.Add(SongResolver.SongKey(t.Title, t.Artist));
                 }
+                else if (favorite.Album is { } a)
+                {
+                    items.Add((ProposalKind.Album, a.ProviderId, a.ProviderItemId));
+                    keys.Add(SongResolver.AlbumKey(a.Title, a.Artist));
+                }
                 else if (favorite.Group is { Source: { } source } group)
                 {
                     var book = LikeStore.BookRef(source);
@@ -530,7 +535,9 @@ public sealed partial class ProposalRunner : BackgroundService, IProposals
             .Concat(favorites.Value.Where(f => f.Track is not null).Select(f => (f.Track!, f.Added)))
             .OrderByDescending(t => t.Added).Select(t => t.Item1)
             .DistinctBy(t => (t.ProviderId, t.ProviderItemId)).ToList();
-        var albums = likes.Value.Where(l => l.Album is not null).OrderByDescending(l => l.Added).Select(l => l.Album!).ToList();
+        var albums = likes.Value.Where(l => l.Album is not null).Select(l => (l.Album!, l.Added))
+            .Concat(favorites.Value.Where(f => f.Album is not null).Select(f => (f.Album!, f.Added)))
+            .OrderByDescending(a => a.Added).Select(a => a.Item1).DistinctBy(a => (a.ProviderId, a.ProviderItemId)).ToList();
         var artists = likes.Value.Where(l => l.Artist is not null).OrderByDescending(l => l.Added).Select(l => l.Artist!).ToList();
         var books = likes.Value.Where(l => l.Audiobook is not null).Select(l => (l.Audiobook!, l.Added))
             .Concat(favorites.Value.Where(f => f.Group is { Source: not null }).Select(f => (Audiobook.Of(f.Group!), f.Added)))

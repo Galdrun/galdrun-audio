@@ -1,5 +1,318 @@
 # Connector 3 / Teufel Streamer: SSH access and experimental RAM build
 
+## Reinstall, audio and status LEDs qualified — 2026-11-01
+
+The rebuilt USB installer `a9c033fb...` installed normal FIT `e9542fdc...` with
+rootfs/volume/FIT readback and factory preservation checks. A physical NAND
+cold boot without USB or Reset passed automatic MCU audio initialization,
+SDMA firmware 4.6, saved identity/SSH key and LED preference. The user confirmed
+**music audible and three front LEDs steady**. The MCU rate is initialized on
+startup and follows the actual ALSA stream rate; no manual diagnostic SET is
+required. Normal LED status mode is restored and saved; music remains running.
+
+Use the [current handover](connector3-handover-2026-10-31.md#current-state) for
+the qualified installer, exact hashes, fresh rollback backups, current SSH pin
+and evidence. The joined report is
+`hardware/buildroot/output/connector3-persistent/hardware-verification.json`.
+The checkpoints below describe earlier images and sessions.
+
+## Persistent installer checkpoint — 2026-10-31
+
+**Latest: the authorized MTD4-only update to Wi-Fi FIT `5eed3ce8...` passed exact
+readback.** MTD0 remained protected; MTD1-MTD3 and MTD5 hashes were unchanged.
+Physical NAND cold boot without USB/Reset **passed**, including the enabled
+32768 Hz Wi-Fi sleep clock, automatic p14 firmware, saved settings/client ID,
+persistent SSH host key, client API/MCU and root/factory protection. Wi-Fi-only
+DHCP/pinned SSH at `10.0.0.58` passed with Ethernet down and 30/30 WLAN gateway
+pings (0% loss, about 29 seconds). Ethernet SSH at `10.0.0.74` was restored.
+Final checks confirmed USB absent, zero uncorrectable ECC failures and normal
+partition protection. UART capture was archived and stopped; COM5 is released.
+
+**Galdrun is installed in NAND and boots normally.** Install/readback, restoration
+of the original MTD4/5 backup with matching readback, and final Galdrun reinstall
+passed. The original beta was not booted between rollback and reinstall. The
+physical power-off boot without USB also passed, including saved settings, SSH
+identity and factory protection. No flash operation is running. Later dated
+sections are earlier history. See the [current handover](connector3-handover-2026-10-31.md#current-state)
+for the completed Wi-Fi update, exact artifact hashes and remaining limits.
+
+Normal boot uses kernel `6.12.112-galdrun-connector3`, read-only `ubi0:RootFS`,
+writable `ubi0:GaldrunSettings` at `/settings`, and its saved `/etc` bind mount.
+MTD0–MTD4 are read-only; only MTD5 is writable. RootFS reserves 768 LEBs and
+settings 128, leaving 512 PEBs available after UBI reserves on this board.
+Factory MTD1–MTD3 hashes remain unchanged and uncorrectable ECC counters are zero.
+Ethernet/key SSH at `10.0.0.74`, client identity/API, native MCU socket and ALSA
+Connector3 registration passed. No fresh listening test or deep-sleep result is
+claimed. Wi-Fi's PCIe link failed in the older warm/cold normal boots. A new RAM
+kernel explicitly enabling CLKO2 at 32768 Hz brings up PCIe and enumerates the
+Marvell endpoint. The follow-up kernel embeds approved radio/regulatory firmware
+and passes automatic loading and a short association in RAM. Signed candidate
+FIT `5eed3ce8...` is now installed with exact readback and passed NAND cold boot
+plus the Wi-Fi-only checks above.
+Keep the already qualified radio blob.
+
+The MTD4-only updater is `board/connector3/installer/update-fit.sh` under
+`hardware/buildroot/`. It requires the qualified USB write profile, the audited
+installer preflight and pinned factory backups. `--prepare` saves the current
+Galdrun MTD4 image; `--update` requires its independently verified host hash,
+checks exact readback and restores that image on failure. It hashes MTD5 before
+and after and never programs it. File-based gates/write/readback/rollback checks
+passed with `python3 hardware/buildroot/scripts/test-connector3-fit-update.py`.
+The existing stick has been physically booted again without copying an image;
+its ephemeral SSH key was authenticated over COM5. The installed Galdrun MTD4
+is independently saved/verified on the host, SHA256
+`c3818bc5d261c5aa7ce378798a555750763a4e48a8c6b3b88b7f63c912adfe53`.
+The new candidate's actual signature passed a separate check against the
+diagnostic public control tree. After explicit user authorization, the FIT-only
+update passed exact readback and factory checks. MTD5 before/after SHA256:
+`6d1a3b555084728795b7b132610ba7f851576eca3812237e1b1c08952e7c398f`.
+New cold-boot and Wi-Fi-only verification passed. Evidence is
+`reference/connector3-ssh-archive/fit-only-update-20261031.json` and matching log.
+`persistent-wifi-cold-boot-20261031.json`, `persistent-wifi-only-20261031.json`
+and their runtime/UART logs record the distinct physical tests. The joined
+`output/connector3-persistent/hardware-verification.json` retains the actual
+installed rootfs provenance and marks refreshed containers as unflashed.
+
+Refreshed host exports contain the Wi-Fi candidate FIT and dedicated updater:
+check USB SHA256 `5deddcb03e5ffd179bbd69fa17d483dd4af63543595109c8a36aaed352f2044f`,
+write USB SHA256 `43835e8b60a5abca7fc28b7fe1a2c4ad7aed016a26fde206c07e2407b394d68f`.
+Build/content/signature/tamper/protection checks passed; these exact new USB
+containers have not been physically booted. The actual stick and frozen tested
+images remain unchanged. See the handover for pinned host helpers/current COM5.
+
+The first boot exposed missing devpts and a read-only `/var/run`. The tested
+`board/connector3/persistent/init.sh` now recognizes kernel-mounted devtmpfs,
+creates `/dev/pts`, and binds volatile `/run` onto `/var/run`. The fix was applied
+only to the new MTD5 root, followed by reboot and completion of UBIFS recovery;
+root read-only mode, interactive SSH and the daemon PID file were then verified.
+Runtime init SHA256:
+`1f080a83b3ad21db37485c26c037710a833c074e3f61a3e86938835221a93ecf`.
+
+Installed normal FIT SHA256:
+`5eed3ce8912b83ca9be44d6829a66a60cb67685f9d7eaed6efd683e04336957d`.
+Previous FIT `2bfb58b7...` is independently backed up as recorded above.
+The initially flashed rootfs container was
+`480ae910a5dc0bfae5c434be05afe61e7b95ced826e5332a19278aa483d65ec7`,
+then its init was updated as recorded above. The refreshed clean exported
+container `f849093dfbce8e21be5ba0b6ec7cf3cb67d3e78df6ae946f182721c67e96f8e5`
+contains that startup fix but has not itself been flashed byte-for-byte. Generic
+exports remain SSH-off, without developer keys, home credentials or board identity.
+The installed private settings separately preserve this board's identity and
+owner public SSH key. Keep this distinction in qualification reports.
+
+The qualified limited OP-TEE/PSCI monitor SHA256 is
+`2b84ee7ba3ccd26264bed516aa20f0401932f5d584fd9b8175ae096cf76ad3ff`.
+It disables both CAAM implementations, TAs, secure storage and software PRNG.
+Standard TEE commands and RNG requests fail closed; no zero seed or fake random
+bytes are supplied. All CAAM rings were factory-locked, so selecting JR1 did not
+solve ownership initialization. Keep the archived traces; do not bypass locks
+or reopen the accepted radio licence/version decision. The limited monitor's
+cold-boot/static-watchdog scope is recorded in
+`output/connector3-monitor-production/hardware-verification.json`.
+
+The tested USB images were check `d904357b...` and write `f3223bea...`; frozen
+copies/reports are in `private/connector3/installer-{check,write}-tested-*`.
+During installation, the audited script was updated in RAM to SHA256
+`0ab27f34b54b34ca0f9554e9a3bd12c147e4dfe5aab3a00dec18251400f238c7`:
+raw MTD0 reads can vary by a bit because their ROM ECC layout is unqualified.
+MTD0 must stay physically read-only; exact identity checks use corrected MTD1–3.
+Raw MTD0 is retained for investigation and is never a restore target. The first
+attempt refused before erase under the old raw hash check; the corrected script
+then passed installation, rollback/readback and reinstall. The direct packer and
+builder both require the qualified monitor and matching normal FIT for write
+images. Boot itself only runs preflight; writes require an explicit pinned command.
+Refreshed USB artifacts passed build, signature/tamper, embedded-source and
+content checks: `private/connector3/installer-check/connect3.img` SHA256
+`dc131cd4fc9f04833dfd01ca28bc3f4659111c2f52e04be2093469587e6b43be`,
+and `private/connector3/installer-write/connect3.img` SHA256
+`45fcca78382d3228e01e49bd2ce5906b0e6f19f6923dcb6548a7fd232f499e1a`.
+They contain the corrected installer and exported rootfs. Do not label them as
+cold-booted solely from the older images' evidence.
+
+Original rollback files are independently verified on USB `galdrun-backup/` and
+in `private/connector3/rollback-usb-20261031/`. Manifest pin:
+`3ce972d6b4e8c4d081a91002856e423315a4b7b97312b6d8b9d0275ba4b2693e`.
+An inconsistent raw read is retained as `mtd0-first-read.bin`. Do not restore
+MTD0–MTD3. Keep USB `galdrun-private/` separate from generic exports. No image
+copy over SSH should be attempted: the user chose manual copying. Backup reads
+and the small settings/script transfers subsequently succeeded over pinned SSH.
+
+COM5 RX/TX is user-authorized. Capture PID 29900 writes
+`private/connector3/persistent-console-continue-20261031.log` and accepts the
+JSON TX queue `private/connector3/uart-transmit-20261031.json`; its four-hour
+limit may expire, so inspect the owned process before relying on it. Older
+`persistent-console-20261031.log` is retained. Normal NAND SSH uses the separate
+strict file `private/connector3/known_hosts_persistent_20261031`; reuse its key
+for the cold-boot test. Local Galdrun server/core remain stopped.
+
+Evidence under `reference/connector3-ssh-archive/` includes
+`install-retry-20261031.*`, `rollback-20261031.*`, `install-final-20261031.*`,
+`installed-persistent-inputs-20261031.json`, `persistent-first-boot-20261031.json`
+and `root-maintenance-20261031.txt`. Physical cold-boot verification passed in
+`persistent-cold-boot-20261031.json`, with matching UART/runtime evidence.
+The source collector includes package/toolchain licences/sources and the actual
+local code snapshot; refresh and verify it after the final code fixes.
+
+Reproduction commands from the repository root in Linux/WSL:
+
+```bash
+bash hardware/buildroot/scripts/build-connector3-persistent.sh hardware/buildroot/private/connector3/fit-signing
+# Rebuilding a monitor invalidates its hash qualification; use a separate test.
+# bash hardware/buildroot/scripts/build-connector3-monitor.sh --production
+bash hardware/buildroot/scripts/build-connector3-installer.sh hardware/buildroot/private/connector3/id_ed25519.pub hardware/buildroot/private/connector3/fit-signing
+bash hardware/buildroot/scripts/build-connector3-installer.sh hardware/buildroot/private/connector3/id_ed25519.pub hardware/buildroot/private/connector3/fit-signing --write
+python3 hardware/buildroot/scripts/source-bundle-connector3.py ~/.cache/raumfeld-buildroot hardware/buildroot/output/connector3-sources
+```
+
+## Approved radio and storage USB check — 2026-10-31
+
+The user resumed work. The `15.87.19.p14` exception is implemented: the exact
+approved hardware blob is accepted with its unchanged manufacturer notice and
+honest device-extraction source record under `usr/share/licenses/connector3-radio/`.
+The known licence version mismatch stays recorded, as accepted by the user.
+Local-radio builds now run the same OEM-runtime/source checks as generic builds;
+they no longer bypass the audit. OEM apps/libraries and the vendor D-Bus bridge
+remain excluded. Regression checks cover missing/modified notices, unexpected
+radio paths and the continued rejection of vendor runtime software.
+
+The cleaned standalone image was rebuilt with the explicit local-radio command
+below. Content checks passed: 22 source packages, 81 ELF files, no saved home
+Wi-Fi credentials. Its exported `licenses/` includes the manufacturer notice and
+source record. Generic settings remain separate from the private deployment
+overlay restoring this board's existing Galdrun identity/network/audio settings.
+The private `ram-local/buildroot-source-license.tar.gz` (with SHA256 sidecar)
+collects Buildroot legal-info/source archives, the pinned Buildroot archive and
+the current local board/scripts/client/shared build inputs, excluding private
+device settings and keys. This is build evidence, not yet a complete release
+source bundle; legal-info's README records its external-toolchain collection
+limitations.
+
+```text
+f9ef8e2f3fdb35372e74869b839fa1da9da1baafa2de9ceaba3bb909de70f044  zImage
+0196caddb78a01dd9ed1de9c34c953d9f50b32e868341700c205fc77a153f47f  rootfs.cpio.gz
+aae6e6c923ab5ff8a41fe02304eef6dba78c195c4b194c6dad25d0ae335455db  rootfs.tar.gz
+```
+
+The original beta was reached at **Ethernet `10.0.0.74`**, using its original
+trusted host key; WLAN `.58` was initially unreachable. RAM boot of the cleaned
+image then passed Ethernet SSH, radio initialization, association, **Wi-Fi-only
+SSH at `10.0.0.58` with eth0 down**, a WLAN default route and 5/5 gateway pings
+(0% loss, min/avg/max 1.419/2.145/2.510 ms). The existing recovery helper restores
+Ethernet after 150 seconds. No server/core was started and no new listening,
+audible volume/mute or deep-sleep result is claimed. Hash-bound evidence:
+`private/connector3/ram-local/hardware-verification.json` and
+`reference/connector3-ssh-archive/wifi-approved-radio-verified-20261031-console.txt`.
+The session's receive-only COM5 log is
+`private/connector3/approved-radio-20261031.log`. After the storage qualification,
+it was archived to `reference/connector3-ssh-archive/approved-radio-and-storage-uart-20261031.log`
+and owned capture PID 33496 was stopped, releasing COM5.
+
+The **read-only storage USB cold-boot check** is qualified:
+
+```text
+06cbd4dbf235e8f16b729f6da36767bd619dc1393ff4e3686de5529589613786  output/connector3-storage-check/connect3.img
+e010da1de1153a9ac786d3980c2424ff2dd6a87963520bca40d3440212541c15  protected storage zImage
+```
+
+Reproduce it in Linux/WSL from the repository root:
+
+```bash
+bash hardware/buildroot/scripts/build-connector3-storage-check.sh \
+  hardware/buildroot/private/connector3/fit-signing
+```
+
+The optional signing argument invokes `pack-connector3-storage-usb.py`; omitting
+it retains the existing kexec-component build. The packer reuses the audited
+diagnostic userspace, source-built OP-TEE and FIT layout. It checks the NAND
+controller program/erase guard, every partition's read-only flag, the actual
+signed kernel/DTB/monitor and load addresses, signature enforcement and the
+12 MiB total limit. A deliberately corrupted signature was rejected.
+The original storage kernel exceeded the host FIT loader's conservative 8 MiB
+kernel limit; the USB variant omits unused NFS/ext*/FUSE drivers and passes.
+The resulting FIT is 8,553,204 bytes, padded to 12,582,912 bytes for USB.
+`usb-storage-verification.json` records its exact inputs. No signing key is
+packaged. The previously qualified plain USB diagnostic remains unchanged.
+
+The first storage USB attempt (`19dd15e...`) reached the protected NAND driver,
+then failed at PID 1: the new packer's initial bus-name replacement also
+renamed `spba-bus@30800000`, breaking the `serial0` alias and console creation.
+The packer now matches only the entire parent bus node name and checks that
+`serial0` resolves to enabled UART1 before signing. The corrected image above
+uses signed DTB SHA256
+`af7d36784a06fa6ea66323fee5ec371a9aec5dd83d6c5cc29d86b530240a5d59`.
+The first failed UART capture is saved privately as
+`reference/connector3-ssh-archive/storage-usb-cold-first-failed-20261031.log`.
+
+**Physical cold boot passed on the corrected image.** It reached `/init`,
+Ethernet DHCP and key-only SSH at `10.0.0.74`, MAC `50:1e:2d:3b:77:f4`,
+100 Mbps/full duplex. UART confirmed the boot and the new key was enrolled in
+the separate strict file `private/connector3/known_hosts_storage_usb_cold_20261031`.
+All six MTD flags were `0x0`; NAND geometry and BCH8/512 matched; original
+environment/constants/FIT hashes matched before and after the reads; every ECC
+failure counter remained zero. Explicit read-only UBI attach and UBIFS mount/
+unmount passed. USB/FAT32 mounted read-only and its `connect3.img` hash matched
+the corrected image above. No original rootfs file was copied or executed.
+The old UBI allocation still warns `reserved 25, need 34`; the persistent layout
+must leave additional reserve.
+
+Hash-bound evidence is `output/connector3-storage-check/hardware-verification.json`
+and `reference/connector3-ssh-archive/storage-usb-cold-qualification-20261031.json`.
+The latter directory also holds `storage-cold-{runtime,data,ubi,usb-read}-20261031.txt`
+and `storage-usb-cold-qualified-20261031.log`. The board currently remains in
+this protected diagnostic; no server/core/client is running. It has no installer
+or flash writers and attaches no UBI automatically. Recovery is power-off,
+remove USB, power on without Reset. No NAND erase/program or bootloader/
+environment/settings modification has occurred.
+
+Still pending: persistent boot/settings qualification, the complete release source bundle,
+installer preflight/write/readback/rollback and production monitor qualification.
+The following 2026-10-30 sections are historical checkpoints.
+
+### Offline persistent filesystem candidate
+
+`scripts/build-connector3-persistent-rootfs.sh` under `hardware/buildroot/` now
+assembles a **private developer filesystem candidate** from the audited local
+RAM archive. It rechecks the selected radio and archive hashes, builds Buildroot's
+existing `host-mtd` tools if needed, and uses fakeroot/mkfs.ubifs/ubinize with
+4096-byte I/O, 4096-byte VID offset and 253952-byte LEBs. No device is contacted.
+
+```bash
+bash hardware/buildroot/scripts/build-connector3-persistent-rootfs.sh
+python3 hardware/buildroot/scripts/test-connector3-persistent-init.py
+```
+
+Output: `private/connector3/persistent-rootfs/`, including `SHA256SUMS` and
+`persistent-rootfs-verification.json`:
+
+```text
+1a642aab761321dbf56a93cfc724929bad62caba81f99e553ec04903a2957cf6  rootfs.ubi
+7173415122c1022d0bfe8d14b8270dd66d5f402b59361d63b9f8845c7e7d8c90  rootfs.ubifs
+664287a80b97a2b6093d0c02b8ead9702ce76fe72802c0fae57afed29dac63e2  settings.ubifs
+```
+
+Both volumes belong to **MTD5 only**: `RootFS` reserves 768 LEBs (195035136
+bytes), `GaldrunSettings` 128 LEBs (32505856 bytes). With the observed six bad/BBT
+blocks and two UBI layout blocks, 548 PEBs remain before UBI's operational/
+bad-block reserves; neither volume uses autoresize. Factory settings MTD3 is
+not part of this image. The verifier checks every EC header and both volume
+table copies, volume names/sizes, image hashes and the actual rootfs content.
+The 22-package/81-ELF audit passed with the approved radio/notice, no OEM runtime,
+no home Wi-Fi credentials, no saved room identity and no SSH host private key.
+
+The candidate's `/init` requires a read-only `ubi0:RootFS` root on MTD5 and
+mounts `ubi0:GaldrunSettings` for writes. It seeds `/etc` and client defaults
+atomically on first boot, binds the saved `/etc`, and keeps client identity,
+audio cache and generated SSH host keys in settings. Host checks passed for an
+interrupted initial copy and preservation of existing settings/room identity.
+Persisting all `/etc` is a first-install shortcut; default/config migration for
+future firmware updates remains to be implemented. This candidate retains the
+RAM build's developer SSH public key and key-only policy, so it is not a generic
+release or production SSH setup.
+
+This earlier developer candidate has been superseded by the release-default
+rootfs/kernel/FIT and check installer described at the top of this document.
+NAND write/readback, persistence and rollback remain physically unqualified.
+
 ## End of day — 2026-10-30
 
 **Stopped at the user's request. Read [tomorrow's handover](connector3-handover-2026-10-31.md)

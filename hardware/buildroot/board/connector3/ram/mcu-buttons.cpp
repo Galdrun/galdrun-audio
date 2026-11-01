@@ -138,7 +138,12 @@ bool exchange(int uart, int input, std::array<bool, buttons.size()>& pressed,
                     return false;
                 }
                 ack = true;
-                if (type == 0) return true;
+                if (type != 1) return true;
+            }
+            if (ack && type == 1 && command == 0xfffc && header[1] == 2 &&
+                (id == 0xfffd || id == 0xfffe) && le16(header.data() + 10) == 0) {
+                value = id;
+                return true;
             }
             if (ack && header[1] == 2 && id == command && le16(header.data() + 10) == 0) {
                 value = le32(header.data() + 4);
@@ -150,6 +155,25 @@ bool exchange(int uart, int input, std::array<bool, buttons.size()>& pressed,
     return false;
 }
 constexpr const char* audioSocket = "/run/galdrun-connector3-mcu.sock";
+bool synchronize(int uart, int input, std::array<bool, buttons.size()>& pressed,
+                 std::vector<uint8_t>& bytes)
+{
+    // Cold-start firmware ignores ordinary commands until GET Sync is acknowledged.
+    // A bootloader response requires starting the existing, verified application;
+    // no firmware upload/erase or unverified-start command is used here.
+    uint32_t state = 0;
+    if (!exchange(uart, input, pressed, bytes, 1, 0xfffc, state)) return false;
+    if (state == 0xfffd) return true;
+    uint32_t value = 0;
+    if (!exchange(uart, input, pressed, bytes, 2, 0x0c, value)) return false;
+    for (unsigned attempt = 0; running && attempt < 5; ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        state = 0;
+        if (exchange(uart, input, pressed, bytes, 1, 0xfffc, state) && state == 0xfffd)
+            return true;
+    }
+    return false;
+}
 bool setAudio(int uart, int input, std::array<bool, buttons.size()>& pressed,
               std::vector<uint8_t>& bytes, unsigned command, uint32_t requested)
 {
@@ -162,6 +186,42 @@ bool setAudio(int uart, int input, std::array<bool, buttons.size()>& pressed,
         if (value == requested) return true;
     } while (running && std::chrono::steady_clock::now() < deadline);
     return false;
+}
+bool setSampleRate(int uart, int input, std::array<bool, buttons.size()>& pressed,
+                   std::vector<uint8_t>& bytes, uint32_t rate)
+{
+    if (rate < 8000 || rate > 192000) return false;
+    uint32_t mute = 0;
+    if (!exchange(uart, input, pressed, bytes, 1, 0x10, mute) || mute > 1) return false;
+    if (!mute && !setAudio(uart, input, pressed, bytes, 0x10, 1)) return false;
+    // The high byte selects SOM/I2S. A bare rate is rejected by this MCU.
+    uint32_t encoded = 0x01000000u | rate;
+    const bool accepted = exchange(uart, input, pressed, bytes, 0, 0x16, encoded);
+    uint32_t actual = 0x01000000u;
+    const bool verified = accepted && exchange(uart, input, pressed, bytes, 1, 0x16, actual) &&
+                          actual == encoded;
+    // Leave a failed rate change muted; never announce successful playback.
+    const bool restored = verified && (mute || setAudio(uart, input, pressed, bytes, 0x10, 0));
+    std::fprintf(stderr, "MCU I2S rate %u: accepted=%d readback=0x%08x restored=%d\n",
+                 rate, accepted, actual, restored);
+    return restored;
+}
+bool initializeAudio(int uart, int input, std::array<bool, buttons.size()>& pressed,
+                     std::vector<uint8_t>& bytes)
+{
+    const bool synced = synchronize(uart, input, pressed, bytes);
+    std::fprintf(stderr, "MCU application synchronized: %d\n", synced);
+    // The source can survive a reset with a different value. Select the same
+    // host-I2S route (0x100) as the verified audible Connector 3 configuration.
+    const bool source = synced && setAudio(uart, input, pressed, bytes, 0x10, 1) &&
+                        setAudio(uart, input, pressed, bytes, 0x15, 0x100);
+    const bool awake = source && setAudio(uart, input, pressed, bytes, 0x50, 0);
+    // Establish the proven boot baseline even before the client opens ALSA.
+    // The client sends the actual rate on every subsequent device open.
+    const bool rate = awake && setSampleRate(uart, input, pressed, bytes, 48000);
+    const bool unmuted = rate && setAudio(uart, input, pressed, bytes, 0x10, 0);
+    std::fprintf(stderr, "MCU audio source 0x100: %d; power On: %d; unmuted: %d\n", source, awake, unmuted);
+    return unmuted;
 }
 int createAudioSocket()
 {
@@ -201,10 +261,25 @@ void handleAudio(int listener, int uart, int input, std::array<bool, buttons.siz
              requested <= (operation == "mute" ? 1u : 100u);
         if (ok) ok = setAudio(uart, input, pressed, bytes, operation == "mute" ? 0x10 : 0x11, requested);
     }
+    if (operation == "rate") {
+        ok = bool(requestLine >> requested) && !(requestLine >> extra) &&
+             setSampleRate(uart, input, pressed, bytes, requested);
+    }
+    if (operation == "indication") {
+        ok = bool(requestLine >> requested) && !(requestLine >> extra) &&
+             (requested == 0 || requested == 4 || requested == 5 || requested == 6 ||
+              requested == 10 || requested == 22);
+        // Indication is write-only on the Streamer MCU (GET returns status 3).
+        if (ok) {
+            uint32_t value = requested;
+            ok = exchange(uart, input, pressed, bytes, 0, 0x20, value);
+        }
+    }
     uint32_t mute = 0, volume = 0;
     if (ok) ok = exchange(uart, input, pressed, bytes, 1, 0x10, mute) &&
                  exchange(uart, input, pressed, bytes, 1, 0x11, volume) && mute <= 1 && volume <= 100;
-    if (ok && operation != "get") ok = requested == (operation == "mute" ? mute : volume);
+    if (ok && (operation == "mute" || operation == "volume"))
+        ok = requested == (operation == "mute" ? mute : volume);
     if (operation != "get") std::fprintf(stderr, "MCU audio %s %u: ok=%d mute=%u volume=%u\n",
                                          operation.c_str(), requested, ok, mute, volume);
     const std::string reply = ok ? "ok " + std::to_string(mute) + " " + std::to_string(volume) + "\n" :
@@ -254,22 +329,48 @@ void selfTest()
     }
     int pair[2];
     assert(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
+    assert(fcntl(pair[0], F_SETFL, O_NONBLOCK) == 0); // Match the real UART, including timeouts.
     std::thread emulator([&] {
-        uint32_t power = 2, mute = 1, pendingMute = 1;
-        bool mutePending = false;
+        uint32_t power = 2, mute = 1, pendingMute = 1, source = 0x201, rate = 0, indication = 0;
+        bool mutePending = false, synced = false, bootloader = true;
         Header packet{};
         while (recv(pair[1], packet.data(), packet.size(), MSG_WAITALL) == static_cast<ssize_t>(packet.size())) {
             const unsigned command = le16(packet.data() + 2);
             if (command == 0) continue;
-            const bool known = command == 0x50 || command == 0x10 || command == 0x11;
+            const bool sync = command == 0xfffc && packet[1] == 1;
+            const bool start = command == 0x0c && packet[1] == 2 && bootloader;
+            // Reproduce the real cold-start failure: normal requests get no reply.
+            if (!synced && !sync && !start) continue;
+            const bool known = sync || start || command == 0x50 || command == 0x10 ||
+                               command == 0x11 || command == 0x15 || command == 0x16 ||
+                               (command == 0x20 && packet[1] == 0);
             const auto ack = request(2, 0, known ? 0 : 3, packet[8]);
             assert(write(pair[1], ack.data(), ack.size()) == static_cast<ssize_t>(ack.size()));
             if (!known) continue;
+            if (start) { bootloader = false; synced = false; continue; }
+            if (sync) {
+                const auto reply = request(2, bootloader ? 0xfffe : 0xfffd, 0, 98);
+                assert(write(pair[1], reply.data(), reply.size()) == static_cast<ssize_t>(reply.size()));
+                synced = !bootloader;
+                continue;
+            }
             if (packet[1] == 0) {
                 if (command == 0x50) power = le32(packet.data() + 4);
+                if (command == 0x15) {
+                    assert(mute == 1); // Never switch a live source without muting.
+                    source = le32(packet.data() + 4);
+                }
                 if (command == 0x10) { pendingMute = le32(packet.data() + 4); mutePending = true; }
+                if (command == 0x16) {
+                    assert(mute == 1);
+                    rate = le32(packet.data() + 4);
+                    assert((rate & 0xff000000u) == 0x01000000u);
+                }
+                if (command == 0x20) indication = le32(packet.data() + 4);
             } else {
-                const auto reply = request(2, command, command == 0x50 ? power : command == 0x10 ? mute : 67, 99);
+                if (command == 0x16) assert(le32(packet.data() + 4) == 0x01000000u);
+                const auto reply = request(2, command, command == 0x50 ? power : command == 0x10 ? mute :
+                    command == 0x15 ? source : command == 0x16 ? rate : command == 0x20 ? indication : 67, 99);
                 assert(write(pair[1], reply.data(), reply.size()) == static_cast<ssize_t>(reply.size()));
                 if (command == 0x10 && mutePending) { mute = pendingMute; mutePending = false; }
             }
@@ -277,6 +378,20 @@ void selfTest()
     });
     std::array<bool, buttons.size()> pressed{};
     uint32_t value = 0;
+    assert(!exchange(pair[0], -1, pressed, buffer, 1, 0x10, value));
+    assert(initializeAudio(pair[0], -1, pressed, buffer)); // cold boot with the wrong saved source
+    assert(exchange(pair[0], -1, pressed, buffer, 1, 0x15, value) && value == 0x100);
+    value = 0x01000000u;
+    assert(exchange(pair[0], -1, pressed, buffer, 1, 0x16, value) && value == 0x0100bb80u);
+    assert(setSampleRate(pair[0], -1, pressed, buffer, 44100));
+    value = 0x01000000u;
+    assert(exchange(pair[0], -1, pressed, buffer, 1, 0x16, value) && value == 0x0100ac44u);
+    assert(!setSampleRate(pair[0], -1, pressed, buffer, 0));
+    assert(!setSampleRate(pair[0], -1, pressed, buffer, 192001));
+    for (uint32_t indication : {0u, 4u, 5u, 6u, 10u, 22u})
+        assert(exchange(pair[0], -1, pressed, buffer, 0, 0x20, indication));
+    assert(!exchange(pair[0], -1, pressed, buffer, 1, 0x20, value));
+    assert(synchronize(pair[0], -1, pressed, buffer)); // already running application
     assert(setAudio(pair[0], -1, pressed, buffer, 0x50, 0));
     assert(exchange(pair[0], -1, pressed, buffer, 1, 0x50, value) && value == 0);
     assert(setAudio(pair[0], -1, pressed, buffer, 0x10, 0));
@@ -286,7 +401,7 @@ void selfTest()
     shutdown(pair[0], SHUT_RDWR);
     emulator.join();
     close(pair[0]); close(pair[1]);
-    std::puts("PASS: MCU framing, checksum, resync, buttons, power/mute readback and rejected commands");
+    std::puts("PASS: MCU framing, checksum, resync, cold-start sync/application launch, buttons, power/mute, encoded rate, write-only LEDs and rejected commands");
 }
 }
 
@@ -309,11 +424,10 @@ int main(int argc, char** argv)
     std::array<bool, buttons.size()> pressed{};
     std::vector<uint8_t> bytes;
     bool ok = true;
-    // A warm boot can inherit Standby and Mute from the vendor. ALSA running
-    // alone does not power the carrier DAC: both commands and readback matter.
-    const bool awake = setAudio(uart, input, pressed, bytes, 0x50, 0);
-    const bool unmuted = awake && setAudio(uart, input, pressed, bytes, 0x10, 0);
-    std::fprintf(stderr, "MCU audio power On: %d; unmuted: %d\n", awake, unmuted);
+    // ALSA running alone does not select or power the carrier DAC.
+    if (!initializeAudio(uart, input, pressed, bytes)) {
+        ioctl(input, UI_DEV_DESTROY); close(input); close(uart); return 1;
+    }
     const int listener = createAudioSocket();
     if (listener < 0) std::perror("MCU audio socket");
     std::fprintf(stderr, "Connector 3 MCU touch device ready: 9 buttons\n");

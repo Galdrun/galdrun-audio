@@ -54,14 +54,19 @@ mkdir -p /run/sshd
 cp /opt/galdrun-client/client-default.json /run/client.json
 /usr/sbin/galdrun-connector3-mcu /dev/ttymxc2 >/run/mcu-buttons.log 2>&1 &
 echo $! >/run/mcu-buttons.pid
-for attempt in 1 2 3 4 5; do
+for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     [ -S /run/galdrun-connector3-mcu.sock ] && break
     sleep 1
 done
 export LD_LIBRARY_PATH=/opt/galdrun-client/lib
+if [ -S /run/galdrun-connector3-mcu.sock ]; then
+/usr/sbin/galdrun-status-leds /run/client.json >/run/status-leds.log 2>&1 &
 /opt/galdrun-client/galdrun-client --config /run/client.json \
     --audio-cache /run/audio_devices.json --log-file /run/galdrun-client.log \
     >/run/galdrun-client-console.log 2>&1 &
+else
+    echo 'MCU audio initialization failed; client not started' >/dev/kmsg
+fi
 
 while :; do
     /bin/sh

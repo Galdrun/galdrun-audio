@@ -11,7 +11,7 @@ below mean `src/Multiroom.Server.Playback/`. Commands: [development.md](developm
 | `Multiroom.Server` | Composition root: `Program.cs` -> `ServerHost.cs`; `Configuration/ConfigLoader.cs`, `ServerOptions.cs`; logging and service lifecycle |
 | `Multiroom.Server.Abstractions` | Shared contracts: `Result.cs`, `Queue.cs`, `Providers.cs`, `ResolvedStream.cs`, `MediaPublisher.cs`, `ApiError.cs` |
 | `Multiroom.Server.Library` | SQLite/indexer/catalog/stores, SQL migrations, local/SMB folders, playlists, users, likes/history/book positions |
-| `Multiroom.Server.Providers` | `ProviderRegistry.cs`, `UnifiedSearch.cs`, `SongResolver.cs`; `Local/`, `WebRadio/`, `TuneIn/`, `Tidal/`, `Covers/`, `AddIns/` |
+| `Multiroom.Server.Providers` | `ProviderRegistry.cs`, `UnifiedSearch.cs`, `SongResolver.cs`; `Local/`, `WebRadio/`, `TuneIn/`, `Tidal/`, `Streaming/`, `Covers/`, `AddIns/` |
 | `Multiroom.Server.Playback` | Queues/zone policy/persistence and the `Core/` TCP client |
 | `Multiroom.Server.Web` | Independent `Api/ApiEndpoint`, `Media/MediaEndpoint`, and `Gui/GuiEndpoint` Kestrel listeners |
 | `Multiroom.Server.Mcp` | `MultiroomMcpServer.cs`, `MultiroomTools.cs`, caller tiers and client store |
@@ -87,6 +87,12 @@ Keep ownership straight when changing settings:
 - Providers return `ResolvedStream`, not decoded PCM. `KnownLength` must
   provide independent seekable readers with stable bytes/length per URL;
   `Live` provides nonseekable readers. Keep stream/cache release lifetimes.
+- On-demand streaming providers (today Tidal) resolve through
+  `Providers/Streaming/StreamWindow.cs`, one per provider: it holds only a
+  window of pieces around each reader (memory or disk, top-level `streaming`
+  config), renews expired signed URLs through the provider's manifest
+  function, and frees a track on release. New streaming providers must use
+  it instead of buffering or caching whole files themselves.
   `Web/Media/MediaHandles.cs` retires handles after the core is done.
 - `Web/Media/MediaEndpoint.cs` serves `/media/{handle}` on its own listener:
   Range for seekable media, streaming/backpressure for live media. A paused

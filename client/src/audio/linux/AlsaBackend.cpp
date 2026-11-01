@@ -2,6 +2,8 @@
 
 #include "audio/FormatProbe.h"
 #include "audio/linux/AlsaMixer.h"
+#include "Connector3Mcu.h"
+#include "config/BoardConfig.h"
 #include "util/Logger.h"
 
 #include <alsa/asoundlib.h>
@@ -654,6 +656,18 @@ bool AlsaBackend::open(const AudioBackendConfig& config)
             std::string("cannot apply the hardware parameters: ") + snd_strerror(result);
         closeLocked();
         return false;
+    }
+
+    if (config.deviceId == "hw:CARD=Connector3,DEV=0" &&
+        board_config::enabled(board_config::current(), "mcuAudioControls"))
+    {
+        long mute = 0, volume = 0;
+        if (!connector3McuRequest("rate " + std::to_string(config.format.sampleRate),
+                                  mute, volume, lastError_))
+        {
+            closeLocked();
+            return false;
+        }
     }
 
     // Only once the parameters are applied do they carry the driver's

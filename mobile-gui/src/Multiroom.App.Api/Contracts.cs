@@ -51,6 +51,9 @@ public sealed record SearchResult(string Query, CatalogItems Items, IReadOnlyLis
     IReadOnlyList<SearchFailure> Failures);
 public sealed record ServerStatus(string Version, CoreStatus Core, JsonElement Media, JsonElement Library,
     IReadOnlyList<ProviderView> Providers, JsonElement AddIns, EventStatus Events);
+// indexer.progress: counted since the server started. Indexed and Failed grow only for new or changed files;
+// Passes when a folder's scan ends; QueueDepth is the folders waiting (not the one being scanned).
+public sealed record IndexerStatus(long Scanned, long Indexed, long Failed, int QueueDepth, long Passes);
 public sealed record CoreStatus(bool Connected, long Connections, int Zones, int Rooms,
     int QueuedEvents, long DroppedEvents, string? Version = null);
 public sealed record EventStatus(int Subscribers, int Held, long Dropped);

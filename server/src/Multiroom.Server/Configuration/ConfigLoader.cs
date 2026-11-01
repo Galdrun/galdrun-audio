@@ -6,6 +6,7 @@ using Multiroom.Server.Ai;
 using Multiroom.Server.Library;
 using Multiroom.Server.Library.Smb;
 using Multiroom.Server.Providers.Covers;
+using Multiroom.Server.Providers.Streaming;
 using Multiroom.Server.Providers.Tidal;
 using Multiroom.Server.Providers.TuneIn;
 using Multiroom.Server.Web.Api;
@@ -43,11 +44,13 @@ public sealed record ServerSettings(
     LibrarySettings Library,
     TidalSettings Tidal,
     bool AutoResume,
+    StreamingSettings Streaming,
     TuneInSettings? TuneIn = null,
     int CoreDiscoveryPort = 4722,
     IReadOnlyList<AiProviderConfig>? AiProviders = null,
     ArtworkSettings? Artwork = null,
-    GuiEndpointOptions? Gui = null);
+    GuiEndpointOptions? Gui = null,
+    IReadOnlyList<string>? Warnings = null);
 
 // Config is the JSON file, then GALDRUN_-prefixed environment variables
 // (GALDRUN_logging__level=debug), then the command line (--logging:level=debug),
@@ -263,6 +266,18 @@ public static class ConfigLoader
         var tidal = ResolveTidal(options.Providers.Tidal);
         if (!tidal.IsSuccess)
             return tidal.Failure;
+        var warnings = new List<string>();
+        if (options.Providers.Tidal.CacheBytes is not null)
+            warnings.Add("providers.tidal.cacheBytes is ignored: tracks are streamed through a window (streaming.trackWindowBytes)");
+
+        var streaming = options.Streaming;
+        if (!Enum.IsDefined(streaming.TrackBuffer))
+            return Result.Fail(ConfigError.OutOfRange, $"streaming.trackBuffer: {streaming.TrackBuffer}");
+        if (streaming.TrackWindowBytes != 0 && streaming.TrackWindowBytes < StreamingSettings.MinimumWindowBytes)
+        {
+            return Result.Fail(ConfigError.OutOfRange,
+                $"streaming.trackWindowBytes: 0 or at least {StreamingSettings.MinimumWindowBytes}, was {streaming.TrackWindowBytes}");
+        }
 
         var ai = ResolveAi(options.Ai);
         if (!ai.IsSuccess)
@@ -274,10 +289,12 @@ public static class ConfigLoader
 
         return new ServerSettings(configPath, dataDirectory, logging.Level, logFile, logging.MaxBytes, core.Host,
             core.Port, new MediaEndpointOptions(mediaBind, media.Port, mediaToken), api.Value, library.Value,
-            tidal.Value, options.Playback.AutoResume, tuneIn.Value, core.DiscoveryPort,
+            tidal.Value, options.Playback.AutoResume,
+            new StreamingSettings(streaming.TrackBuffer, streaming.TrackWindowBytes, Path.Combine(dataDirectory, "streams")),
+            tuneIn.Value, core.DiscoveryPort,
             ai.Value, new ArtworkSettings(options.Artwork.MusicBrainz,
                 string.IsNullOrWhiteSpace(options.Artwork.FanartTvKey) ? null : options.Artwork.FanartTvKey.Trim()),
-            gui.Value);
+            gui.Value, warnings);
     }
 
     // The same ports as the API's are refused, and the API's own. This
@@ -416,18 +433,13 @@ public static class ConfigLoader
             return Result.Fail(ConfigError.MissingValue, "providers.tidal.playbackClientId");
         if (!Enum.IsDefined(tidal.Quality))
             return Result.Fail(ConfigError.OutOfRange, $"providers.tidal.quality: {tidal.Quality}");
-        if (tidal.CacheBytes < TidalSettings.MinimumCacheBytes)
-        {
-            return Result.Fail(ConfigError.OutOfRange,
-                $"providers.tidal.cacheBytes: at least {TidalSettings.MinimumCacheBytes}, was {tidal.CacheBytes}");
-        }
         if (tidal.ArtworkCacheBytes < TidalSettings.MinimumArtworkCacheBytes)
         {
             return Result.Fail(ConfigError.OutOfRange,
                 $"providers.tidal.artworkCacheBytes: at least {TidalSettings.MinimumArtworkCacheBytes}, was {tidal.ArtworkCacheBytes}");
         }
         return new TidalSettings(clientId, string.IsNullOrEmpty(tidal.ClientSecret) ? null : tidal.ClientSecret,
-            tidal.Quality, tidal.CacheBytes, tidal.ArtworkCacheBytes, playbackId,
+            tidal.Quality, tidal.ArtworkCacheBytes, playbackId,
             string.IsNullOrEmpty(tidal.PlaybackClientSecret) ? null : tidal.PlaybackClientSecret);
     }
 

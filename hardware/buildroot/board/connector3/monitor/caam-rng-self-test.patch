@@ -1,0 +1,26 @@
+Subject: [PATCH] caam: exercise hardware RNG during crypto service initialization
+
+The CAAM driver initializes in early_init, before this service_init hook.
+Reject failed/all-zero/repeated samples and report only the result, never data.
+
+--- a/core/drivers/crypto/caam/caam_rng.c
++++ b/core/drivers/crypto/caam/caam_rng.c
+@@ -576,5 +576,18 @@
+ 
+ void plat_rng_init(void)
+ {
++	uint8_t first[32] = { 0 };
++	uint8_t second[32] = { 0 };
++	uint8_t nonzero = 0;
++	size_t i = 0;
++
++	if (do_rng_read(first, sizeof(first)) != TEE_SUCCESS ||
++	    do_rng_read(second, sizeof(second)) != TEE_SUCCESS)
++		panic("CAAM hardware RNG read failed");
++	for (i = 0; i < sizeof(first); i++)
++		nonzero |= first[i] | second[i];
++	if (!nonzero || !memcmp(first, second, sizeof(first)))
++		panic("CAAM hardware RNG self-test failed");
++	IMSG("CAAM hardware RNG self-test passed");
+ }
+ #endif

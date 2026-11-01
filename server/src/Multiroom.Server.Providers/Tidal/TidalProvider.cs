@@ -4,19 +4,19 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Multiroom.Server.Abstractions;
+using Multiroom.Server.Providers.Streaming;
 
 namespace Multiroom.Server.Providers.Tidal;
 
 public static class TidalServiceCollectionExtensions
 {
-    // `directory` holds the tokens and the caches: <dataDirectory>/tidal.
-    // `client`, when it answers one, is the app set through the API, used
-    // instead of the config's.
+    // `directory` holds the tokens and the artwork cache: <dataDirectory>/tidal.
+    // Tracks are streamed through a StreamWindow under `streaming`.
     public static IServiceCollection AddTidal(this IServiceCollection services, TidalSettings settings,
-        string directory) =>
+        StreamingSettings streaming, string directory) =>
         services.AddProvider(TidalProvider.ProviderId, s =>
         {
-            var provider = new TidalProvider(settings, directory,
+            var provider = new TidalProvider(settings, streaming, directory,
                 s.GetRequiredService<ILoggerFactory>().CreateLogger<TidalProvider>());
             provider.Start();
             return provider;
@@ -58,13 +58,13 @@ public sealed partial class TidalProvider : IProvider, ISearchProvider, IBrowseP
     private readonly TidalEndpoints _endpoints;
     private readonly HttpClient _http;
     private readonly ILogger _log;
-    private readonly TrackCache _tracks;
+    private readonly StreamWindow _tracks;
     private readonly ArtworkCache _artwork;
     private readonly TidalSession _session;
     private volatile string? _granted;
     private int _disposed;
 
-    public TidalProvider(TidalSettings settings, string directory, ILogger log, TidalEndpoints? endpoints = null)
+    public TidalProvider(TidalSettings settings, StreamingSettings streaming, string directory, ILogger log, TidalEndpoints? endpoints = null)
     {
         _settings = settings;
         _endpoints = endpoints ?? TidalEndpoints.Default;
@@ -81,7 +81,8 @@ public sealed partial class TidalProvider : IProvider, ISearchProvider, IBrowseP
         _http.DefaultRequestHeaders.UserAgent.ParseAdd(Branding.ServerName);
         _log = log;
         _session = new TidalSession(_http, settings, _endpoints, Path.Combine(directory, "token.json"), log);
-        _tracks = new TrackCache(Path.Combine(directory, "tracks"), settings.CacheBytes, _http, log);
+        _tracks = new StreamWindow(_http, streaming, Path.Combine(streaming.Directory, ProviderId), log);
+        DeleteOldTrackCache(Path.Combine(directory, "tracks"));
         _artwork = new ArtworkCache(Path.Combine(directory, "artwork"), settings.ArtworkCacheBytes, _http);
     }
 
@@ -102,9 +103,8 @@ public sealed partial class TidalProvider : IProvider, ISearchProvider, IBrowseP
 
     public Task<ProviderStatus> GetStatusAsync(CancellationToken cancellationToken)
     {
-        var (tracks, bytes, inUse) = _tracks.Held;
         var (images, imageBytes) = _artwork.Held;
-        var caches = $"track cache {tracks} track(s), {inUse} in use, {bytes} of {_tracks.Capacity} bytes; " +
+        var caches = $"{_tracks.Describe()}; " +
             $"artwork {images} image(s), {imageBytes} of {_artwork.Capacity} bytes";
         var token = _session.Token;
         return Task.FromResult(token is null
@@ -136,8 +136,8 @@ public sealed partial class TidalProvider : IProvider, ISearchProvider, IBrowseP
             [.. Of(SearchKinds.Playlists, "playlists").Select(PlaylistNode).OfType<BrowseNode>()]);
     }
 
-    // Through the track cache: a track played before, in the quality asked
-    // for, is answered from disk without asking Tidal.
+    // Through the stream window: a track another zone is playing in the
+    // quality asked for is shared without asking Tidal; a replay asks again.
     public Task<Result<ResolvedStream, ProviderError>> ResolveAsync(Track track, CancellationToken cancellationToken)
     {
         if (IdOf(track.ProviderItemId, TrackPrefix) is not { } id)
@@ -167,7 +167,25 @@ public sealed partial class TidalProvider : IProvider, ISearchProvider, IBrowseP
         _http.Dispose();
     }
 
-    private async Task<Result<TidalManifest, ProviderError>> ManifestAsync(long id, string quality, string name,
+    // The track cache earlier versions kept whole tracks in, up to 2 GiB.
+    private void DeleteOldTrackCache(string directory)
+    {
+        try
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            LogOldCacheFailed(_log, directory, e.Message);
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "tidal: the old track cache {Path} cannot be deleted: {Reason}")]
+    private static partial void LogOldCacheFailed(ILogger log, string path, string reason);
+
+    // Called again by the stream window when the signed URLs expire.
+    private async Task<Result<StreamManifest, ProviderError>> ManifestAsync(long id, string quality, string name,
         CancellationToken cancellationToken)
     {
         var info = await _session.GetAsync($"tracks/{id}/playbackinfopostpaywall",
@@ -188,10 +206,11 @@ public sealed partial class TidalProvider : IProvider, ISearchProvider, IBrowseP
         if (granted is not null && granted != quality && _granted != granted)
             LogDowngraded(_log, quality, granted, name);
         _granted = granted;
-        return manifest.Value with { Grant = GrantOf(granted, json.Number("sampleRate"), json.Number("bitDepth")) };
+        var grant = GrantOf(granted, json.Number("sampleRate"), json.Number("bitDepth"));
+        return manifest.Value with { Format = FormatOfGrant(grant), Tag = grant };
     }
 
-    // The grant as the cache keeps it in a file name: the tier, and for a
+    // The grant as the stream window names it on disk: the tier, and for a
     // lossless tier the sample rate and bit depth when Tidal names them
     // ("HI_RES_LOSSLESS-96000-24").
     private static string GrantOf(string? quality, long? sampleRate, long? bitDepth)
@@ -203,8 +222,8 @@ public sealed partial class TidalProvider : IProvider, ISearchProvider, IBrowseP
             : quality;
     }
 
-    // What a cached file holds, from its grant; null when it is not known.
-    internal static AudioFormat? FormatOfGrant(string grant)
+    // What the stream holds, from its grant; null when it is not known.
+    private static AudioFormat? FormatOfGrant(string grant)
     {
         var parts = grant.Split('-');
         var format = FormatOf(parts[0]);

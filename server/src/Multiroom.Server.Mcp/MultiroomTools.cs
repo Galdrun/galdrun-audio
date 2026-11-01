@@ -414,25 +414,28 @@ public sealed class MultiroomTools
                     : playlists.AddEntries(playlist, expanded.Tracks, index));
             });
 
-        Add(McpTier.Modify, "add_favorite", "Makes a track, a station or a book (a browse node of audiobook tracks) " +
-            "a favourite: exactly one of the three.",
+        Add(McpTier.Modify, "add_favorite", "Makes a track, a station, an album or a book (a browse node of audiobook " +
+            "tracks) a favourite: exactly one of the four.",
             async (Track? track = null, RadioStation? station = null, NodeRef? node = null,
-                [Description(UserParameter)] string? user = null, CancellationToken cancellationToken = default) =>
+                [Description(UserParameter)] string? user = null, Album? album = null,
+                CancellationToken cancellationToken = default) =>
             {
-                switch (track, station, node)
+                switch (track, station, node, album)
                 {
-                    case ({ } t, null, null):
+                    case ({ } t, null, null, null):
                         return Ok(playlists.AddFavorite(t, user));
-                    case (null, { } s, null):
+                    case (null, { } s, null, null):
                         return Ok(playlists.AddFavorite(s, user));
-                    case (null, null, { } n):
+                    case (null, null, null, { } a):
+                        return Ok(playlists.AddFavorite(a, user));
+                    case (null, null, { } n, null):
                         var expanded = Ok(await player.ExpandAsync(n.Provider, n.Id, group: true, cancellationToken)
                             .ConfigureAwait(false));
                         return expanded.Group is { } book
                             ? Ok(playlists.AddFavorite(book, user))
                             : throw Refused("invalidArgument", $"{n.Id} is no book (two or more audiobook tracks)");
                     default:
-                        throw Refused("invalidArgument", "exactly one of track, station or node");
+                        throw Refused("invalidArgument", "exactly one of track, station, album or node");
                 }
             });
 

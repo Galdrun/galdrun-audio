@@ -20,7 +20,15 @@ public partial class ShellViewModel : ObservableObject
     private readonly Func<TimeSpan, CancellationToken, IAsyncEnumerable<DiscoveredServer>> _discovery;
     private readonly Func<string, string?, MultiroomClient> _newClient;
     private string _beforeVolume = "Sources";
+    // The page an album was opened from (Home, and its "See all" shelf if open), for back once Browse has no
+    // history of its own.
+    private string? _beforeBrowse;
+    private HomeShelf? _beforeShelf;
     public IReadOnlyList<string> Pages { get; } = ["Home", "Sources", "Search", "Browse", "Playlists", "Favourites", "Recommendations", "Queue", "Zones", "Rooms", "Diagnostics", "Now Playing", "Volume", "Servers", "Server"];
+    // The menu's pages: Browse is reached from Sources, Home and Search.
+    public IReadOnlyList<string> MenuPages { get; } = ["Home", "Sources", "Search", "Playlists", "Favourites", "Recommendations", "Queue", "Zones", "Rooms", "Diagnostics", "Now Playing", "Volume", "Servers", "Server"];
+    [ObservableProperty] private bool _isMenuOpen;
+    [RelayCommand] private void ToggleMenu() => IsMenuOpen = !IsMenuOpen;
     public PlaybackViewModel Playback { get; }
     public BrowserViewModel Browser { get; }
     public CollectionsViewModel Collections { get; }
@@ -41,7 +49,12 @@ public partial class ShellViewModel : ObservableObject
         Home = new(ReadAsync, () => Playback.SelectedZone, Playback.ZoneNameOf);
         Home.QueueChanged += () => _session?.Refresh();
         Home.PlayedIn += zone => Playback.SelectedZone = zone;
-        Home.OpenRequested += (node, title) => { SelectedPage = "Browse"; _ = Browser.OpenNodeAsync(node, title); };
+        Home.OpenRequested += (node, title) =>
+        {
+            var shelf = Home.OpenShelf;
+            _beforeBrowse = SelectedPage; SelectedPage = "Browse"; _beforeShelf = shelf;
+            _ = Browser.OpenNodeAsync(node, title);
+        };
         Collections.QueueChanged += () => _session?.Refresh();
         Collections.Warned += message => Error = message;
         Collections.RecommendationsRequested += () => SelectedPage = "Recommendations";
@@ -52,6 +65,9 @@ public partial class ShellViewModel : ObservableObject
             if (page == "Recommendations") _ = Collections.MoreLikeCommand.ExecuteAsync("pending");
         };
         Browser.QueueChanged += () => _session?.Refresh();
+        Browser.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(Browser.IsDetail)) OnPropertyChanged(nameof(ShowContentHeader)); };
+        Browser.SheetRequested += item => Home.OpenSheetCommand.Execute(item);
+        Browser.MarksChanged += () => _ = Home.RefreshAsync();
         Playback.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(Playback.SelectedZone) && _connectedAddress is not null) _ = SavePreferencesAsync();
@@ -81,7 +97,8 @@ public partial class ShellViewModel : ObservableObject
     public bool IsQueue => SelectedPage == "Queue";
     public bool IsZones => SelectedPage == "Zones";
     public bool IsNowPlaying => SelectedPage == "Now Playing";
-    public bool ShowContentHeader => !IsHome && !IsNowPlaying;
+    // An album page starts with its cover: no brand, connection, heading or refresh above it.
+    public bool ShowContentHeader => !IsHome && !IsNowPlaying && !(IsBrowser && Browser.IsDetail);
     public bool ShowTopProgress => IsBusy && _busyShown && !IsNowPlaying;
     public bool ShowArtworkProgress => IsBusy && IsNowPlaying;
     public bool IsVolume => SelectedPage == "Volume";
@@ -100,6 +117,32 @@ public partial class ShellViewModel : ObservableObject
     // An error shows as a toast over the page for a few seconds; Error itself stays until the next request.
     public TimeSpan ErrorShown { get; set; } = TimeSpan.FromSeconds(5);
     [ObservableProperty] private bool _showError;
+    // Pending news from the server, behind the header bar's info icon instead of in a page.
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasInfo))] private string _info = "";
+    public bool HasInfo => Info.Length != 0;
+    public const string LibraryUpdating = "Your library is being updated. New music shows up by itself once it is done.";
+    // The indexer's count of new or changed files and its passes, as last seen (none before the first
+    // indexer.progress), and while an update shows, the pass that must end before the pages are read again.
+    private long? _libraryChanges;
+    private long _libraryPasses;
+    private long? _libraryUntilPass;
+
+    // New or changed music shows the info; once the indexer has finished a pass after that with no folder
+    // waiting, the open page is read again by itself and the info goes.
+    public void LibraryProgress(IndexerStatus status)
+    {
+        var changes = status.Indexed + status.Failed;
+        if (changes > (_libraryChanges ?? changes)) { _libraryUntilPass ??= _libraryPasses; Info = LibraryUpdating; }
+        _libraryChanges = changes;
+        if (_libraryUntilPass is { } pass && status.Passes > pass && status.QueueDepth == 0)
+        {
+            _libraryUntilPass = null; Info = "";
+            RefreshLibraryPage();
+        }
+        _libraryPasses = status.Passes;
+    }
+    // Home and Browse show the library; other pages read it when opened.
+    private void RefreshLibraryPage() { if (IsHome || (IsBrowser && !Browser.IsLoading)) _ = RefreshAsync(); }
     private IDisposable? _hideError;
     partial void OnErrorChanged(string value)
     {
@@ -124,6 +167,8 @@ public partial class ShellViewModel : ObservableObject
     partial void OnIsWideChanged(bool value) => OnPropertyChanged(nameof(ShowSideQueue));
     partial void OnSelectedPageChanged(string value)
     {
+        if (value != "Browse") { _beforeBrowse = null; _beforeShelf = null; }
+        IsMenuOpen = false;
         _page.Cancel(); _page.Dispose(); _page = new(); Browser.Cancel(); Browser.SetSearchVisible(IsSearch); Playback.CancelMarks();
         foreach (var property in new[] { nameof(Heading), nameof(IsHome), nameof(IsSettings), nameof(IsSources), nameof(IsQueue),
             nameof(IsZones), nameof(IsBrowser), nameof(IsSearch), nameof(IsNowPlaying), nameof(ShowSideQueue),
@@ -143,6 +188,18 @@ public partial class ShellViewModel : ObservableObject
         _beforeVolume = SelectedPage; SelectedPage = "Volume";
     }
     [RelayCommand] private void CloseVolume() => SelectedPage = _beforeVolume;
+    // The system back (Android's, or a right click on the desktop) steps out of what is open, innermost first;
+    // false leaves it to the system.
+    public bool GoBack()
+    {
+        if (IsMenuOpen) { IsMenuOpen = false; return true; }
+        if (Home.IsSheetOpen) { if (Home.IsActionsStep) Home.CloseSheet(); else Home.SheetBackCommand.Execute(null); return true; }
+        if (IsVolume) { CloseVolume(); return true; }
+        if (IsBrowser && Browser.CanBack) { Browser.BackCommand.Execute(null); return true; }
+        if (IsBrowser && _beforeBrowse is { } opener) { var shelf = _beforeShelf; SelectedPage = opener; Home.OpenShelf = shelf; return true; }
+        if (IsHome && Home.IsShelfOpen) { Home.CloseShelfCommand.Execute(null); return true; }
+        return false;
+    }
 
     [RelayCommand]
     private Task ConnectAsync() => ConnectCoreAsync(null);
@@ -167,7 +224,10 @@ public partial class ShellViewModel : ObservableObject
             if (previous is not null) await previous.DisposeAsync();
             Browser.Artwork?.Dispose(); Browser.Reset(); Playback.Apply(new([], [])); Collections.Reset(); Rooms.Reset(); Home.Reset();
             var session = new ControllerSession(client); _session = session;
-            Browser.Artwork = new ArtworkCache(client); Playback.Artwork = Browser.Artwork;
+            // Each server keeps its pictures in its own folder beside the preferences; ids are unique per server only.
+            var artworkFolder = Path.Combine(Path.GetDirectoryName(_preferencesPath)!, "Artwork", Convert.ToHexStringLower(
+                System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(serverId ?? client.BaseUri.Authority)))[..16]);
+            Browser.Artwork = new ArtworkCache(client, artworkFolder); Playback.Artwork = Browser.Artwork;
             Connection = "Connecting…"; Connected = false;
             var status = await client.StatusAsync(ct);
             Providers = await client.ProvidersAsync(ct);
@@ -181,6 +241,7 @@ public partial class ShellViewModel : ObservableObject
             session.ProvidersChanged += providers => Dispatch(session, () => Providers = providers);
             var artwork = Browser.Artwork;
             session.ArtworkFound += id => _ = artwork.AnnounceAsync(id);
+            session.IndexerChanged += status => Dispatch(session, () => LibraryProgress(status));
             session.ContentInvalidated += type =>
             {
                 if (type is "resync" or "events.lost" or "core.eventsLost" or "core.synchronised")
@@ -195,8 +256,8 @@ public partial class ShellViewModel : ObservableObject
                         if (IsNowPlaying && type is "like.changed" or "favorite.changed") _ = RefreshCurrentMarksAsync();
                         if (IsHome) _ = Home.RefreshAsync();
                     });
-                else if (type is "indexer.progress" or "library.folderChanged")
-                    Dispatch(session, () => Browser.Notice = "Your library is updating. Refresh for the latest music.");
+                else if (type == "library.folderChanged")
+                    Dispatch(session, RefreshLibraryPage);
             };
             session.Start();
             await SavePreferencesAsync();
@@ -253,7 +314,7 @@ public partial class ShellViewModel : ObservableObject
         _page.Cancel(); _page.Dispose(); _page = new(); Browser.Cancel(); Browser.Artwork?.Dispose();
         var previous = _session; _session = null;
         if (previous is not null) await previous.DisposeAsync();
-        Connection = "Not connected"; Connected = false;
+        Connection = "Not connected"; Connected = false; Info = ""; _libraryChanges = null; _libraryUntilPass = null;
     }
     public async Task InitializeAsync()
     {

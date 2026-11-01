@@ -20,6 +20,8 @@ public sealed class ControllerSession : IAsyncDisposable
     public event Action<string>? ContentInvalidated;
     // An artworkId that has a picture now (server phase 40: artwork.changed).
     public event Action<string>? ArtworkFound;
+    // The library indexer's progress (indexer.progress).
+    public event Action<IndexerStatus>? IndexerChanged;
     public event Action<string>? RefreshFailed;
 
     public ControllerSession(MultiroomClient client) => Client = client;
@@ -28,6 +30,12 @@ public sealed class ControllerSession : IAsyncDisposable
     {
         if (full) Interlocked.Exchange(ref _fullRefresh, 1);
         _refresh.Writer.TryWrite(true);
+    }
+
+    private static IndexerStatus? Indexer(string data)
+    {
+        try { return System.Text.Json.JsonSerializer.Deserialize<IndexerStatus>(data, MultiroomClient.Json); }
+        catch (System.Text.Json.JsonException) { return null; }
     }
 
     private static string? ArtworkId(string data)
@@ -51,6 +59,7 @@ public sealed class ControllerSession : IAsyncDisposable
                     e.Type.StartsWith("queue.", StringComparison.Ordinal) || e.Type is "events.lost" or "core.eventsLost" or "core.synchronised")
                     Refresh(e.Type is "events.lost" or "core.eventsLost" or "core.synchronised");
                 if (e.Type == "artwork.changed" && ArtworkId(e.Data) is { } artwork) ArtworkFound?.Invoke(artwork);
+                if (e.Type == "indexer.progress" && Indexer(e.Data) is { } indexer) IndexerChanged?.Invoke(indexer);
                 ContentInvalidated?.Invoke(e.Type);
                 return Task.CompletedTask;
             }, connected =>

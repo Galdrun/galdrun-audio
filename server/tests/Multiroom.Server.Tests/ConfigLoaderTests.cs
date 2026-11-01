@@ -3,6 +3,7 @@ using System.Text.Json;
 using Multiroom.Server.Abstractions;
 using Multiroom.Server.Configuration;
 using Multiroom.Server.Library;
+using Multiroom.Server.Providers.Streaming;
 using Multiroom.Server.Providers.Tidal;
 using Multiroom.Server.Web.Gui;
 
@@ -61,8 +62,8 @@ public sealed class ConfigLoaderTests : IDisposable
         Assert.Equal("play-id", tidal.PlaybackClientId);
         Assert.Equal("play-secret", tidal.PlaybackClientSecret);
         Assert.Equal(TidalQuality.HiResLossless, tidal.Quality);
-        Assert.Equal(TidalSettings.DefaultCacheBytes, tidal.CacheBytes);
         Assert.Equal(TidalSettings.DefaultArtworkCacheBytes, tidal.ArtworkCacheBytes);
+        Assert.Empty(result.Value.Warnings!);
         Assert.DoesNotContain("app-secret", result.Value.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("play-secret", result.Value.ToString(), StringComparison.Ordinal);
     }
@@ -70,12 +71,40 @@ public sealed class ConfigLoaderTests : IDisposable
     [Theory]
     [InlineData("""{ "clientSecret": "s" }""", ConfigError.MissingValue, "providers.tidal.clientId")]
     [InlineData("""{ "clientId": "a", "playbackClientSecret": "s" }""", ConfigError.MissingValue, "providers.tidal.playbackClientId")]
-    [InlineData("""{ "clientId": "a", "cacheBytes": 1000 }""", ConfigError.OutOfRange, "providers.tidal.cacheBytes")]
     [InlineData("""{ "clientId": "a", "artworkCacheBytes": 1000 }""", ConfigError.OutOfRange, "providers.tidal.artworkCacheBytes")]
     [InlineData("""{ "clientId": "a", "quality": "master" }""", ConfigError.MalformedValue, "")]
     public void A_tidal_section_that_cannot_be_used_is_refused(string tidal, ConfigError code, string key)
     {
         var result = ConfigLoader.Load(["--config", Config($$"""{ "providers": { "tidal": {{tidal}} } }""")], _dir.Path);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(code, result.Failure.Code);
+        Assert.StartsWith(key, result.Failure.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Streaming_holds_a_window_in_memory_by_default_and_the_old_tidal_cache_size_is_only_warned_about()
+    {
+        var defaults = ConfigLoader.Load(["--config", Config("""{ "dataDirectory": "data" }""")], _dir.Path).Value;
+        Assert.Equal(new StreamingSettings(TrackBuffer.Memory, 16 * 1024 * 1024, Path.Combine(_dir.Path, "data", "streams")),
+            defaults.Streaming);
+
+        var result = ConfigLoader.Load(["--config", Config("""
+            { "dataDirectory": "data", "streaming": { "trackBuffer": "disk", "trackWindowBytes": 0 },
+              "providers": { "tidal": { "cacheBytes": 1000 } } }
+            """)], _dir.Path);
+        Assert.True(result.IsSuccess, result.ToString());
+        Assert.Equal(TrackBuffer.Disk, result.Value.Streaming.Buffer);
+        Assert.Equal(0, result.Value.Streaming.WindowBytes);
+        Assert.StartsWith("providers.tidal.cacheBytes is ignored", Assert.Single(result.Value.Warnings!), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""{ "trackWindowBytes": 1048576 }""", ConfigError.OutOfRange, "streaming.trackWindowBytes")]
+    [InlineData("""{ "trackBuffer": "flash" }""", ConfigError.MalformedValue, "")]
+    public void A_streaming_section_that_cannot_be_used_is_refused(string streaming, ConfigError code, string key)
+    {
+        var result = ConfigLoader.Load(["--config", Config($$"""{ "streaming": {{streaming}} }""")], _dir.Path);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(code, result.Failure.Code);

@@ -1,0 +1,13 @@
+{
+  "manufacturer": "Marvell/NXP",
+  "version": "15.87.19.p14",
+  "sha256": "b2c5e7f4f88b061b92be8113ddd5ec688da94729c3a5d07bec9e334335499538",
+  "size_bytes": 673220,
+  "runtime_path": "/lib/firmware/mrvl/pcie8897_uapsta.bin",
+  "source": "Extracted unmodified hardware microcode from the user's Connector 3; not an independently downloaded NXP release.",
+  "embedded_identity": "$Id: w8897o-B0, RF87XX, FP87, 15.87.19.p14 $",
+  "manufacturer_notice": "LICENCE.Marvell",
+  "notice_source": "Manufacturer GPL archive linux-firmware package a179db97914da5e650c21ba8f9b0bae04a0f8a41, whose manifest identifies firmware 15.68.7.p77.",
+  "exact_version_licence_association_verified": false,
+  "user_accepted_notice_version_mismatch": "2026-10-30"
+}

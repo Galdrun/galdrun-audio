@@ -1,54 +1,39 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-/* Copyright (C) 2015 Freescale Semiconductor, Inc.
- * Connector 3 CPU-off / DDR self-refresh, adapted from Freescale's 2015
- * pm-imx7.c and gpcv2.c. Peripheral domain retained for Ethernet wake.
- * Deliberately no LPSR, PMIC rail changes or DDR PHY power cycling. */
-#include <linux/cpu.h>
+/* Connector 3 CPU-core power-down with DDR self-refresh through PSCI.
+ * Keep SCU and peripheral clocks available for Ethernet and MCU UART wake.
+ * GPC setup follows Freescale's i.MX7 WFI power-gating path. */
 #include <linux/clk.h>
+#include <linux/cpu.h>
+#include <linux/cpu_pm.h>
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_fdt.h>
+#include <linux/psci.h>
 #include <linux/sizes.h>
 #include <linux/suspend.h>
-#include <asm/cacheflush.h>
-#include <asm/fncpy.h>
+#include <asm/arch_timer.h>
 #include <asm/mach/map.h>
-#include <asm/pgtable.h>
 #include <asm/suspend.h>
-#include <asm/tlbflush.h>
+#include "common.h"
 
-#define SRAM_PHYS 0x00900000
-#define SRAM_VIRT 0xf6000000
-#define DDR_VIRT  0xf6100000
-#define SOC_VIRT  0xf6200000
-#define CNT_VIRT  0xf6300000
+#define SOC_VIRT 0xf6200000
+#define CNT_VIRT 0xf6300000
 #define GPC ((void __iomem *)(SOC_VIRT + 0xa0000))
 #define ANATOP ((void __iomem *)(SOC_VIRT + 0x60000))
+#define SRC ((void __iomem *)(SOC_VIRT + 0x90000))
+#define GPR ((void __iomem *)(SOC_VIRT + 0x40000))
 #define COUNTER ((void __iomem *)(CNT_VIRT + 0xc0000))
 
-/* The upper 8 KiB hold TTBR1 entries. Code starts at byte 0x100. */
-struct connector3_pm_info {
-    u32 pbase, resume, ddrc_phys, ddrc_virt, src_phys, src_virt;
-    u32 ttbr1, ttbcr, sctlr, resumed;
-};
-static struct connector3_pm_info * const info = (void *)SRAM_VIRT;
-extern void connector3_suspend(void *info);
-extern char connector3_suspend_end[];
-extern void v7_cpu_resume(void);
-static void (*suspend_fn)(void *);
 static bool suspend_enabled;
+static bool wake_clocks_held;
 static struct clk_bulk_data wake_clocks[] = {
     { .id = "enet_out" }, { .id = "enet_clk_ref" }, { .id = "ipg" }, { .id = "ahb" },
 };
-static void __iomem *fec_regs;
-static bool wake_clocks_held;
 void connector3_pm_map_io(void);
 void connector3_pm_init(void);
 
-/* Explicit opt-in during qualification; an untested port must not replace
- * another platform's suspend ops or make the appliance claim deep sleep. */
 static int __init connector3_suspend_setup(char *value)
 {
     return kstrtobool(value, &suspend_enabled) == 0;
@@ -56,10 +41,6 @@ static int __init connector3_suspend_setup(char *value)
 __setup("connector3_suspend=", connector3_suspend_setup);
 
 static struct map_desc connector3_maps[] __initdata = {
-    { .virtual = SRAM_VIRT, .pfn = __phys_to_pfn(SRAM_PHYS),
-      .length = SZ_16K, .type = MT_MEMORY_RWX_NONCACHED },
-    { .virtual = DDR_VIRT, .pfn = __phys_to_pfn(0x30700000),
-      .length = SZ_1M, .type = MT_DEVICE },
     { .virtual = SOC_VIRT, .pfn = __phys_to_pfn(0x30300000),
       .length = SZ_1M, .type = MT_DEVICE },
     { .virtual = CNT_VIRT, .pfn = __phys_to_pfn(0x30600000),
@@ -74,9 +55,8 @@ void __init connector3_pm_map_io(void)
 
 static int connector3_finish(unsigned long unused)
 {
-    local_flush_tlb_all();
-    suspend_fn(info);
-    return 0;
+    /* Power-down type, vendor suspend state ID0; firmware owns secure OCRAM. */
+    return psci_ops.cpu_suspend(1U << 16, __pa_symbol(cpu_resume));
 }
 
 static int connector3_begin(suspend_state_t state)
@@ -98,14 +78,16 @@ static int connector3_enter(suspend_state_t state)
 {
     const unsigned int regs[] = { 0, 4, 8, 0x14, 0x20, 0x24, 0x890,
                                  0x804, 0x800, 0x880, 0xb0, 0xb8, 0xc8 };
+    /* Preserve the qualified stock PLL override sequence. */
     const unsigned int pll_offsets[] = { 0x60, 0x70, 0xb0, 0xe0, 0xf0, 0x130 };
     const u32 pll_bits[] = { BIT(20), BIT(19), 0x1ff << 17, BIT(13), BIT(24), BIT(24) };
     u32 saved[ARRAY_SIZE(regs)], pll_saved[ARRAY_SIZE(pll_offsets)];
-    u32 counter, gpr, val;
+    u32 counter, gpr, wake_imr1, val, freq, kctl;
     unsigned int i;
     int ret;
 
     if (state != PM_SUSPEND_MEM || num_online_cpus() != 1 ||
+        (readl_relaxed(SRC + 8) & BIT(1)) ||
         (readl_relaxed(GPC + 0xa00) & 1))
         return -EINVAL;
     for (i = 0; i < ARRAY_SIZE(regs); i++)
@@ -116,53 +98,57 @@ static int connector3_enter(suspend_state_t state)
     }
     counter = readl_relaxed(COUNTER);
     writel_relaxed((counter & ~BIT(8)) | BIT(9), COUNTER);
-    gpr = readl_relaxed((void __iomem *)(SOC_VIRT + 0x40004));
-    writel_relaxed(gpr | BIT(12), (void __iomem *)(SOC_VIRT + 0x40004));
+    gpr = readl_relaxed(GPR + 4);
+    writel_relaxed(gpr | BIT(12), GPR + 4);
 
-    /* Mainline's GPC IRQ syscore_ops have already installed wake-only IMRs.
-     * Both A7 LPM fields select STOP; M4 does not participate in this port. */
+    /* Hold the pending IOMUX IRQ while selecting LPM: vendor GPC erratum. */
+    wake_imr1 = readl_relaxed(GPC + 0x30);
+    writel_relaxed(wake_imr1 & ~BIT(0), GPC + 0x30);
+    dsb();
     val = readl_relaxed(GPC);
-    writel_relaxed((val & ~(0xf | BIT(14))) | 0x7000000a, GPC);
+    writel_relaxed((val & ~(0xf | BIT(14))) | 0x70000005, GPC);
     writel_relaxed(readl_relaxed(GPC + 8) | BIT(31), GPC + 8);
     val = readl_relaxed(GPC + 0x14);
-    /* Keep the 24 MHz oscillator and external supplies on: the LAN8720's
-     * SoC-generated reference must run while its magic-packet detector is
-     * armed. CPU0 and SCU are still gated by their PGC/slot configuration. */
-    val &= ~(0x3f000000 | BIT(16) | BIT(2) | BIT(1));
-    val |= BIT(31) | BIT(30) | BIT(0);
-    writel_relaxed(val, GPC + 0x14);
-    writel_relaxed((readl_relaxed(GPC + 4) & ~0xf0f) |
-                    BIT(16) | BIT(9) | BIT(4) | BIT(1), GPC + 4);
+    val &= ~(BIT(31) | BIT(30) | 0x3f000000 | BIT(16) | BIT(2) | BIT(1) | BIT(0));
+    writel_relaxed(val | BIT(16), GPC + 0x14);
+    writel_relaxed(wake_imr1, GPC + 0x30);
+    dsb();
+
+    /* Gate only CPU0 on WFI, wake on IRQ; retain SCU and peripheral domain. */
+    writel_relaxed((readl_relaxed(GPC + 4) & ~(0xf0f | BIT(16) | BIT(4))) |
+                    BIT(8) | BIT(0), GPC + 4);
     writel_relaxed((0x59 << 10) | 0x5b | (2 << 20), GPC + 0x890);
     writel_relaxed((readl_relaxed(GPC + 0x804) & ~0x7fff80) | (0x1a << 7), GPC + 0x804);
-    /* CORE0 down, SCU down+ack; SCU up, CORE0 up+ack. */
-    writel_relaxed(1, GPC + 0xb0);
-    writel_relaxed(1 << 4, GPC + 0xb8);
-    writel_relaxed((2 << 4) | 2, GPC + 0xc8);
-    writel_relaxed(BIT(2) | BIT(16), GPC + 0x24);
+    writel_relaxed(0, GPC + 0xb0);
+    writel_relaxed(0, GPC + 0xb8);
+    writel_relaxed(0, GPC + 0xc8);
+    writel_relaxed(BIT(31) | BIT(15), GPC + 0x24);
     writel_relaxed(1, GPC + 0x800);
-    writel_relaxed(1, GPC + 0x880);
-    info->resumed = 0;
-    pr_info("Connector3 wake: ECR=%#x EIR=%#x EIMR=%#x IMR=%08x/%08x/%08x/%08x\n",
-            readl_relaxed(fec_regs + 0x24), readl_relaxed(fec_regs + 4),
-            readl_relaxed(fec_regs + 8), readl_relaxed(GPC + 0x30),
-            readl_relaxed(GPC + 0x34), readl_relaxed(GPC + 0x38), readl_relaxed(GPC + 0x3c));
+    writel_relaxed(0, GPC + 0x880);
     dsb();
-    ret = cpu_suspend(0, connector3_finish);
-    pr_info("Connector3 wake: resumed EIR=%#x\n", readl_relaxed(fec_regs + 4));
-    writel_relaxed(0, (void __iomem *)(SOC_VIRT + 0x90074));
-    writel_relaxed(0, (void __iomem *)(SOC_VIRT + 0x90078));
 
-    /* Restore the exact entry state, including pre-existing PLL overrides. */
+    freq = arch_timer_get_cntfrq();
+    kctl = arch_timer_get_cntkctl();
+    ret = cpu_pm_enter();
+    if (!ret) {
+        ret = cpu_suspend(0, connector3_finish);
+        cpu_pm_exit();
+    }
+    if (!ret && (!freq || freq != arch_timer_get_cntfrq() ||
+                 kctl != arch_timer_get_cntkctl())) {
+        pr_err("Connector3 resume: architectural timer context was not restored\n");
+        ret = -EIO;
+    }
+    writel_relaxed(0, SRC + 0x74);
+    writel_relaxed(0, SRC + 0x78);
     for (i = 0; i < ARRAY_SIZE(regs); i++)
         writel_relaxed(saved[i], GPC + regs[i]);
-    /* RBC changes require at least two CKIL cycles before IMRs are restored. */
     udelay(65);
-    writel_relaxed(gpr, (void __iomem *)(SOC_VIRT + 0x40004));
+    writel_relaxed(gpr, GPR + 4);
     writel_relaxed(counter, COUNTER);
     for (i = 0; i < ARRAY_SIZE(pll_offsets); i++)
         writel_relaxed(pll_bits[i] & ~pll_saved[i], ANATOP + pll_offsets[i] + 8);
-    pr_info("Connector3 suspend: CPU-off resume=%u, result=%d\n", info->resumed, ret);
+    pr_info("Connector3 PSCI suspend/resume: result=%d\n", ret);
     return ret;
 }
 
@@ -173,52 +159,41 @@ static const struct platform_suspend_ops connector3_suspend_ops = {
 
 void __init connector3_pm_init(void)
 {
-    u32 *table = (void *)SRAM_VIRT;
-    unsigned int i;
     struct device_node *ethernet;
-    size_t code_size = connector3_suspend_end - (char *)connector3_suspend;
+    unsigned int i;
 
-    BUILD_BUG_ON(sizeof(*info) > 0x100);
-    BUILD_BUG_ON(offsetof(struct connector3_pm_info, resumed) != 36);
     if (!of_machine_is_compatible("fsl,imx7d-teufel-streamer") ||
         !(suspend_enabled || of_property_read_bool(of_root, "galdrun,experimental-suspend")))
         return;
-    if (IS_ENABLED(CONFIG_ARM_LPAE) || code_size > 0x1f00) {
-        pr_err("Connector3 suspend: unsupported page tables or OCRAM code size\n");
+    if (!psci_ops.cpu_suspend) {
+        pr_err("Connector3 suspend requires the PSCI monitor\n");
         return;
     }
-    /* The LAN8720 takes its 50 MHz reference from this SoC. FEC releases
-     * these references in suspend even with WOL armed; retain them across
-     * device suspend so the PHY and magic-packet detector keep their clocks. */
+    /* Firmware may leave CPU1 enabled although Linux boots with maxcpus=1. */
+    if (cpu_possible(1) && !cpu_online(1))
+        imx_enable_cpu(1, false);
+    if (num_online_cpus() != 1 || (readl_relaxed(SRC + 8) & BIT(1))) {
+        pr_err("Connector3 suspend requires CPU1 to be parked offline\n");
+        return;
+    }
     ethernet = of_find_node_by_path("ethernet0");
+    if (!ethernet) {
+        pr_err("Connector3 suspend: Ethernet clock provider unavailable\n");
+        return;
+    }
     for (i = 0; i < ARRAY_SIZE(wake_clocks); i++)
         wake_clocks[i].clk = of_clk_get_by_name(ethernet, wake_clocks[i].id);
-    fec_regs = of_iomap(ethernet, 0);
     of_node_put(ethernet);
     for (i = 0; i < ARRAY_SIZE(wake_clocks); i++)
-        if (IS_ERR(wake_clocks[i].clk)) goto clocks_unavailable;
-    if (!fec_regs) goto clocks_unavailable;
-    memset((void *)SRAM_VIRT, 0, SZ_16K);
-    for (i = 0; i < ARRAY_SIZE(connector3_maps); i++) {
-        u32 phys = __pfn_to_phys(connector3_maps[i].pfn);
-        u32 attributes = connector3_maps[i].type == MT_DEVICE ?
-                         PMD_SECT_BUFFERABLE | PMD_SECT_XN : PMD_SECT_TEX(1);
-        table[connector3_maps[i].virtual >> 20] = phys | PMD_TYPE_SECT |
-                PMD_SECT_AP_WRITE | attributes | PMD_SECT_S;
-    }
-    info->pbase = SRAM_PHYS;
-    info->resume = __pa_symbol(v7_cpu_resume);
-    info->ddrc_phys = 0x307a0000;
-    info->ddrc_virt = DDR_VIRT + 0xa0000;
-    info->src_phys = 0x30390000;
-    info->src_virt = SOC_VIRT + 0x90000;
-    suspend_fn = fncpy((void *)(SRAM_VIRT + 0x100), &connector3_suspend, code_size);
+        if (IS_ERR(wake_clocks[i].clk))
+            goto clocks_unavailable;
     suspend_set_ops(&connector3_suspend_ops);
-    pr_info("Connector3 experimental CPU-off/DDR self-refresh suspend enabled\n");
+    pr_info("Connector3 PSCI CPU-core suspend enabled; peripheral wake retained\n");
     return;
+
 clocks_unavailable:
     for (i = 0; i < ARRAY_SIZE(wake_clocks); i++)
-        if (!IS_ERR(wake_clocks[i].clk)) clk_put(wake_clocks[i].clk);
-    if (fec_regs) iounmap(fec_regs);
-    pr_err("Connector3 suspend: Ethernet wake resources unavailable\n");
+        if (!IS_ERR_OR_NULL(wake_clocks[i].clk))
+            clk_put(wake_clocks[i].clk);
+    pr_err("Connector3 suspend: Ethernet wake clocks unavailable\n");
 }

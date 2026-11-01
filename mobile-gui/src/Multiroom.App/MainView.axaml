@@ -1,15 +1,21 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:vm="using:Multiroom.App" xmlns:api="using:Multiroom.App.Api"
  x:Class="Multiroom.App.MainView" x:DataType="vm:ShellViewModel" Background="#101315">
+ <UserControl.Styles>
+  <!-- No padding around the pages: each keeps 16 px from the window's sides itself, so a page may run edge to edge
+       (an album's cover, BrowserView). Pages with no heading above them start 16 px down. -->
+  <Style Selector="Grid#Pages > :is(Control)"><Setter Property="Margin" Value="16,0,16,12" /></Style>
+  <Style Selector="ListBox#Navigation"><Setter Property="Margin" Value="16,0,4,12" /></Style>
+  <Style Selector="Grid#Body.top ListBox#Navigation"><Setter Property="Margin" Value="16,16,4,12" /></Style>
+  <Style Selector="Border#SideQueue"><Setter Property="Margin" Value="4,0,16,12" /></Style>
+  <Style Selector="Grid#Body.top Border#SideQueue"><Setter Property="Margin" Value="4,16,16,12" /></Style>
+ </UserControl.Styles>
  <Grid RowDefinitions="Auto,*,Auto">
    <Border Grid.Row="0" Background="#1B2123">
     <Grid MinHeight="48">
      <Grid ColumnDefinitions="48,*,1,Auto" IsVisible="{Binding !IsSetup}">
-    <Button x:Name="HamburgerButton" Width="48" Height="48" Background="Transparent" CornerRadius="0" Padding="0" HorizontalAlignment="Left" VerticalAlignment="Top" AutomationProperties.Name="Open navigation menu" ToolTip.Tip="Open navigation menu">
+    <Button x:Name="HamburgerButton" Command="{Binding ToggleMenuCommand}" Width="48" Height="48" Background="Transparent" CornerRadius="0" Padding="0" HorizontalAlignment="Left" VerticalAlignment="Top" AutomationProperties.Name="Open navigation menu" ToolTip.Tip="Open navigation menu">
      <Path Data="M 4,7 L 20,7 M 4,12 L 20,12 M 4,17 L 20,17" Stroke="#EEF1ED" StrokeThickness="1.7" Width="24" Height="24" />
-     <Button.Flyout><Flyout Placement="Bottom">
-      <ListBox x:Name="PagePicker" ItemsSource="{Binding Pages}" SelectedItem="{Binding SelectedPage}" MinWidth="220" MaxHeight="420" SelectionChanged="PagePicked" AutomationProperties.Name="Choose page" />
-     </Flyout></Button.Flyout>
     </Button>
     <!-- Requests in flight: a dot pulsing after the title, shown only when a request takes a moment. -->
     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Margin="6,0,12,0" ClipToBounds="True">
@@ -32,18 +38,20 @@
     </StackPanel>
     <Border x:Name="ToolbarDivider" Grid.Column="2" Background="#4A5450" IsHitTestVisible="False" />
     <StackPanel Grid.Column="3" Orientation="Horizontal">
+     <Button x:Name="InfoButton" IsVisible="{Binding HasInfo}" Background="Transparent" CornerRadius="0" Padding="0" Width="48" Height="48" AutomationProperties.Name="Information" ToolTip.Tip="Information">
+      <Grid Width="24" Height="24">
+       <Ellipse Stroke="#CBEC97" StrokeThickness="1.7" Margin="2" />
+       <Path Data="M 12,10.5 L 12,17 M 12,7 L 12,7.2" Stroke="#CBEC97" StrokeThickness="2" StrokeLineCap="Round" />
+      </Grid>
+      <Button.Flyout><Flyout Placement="Bottom">
+       <TextBlock x:Name="InfoText" Text="{Binding Info}" TextWrapping="Wrap" MaxWidth="300" />
+      </Flyout></Button.Flyout>
+     </Button>
      <Button x:Name="SearchButton" Command="{Binding NavigateCommand}" CommandParameter="Search" Background="Transparent" CornerRadius="0" Padding="0" Width="48" Height="48" AutomationProperties.Name="Search" ToolTip.Tip="Search">
       <Path Data="M 10.5,10.5 m -5.5,0 a 5.5,5.5 0 1,0 11,0 a 5.5,5.5 0 1,0 -11,0 M 14.6,14.6 L 20.5,20.5" Stroke="#EEF1ED" StrokeThickness="1.7" Width="24" Height="24" />
      </Button>
      <Button Command="{Binding NavigateCommand}" CommandParameter="Queue" Background="Transparent" CornerRadius="0" Padding="0" Width="48" Height="48" AutomationProperties.Name="Queue" ToolTip.Tip="Queue">
       <Path Data="M 4,7 L 20,7 M 4,12 L 20,12 M 4,17 L 14,17" Stroke="#EEF1ED" StrokeThickness="1.7" Width="24" Height="24" />
-     </Button>
-     <Button Command="{Binding NavigateCommand}" CommandParameter="Now Playing" Background="Transparent" CornerRadius="0" Padding="0" Width="48" Height="48" AutomationProperties.Name="Now Playing" ToolTip.Tip="Now Playing">
-      <Grid Width="24" Height="24">
-       <Path Data="M 9,17.5 L 9,6 L 19,4 L 19,16" Stroke="#EEF1ED" StrokeThickness="1.7" />
-       <Ellipse Margin="6.2,15.5,0,0" Width="5.6" Height="4.4" Fill="#EEF1ED" HorizontalAlignment="Left" VerticalAlignment="Top" />
-       <Ellipse Margin="16.2,14,0,0" Width="5.6" Height="4.4" Fill="#EEF1ED" HorizontalAlignment="Left" VerticalAlignment="Top" />
-      </Grid>
      </Button>
     </StackPanel>
     </Grid>
@@ -51,24 +59,23 @@
      FontSize="18" FontWeight="Bold" LetterSpacing="5" TextAlignment="Center" />
     </Grid>
    </Border>
-   <Grid Grid.Row="1" Margin="16,16,16,12" RowDefinitions="Auto,*" IsVisible="{Binding !IsSetup}">
-  <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,20" IsVisible="{Binding ShowContentHeader}">
+   <Grid Grid.Row="1" RowDefinitions="Auto,*" IsVisible="{Binding !IsSetup}">
+  <Grid ColumnDefinitions="*,Auto" Margin="16,16,16,20" IsVisible="{Binding ShowContentHeader}">
    <StackPanel><TextBlock Text="GALDRUN" FontSize="24" FontWeight="Bold" LetterSpacing="5" />
     <TextBlock Text="Your music. Every room." Classes="muted" /></StackPanel>
    <TextBlock Grid.Column="1" Text="{Binding Connection}" MaxWidth="180" TextWrapping="Wrap" VerticalAlignment="Center" Classes="muted" />
   </Grid>
-  <Grid Grid.Row="1" ColumnDefinitions="190,*,Auto" x:Name="Body">
-   <ListBox x:Name="Navigation" ItemsSource="{Binding Pages}" SelectedItem="{Binding SelectedPage}" Background="Transparent" Margin="0,0,20,0" />
+  <Grid Grid.Row="1" ColumnDefinitions="190,*,Auto" x:Name="Body" Classes.top="{Binding !ShowContentHeader}">
+   <ListBox x:Name="Navigation" ItemsSource="{Binding MenuPages}" SelectedItem="{Binding SelectedPage, Mode=OneWay}" SelectionChanged="PagePicked" Background="Transparent" />
    <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*" x:Name="ContentArea">
-    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,10" IsVisible="{Binding ShowContentHeader}"><TextBlock Text="{Binding Heading}" Classes="title" />
+    <Grid ColumnDefinitions="*,Auto" Margin="16,0,16,10" IsVisible="{Binding ShowContentHeader}"><TextBlock Text="{Binding Heading}" Classes="title" />
      <Button Grid.Column="1" Content="Refresh" Command="{Binding RefreshCommand}" /></Grid>
-    <Grid Grid.Row="2">
-     <Grid IsVisible="{Binding IsHome}"><vm:HomeView /></Grid>
+    <Grid Grid.Row="2" x:Name="Pages">
+     <Grid IsVisible="{Binding IsHome}" Margin="16,16,16,12"><vm:HomeView /></Grid>
      <Grid IsVisible="{Binding IsCollections}"><vm:CollectionsView DataContext="{Binding Collections}" /></Grid>
      <Grid IsVisible="{Binding IsRooms}"><vm:RoomsView DataContext="{Binding Rooms}" /></Grid>
      <ScrollViewer IsVisible="{Binding IsVolume}">
       <StackPanel Spacing="14" MaxWidth="650" HorizontalAlignment="Stretch">
-       <Button Content="Back" Command="{Binding CloseVolumeCommand}" HorizontalAlignment="Left" />
        <TextBlock Text="{Binding Playback.ZoneName}" Classes="section" />
        <ComboBox ItemsSource="{Binding Playback.ZoneChoices}" DisplayMemberBinding="{Binding Name, x:DataType=vm:ZoneChoice}" SelectedValueBinding="{Binding Zone, x:DataType=vm:ZoneChoice}" SelectedValue="{Binding Playback.SelectedZone}" HorizontalAlignment="Stretch" AutomationProperties.Name="Volume zone" />
        <TextBlock Text="{Binding Playback.ZoneVolumeStatus}" Classes="muted" />
@@ -89,8 +96,8 @@
      </ScrollViewer>
      <ScrollViewer IsVisible="{Binding IsDiagnostics}"><TextBlock Text="{Binding Rooms.Diagnostics}" TextWrapping="Wrap" /></ScrollViewer>
      <Grid IsVisible="{Binding IsQueue}"><vm:QueueView DataContext="{Binding Playback}" /></Grid>
-     <Grid IsVisible="{Binding IsBrowser}" RowDefinitions="Auto,*">
-      <Grid IsVisible="{Binding IsSearch}" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+     <Grid IsVisible="{Binding IsBrowser}" RowDefinitions="Auto,*" Margin="0,0,0,12">
+      <Grid IsVisible="{Binding IsSearch}" ColumnDefinitions="*,Auto" Margin="16,0,16,12">
        <TextBox Text="{Binding Browser.Query}" PlaceholderText="Artists, albums, tracks, stations" AutomationProperties.Name="Search all sources">
         <TextBox.KeyBindings><KeyBinding Gesture="Enter" Command="{Binding Browser.SearchCommand}" /></TextBox.KeyBindings>
        </TextBox>
@@ -112,7 +119,7 @@
        <Button Content="Apply full room membership" Command="{Binding Playback.SaveMembershipCommand}" IsEnabled="{Binding Playback.HasZone}" />
       </StackPanel>
      </ScrollViewer>
-     <Grid IsVisible="{Binding IsNowPlaying}"><vm:NowPlayingView /></Grid>
+     <Grid IsVisible="{Binding IsNowPlaying}" Margin="16,16,16,12"><vm:NowPlayingView /></Grid>
       <Grid IsVisible="{Binding IsSources}" RowDefinitions="Auto,*,Auto">
       <TextBlock Text="Choose where the music begins." Classes="muted" Margin="0,0,0,20" />
       <ListBox Grid.Row="1" ItemsSource="{Binding Providers}" Background="Transparent" SelectedItem="{Binding SelectedProvider}">
@@ -132,7 +139,7 @@
      </Grid>
     </Grid>
    </Grid>
-   <Border Grid.Column="2" Width="290" Margin="20,0,0,0" IsVisible="{Binding ShowSideQueue}" Background="#151B1D" CornerRadius="12" Padding="12">
+   <Border x:Name="SideQueue" Grid.Column="2" Width="290" IsVisible="{Binding ShowSideQueue}" Background="#151B1D" CornerRadius="12" Padding="12">
     <Grid RowDefinitions="Auto,*"><TextBlock Text="Up next" Classes="section" Margin="8,4,0,16" />
      <vm:QueueView Grid.Row="1" DataContext="{Binding Playback}" /></Grid>
    </Border>
@@ -190,6 +197,32 @@
       </Border>
      </Grid>
     <vm:ZoneBar Grid.Row="2" x:Name="BottomZoneBar" IsVisible="{Binding ShowZoneBar}" />
+    <!-- The menu: a drawer sliding in from the left over the whole page; the dimmed rest (or back) closes it.
+         Closed, it is hidden, not only moved away, so its pages are never seen (or read out) twice. -->
+    <Grid x:Name="MenuDrawer" Grid.RowSpan="3" ColumnDefinitions="Auto,*" Classes.open="{Binding IsMenuOpen}">
+     <Grid.Styles>
+      <Style Selector="Grid#MenuDrawer"><Setter Property="IsHitTestVisible" Value="False" /></Style>
+      <Style Selector="Grid#MenuDrawer.open"><Setter Property="IsHitTestVisible" Value="True" /></Style>
+      <Style Selector="Border#MenuScrim">
+       <Setter Property="Opacity" Value="0" />
+       <Setter Property="Transitions"><Transitions><DoubleTransition Property="Opacity" Duration="0:0:0.22" /></Transitions></Setter>
+      </Style>
+      <Style Selector="Grid#MenuDrawer.open Border#MenuScrim"><Setter Property="Opacity" Value="1" /></Style>
+      <Style Selector="Border#MenuPanel">
+       <Setter Property="RenderTransform" Value="translateX(-300px)" /><Setter Property="IsEnabled" Value="False" />
+       <Setter Property="Transitions"><Transitions><TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.22" Easing="CubicEaseOut" /></Transitions></Setter>
+      </Style>
+      <Style Selector="Grid#MenuDrawer.open Border#MenuPanel"><Setter Property="RenderTransform" Value="translateX(0px)" /><Setter Property="IsEnabled" Value="True" /></Style>
+     </Grid.Styles>
+     <Border x:Name="MenuScrim" Grid.ColumnSpan="2" Background="#A6000000" Tapped="MenuScrimTapped" />
+     <Border x:Name="MenuPanel" Width="280" Background="#1B2123" IsVisible="{Binding IsMenuOpen}">
+      <Grid RowDefinitions="Auto,*">
+       <TextBlock Text="GALDRUN" FontSize="18" FontWeight="Bold" LetterSpacing="5" Margin="20,16,20,12" />
+       <ListBox x:Name="PagePicker" Grid.Row="1" ItemsSource="{Binding MenuPages}" SelectedItem="{Binding SelectedPage, Mode=OneWay}" SelectionChanged="PagePicked"
+        Background="Transparent" Margin="8,0,8,12" AutomationProperties.Name="Choose page" />
+      </Grid>
+     </Border>
+    </Grid>
     <!-- An item's sheet: slides up over the whole page; the dimmed rest closes it. -->
     <Grid x:Name="ItemSheet" Grid.RowSpan="3" RowDefinitions="*,Auto" Classes.open="{Binding Home.IsSheetOpen}">
      <Grid.Styles>
@@ -247,16 +280,14 @@
        </Grid>
        <Border Height="1" Background="#2E3638" />
        <StackPanel x:Name="SheetActions" Spacing="8" IsVisible="{Binding Home.IsActionsStep}">
+        <Button Classes="sheet" Content="Play now" Command="{Binding Home.PlayNowCommand}" />
         <Button Classes="sheet" Content="Play in a room" Command="{Binding Home.ChooseZoneCommand}" />
         <Button Classes="sheet" Content="Play next" Command="{Binding Home.PlayNextCommand}" CommandParameter="{Binding Home.SheetItem}" />
         <Button Classes="sheet" Content="Add to queue" Command="{Binding Home.QueueCommand}" CommandParameter="{Binding Home.SheetItem}" />
         <Button Classes="sheet" Content="Add to playlist" Command="{Binding Home.ChoosePlaylistCommand}" IsVisible="{Binding Home.CanAddToPlaylist}" />
        </StackPanel>
        <StackPanel x:Name="SheetZones" Spacing="8" IsVisible="{Binding Home.IsZonesStep}">
-        <Grid ColumnDefinitions="*,Auto">
-         <TextBlock Text="Play in a room" Classes="section" FontSize="16" VerticalAlignment="Center" />
-         <Button Grid.Column="1" Content="Back" Command="{Binding Home.SheetBackCommand}" Background="Transparent" />
-        </Grid>
+        <TextBlock Text="Play in a room" Classes="section" FontSize="16" />
         <TextBlock Text="No zones yet. Create one under Zones." Classes="muted" IsVisible="{Binding !Playback.ZoneChoices.Count}" />
         <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Hidden">
          <ItemsControl ItemsSource="{Binding Playback.ZoneChoices}">
@@ -269,10 +300,7 @@
         </ScrollViewer>
        </StackPanel>
        <StackPanel x:Name="SheetPlaylists" Spacing="8" IsVisible="{Binding Home.IsPlaylistsStep}">
-        <Grid ColumnDefinitions="*,Auto">
-         <TextBlock Text="Add to playlist" Classes="section" FontSize="16" VerticalAlignment="Center" />
-         <Button Grid.Column="1" Content="Back" Command="{Binding Home.SheetBackCommand}" Background="Transparent" />
-        </Grid>
+        <TextBlock Text="Add to playlist" Classes="section" FontSize="16" />
         <TextBlock Text="No playlists yet. Create one under Playlists." Classes="muted" IsVisible="{Binding !Home.Playlists.Count}" />
         <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Hidden">
          <ItemsControl ItemsSource="{Binding Home.Playlists}">

@@ -1,5 +1,6 @@
 using Multiroom.Server.Abstractions;
 using Multiroom.Server.Library;
+using Multiroom.Server.Providers.Streaming;
 using Multiroom.Server.Providers.Tidal;
 
 namespace Multiroom.Server.Configuration;
@@ -28,6 +29,8 @@ public sealed class ServerOptions
 
     public ProvidersOptions Providers { get; set; } = new();
 
+    public StreamingOptions Streaming { get; set; } = new();
+
     public AiOptions Ai { get; set; } = new();
 
     public ArtworkOptions Artwork { get; set; } = new();
@@ -40,6 +43,18 @@ public sealed class PlaybackOptions
     // themselves. Off: they come back stopped, where they were, and a caller
     // plays them.
     public bool AutoResume { get; set; }
+}
+
+// How on-demand streaming providers (Tidal) hold a track while it plays:
+// only a window of pieces around where the core reads.
+public sealed class StreamingOptions
+{
+    // Memory, or disk under <dataDirectory>/streams/<providerId>.
+    public TrackBuffer TrackBuffer { get; set; } = TrackBuffer.Memory;
+
+    // Bytes held ahead of each reader. 0: the whole track. Otherwise at
+    // least StreamingSettings.MinimumWindowBytes.
+    public long TrackWindowBytes { get; set; } = StreamingSettings.DefaultWindowBytes;
 }
 
 // One block per provider that has something to configure.
@@ -75,7 +90,9 @@ public sealed class TidalOptions
 
     public TidalQuality Quality { get; set; } = TidalQuality.Lossless;
 
-    public long CacheBytes { get; set; } = TidalSettings.DefaultCacheBytes;
+    // No longer used: tracks are streamed through `streaming`. Accepted so
+    // that existing configs load; a warning names it.
+    public long? CacheBytes { get; set; }
 
     public long ArtworkCacheBytes { get; set; } = TidalSettings.DefaultArtworkCacheBytes;
 }

@@ -18,6 +18,53 @@ public sealed class HomeTests
         new RadioStation("radio", "station:1", "Favourite radio", "Jazz"));
 
     [Fact]
+    public async Task Play_now_queues_the_whole_list_in_the_selected_zone_and_starts_at_the_picked_track()
+    {
+        Track[] album = [new("local", "track:1", "One"), new("local", "track:2", "Two"), new("local", "track:3", "Three")];
+        var requests = new List<string>();
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (r, ct) =>
+        {
+            if (r.RequestUri!.AbsolutePath == "/api/v1/items/status") return FakeHttp.Json("[]");
+            requests.Add($"{r.Method} {r.RequestUri.AbsolutePath} {(r.Content is null ? "" : await r.Content.ReadAsStringAsync(ct))}");
+            return r.RequestUri.AbsolutePath.EndsWith("/queue/items", StringComparison.Ordinal)
+                ? BrowserTests.Reply(new QueueState("living", [new(21, album[0]), new(22, album[1]), new(23, album[2])], RepeatMode.Off, false, QueueTransport.Stopped))
+                : FakeHttp.Json("{}");
+        }));
+        var home = new HomeViewModel(action => action(api, TestContext.Current.CancellationToken), () => "living");
+        await home.OpenSheetCommand.ExecuteAsync(HomeItem.InList(album[1], album));
+        await home.PlayNowCommand.ExecuteAsync(null);
+        Assert.False(home.IsSheetOpen);
+        Assert.Equal(2, requests.Count);
+        Assert.StartsWith("POST /api/v1/zones/living/queue/items ", requests[0]);
+        using (var body = JsonDocument.Parse(requests[0][(requests[0].IndexOf('{'))..]))
+        {
+            Assert.True(body.RootElement.GetProperty("replace").GetBoolean());
+            Assert.Equal(3, body.RootElement.GetProperty("tracks").GetArrayLength());
+        }
+        Assert.Equal("POST /api/v1/zones/living/play {\"item\":22}", requests[1]);
+        // Play next adds the picked track alone.
+        requests.Clear();
+        await home.PlayNextCommand.ExecuteAsync(HomeItem.InList(album[1], album));
+        using (var body = JsonDocument.Parse(requests[0][(requests[0].IndexOf('{'))..]))
+            Assert.Equal("track:2", Assert.Single(body.RootElement.GetProperty("tracks").EnumerateArray()).GetProperty("providerItemId").GetString());
+    }
+
+    [Fact]
+    public void A_refresh_with_the_same_items_keeps_the_shown_covers()
+    {
+        var shelf = new HomeShelf("Favourites", "M 0,0", "Nothing yet.");
+        shelf.Set([HomeItem.From(Song), HomeItem.From(Station)]);
+        var shown = shelf.Items.ToArray(); var all = shelf.All; var changes = 0;
+        shelf.Items.CollectionChanged += (_, _) => changes++;
+        // Equal, but read anew (a track item's list is a new instance).
+        shelf.Set([HomeItem.From(Song), HomeItem.From(Station)]);
+        Assert.Equal(0, changes); Assert.Same(all, shelf.All); Assert.Equal(shown, shelf.Items, ReferenceEqualityComparer.Instance);
+        // A changed item (here saved again, with a new id) is replaced alone; a removed one goes.
+        shelf.Set([HomeItem.From(Song with { Id = 10 })]);
+        Assert.Equal(10, shelf.Items.Single().Items.Favorite); Assert.Single(shelf.All);
+    }
+
+    [Fact]
     public async Task Refresh_preserves_server_order_and_reads_external_changes()
     {
         Favorite[] favourites = [Song, Station];
@@ -184,11 +231,8 @@ public sealed class HomeTests
             // A few covers keep their own height: rows are not spread over the page.
             var items = home.FindControl<ItemsControl>("ShelfItems")!;
             Assert.Equal(items.DesiredSize.Height - items.Margin.Bottom, items.Bounds.Height, tolerance: 1.0);
-            var back = home.FindControl<Button>("ShelfBack")!;
-            Assert.True(back.IsEffectivelyVisible); Assert.Equal("Back", back.Content);
-            Assert.DoesNotContain(back, grid.GetVisualDescendants());
-            var corner = back.TranslatePoint(new Point(back.Bounds.Width, 0), home)!.Value;
-            Assert.Equal(home.Bounds.Width, corner.X, 1); Assert.True(corner.Y < grid.TranslatePoint(new Point(), home)!.Value.Y);
+            // No back button: the system back closes the shelf.
+            Assert.DoesNotContain(home.GetVisualDescendants().OfType<Button>(), b => b.IsEffectivelyVisible && Equals(b.Content, "Back"));
             // No scrollbars anywhere on Home; swiping still scrolls.
             Assert.All(home.GetVisualDescendants().OfType<ScrollViewer>(), viewer =>
             {
@@ -197,9 +241,17 @@ public sealed class HomeTests
                 Assert.NotEqual(Avalonia.Controls.Primitives.ScrollBarVisibility.Visible, viewer.VerticalScrollBarVisibility);
                 Assert.NotEqual(Avalonia.Controls.Primitives.ScrollBarVisibility.Visible, viewer.HorizontalScrollBarVisibility);
             });
-            back.Command!.Execute(null);
+            // A right click anywhere but a cover (whose own right click opens its sheet) is the desktop's back.
+            var below = new Point(window.Bounds.Width / 2, divider.TranslatePoint(new Point(), window)!.Value.Y - 12);
+            window.MouseDown(below, MouseButton.Right); window.MouseUp(below, MouseButton.Right);
             window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-            Assert.Null(model.Home.OpenShelf); Assert.True(home.FindControl<ScrollViewer>("HomeScroll")!.IsEffectivelyVisible);
+            Assert.Null(model.Home.OpenShelf); Assert.False(model.GoBack()); Assert.True(home.FindControl<ScrollViewer>("HomeScroll")!.IsEffectivelyVisible);
+            // On a plain button too, without pressing it.
+            model.Home.OpenShelf = model.Home.Favourites; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var search = view.FindControl<Button>("SearchButton")!;
+            var onSearch = search.TranslatePoint(new Point(search.Bounds.Width / 2, search.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(onSearch, MouseButton.Right); window.MouseUp(onSearch, MouseButton.Right); Dispatcher.UIThread.RunJobs();
+            Assert.Null(model.Home.OpenShelf); Assert.Equal("Home", model.SelectedPage);
             model.SelectedPage = "Favourites";
             window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             Assert.False(home.IsEffectivelyVisible);
@@ -297,7 +349,7 @@ public sealed class HomeTests
             Assert.True(model.Home.IsSheetOpen); Assert.Same(model.Home.Favourites.Items[1], model.Home.SheetItem);
             Assert.Equal("Home", model.SelectedPage); Assert.True(sheet.IsHitTestVisible);
             Assert.Equal("Night", view.FindControl<TextBlock>("SheetTitle")!.Text);
-            Assert.Equal(["Play in a room", "Play next", "Add to queue", "Add to playlist"], view.FindControl<StackPanel>("SheetActions")!.Children
+            Assert.Equal(["Play now", "Play in a room", "Play next", "Add to queue", "Add to playlist"], view.FindControl<StackPanel>("SheetActions")!.Children
                 .OfType<Button>().Where(b => b.IsVisible).Select(b => b.Content));
             var scrim = view.FindControl<Border>("SheetScrim")!;
             var top = scrim.TranslatePoint(new Point(scrim.Bounds.Width / 2, 40), window)!.Value;
@@ -313,5 +365,45 @@ public sealed class HomeTests
             Assert.False(model.Home.IsSheetOpen);
         }
         finally { window.Close(); }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(390)] [InlineData(650)]
+    public async Task An_album_opened_from_home_goes_back_home_on_a_right_click_and_fills_a_phone_width(int width)
+    {
+        var album = new BrowseNode("tidal", "album:7", "Night", null, BrowseKind.Album, "Band", Playable: true);
+        using var events = new FixtureEventStream();
+        var model = new ShellViewModel(preferencesPath: Path.Combine(Path.GetTempPath(), "galdrun-home-" + Guid.NewGuid().ToString("N") + ".json"),
+            clientFactory: (address, token) => new MultiroomClient(address, token, new FakeHttp((request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+            {
+                "/api/v1/status" => FakeHttp.Json("""{"version":"0.1","core":{"connected":true,"connections":1,"zones":0,"rooms":0,"queuedEvents":0,"droppedEvents":0},"media":{},"library":{},"providers":[],"addIns":{},"events":{"subscribers":0,"held":0,"dropped":0}}"""),
+                "/api/v1/events" => new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StreamContent(events) { Headers = { ContentType = new("text/event-stream") } } },
+                var path when path.EndsWith("/browse", StringComparison.Ordinal) =>
+                    BrowserTests.Reply(new BrowsePage([], new([new Track("tidal", "track:1", "One")], [], [], []), Node: album, Total: 1)),
+                _ => FakeHttp.Json("[]"),
+            }))));
+        var view = new MainView(model, loadPreferences: false);
+        var window = new Window { Width = width, Height = 844, Content = view };
+        try
+        {
+            await model.ConnectCommand.ExecuteAsync(null);
+            window.Show(); model.SelectedPage = "Home"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            // Opened from a "See all" shelf, back returns to that shelf.
+            model.Home.OpenShelf = model.Home.Favourites;
+            model.Home.OpenCommand.Execute(HomeItem.From(new ProposalItem(1, new Album("tidal", "album:7", "Night", "Band"))));
+            for (var i = 0; i < 100 && !model.Browser.IsAlbum; i++) { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
+            window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Browse", model.SelectedPage); Assert.True(model.Browser.IsAlbum); Assert.False(model.Browser.CanBack);
+            // On a phone the cover runs edge to edge, right under the header bar.
+            var cover = view.GetVisualDescendants().OfType<Grid>().Single(g => g.Name == "AlbumHeader");
+            var topLeft = cover.TranslatePoint(new Point(), window)!.Value;
+            var header = view.FindControl<Button>("HamburgerButton")!;
+            Assert.Equal(0, topLeft.X, 0.5); Assert.Equal(window.Bounds.Width, cover.Bounds.Width, 0.5);
+            Assert.Equal(header.TranslatePoint(new Point(0, header.Bounds.Height), window)!.Value.Y, topLeft.Y, 0.5);
+            var at = new Point(window.Bounds.Width / 2, topLeft.Y + 60);
+            window.MouseDown(at, MouseButton.Right); window.MouseUp(at, MouseButton.Right); Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Home", model.SelectedPage); Assert.Same(model.Home.Favourites, model.Home.OpenShelf);
+        }
+        finally { window.Close(); await model.DisconnectAsync(); }
     }
 }

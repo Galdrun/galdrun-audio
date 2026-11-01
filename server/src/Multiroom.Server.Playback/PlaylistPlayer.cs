@@ -120,6 +120,13 @@ public sealed class PlaylistPlayer(PlaylistStore store, IQueueEngine queues, Pro
             }
             return await PlaceAsync(zone, Book(book, fromStart, zone), placement, index, cancellationToken).ConfigureAwait(false);
         }
+        // An album is its provider's node, expanded as it is now.
+        if (found.Value.Album is { } album)
+        {
+            var node = await EnqueueNodeAsync(zone, album.ProviderId, album.ProviderItemId, placement, cancellationToken,
+                fromStart: fromStart, index: index).ConfigureAwait(false);
+            return node.IsSuccess ? node.Value.Queue : node.Failure;
+        }
         var (track, station) = (found.Value.Track, found.Value.Station);
         if (Unplayable(track, station) is { } reason)
             return Result.Fail(QueueError.Unavailable, $"favourite {favorite} ({found.Value.Title}): {reason}");

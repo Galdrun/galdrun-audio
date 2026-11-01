@@ -30,6 +30,10 @@ rm -f "$target/etc/init.d/S50hostapd" "$target/etc/init.d/S80dnsmasq" "$target/e
 rm -f "$target/usr/sbin/galdrun-connector3-buttons"
 "$HOST_DIR/bin/arm-linux-g++" -std=c++17 -Os -Wall -Wextra -Werror \
     "$board/mcu-buttons.cpp" -pthread -o "$target/usr/sbin/galdrun-connector3-mcu"
+"$HOST_DIR/bin/arm-linux-g++" -std=c++17 -Os -Wall -Wextra -Werror -DCONNECTOR3_STATUS_LEDS \
+    -I"$project/../../shared/json/include" -I"$project/../../client/src/audio/linux" \
+    "$board/../../connector2/status-leds.cpp" "$project/../../shared/json/src/Json.cpp" \
+    "$project/../../client/src/audio/linux/Connector3Mcu.cpp" -o "$target/usr/sbin/galdrun-status-leds"
 # The existing network service launches this helper for setup AP mode.
 "$HOST_DIR/bin/arm-linux-g++" -std=c++17 -Os -Wall -Wextra -Werror \
     "$project/board/common/captive-portal.cpp" -o "$target/usr/sbin/raumfeld-captive-portal"
@@ -38,6 +42,16 @@ firmware="$BUILD_DIR/linux-firmware-20250211"
 # leak a previous build's firmware into the generic image through the cache.
 install -D -m 0644 "${GALDRUN_CONNECTOR3_WIFI_FIRMWARE:-$firmware/mrvl/pcie8897_uapsta.bin}" \
     "$target/lib/firmware/mrvl/pcie8897_uapsta.bin"
+# Keep source attribution honest: these approved bytes came from the device,
+# and the available manufacturer notice has a known version mismatch.
+radio_notices="$target/usr/share/licenses/connector3-radio"
+rm -f "$radio_notices/LICENCE.Marvell" "$radio_notices/source.json"
+if [[ -n ${GALDRUN_CONNECTOR3_WIFI_FIRMWARE:-} ]]; then
+    printf '%s  %s\n' b2c5e7f4f88b061b92be8113ddd5ec688da94729c3a5d07bec9e334335499538 \
+        "$GALDRUN_CONNECTOR3_WIFI_FIRMWARE" | sha256sum -c -
+    install -D -m 0644 "$board/../firmware/LICENCE.Marvell" "$radio_notices/LICENCE.Marvell"
+    install -m 0644 "$board/../firmware/source.json" "$radio_notices/source.json"
+fi
 install -D -m 0644 "$firmware/imx/sdma/sdma-imx7d.bin" \
     "$target/lib/firmware/imx/sdma/sdma-imx7d.bin"
 install -D -m 0644 "$firmware/LICENSE.sdma_firmware" \

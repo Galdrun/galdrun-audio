@@ -1,0 +1,26 @@
+From: Galdrun <galdrun@localhost>
+Subject: [PATCH] imx7: restore CNTFRQ after secure CPU suspend
+
+CPU power loss clears CNTFRQ. Restore the saved architectural frequency before
+returning to Linux, including before platform resume code uses timer delays.
+Without this, the next kexec kernel discovers a zero-rate architectural timer.
+
+--- a/core/arch/arm/plat-imx/pm/imx7_suspend.c
++++ b/core/arch/arm/plat-imx/pm/imx7_suspend.c
+@@ -38,5 +38,6 @@ int imx7_cpu_suspend(uint32_t power_state __unused, uintptr_t entry,
+ 	struct imx7_pm_info *p = (struct imx7_pm_info *)suspend_ocram_base;
+ 	int ret;
++	uint32_t cntfrq = read_cntfrq();
+ 
+ 	if (!suspended_init) {
+ 		imx7_suspend_init();
+@@ -55,6 +56,9 @@ int imx7_cpu_suspend(uint32_t power_state __unused, uintptr_t entry,
+ 		return 0;
+ 	}
+ 
++	write_cntfrq(cntfrq);
++	isb();
++
+ 	if (!get_core_pos())
+ 		plat_primary_init_early();
+ 

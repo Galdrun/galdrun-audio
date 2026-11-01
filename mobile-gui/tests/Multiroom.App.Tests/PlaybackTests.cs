@@ -51,6 +51,17 @@ public sealed class PlaybackTests
     }
 
     [Fact]
+    public async Task Transport_button_is_pending_until_its_request_finishes_or_fails()
+    {
+        var done = new TaskCompletionSource();
+        var vm = new PlaybackViewModel(_ => done.Task); vm.Apply(Snapshot());
+        var next = vm.TransportCommand.ExecuteAsync("next");
+        Assert.True(vm.IsNextPending); Assert.False(vm.IsPreviousPending);
+        done.SetException(new HttpRequestException()); await Assert.ThrowsAsync<HttpRequestException>(() => next);
+        Assert.False(vm.IsNextPending); Assert.Null(vm.PendingTransport);
+    }
+
+    [Fact]
     public void Desired_room_state_does_not_override_actual_reason()
     {
         var room = JsonSerializer.Deserialize<RoomView>("""{"client":"room","desired":{"audioControl":"required","volume":0.5},"actual":{"client":"room","connected":true,"member":true,"plan":{"bitPerfect":false,"reason":"resampling","outputFormat":{},"driftCorrected":true}}}""", MultiroomClient.Json)!;

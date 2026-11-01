@@ -1,0 +1,37 @@
+Subject: [PATCH] imx7: reserve JR1 instead of the factory-locked JR0
+
+Connector 3's factory boot path leaves JR0 locked at 0x80008001.
+Use JR1; its SPI 106 (GIC interrupt 138) is defined in imx7s.dtsi.
+Keep the driver's ownership validation unchanged. Trace all three rings
+before ownership configuration so a rejected lock can be diagnosed.
+
+--- a/core/arch/arm/plat-imx/crypto_conf.mk
++++ b/core/arch/arm/plat-imx/crypto_conf.mk
+@@ -43,8 +43,8 @@
+ #
+ $(call force, CFG_JR_BLOCK_SIZE,0x1000)
+ 
+-$(call force, CFG_JR_INDEX,0)  # Default JR index used
+-$(call force, CFG_JR_INT,137)  # Default JR IT Number (105 + 32) = 137
++$(call force, CFG_JR_INDEX,1)  # Connector 3: leave factory JR0 alone
++$(call force, CFG_JR_INT,138)  # i.MX7 JR1: SPI 106 + 32
+ 
+ #
+ # Configuration of the Crypto Driver
+--- a/core/drivers/crypto/caam/hal/imx_6_7/hal_jr.c
++++ b/core/drivers/crypto/caam/hal/imx_6_7/hal_jr.c
+@@ -28,6 +28,14 @@
+ 	uint32_t cfg_ms = 0;
+ 	uint32_t cfg_ls = 0;
+ 	unsigned int jr_idx = JRX_IDX(jr_offset);
++	unsigned int index = 0;
++
++	/* Connector 3 has three rings. Read-only ownership diagnostics. */
++	for (index = 0; index < 3; index++) {
++		HAL_TRACE("JR%u ownership MS=0x%08" PRIx32 " LS=0x%08" PRIx32,
++			  index, io_caam_read32(ctrl_base + JRxMIDR_MS(index)),
++			  io_caam_read32(ctrl_base + JRxMIDR_LS(index)));
++	}
+ 
+ 	/* Read the Job Ring Lock bit */
+ 	val = io_caam_read32(ctrl_base + JRxMIDR_MS(jr_idx));

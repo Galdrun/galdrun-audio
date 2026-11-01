@@ -1,14 +1,51 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Multiroom.App" xmlns:api="using:Multiroom.App.Api"
              x:Class="Multiroom.App.BrowserView" x:DataType="vm:BrowserViewModel">
+  <UserControl.Styles>
+    <Style Selector="Button.mark">
+      <Setter Property="Background" Value="Transparent" /><Setter Property="CornerRadius" Value="24" /><Setter Property="Padding" Value="12" />
+      <Setter Property="Width" Value="48" /><Setter Property="Height" Value="48" />
+    </Style>
+    <!-- A detail page (an album's or an artist's). The page has no margins of its own (MainView): every part keeps
+         16 px from the sides but the cover. That is square, up to 480 wide and 16 px down; in the phone layout
+         (MainView's, no side navigation) it runs edge to edge right under the header bar. -->
+    <Style Selector="Grid.cover"><Setter Property="MaxWidth" Value="480" /></Style>
+    <Style Selector="StackPanel.detail"><Setter Property="Margin" Value="0,16,0,16" /></Style>
+    <Style Selector="ScrollViewer.edge StackPanel.detail"><Setter Property="Margin" Value="0,0,0,16" /></Style>
+    <Style Selector="ScrollViewer.edge Grid.cover"><Setter Property="MaxWidth" Value="Infinity" /></Style>
+    <Style Selector="StackPanel.detail > :is(Control).inset"><Setter Property="Margin" Value="16,0" /></Style>
+    <Style Selector="Border.actions"><Setter Property="VerticalAlignment" Value="Bottom" /><Setter Property="Background" Value="#99101315" /><Setter Property="Padding" Value="8,6" /></Style>
+    <Style Selector="Button.play">
+      <Setter Property="Width" Value="56" /><Setter Property="Height" Value="56" /><Setter Property="CornerRadius" Value="28" /><Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="#CBEC97" /><Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+  </UserControl.Styles>
+  <UserControl.Resources>
+    <!-- A track of a detail page's list; a tap gives its play choices, playing the whole list from it. -->
+    <DataTemplate x:Key="TrackRow" x:DataType="vm:AlbumTrack">
+      <Button Command="{Binding $parent[vm:BrowserView].((vm:BrowserViewModel)DataContext).PlayTrackCommand}" CommandParameter="{Binding}"
+              Background="Transparent" CornerRadius="8" Padding="8,10" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+              AutomationProperties.Name="{Binding Title}">
+        <Grid ColumnDefinitions="32,*,Auto">
+          <TextBlock Text="{Binding Number}" Classes="muted" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding Artist}" Classes="muted" FontSize="12" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <TextBlock Grid.Column="2" Text="{Binding Length}" Classes="muted" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0" />
+        </Grid>
+      </Button>
+    </DataTemplate>
+  </UserControl.Resources>
   <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto">
-    <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,12">
-      <Button Content="Back" Command="{Binding BackCommand}" IsEnabled="{Binding CanBack}" Margin="0,0,12,0" />
-      <StackPanel Grid.Column="1"><TextBlock Text="{Binding Title}" Classes="section" TextTrimming="CharacterEllipsis" />
+    <!-- Back is the system's: Android's back button, or a right click on the desktop (MainView). -->
+    <Grid Margin="16,0,16,12" IsVisible="{Binding IsBrowsing}">
+      <StackPanel><TextBlock Text="{Binding Title}" Classes="section" TextTrimming="CharacterEllipsis" />
         <TextBlock Text="{Binding Breadcrumb}" Classes="muted" TextTrimming="CharacterEllipsis" />
         <TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" /></StackPanel>
     </Grid>
-    <Grid Grid.Row="1">
+    <Grid Grid.Row="1" Margin="16,0">
     <Button IsVisible="{Binding ShowHeader}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
             Tag="{Binding Header}" Click="SelectCard" Margin="0,0,0,12">
       <Grid ColumnDefinitions="Auto,*"><vm:ArtworkView Reference="{Binding Header.Artwork}" Cache="{Binding Artwork}" Width="88" Height="88" />
@@ -20,7 +57,7 @@
     </Button>
     <Button IsVisible="{Binding ShowCompactHeader}" Content="{Binding Header.Title}" Tag="{Binding Header}" Click="SelectCard" HorizontalAlignment="Stretch" Margin="0,0,0,8" />
     </Grid>
-    <Expander Grid.Row="2" Header="Sort, filter and letters" IsVisible="{Binding HasOptions}" IsExpanded="{Binding OptionsExpanded}" HorizontalAlignment="Stretch" Margin="0,0,0,8">
+    <Expander Grid.Row="2" Header="Sort, filter and letters" IsVisible="{Binding ShowOptions}" IsExpanded="{Binding OptionsExpanded}" HorizontalAlignment="Stretch" Margin="16,0,16,8">
     <WrapPanel>
       <ComboBox ItemsSource="{Binding Sorts}" SelectedItem="{Binding Sort}" IsVisible="{Binding HasSorts}" MinWidth="110" Margin="0,0,8,8" AutomationProperties.Name="Sort order" />
       <TextBox Text="{Binding Filter}" PlaceholderText="Filter this page" IsVisible="{Binding Filterable}" Width="190" Margin="0,0,8,8" AutomationProperties.Name="Filter music" />
@@ -30,7 +67,89 @@
       <Button Content="Apply" Command="{Binding ApplyCommand}" IsVisible="{Binding HasOptions}" Margin="0,0,8,8" />
     </WrapPanel>
     </Expander>
-    <Grid Grid.Row="3">
+    <!-- An album: its cover, with favourite, play and like centred in a dimmed row along its bottom;
+         then its title, artist, track count and length; then its tracks, each tapped for its play choices. -->
+    <ScrollViewer x:Name="AlbumPage" Grid.Row="3" IsVisible="{Binding IsAlbum}" Classes.edge="{Binding $parent[vm:MainView].((vm:ShellViewModel)DataContext).IsCompact, FallbackValue=False}" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden">
+      <StackPanel x:Name="AlbumContent" Classes="detail" Spacing="16">
+        <Grid x:Name="AlbumHeader" Classes="cover">
+          <Viewbox Stretch="Uniform">
+            <vm:ArtworkView x:Name="AlbumCover" Reference="{Binding Album.ArtworkId, FallbackValue={x:Null}}" Cache="{Binding Artwork}" Width="480" Height="480" CornerRadius="0" />
+          </Viewbox>
+          <Border x:Name="AlbumActions" Classes="actions">
+            <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Button x:Name="AlbumFavorite" Classes="mark" IsVisible="{Binding CanMarkAlbum}" Command="{Binding ToggleAlbumFavoriteCommand}"
+                      VerticalAlignment="Center" AutomationProperties.Name="Favourite" ToolTip.Tip="Favourite">
+                <Grid Width="24" Height="24">
+                  <Path Data="M 12,2 L 15,8.5 L 22,9.5 L 17,14.5 L 18,22 L 12,18.5 L 6,22 L 7,14.5 L 2,9.5 L 9,8.5 Z" Stroke="#EEF1ED" StrokeThickness="1.7" Stretch="Uniform" IsVisible="{Binding !AlbumFavorite}" />
+                  <Path Data="M 12,2 L 15,8.5 L 22,9.5 L 17,14.5 L 18,22 L 12,18.5 L 6,22 L 7,14.5 L 2,9.5 L 9,8.5 Z" Fill="#CBEC97" Stretch="Uniform" IsVisible="{Binding AlbumFavorite}" />
+                </Grid>
+              </Button>
+              <Button x:Name="AlbumPlay" Classes="play" Command="{Binding PlayAlbumCommand}" AutomationProperties.Name="Play album" ToolTip.Tip="Play">
+                <Path Data="M 7,4 L 20,12 L 7,20 Z" Fill="#182316" Height="24" Stretch="Uniform" Margin="2,0,0,0" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Button>
+              <Button x:Name="AlbumLike" Classes="mark" IsVisible="{Binding CanMarkAlbum}" Command="{Binding ToggleAlbumLikeCommand}"
+                      VerticalAlignment="Center" AutomationProperties.Name="I like it" ToolTip.Tip="I like it">
+                <Grid Width="24" Height="24">
+                  <Path Data="M 12,21 L 3,12 C -3,4 7,-1 12,6 C 17,-1 27,4 21,12 Z" Stroke="#EEF1ED" StrokeThickness="1.7" Stretch="Uniform" VerticalAlignment="Center" IsVisible="{Binding !AlbumLiked}" />
+                  <Path Data="M 12,21 L 3,12 C -3,4 7,-1 12,6 C 17,-1 27,4 21,12 Z" Fill="#CBEC97" Stretch="Uniform" VerticalAlignment="Center" IsVisible="{Binding AlbumLiked}" />
+                </Grid>
+              </Button>
+            </StackPanel>
+          </Border>
+        </Grid>
+        <StackPanel x:Name="AlbumInfo" Classes="inset" Spacing="4" HorizontalAlignment="Center" MaxWidth="600">
+          <TextBlock x:Name="AlbumTitle" Text="{Binding Album.Title, FallbackValue=''}" FontSize="20" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock x:Name="AlbumArtist" Text="{Binding Album.Artist, FallbackValue=''}" Classes="muted" TextAlignment="Center" TextTrimming="CharacterEllipsis"
+                     IsVisible="{Binding Album.Artist, Converter={x:Static StringConverters.IsNotNullOrEmpty}, FallbackValue=False}" />
+          <TextBlock x:Name="AlbumSummary" Text="{Binding AlbumSummary}" Classes="muted" FontSize="12" TextAlignment="Center" />
+        </StackPanel>
+        <ItemsControl x:Name="AlbumTracks" Classes="inset" ItemsSource="{Binding AlbumTracks}" ItemTemplate="{StaticResource TrackRow}" />
+        <Button Content="Load more" Command="{Binding MoreCommand}" IsVisible="{Binding HasMore}" HorizontalAlignment="Center" />
+      </StackPanel>
+    </ScrollViewer>
+    <!-- An artist: its picture as an album's cover, with play in the dimmed row; its name; then its sections as
+         rows like an album's tracks: its tracks as one row opening them, then its albums (newest first), singles
+         and EPs and similar artists; a tap opens one. -->
+    <ScrollViewer x:Name="ArtistPage" Grid.Row="3" IsVisible="{Binding IsArtist}" Classes.edge="{Binding $parent[vm:MainView].((vm:ShellViewModel)DataContext).IsCompact, FallbackValue=False}" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden">
+      <StackPanel Classes="detail" Spacing="16">
+        <Grid x:Name="ArtistHeader" Classes="cover">
+          <Viewbox Stretch="Uniform">
+            <vm:ArtworkView x:Name="ArtistCover" Reference="{Binding Header.Artwork, FallbackValue={x:Null}}" Cache="{Binding Artwork}" Width="480" Height="480" CornerRadius="0" />
+          </Viewbox>
+          <Border Classes="actions">
+            <Button x:Name="ArtistPlay" Classes="play" Command="{Binding PlayArtistCommand}" HorizontalAlignment="Center" AutomationProperties.Name="Play artist" ToolTip.Tip="Play">
+              <Path Data="M 7,4 L 20,12 L 7,20 Z" Fill="#182316" Height="24" Stretch="Uniform" Margin="2,0,0,0" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Button>
+          </Border>
+        </Grid>
+        <TextBlock x:Name="ArtistName" Classes="inset" Text="{Binding Header.Title, FallbackValue=''}" FontSize="20" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap" />
+        <ItemsControl x:Name="ArtistSections" Classes="inset" ItemsSource="{Binding ArtistSections}">
+          <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:DetailSection">
+            <StackPanel Spacing="4" Margin="0,0,0,16">
+              <TextBlock Text="{Binding Title}" Classes="section" IsVisible="{Binding HasTitle}" Margin="8,0,0,4" />
+              <ItemsControl ItemsSource="{Binding Rows}">
+                <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:MediaRow">
+                  <Button Command="{Binding $parent[vm:BrowserView].((vm:BrowserViewModel)DataContext).OpenRowCommand}" CommandParameter="{Binding}"
+                          Background="Transparent" CornerRadius="8" Padding="8,8" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                          AutomationProperties.Name="{Binding Title}">
+                    <Grid ColumnDefinitions="Auto,*">
+                      <vm:ArtworkView Reference="{Binding Artwork}" Cache="{Binding Cache}" Width="48" Height="48" />
+                      <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center" Margin="12,0,0,0">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="12" TextTrimming="CharacterEllipsis"
+                                   IsVisible="{Binding Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                      </StackPanel>
+                    </Grid>
+                  </Button>
+                </DataTemplate></ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <ItemsControl ItemsSource="{Binding Tracks}" ItemTemplate="{StaticResource TrackRow}" />
+            </StackPanel>
+          </DataTemplate></ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+    <Grid Grid.Row="3" IsVisible="{Binding IsBrowsing}" Margin="16,0">
       <ListBox ItemsSource="{Binding Bands}" Background="Transparent" x:Name="MediaList" SelectionMode="Single">
         <ListBox.Styles><Style Selector="ListBoxItem"><Setter Property="Padding" Value="0" /><Setter Property="Focusable" Value="False" /></Style></ListBox.Styles>
         <ListBox.ItemTemplate><DataTemplate x:DataType="vm:MediaBand">
@@ -60,14 +179,14 @@
           </ItemsControl>
         </DataTemplate></ListBox.ItemTemplate>
       </ListBox>
-      <TextBlock Text="No music to show here yet." IsVisible="{Binding IsEmpty}" Classes="muted" HorizontalAlignment="Center" VerticalAlignment="Center" />
+      <TextBlock Text="No music to show here yet." IsVisible="{Binding ShowEmpty}" Classes="muted" HorizontalAlignment="Center" VerticalAlignment="Center" />
     </Grid>
-    <StackPanel Grid.Row="4" Margin="0,8,0,0" Spacing="6" IsVisible="{Binding HasSelectionOrNotice}">
+    <StackPanel Grid.Row="4" Margin="16,8,16,0" Spacing="6" IsVisible="{Binding HasSelectionOrNotice}">
       <TextBlock Text="{Binding Notice}" IsVisible="{Binding HasNotice}" Classes="muted" TextWrapping="Wrap" MaxHeight="65" />
       <TextBlock Text="{Binding SelectedItem.Title}" Foreground="#CBEC97" TextTrimming="CharacterEllipsis" />
       <TextBlock Text="{Binding SelectedItem.Subtitle}" Classes="muted" TextWrapping="Wrap" MaxHeight="60" />
     </StackPanel>
-    <Grid Grid.Row="5" Margin="0,8,0,0">
+    <Grid Grid.Row="5" Margin="16,8,16,0" IsVisible="{Binding IsBrowsing}">
     <WrapPanel IsVisible="{Binding !IsCompact}">
       <Button Content="Open" Command="{Binding OpenCommand}" IsEnabled="{Binding CanOpen}" Margin="0,0,8,6" />
       <Button Content="Play now" Command="{Binding QueueCommand}" CommandParameter="now" IsEnabled="{Binding CanQueue}" Classes="accent" Margin="0,0,8,6" />

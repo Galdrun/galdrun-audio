@@ -3,6 +3,14 @@
 # No vendor filesystem/binaries, USB installer or hardware writes.
 set -euo pipefail
 project=$(cd -- "$(dirname -- "$0")/.." && pwd)
+[[ $# -le 1 ]] || { echo "Usage: $0 [FIT signing-key directory]" >&2; exit 2; }
+signing=
+if [[ $# == 1 ]]; then
+    signing=$(realpath -- "$1")
+    [[ -r "$signing/verified-boot.key" && -r "$signing/verified-boot.crt" ]] || {
+        echo 'Missing private local FIT signing material.' >&2; exit 2;
+    }
+fi
 source "$project/PrepareHost.sh"
 jobs=${JOBS:-16}
 [[ $jobs =~ ^[0-9]+$ && $jobs -ge 1 && $jobs -le 32 ]] || exit 2
@@ -25,6 +33,7 @@ fi
 cp -p "$diagnostic/images/rootfs.cpio" "$output/rootfs.cpio"
 cp "$diagnostic/build/linux-6.12.112/.config" "$linux/.config"
 cp "$board/imx7d-galdrun-connector3-storage-check.dts" "$linux/arch/arm/boot/dts/nxp/imx/"
+cp "$board/../imx7d-galdrun-connector3-storage.dtsi" "$linux/arch/arm/boot/dts/nxp/imx/"
 "$linux/scripts/config" --file "$linux/.config" \
     --enable MTD --enable MTD_RAW_NAND --enable MTD_NAND_GPMI_NAND \
     --enable MTD_UBI --enable UBIFS_FS --disable MTD_BLOCK \
@@ -33,6 +42,13 @@ cp "$board/imx7d-galdrun-connector3-storage-check.dts" "$linux/arch/arm/boot/dts
     --enable USB_STORAGE --enable SCSI --enable BLK_DEV_SD \
     --enable VFAT_FS --enable NLS_CODEPAGE_437 --enable NLS_ISO8859_1 \
     --set-str LOCALVERSION '-galdrun-storage-ro' --set-str INITRAMFS_SOURCE "$output/rootfs.cpio"
+if [[ -n $signing ]]; then
+    # Keep the USB kernel below the host FIT loader's conservative 8 MiB cap.
+    # This diagnostic mounts only UBIFS and FAT; it needs no NFS or ext* stack.
+    "$linux/scripts/config" --file "$linux/.config" \
+        --disable NFS_FS --disable NFSD --disable SUNRPC --disable LOCKD \
+        --disable FUSE_FS --disable EXT2_FS --disable EXT3_FS --disable EXT4_FS
+fi
 args=(-C "$linux" ARCH=arm "CROSS_COMPILE=$diagnostic/host/bin/arm-linux-")
 make "${args[@]}" olddefconfig >"$project/logs/connector3-storage-check.log" 2>&1
 make "${args[@]}" -j"$jobs" zImage nxp/imx/imx7d-galdrun-connector3-storage-check.dtb \
@@ -49,3 +65,6 @@ install -m 0644 "$output/storage-verification.json" "$destination/"
 cd "$destination"
 sha256sum zImage connector3.dtb >SHA256SUMS
 printf 'Read-only NAND RAM test components (not an installer): %s\n' "$destination"
+if [[ -n $signing ]]; then
+    python3 "$project/scripts/pack-connector3-storage-usb.py" "$output" "$diagnostic" "$linux" "$signing" "$destination"
+fi

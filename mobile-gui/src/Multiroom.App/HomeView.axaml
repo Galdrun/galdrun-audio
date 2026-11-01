@@ -75,13 +75,11 @@
     </ItemsControl>
    </StackPanel>
   </ScrollViewer>
-  <!-- "See all": a fixed header (the shelf's icon and title, back on the right) over every cover of the shelf. -->
+  <!-- "See all": a fixed header (the shelf's icon and title) over every cover of the shelf; the system back closes it. -->
   <Grid x:Name="ShelfPage" IsVisible="{Binding Home.IsShelfOpen}" RowDefinitions="Auto,Auto,*">
-   <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
+   <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,8">
     <Path Data="{Binding Home.OpenShelf.Icon, FallbackValue={x:Null}}" Stroke="#CBEC97" StrokeThickness="1.8" StrokeJoin="Round" StrokeLineCap="Round" Width="24" Height="24" VerticalAlignment="Center" />
     <TextBlock Grid.Column="1" Text="{Binding Home.OpenShelf.Title, FallbackValue=''}" Classes="section" VerticalAlignment="Center" Margin="8,0,0,0" TextTrimming="CharacterEllipsis" />
-    <Button x:Name="ShelfBack" Grid.Column="2" Content="Back" Command="{Binding Home.CloseShelfCommand}" Background="Transparent"
-     VerticalAlignment="Center" AutomationProperties.Name="Back to home" />
    </Grid>
    <Border x:Name="ShelfDivider" Grid.Row="1" Height="1" Background="#2E3638" Margin="0,0,0,14" />
    <ScrollViewer x:Name="ShelfGrid" Grid.Row="2" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden">

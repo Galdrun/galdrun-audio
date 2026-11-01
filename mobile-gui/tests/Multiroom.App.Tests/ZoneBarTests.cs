@@ -45,10 +45,37 @@ public sealed class ZoneBarTests
             Assert.Equal(volumeCenter, volumeIcon.TranslatePoint(new Point(volumeIcon.Bounds.Width / 2, volumeIcon.Bounds.Height / 2), bar)!.Value);
             Assert.Equal(new Thickness(0), volume.BorderThickness);
             Assert.Same(model.OpenVolumeCommand, volume.Command);
-            Assert.Equal(8, volume.TranslatePoint(new Point(), bar)!.Value.Y - play.TranslatePoint(new Point(0, play.Bounds.Height), bar)!.Value.Y);
+            var strip = bar.FindControl<Border>("ZoneStrip")!;
+            Assert.Equal(Avalonia.Media.Colors.Black, ((Avalonia.Media.ISolidColorBrush)strip.Background!).Color);
+            var stripTopLeft = strip.TranslatePoint(new Point(), bar)!.Value;
+            Assert.Equal(artButton.Bounds.Width, stripTopLeft.X); Assert.Equal(bar.Bounds.Width, stripTopLeft.X + strip.Bounds.Width);
+            Assert.Equal(bar.Bounds.Height, stripTopLeft.Y + strip.Bounds.Height, 0);
+            Assert.Contains(volume, strip.GetVisualDescendants()); Assert.Contains(bar.FindControl<TextBlock>("ZoneName")!, strip.GetVisualDescendants());
+            Assert.True(play.TranslatePoint(new Point(0, play.Bounds.Height), bar)!.Value.Y <= stripTopLeft.Y);
             Assert.Equal(100, art.Bounds.Height);
-            Assert.Equal(art.Bounds.Height, bar.Bounds.Height);
-            Assert.Equal(new Point(0, 0), art.TranslatePoint(new Point(), bar));
+            var seek = bar.FindControl<Slider>("ZonePositionSlider")!;
+            Assert.True(seek.IsEffectivelyVisible); Assert.Equal(model.Playback.CanScrub, seek.IsEnabled);
+            Assert.Equal(model.Playback.ProgressMaximum, seek.Maximum); Assert.Equal(model.Playback.ProgressSeconds, seek.Value);
+            Assert.Equal(new Size(bar.Bounds.Width, 10), seek.Bounds.Size);
+            var track = seek.GetVisualDescendants().OfType<Border>().First(border => border.Name == "TrackBackground");
+            Assert.Equal(0, track.TranslatePoint(new Point(), bar)!.Value.Y, 1); Assert.Equal(3, track.Bounds.Height);
+            var thumb = Assert.Single(seek.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Thumb>());
+            Assert.Equal(new Size(10, 10), thumb.Bounds.Size);
+            Assert.True(thumb.TranslatePoint(new Point(0, thumb.Bounds.Height), bar)!.Value.Y > art.TranslatePoint(new Point(), bar)!.Value.Y);
+            var cardGrid = (Grid)card.Child!; Assert.Same(seek, cardGrid.Children[^1]); // Drawn over the artwork.
+            var bubbles = bar.FindControl<Grid>("ScrubBubbles")!; Assert.False(bubbles.IsVisible);
+            var snapshot = PlaybackTests.Snapshot();
+            model.Playback.Apply(snapshot with { Zones = [snapshot.Zones[0] with { Queue = snapshot.Zones[0].Queue! with
+                { Items = [new(1, new Track("local", "track:1", "First", Duration: TimeSpan.FromSeconds(200)))], PositionMs = 65000, Transport = QueueTransport.Paused } }] });
+            model.Playback.BeginScrub(); Assert.True(bubbles.IsVisible);
+            Assert.Equal("1:05", bar.FindControl<TextBlock>("ScrubPosition")!.Text);
+            Assert.Equal("3:20", bar.FindControl<TextBlock>("ScrubLength")!.Text);
+            model.Playback.CancelScrub(); Assert.False(bubbles.IsVisible);
+            model.Playback.Apply(snapshot);
+            // The dot overhangs the bar's top edge; nothing between it and the page may clip it.
+            Assert.All(thumb.GetVisualAncestors().TakeWhile(visual => visual != view).Where(visual => visual.Bounds.Height > seek.Bounds.Height), visual => Assert.False(visual.ClipToBounds));
+            Assert.Equal(art.Bounds.Height + 3, bar.Bounds.Height, 0);
+            Assert.Equal(new Point(0, 3), art.TranslatePoint(new Point(), bar));
             Assert.Equal(width < 520 ? 16 : 18, bar.FindControl<TextBlock>("MediaTitle")!.FontSize);
             Assert.Equal(media.Command, artButton.Command); Assert.Equal(media.CommandParameter, artButton.CommandParameter);
             Assert.Equal(new CornerRadius(0), art.CornerRadius);
@@ -56,7 +83,7 @@ public sealed class ZoneBarTests
             Assert.All(new[] { bar.FindControl<TextBlock>("MediaTitle")!, bar.FindControl<TextBlock>("MediaSubtitle")! }, text => Assert.Equal(Avalonia.Media.TextAlignment.Left, text.TextAlignment));
             Assert.Equal(new Size(40, 40), play.Bounds.Size);
             var mediaGrid = bar.FindControl<Grid>("MediaGrid")!;
-            Assert.Same(mediaGrid, media.Parent); Assert.Contains(selector, media.GetVisualDescendants());
+            Assert.Same(mediaGrid, media.Parent); Assert.DoesNotContain(selector, media.GetVisualDescendants());
             var playLeft = play.TranslatePoint(new Point(), bar)!.Value.X;
             Assert.Equal(16, bar.Bounds.Width - playLeft - play.Bounds.Width);
             foreach (var name in new[] { "MediaTitle", "MediaSubtitle" })
@@ -82,6 +109,7 @@ public sealed class ZoneBarTests
             Assert.Equal(view.Bounds.Height, bottom, 0);
             Assert.Equal(view.Bounds.Width, bar.Bounds.Width, 0);
             model.SelectedPage = "Now Playing"; Assert.True(model.ShowZoneBar);
+            window.UpdateLayout(); Assert.False(seek.IsEffectivelyVisible);
             foreach (var page in new[] { "Zones", "Volume", "Servers", "Server" })
             { model.SelectedPage = page; Assert.False(model.ShowZoneBar); }
             model.SelectedPage = "Search"; Assert.True(model.ShowZoneBar);
@@ -167,7 +195,7 @@ public sealed class ZoneBarTests
         using var api = new MultiroomClient("http://fake", handler: new FakeHttp((r, _) =>
         { paths.Add($"{r.Method} {r.RequestUri!.AbsolutePath}"); return Task.FromResult(FakeHttp.Json("{}")); }));
         var vm = new PlaybackViewModel(a => a(api, TestContext.Current.CancellationToken));
-        var snapshot = PlaybackTests.Snapshot(); vm.Apply(snapshot);
+        var snapshot = PlaybackTests.Snapshot() with { Rooms = [new("speaker", new(Zone: "kitchen"), new("speaker", Connected: true, Member: true))] }; vm.Apply(snapshot);
         Assert.True(vm.IsPlaying); Assert.Equal("Pause", vm.PlayPauseLabel);
         await vm.PlayPauseCommand.ExecuteAsync(null); Assert.Equal("POST /api/v1/zones/living/pause", Assert.Single(paths));
         snapshot = snapshot with { Zones = snapshot.Zones.Select(z => z with { Queue = z.Queue! with { Transport = QueueTransport.Paused } }).ToArray() };
@@ -178,6 +206,20 @@ public sealed class ZoneBarTests
         Assert.Equal("living", vm.SelectedZone); Assert.Equal("living", Assert.Single(vm.Zones));
         vm.Apply(new([], [])); vm.ChangeZoneCommand.Execute("next"); await vm.PlayPauseCommand.ExecuteAsync(null);
         Assert.Empty(vm.Zones); Assert.Equal(2, paths.Count);
+    }
+
+    [Fact]
+    public async Task Play_with_every_device_off_fails_without_a_request()
+    {
+        var paths = new List<string>();
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp((r, _) =>
+        { paths.Add($"{r.Method} {r.RequestUri!.AbsolutePath}"); return Task.FromResult(FakeHttp.Json("{}")); }));
+        var vm = new PlaybackViewModel(a => a(api, TestContext.Current.CancellationToken));
+        var snapshot = PlaybackTests.Snapshot();
+        vm.Apply(snapshot with { Zones = [snapshot.Zones[0] with { Queue = snapshot.Zones[0].Queue! with { Transport = QueueTransport.Paused } }],
+            Rooms = [new("speaker", new(Zone: "living"), new("speaker", Connected: false, Member: false))] });
+        var error = await Assert.ThrowsAsync<ApiException>(() => vm.PlayPauseCommand.ExecuteAsync(null));
+        Assert.Equal("No device in living is connected. Turn a device on and try again.", error.Message); Assert.Empty(paths);
     }
 
     [Fact]

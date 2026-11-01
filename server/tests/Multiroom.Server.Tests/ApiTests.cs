@@ -90,7 +90,7 @@ public sealed partial class ApiTests : IAsyncDisposable
         // The self-check: the media endpoint answered its probe, and the
         // database is at the latest schema.
         Assert.Equal($"reachable at {baseUri}", status["media"]!["reachability"]!.GetValue<string>());
-        Assert.Equal(30, status["library"]!["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(31, status["library"]!["schemaVersion"]!.GetValue<int>());
         Assert.NotNull(status["library"]!["indexer"]!["queueDepth"]);
         Assert.Equal(["local", "webradio", "tidal", "fake", "slow"],
             status["providers"]!.AsArray().Select(p => p!["id"]!.GetValue<string>()));
@@ -902,7 +902,7 @@ public sealed partial class ApiTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.NoContent, (await Send(HttpMethod.Delete, $"favorites/{id}")).Status);
         await Refused(HttpMethod.Delete, $"favorites/{id}", HttpStatusCode.NotFound, "notFound");
         await Refused(HttpMethod.Post, "favorites", $$"""{"track":{{Json(a)}},"station":{{Json(radio)}}}""",
-            HttpStatusCode.BadRequest, "invalidArgument", "exactly one of track, station or node");
+            HttpStatusCode.BadRequest, "invalidArgument", "exactly one of track, station, album or node");
         await Refused(HttpMethod.Post, "zones/living/queue/items", $$"""{"favorite":{{id}}}""", HttpStatusCode.NotFound, "notFound");
     }
 
@@ -1144,6 +1144,21 @@ public sealed partial class ApiTests : IAsyncDisposable
             HttpStatusCode.BadRequest, "invalidRequest");
         await Refused(HttpMethod.Post, "zones/living/queue/items", """{"node":{"provider":"local"}}""",
             HttpStatusCode.BadRequest, "invalidRequest", "field node.id is required");
+
+        // An album is a favourite by its identity, answered in an items status, and queued as its node is now.
+        var daysAlbum = $$"""{"providerId":"local","providerItemId":"{{id}}","title":"Days","artist":"Aurora"}""";
+        var favourite = await Send(HttpMethod.Post, "favorites", $$"""{"album":{{daysAlbum}}}""");
+        Assert.Equal(HttpStatusCode.Created, favourite.Status);
+        Assert.Equal(("album", "Days", "Aurora"), (favourite.Body!["item"]!["kind"]!.GetValue<string>(),
+            favourite.Body["item"]!["title"]!.GetValue<string>(), favourite.Body["item"]!["artist"]!.GetValue<string>()));
+        var favouriteId = favourite.Body["id"]!.GetValue<long>();
+        Assert.Equal(favouriteId, (await Ok(HttpMethod.Post, "favorites", $$"""{"album":{{daysAlbum}}}"""))["id"]!.GetValue<long>());
+        var status = await Ok(HttpMethod.Post, "items/status", $$$"""{"items":[{"kind":"album","providerId":"local","providerItemId":"{{{id}}}"}]}""");
+        Assert.Equal((true, favouriteId), (status[0]!["favorite"]!.GetValue<bool>(), status[0]!["favoriteId"]!.GetValue<long>()));
+        Assert.Equal(["One", "Two"], Titles(await Ok(HttpMethod.Post, "zones/living/queue/items",
+            $$"""{"favorite":{{favouriteId}},"replace":true}""")));
+        await Refused(HttpMethod.Post, "favorites", $$$"""{"album":{{{daysAlbum}}},"node":{"provider":"local","id":"{{{id}}}"}}""",
+            HttpStatusCode.BadRequest, "invalidArgument", "exactly one of track, station, album or node");
     }
 
     // --- add-ins --------------------------------------------------------------

@@ -116,9 +116,11 @@ Connector 3's clean installer must exclude OEM runtime files. The user's final
 hardware blob and accepts the available licence's version mismatch; do not
 continue replacement-firmware research as a prerequisite. Read
 [the next-day handover](../hardware/connector3-handover-2026-10-31.md) first:
-work is stopped and the board is back on its original beta. The current radio
-hash guard still needs the approved exception; it must retain OEM-runtime
-rejection. `hardware/buildroot/scripts/connector3_content.py` checks unpacked content
+  Galdrun is installed in NAND and its physical cold boot passed. The approved
+  radio exception is implemented while OEM-runtime rejection remains active.
+  The Wi-Fi clock/early-firmware fix passes a RAM boot but still needs installation
+  and cold-boot/Wi-Fi-only qualification; use the handover's latest checkpoint.
+  `hardware/buildroot/scripts/connector3_content.py` checks unpacked content
 against source/license metadata; `test-connector3-content.py` runs its guards.
 The standalone RAM image omits the old vendor D-Bus bridge. The explicit
 `prepare-connector3-vendor-ram.py` test now builds/uploads that bridge separately.
@@ -126,7 +128,7 @@ The standalone RAM image omits the old vendor D-Bus bridge. The explicit
 implement the separate RAM-only NAND/USB qualification profile with a
 controller-level write refusal guard and read-only MTD partitions. They are
 not a persistent installer. Default generic RAM builds run the clean-content
-audit; private device-radio builds are explicitly marked ineligible for release.
+  audit, including builds with the exact approved device-radio exception.
 Its RAM image's ASoC machine driver is
 `hardware/buildroot/board/connector3/ram/galdrun-connector3-audio.c` (from the
 repository root), integrated by `hardware/buildroot/external.mk`; it selects
@@ -144,8 +146,11 @@ overlay. `test_connector3_cpu_power_web.cjs <url>` is an explicit hardware
 integration check that changes/restores speed and standby. Suspend-to-idle
 being present does not qualify deep sleep: no Connector 3 suspend helper is
 shipped until a platform deep-suspend and wake path works.
-`connector3-pm.c` / `connector3-suspend.S` port CPU-off/DDR self-refresh using
-reserved OCRAM and retain the peripheral domain. The kernel port requires an
+`connector3-pm.c` powers off CPU0 through the secure PSCI monitor, with DDR
+self-refresh and SCU/peripheral power retained for Ethernet wake. Stock PLL
+handling is preserved. The monitor must restore CNTFRQ, and CPU-PM notifications
+restore CNTKCTL. The older nonsecure `connector3-suspend.S` path is unused.
+The kernel port requires an
 explicit `galdrun,experimental-suspend` root DT property (or boot parameter
 `connector3_suspend=1`). The normal image does not enable it. The explicit
 hardware diagnostic is `hardware/buildroot/scripts/test-connector3-suspend.sh`;
@@ -165,6 +170,22 @@ readbacks passed, but their audible effect remains a pending hardware test,
 explicitly deferred by the user; both RCA channels playing are confirmed.
 Run the MCU helper's `--self-test` and the RAM
 startup check, then verify power/mute readback and real RCA playback on hardware.
+
+Connector 3 startup synchronizes the MCU, selects host I2S, powers On and
+verifies the source-qualified encoded sample rate before publishing its socket.
+`AlsaBackend::open` then sends the actual PCM rate through that socket before
+playback; failure stops the device open. The persistent init waits for this
+readiness before starting the client. The rate is restored on startup rather
+than relying on volatile MCU state surviving a reboot.
+Connector 3 builds the existing `board/connector2/status-leds.cpp` monitor with
+`CONNECTOR3_STATUS_LEDS`, passing `/settings/client.json` (persistent) or
+`/run/client.json` (RAM). It uses the MCU's three-front-LED indications through
+the same socket; Connector 2 retains its GPIO patterns. `ledsOff` and standby
+switch off the status LEDs. The rear Bluetooth indicator is separate and is
+not used to imply an available Bluetooth playback backend. Verify with
+`hardware/buildroot/scripts/test-status-leds.py`,
+`hardware/buildroot/scripts/test-connector3-status-leds.py`, the MCU self-test,
+and `test-connector3-persistent-init.py`, then real boot/listening checks.
 
 Pi firmware uses the same network/SSH/standby services, with MAC-based Wi-Fi
 radio selection/hotplug and AP fallback. `getAudioProfile`/`setAudioProfile`

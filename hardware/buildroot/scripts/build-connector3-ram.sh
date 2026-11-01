@@ -59,6 +59,13 @@ install -m 0644 "$output/images/rootfs.tar.gz" "$destination/rootfs.tar.gz"
 install -m 0644 "$output/images/imx7d-galdrun-connector3-ram.dtb" "$destination/connector3.dtb"
 install -m 0755 "$output/target/usr/sbin/kexec" "$destination/kexec"
 install -m 0644 "$output/images/ram-verification.json" "$destination/ram-verification.json"
+mkdir -p "$destination/licenses"
+rsync -a --delete "$output/legal-info/licenses/" "$destination/licenses/"
+install -m 0644 "$output/legal-info/manifest.csv" "$destination/licenses/manifest.csv"
+if [[ -n $GALDRUN_CONNECTOR3_WIFI_FIRMWARE ]]; then
+    mkdir -p "$destination/licenses/connector3-radio"
+    install -m 0644 "$project/board/connector3/firmware/"* "$destination/licenses/connector3-radio/"
+fi
 cd "$destination"
 sha256sum zImage rootfs.cpio.gz rootfs.tar.gz connector3.dtb kexec >SHA256SUMS
 printf 'Connector 3 RAM test files: %s\n' "$destination"

@@ -1171,7 +1171,7 @@ function transportButton(name, title, onclick, cls = 'icon-only', zone = null, s
   return h('button', {
     class: cls, title, 'aria-label': title, 'aria-busy': busy ? 'true' : null,
     disabled: zone != null && transporting.has(zone), onclick,
-  }, busy ? h('span', { class: 'spinner' }) : icon(name));
+  }, busy && h('span', { class: 'spinner' }), icon(name));
 }
 
 // Sends a transport command for `zone` with its button held busy; the answer's
@@ -1571,12 +1571,12 @@ function likeButton(kind, x, announced = false, body = null) {
   return b;
 }
 
-// The favourites by what they hold: a track or a station by its ids, a book
-// by the node it came from. Read with the Favourites list, in the listener's
+// The favourites by what they hold: a track, a station or an album by its
+// ids, a book by the node it came from. Read with the Favourites list, in the listener's
 // scope, and again on favorite.changed (server phase 36).
-const favorites = new Map(); // 'track|provider|item', 'station|…' or 'book|<source>' -> favorite id
+const favorites = new Map(); // 'track|provider|item', 'station|…', 'album|…' or 'book|<source>' -> favorite id
 const favoriteKey = (f) => (media(f, 'track') ? likeKey('track', f.item) : media(f, 'station') ? likeKey('station', f.item)
-  : media(f, 'group')?.source ? `book|${f.item.source}` : null);
+  : media(f, 'album') ? likeKey('album', f.item) : media(f, 'group')?.source ? `book|${f.item.source}` : null);
 
 function favoritesChanged() {
   favorites.clear();
@@ -3445,8 +3445,8 @@ async function addStation(station, next) {
   const zone = needTarget();
   return api('POST', `zones/${zone}/queue/items`, next ? { station, next: true } : { station });
 }
-function addFavorite(track, station) {
-  return api('POST', 'favorites', { ...(track ? { track } : { station }), ...ownerOf() });
+function addFavorite(track, station, album) {
+  return api('POST', 'favorites', { ...(track ? { track } : album ? { album } : { station }), ...ownerOf() });
 }
 // Stations as the library's tracks are listed (mbTracks): live instead of a
 // length, and under the pointer play, next, last and favourite.
@@ -3666,12 +3666,13 @@ function homeRecent() {
 }
 
 function favoriteTile(f) {
-  const x = f.item, station = media(f, 'station'), book = media(f, 'group');
+  const x = f.item, station = media(f, 'station'), book = media(f, 'group'), album = media(f, 'album');
   return homeTile({
     artworkId: x.artworkId, placeholder: station ? 'radio' : 'library', title: x.title ?? x.name,
-    sub: station ? tt('home.radio') : book ? [x.artist, tt('home.book')].filter(Boolean).join(' · ') : x.artist,
-    ref: { favorite: f.id }, like: media(f, 'track') && likeButton('track', x),
-    fav: favoriteButton(favoriteKey(f), () => (book ? addBookFavorite(x.source) : addFavorite(media(f, 'track'), station)), Boolean(book)) });
+    sub: station ? tt('home.radio') : book ? [x.artist, tt('home.book')].filter(Boolean).join(' · ') : album ? x.artist ?? tt('home.album') : x.artist,
+    ref: { favorite: f.id }, like: (media(f, 'track') && likeButton('track', x)) || (album && likeButton('album', x)),
+    open: album ? () => openHomeDetail(x.providerId, x.providerItemId) : undefined,
+    fav: favoriteButton(favoriteKey(f), () => (book ? addBookFavorite(x.source) : addFavorite(media(f, 'track'), station, album)), Boolean(book)) });
 }
 
 function likedTile(l) {

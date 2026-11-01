@@ -1149,6 +1149,12 @@ body:has(#player:not([hidden])) { padding-bottom: var(--player-space); }
 .player-transport button:not(.mode):disabled, .row-play:disabled { opacity: .5; }
 .player-transport button[aria-busy="true"], .row-play[aria-busy="true"] { opacity: 1; cursor: progress; }
 .play .spinner { border-color: color-mix(in srgb, currentColor 30%, transparent); border-top-color: currentColor; }
+.spinner + svg { display: none; }
+/* In the player bar the icon stays and a ring spins around its button, as in the app. */
+.player-transport button[aria-busy="true"] { position: relative; }
+.player-transport .spinner + svg { display: block; }
+.player-transport .spinner { position: absolute; inset: 0; width: auto; height: auto; border: 2.5px solid transparent; border-top-color: var(--accent); pointer-events: none; }
+.player-transport .play .spinner { inset: -5px; }
 .queue-list tr:has([aria-busy="true"]) .row-tools { max-width: 160px; opacity: 1; transform: none; }
 
 /* --- clients (rooms): one card per client (as the Home page's zones), the room's settings on a page of its own ----- */

@@ -1,0 +1,108 @@
+#!/bin/sh
+# Explicit deep sleep. Standby keeps the network/client running.
+# Wired magic packets and MCU POWER can wake; WLAN-only wake uses POWER.
+set -eu
+if [ "$#" -ne 0 ] || [ "$(id -u)" -ne 0 ]; then
+    echo 'Usage: run raumfeld-suspend as root, with no arguments' >&2
+    exit 1
+fi
+grep -q '\[deep\]' /sys/power/mem_sleep || {
+    echo 'Deep sleep is not selected' >&2
+    exit 1
+}
+settings=/settings
+[ -f "$settings/client.json" ] || settings=/run
+test -r "$settings/client.json"
+export LD_LIBRARY_PATH=/opt/galdrun-client/lib
+api() {
+    wget -q -T 3 -O - --header 'Content-Type: application/json' \
+        --post-data "{\"command\":\"$1\",\"params\":{}}" http://127.0.0.1:4720/api
+}
+power_state() {
+    sed -n 's/.*"state"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+}
+client=$(pidof galdrun-client || :)
+leds=$(pidof galdrun-status-leds || :)
+power=on
+if [ -n "$client" ]; then
+    power=$(api getPower | power_state)
+    case "$power" in on|standby|standbyManual) ;; *) echo 'Cannot read client power state' >&2; exit 1 ;; esac
+fi
+old_mcu_wake=$(cat /sys/class/tty/ttymxc2/power/wakeup)
+client_stopped=0
+leds_stopped=0
+wol=
+old_wol=
+restore() {
+    result=$?
+    trap - EXIT
+    [ -z "$wol" ] || ethtool -s "$wol" wol "$old_wol" || result=1
+    echo "$old_mcu_wake" >/sys/class/tty/ttymxc2/power/wakeup || result=1
+    if [ "$client_stopped" -eq 1 ] && ! kill -0 "$client" 2>/dev/null; then
+        nohup /opt/galdrun-client/galdrun-client --config "$settings/client.json" \
+            --audio-cache "$settings/audio_devices.json" --log-file /run/galdrun-client.log \
+            >>/run/galdrun-client-console.log 2>&1 </dev/null &
+        if [ "$power" = standbyManual ]; then
+            restored=0
+            for attempt in $(seq 1 20); do
+                if response=$(api standbyOn 2>/dev/null) &&
+                   [ "$(printf '%s' "$response" | power_state)" = standbyManual ]; then
+                    restored=1
+                    break
+                fi
+                sleep 0.1
+            done
+            if [ "$restored" -eq 0 ]; then
+                echo 'Could not restore manual standby' >&2
+                result=1
+            fi
+        fi
+    fi
+    if [ "$leds_stopped" -eq 1 ] && ! kill -0 "$leds" 2>/dev/null; then
+        nohup /usr/sbin/galdrun-status-leds "$settings/client.json" \
+            >/run/status-leds.log 2>&1 </dev/null &
+    fi
+    rmdir /run/raumfeld-suspend.lock || result=1
+    exit "$result"
+}
+stop_process() {
+    kill -TERM "$1"
+    for attempt in $(seq 1 50); do
+        kill -0 "$1" 2>/dev/null || return 0
+        sleep 0.1
+    done
+    echo "Process $1 did not stop" >&2
+    return 1
+}
+mkdir /run/raumfeld-suspend.lock 2>/dev/null || {
+    echo 'Deep sleep is already being requested' >&2
+    exit 1
+}
+trap restore EXIT
+trap 'exit 1' HUP INT TERM
+# SIGTERM makes the LED monitor send MCU indication 0; no settings are changed.
+if [ -n "$leds" ]; then
+    leds_stopped=1
+    stop_process "$leds"
+fi
+if [ -n "$client" ]; then
+    client_stopped=1
+    stop_process "$client"
+fi
+echo enabled >/sys/class/tty/ttymxc2/power/wakeup
+for net in /sys/class/net/*; do
+    if [ -d "$net/phy80211" ] || [ -d "$net/wireless" ] || [ "$(cat "$net/type")" != 1 ] ||
+       [ "$(cat "$net/carrier" 2>/dev/null)" != 1 ]; then continue; fi
+    if ethtool "${net##*/}" | grep -q 'Supports Wake-on:.*g'; then
+        wol=${net##*/}
+        old_wol=$(ethtool "$wol" | awk '/^[[:space:]]*Wake-on:/ {print $2}')
+        ethtool -s "$wol" wol d
+        ethtool -s "$wol" wol g
+        break
+    fi
+done
+sync
+result=0
+echo mem >/sys/power/state || result=$?
+if [ "$result" -ne 0 ]; then logger -t raumfeld-suspend 'Kernel deep sleep failed'; fi
+exit "$result"

@@ -43,6 +43,63 @@ public sealed class BrowserTests
     }
 
     [Fact]
+    public async Task An_album_page_counts_its_tracks_marks_the_album_and_offers_play_choices()
+    {
+        var node = new BrowseNode("local", "album:7", "Days", "album:days", BrowseKind.Album, "Aurora · 2015 · 2 tracks · 1:12:00", Playable: true);
+        var tracks = new[]
+        {
+            new Track("local", "track:1", "One", "Aurora", "Days", TimeSpan.FromMinutes(30)),
+            new Track("local", "track:2", "Two", "Aurora", "Days", TimeSpan.FromMinutes(42)),
+        };
+        var liked = false; var posted = new List<string>();
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (r, ct) =>
+        {
+            var path = r.RequestUri!.AbsolutePath;
+            if (r.Method == HttpMethod.Get) return Reply(new BrowsePage([], new(tracks, [], [], []), Node: node, Total: 2));
+            if (path.EndsWith("/items/status", StringComparison.Ordinal))
+            {
+                using var body = JsonDocument.Parse(await r.Content!.ReadAsStringAsync(ct));
+                Assert.Equal("album", body.RootElement.GetProperty("items")[0].GetProperty("kind").GetString());
+                return Reply(new[] { new ItemStatus(LikeKind.Album, "local", "album:7", liked, false, liked ? 3 : null) });
+            }
+            posted.Add($"{r.Method} {path} {await r.Content!.ReadAsStringAsync(ct)}");
+            liked = true;
+            return FakeHttp.Json("""{"id":3,"added":"2026-10-31T00:00:00Z","item":{"kind":"album","providerId":"local","providerItemId":"album:7","title":"Days"}}""");
+        }));
+        var vm = Browser(api);
+        HomeItem? sheet = null; var marksChanged = 0;
+        vm.SheetRequested += item => sheet = item; vm.MarksChanged += () => marksChanged++;
+        await vm.OpenNodeAsync(new NodeReference("local", "album:7"), "Days");
+
+        Assert.True(vm.IsAlbum); Assert.False(vm.IsBrowsing); Assert.False(vm.ShowHeader); Assert.False(vm.ShowCompactHeader);
+        Assert.Equal(("Days", "Aurora", "album:days"), (vm.Album!.Title, vm.Album.Artist, vm.Album.ArtworkId));
+        Assert.Equal("2 tracks · 1 h 12 min", vm.AlbumSummary);
+        Assert.Equal([(1, "One", "30:00"), (2, "Two", "42:00")], vm.AlbumTracks.Select(t => (t.Number, t.Title, t.Length)));
+        Assert.True(vm.CanMarkAlbum); Assert.False(vm.AlbumLiked);
+
+        await vm.ToggleAlbumLikeCommand.ExecuteAsync(null);
+        Assert.True(vm.AlbumLiked); Assert.Equal(1, marksChanged);
+        Assert.StartsWith("POST /api/v1/likes {\"album\":{\"providerId\":\"local\",\"providerItemId\":\"album:7\"", Assert.Single(posted));
+
+        vm.PlayAlbumCommand.Execute(null);
+        Assert.Equal(("Album", new NodeReference("local", "album:7")), (sheet!.Kind, sheet.Items.Node));
+        // A track plays the whole album from it.
+        vm.PlayTrackCommand.Execute(vm.AlbumTracks[1]);
+        Assert.Equal(tracks, sheet!.Items.Tracks!); Assert.Equal(tracks[1], sheet.Start); Assert.Equal(tracks[1], sheet.Media);
+    }
+
+    [Fact]
+    public async Task A_folder_of_tracks_is_no_album_page()
+    {
+        var node = new BrowseNode("local", "folder:1", "Inbox", Kind: BrowseKind.Folder);
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp((_, _) => Task.FromResult(
+            Reply(new BrowsePage([], new([new Track("local", "track:1", "One")], [], [], []), Node: node)))));
+        var vm = Browser(api);
+        await vm.OpenNodeAsync(new NodeReference("local", "folder:1"), "Inbox");
+        Assert.False(vm.IsAlbum); Assert.True(vm.IsBrowsing); Assert.Empty(vm.AlbumTracks);
+    }
+
+    [Fact]
     public async Task Sections_keep_server_order_layout_unplayable_reason_and_more_reference()
     {
         var album = new BrowseNode("tidal", "album:42", "Night", Playable: false, Unplayable: "No stream rights");
@@ -155,5 +212,81 @@ public sealed class BrowserTests
         { calls++; return Task.FromResult(FakeHttp.Json("""{"error":"unavailable","message":"no"}""", HttpStatusCode.ServiceUnavailable)); }));
         var vm = Browser(api); vm.SelectedItem = new("One", "", Track: new("local", "track:1", "One"));
         await Assert.ThrowsAsync<ApiException>(() => vm.QueueCommand.ExecuteAsync("now")); Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task An_artist_page_lists_its_tracks_as_one_row_then_albums_newest_first_singles_and_similar_artists()
+    {
+        var artist = new BrowseNode("tidal", "artist:5", "Aurora", "artist:5", BrowseKind.Artist, Playable: true);
+        Track[] top = [new("tidal", "track:1", "One", "Aurora") { ArtworkId = "album:9" }, new("tidal", "track:2", "Two", "Aurora")];
+        BrowseNode Album(string id, string title, int year) => new("tidal", id, title, id, BrowseKind.Album, $"Aurora · {year} · 10 tracks", Playable: true);
+        var allTop = new BrowseNode("tidal", "artist:5/toptracks", "Top tracks", Kind: BrowseKind.Section, Playable: true);
+        var more = new BrowseNode("tidal", "artist:5/albums", "Albums", Kind: BrowseKind.Section);
+        // As Tidal answers: top tracks first, then albums (oldest first, with more), singles, similar artists.
+        var page = new BrowsePage([], Empty, Node: artist, Sections:
+        [
+            new("Top tracks", [], Empty with { Tracks = top }, allTop),
+            new("Albums", [Album("album:1", "Days", 2015), Album("album:2", "Nights", 2019), Album("album:4", "Mid", 2017)], Empty, more),
+            new("Singles & EPs", [Album("album:3", "Single", 2020)], Empty),
+            new("Similar artists", [new("tidal", "artist:6", "Other", Kind: BrowseKind.Artist, Playable: true)], Empty),
+        ]);
+        var opened = new List<string>();
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp((r, _) =>
+        { opened.Add(r.RequestUri!.Query); return Task.FromResult(Reply(page)); }));
+        var vm = Browser(api); HomeItem? sheet = null; vm.SheetRequested += item => sheet = item;
+        await vm.OpenNodeAsync(new NodeReference("tidal", "artist:5"), "Aurora");
+
+        Assert.True(vm.IsArtist); Assert.True(vm.IsDetail); Assert.False(vm.IsAlbum); Assert.False(vm.IsBrowsing); Assert.False(vm.ShowOptions);
+        Assert.Equal(["", "Albums", "Singles & EPs", "Similar artists"], vm.ArtistSections.Select(s => s.Title));
+        // The top tracks: one row opening them all, with their first titles and the first one's picture.
+        var tracks = Assert.Single(vm.ArtistSections[0].Rows);
+        Assert.Equal(("Top tracks", "One, Two", "album:9"), (tracks.Title, tracks.Subtitle, tracks.Artwork)); Assert.Empty(vm.ArtistSections[0].Tracks);
+        // Albums newest first, then their "More"; the artist's own name is left out of each line.
+        Assert.Equal(["Nights", "Mid", "Days", "More Albums"], vm.ArtistSections[1].Rows.Select(r => r.Title));
+        Assert.Equal("2019 · 10 tracks", vm.ArtistSections[1].Rows[0].Subtitle);
+        Assert.Equal("Other", Assert.Single(vm.ArtistSections[3].Rows).Title);
+
+        vm.PlayArtistCommand.Execute(null);
+        Assert.Equal(("Artist", new NodeReference("tidal", "artist:5")), (sheet!.Kind, sheet.Items.Node));
+        // A row opens at a tap; back returns to the artist.
+        await vm.OpenRowCommand.ExecuteAsync(tracks);
+        Assert.Contains("node=artist%3A5%2Ftoptracks", opened[^1]); Assert.True(vm.CanBack);
+        await vm.BackCommand.ExecuteAsync(null);
+        await vm.OpenRowCommand.ExecuteAsync(vm.ArtistSections[1].Rows[0]);
+        Assert.Contains("node=album%3A2", opened[^1]);
+    }
+
+    [Fact]
+    public async Task An_artist_without_a_node_for_its_tracks_lists_them_and_a_track_plays_them_from_it()
+    {
+        var artist = new BrowseNode("local", "artist:5", "Aurora", Kind: BrowseKind.Artist, Playable: true);
+        Track[] list = [new("local", "track:1", "One"), new("local", "track:2", "Two")];
+        var page = new BrowsePage([], Empty, Node: artist, Sections: [new("Tracks", [], Empty with { Tracks = list })]);
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp((_, _) => Task.FromResult(Reply(page))));
+        var vm = Browser(api); HomeItem? sheet = null; vm.SheetRequested += item => sheet = item;
+        await vm.OpenNodeAsync(new NodeReference("local", "artist:5"), "Aurora");
+        var section = Assert.Single(vm.ArtistSections);
+        Assert.Equal("Tracks", section.Title); Assert.Empty(section.Rows);
+        vm.PlayTrackCommand.Execute(section.Tracks[1]);
+        Assert.Equal(list, sheet!.Items.Tracks!); Assert.Equal(list[1], sheet.Start);
+    }
+
+    [Fact]
+    public async Task Opening_another_page_never_shows_the_last_one_while_it_loads()
+    {
+        var album = new BrowseNode("local", "album:7", "Days", Kind: BrowseKind.Album, Playable: true);
+        var slow = new TaskCompletionSource<HttpResponseMessage>(); var calls = 0;
+        // The album's marks are read too: answered at once, only the second page waits.
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp((r, _) =>
+            r.RequestUri!.AbsolutePath.EndsWith("/items/status", StringComparison.Ordinal) ? Task.FromResult(FakeHttp.Json("[]"))
+            : ++calls == 1 ? Task.FromResult(Reply(new BrowsePage([], Empty with { Tracks = [new Track("local", "track:1", "One")] }, Node: album)))
+            : slow.Task));
+        var vm = Browser(api);
+        await vm.OpenNodeAsync(new NodeReference("local", "album:7"), "Days");
+        Assert.True(vm.IsAlbum);
+        var loading = vm.OpenNodeAsync(new NodeReference("local", "artist:5"), "Aurora");
+        Assert.False(vm.IsAlbum); Assert.Empty(vm.Items); Assert.False(vm.ShowEmpty);
+        slow.SetResult(Reply(new BrowsePage([], Empty, Node: new("local", "artist:5", "Aurora", Kind: BrowseKind.Artist))));
+        await loading;
     }
 }

@@ -50,6 +50,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
     public double ProgressMaximum => Math.Max(1, TrackLengthSeconds);
     public bool CanScrub => CanSeekCurrent && TrackLengthSeconds > 0;
     public bool HasPosition => Queue?.PositionMs is >= 0;
+    public bool IsScrubbing => _scrubbing;
     public string PositionText => _scrubbing || HasPosition ? FormatPosition(ProgressSeconds) : "—:—";
     public string LengthText => Current?.Station is not null ? "LIVE" : TrackLengthSeconds > 0 ? FormatPosition(TrackLengthSeconds) : "—:—";
     public string QueuePosition => Queue?.Current is { } id && Queue.Items.ToList().FindIndex(item => item.Id == id) is var index && index >= 0
@@ -186,13 +187,13 @@ public sealed partial class PlaybackViewModel : ObservableObject
     {
         if (!CanScrub || CommitScrubCommand.IsRunning) return;
         _scrubbing = true; _scrubZone = SelectedZone; _scrubItem = Current?.Id;
-        OnPropertyChanged(nameof(PositionText));
+        OnPropertyChanged(nameof(PositionText)); OnPropertyChanged(nameof(IsScrubbing));
     }
 
     public void CancelScrub()
     {
         _scrubbing = false; _scrubZone = null; _scrubItem = null;
-        RefreshProgress(); OnPropertyChanged(nameof(PositionText));
+        RefreshProgress(); OnPropertyChanged(nameof(PositionText)); OnPropertyChanged(nameof(IsScrubbing));
     }
 
     [RelayCommand]
@@ -293,7 +294,15 @@ public sealed partial class PlaybackViewModel : ObservableObject
     [RelayCommand] private Task PlayPauseAsync()
     {
         var zone = SelectedZone; var action = IsPlaying ? "pause" : "play";
-        return _execute(async (api, ct) => { if (zone is not null) await api.TransportAsync(zone, action, null, ct); });
+        // The server accepts play with every device off; nothing would be heard, so say why instead.
+        var silent = action == "play" && !_snapshot.Rooms.Any(r => r.Desired.Zone == zone && r.Actual?.Connected == true);
+        return _execute(async (api, ct) =>
+        {
+            if (zone is null) return;
+            if (silent) throw new ApiException(System.Net.HttpStatusCode.Conflict, "notConnected",
+                $"No device in {ZoneNameOf(zone)} is connected. Turn a device on and try again.");
+            await api.TransportAsync(zone, action, null, ct);
+        });
     }
     [RelayCommand] private Task SetZoneVolumeAsync()
     {
@@ -319,8 +328,16 @@ public sealed partial class PlaybackViewModel : ObservableObject
         });
     }
 
-    [RelayCommand] private Task TransportAsync(string action) => _execute(async (api, ct) =>
-    { if (SelectedZone is { } zone) await api.TransportAsync(zone, action, null, ct); });
+    // Previous and next share TransportCommand; this tells their spinners apart.
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsPreviousPending)), NotifyPropertyChangedFor(nameof(IsNextPending))] private string? _pendingTransport;
+    public bool IsPreviousPending => PendingTransport == "previous";
+    public bool IsNextPending => PendingTransport == "next";
+    [RelayCommand] private async Task TransportAsync(string action)
+    {
+        PendingTransport = action;
+        try { await _execute(async (api, ct) => { if (SelectedZone is { } zone) await api.TransportAsync(zone, action, null, ct); }); }
+        finally { PendingTransport = null; }
+    }
     [RelayCommand] private Task StartItemAsync() => _execute(async (api, ct) =>
     { if (SelectedZone is { } zone && SelectedItem is { } row) await api.TransportAsync(zone, "play", row.Item.Id, ct); });
     [RelayCommand] private Task SeekAsync() => _execute(async (api, ct) =>

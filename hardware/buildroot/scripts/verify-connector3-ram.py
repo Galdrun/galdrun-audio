@@ -7,7 +7,7 @@ import os
 import struct
 import subprocess
 import sys
-from connector3_content import audit_files
+from connector3_content import DEVICE_RADIO_SHA256, audit_files
 
 
 def verify(output, project):
@@ -83,7 +83,7 @@ def verify(output, project):
                  "lib/firmware/mrvl/pcie8897_uapsta.bin",
                  "lib/firmware/imx/sdma/sdma-imx7d.bin",
                  "usr/sbin/raumfeld-network", "usr/sbin/raumfeld-wifi-scan",
-                 "usr/sbin/galdrun-connector3-mcu",
+                 "usr/sbin/galdrun-connector3-mcu", "usr/sbin/galdrun-status-leds",
                  "etc/init.d/S45raumfeld-network"):
         if name not in files or not files[name][1]:
             raise ValueError(f"Missing RAM payload: {name}")
@@ -100,7 +100,7 @@ def verify(output, project):
     board = json.loads(files["etc/galdrun-board.json"][1])
     if board.get("networkSettings") is not True:
         raise ValueError("Network settings capability missing")
-    for capability in ("dacControls", "selectedCardDacControls", "mcuAudioControls", "cpuFrequency"):
+    for capability in ("dacControls", "selectedCardDacControls", "mcuAudioControls", "cpuFrequency", "statusLeds"):
         if board.get(capability) is not True:
             raise ValueError(f"MCU audio capability missing: {capability}")
     if board.get("hardwareClockControl") != "Drift compensator":
@@ -132,9 +132,8 @@ def verify(output, project):
     phsize, phnum = struct.unpack_from("<HH", kexec, 42)
     if any(struct.unpack_from("<I", kexec, phoff + i * phsize)[0] == 3 for i in range(phnum)):
         raise ValueError("kexec must be static to run on the old vendor libc")
-    content_audit = (audit_files(files, output / "legal-info/manifest.csv") if not radio_source else
-                     {"eligible_for_clean_installer": False,
-                      "reason": "private device-extracted radio firmware; diagnostic use only"})
+    content_audit = audit_files(files, output / "legal-info/manifest.csv")
+    content_audit["eligible_for_clean_installer"] = not radio_source or radio_hash == DEVICE_RADIO_SHA256
     result = {"storage_drivers_absent": True, "network_drivers_built_in": True,
               "content_audit": content_audit,
               "wifi_and_sdma_firmware_present": True, "home_wifi_credentials_present": False,

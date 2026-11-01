@@ -9,8 +9,11 @@ public partial class ZoneBar : UserControl
         InitializeComponent();
         ZoneSwipe.Attach(MediaButton, direction =>
         { if (DataContext is ShellViewModel model) model.Playback.ChangeZoneCommand.Execute(direction); });
+        ZoneSwipe.Attach(ZoneButton, direction =>
+        { if (DataContext is ShellViewModel model) model.Playback.ChangeZoneCommand.Execute(direction); });
         ZoneSwipe.Attach(NowPlayingZoneSelector, direction =>
         { if (DataContext is ShellViewModel model) model.Playback.ChangeZoneCommand.Execute(direction); });
+        SeekSlider.Attach(ZonePositionSlider, () => (DataContext as ShellViewModel)?.Playback);
         SizeChanged += (_, _) =>
         {
             var narrow = Bounds.Width < 520;

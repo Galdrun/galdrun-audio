@@ -125,11 +125,11 @@ public sealed record EntriesRequest(IReadOnlyList<Track>? Tracks = null, int? In
 // The house's playback settings: null keeps.
 public sealed record PlaybackSettingsPatch(bool? GroupBooks = null, bool? ResumeBooks = null, bool? FindRadioLikes = null);
 
-// Exactly one of a track, a station or a node; a node must be a book
-// (phase 31: audiobook tracks), kept as one favourite with its parts.
+// Exactly one of a track, a station, an album or a node; a node must be a
+// book (phase 31: audiobook tracks), kept as one favourite with its parts.
 // User (phase 36): whose favourite, absent or "" for the household.
 public sealed record FavoriteRequest(Track? Track = null, RadioStation? Station = null, NodeReference? Node = null,
-    string? User = null);
+    string? User = null, Album? Album = null);
 
 // "More like this": exactly one of a track (as search and browse answer it)
 // or a stored playlist, whose entries are the seed. At most `Limit` tracks,

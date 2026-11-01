@@ -258,7 +258,8 @@ public sealed class NowPlayingTests
             window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             Assert.Equal("kitchen", zoneName.Text);
             Assert.Equal(new[] { "#ff50575a", "#ffc7ccce" }, dots.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Ellipse>().Select(dot => dot.Fill!.ToString()));
-            model.SelectedPage = "Home"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); Assert.Equal(100, bar.Bounds.Height);
+            model.SelectedPage = "Home"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            Assert.Equal(103, bar.Bounds.Height);
             Assert.False(dots.IsEffectivelyVisible);
             Assert.False(like.IsEffectivelyVisible); Assert.False(favoriteButton.IsEffectivelyVisible);
         }

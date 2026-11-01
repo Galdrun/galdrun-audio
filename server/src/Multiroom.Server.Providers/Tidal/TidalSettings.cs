@@ -16,11 +16,9 @@ public enum TidalQuality
 //
 // The client signs in by device code. The optional playback client, when
 // set, refreshes the tokens instead.
-public sealed class TidalSettings(string? clientId, string? clientSecret, TidalQuality quality, long cacheBytes,
+public sealed class TidalSettings(string? clientId, string? clientSecret, TidalQuality quality,
     long artworkCacheBytes, string? playbackClientId = null, string? playbackClientSecret = null)
 {
-    public const long DefaultCacheBytes = 2L * 1024 * 1024 * 1024;
-    public const long MinimumCacheBytes = 256L * 1024 * 1024;
     public const long DefaultArtworkCacheBytes = 64L * 1024 * 1024;
     public const long MinimumArtworkCacheBytes = 1024 * 1024;
 
@@ -33,9 +31,6 @@ public sealed class TidalSettings(string? clientId, string? clientSecret, TidalQ
     public string? PlaybackClientSecret { get; } = playbackClientSecret;
 
     public TidalQuality Quality { get; } = quality;
-
-    // The reassembled tracks, least recently played evicted first.
-    public long CacheBytes { get; } = cacheBytes;
 
     public long ArtworkCacheBytes { get; } = artworkCacheBytes;
 }

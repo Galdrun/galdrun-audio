@@ -135,6 +135,21 @@
 };
 
 &pcie {
+    /* The radio also needs its 32.768 kHz clock before power/reset release.
+     * A cold boot cannot inherit the vendor kernel's CLKO2 setup. */
+    clocks = <&clks IMX7D_PCIE_CTRL_ROOT_CLK>,
+             <&clks IMX7D_PLL_ENET_MAIN_100M_CLK>,
+             <&clks IMX7D_PCIE_PHY_ROOT_CLK>,
+             <&clks IMX7D_CLKO2_ROOT_DIV>;
+    clock-names = "pcie", "pcie_bus", "pcie_phy", "wifi-32k";
+    assigned-clocks = <&clks IMX7D_PCIE_CTRL_ROOT_SRC>,
+                      <&clks IMX7D_PCIE_PHY_ROOT_SRC>,
+                      <&clks IMX7D_CLKO2_ROOT_SRC>,
+                      <&clks IMX7D_CLKO2_ROOT_DIV>;
+    assigned-clock-parents = <&clks IMX7D_PLL_ENET_MAIN_250M_CLK>,
+                            <&clks IMX7D_PLL_ENET_MAIN_100M_CLK>,
+                            <&ckil>, <0>;
+    assigned-clock-rates = <0>, <0>, <0>, <32768>;
     /* Let the DesignWare host map inbound Wi-Fi DMA into system RAM. */
     dma-ranges = <0x02000000 0 0x80000000 0x80000000 0 0x20000000>;
     vpcie-supply = <&wifi_supply>;

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Multiroom.Server.Providers;
+using Multiroom.Server.Providers.Streaming;
 using Multiroom.Server.Providers.Tidal;
 
 namespace Multiroom.Server.Tests;
@@ -18,7 +19,8 @@ public sealed partial class ApiTests
             services.AddProvider("tidal", _ =>
             {
                 var provider = new TidalProvider(new TidalSettings(FakeTidal.ClientId, FakeTidal.ClientSecret, TidalQuality.Lossless,
-                    64 * 1024 * 1024, 1024 * 1024), Path.Combine(_dir.Path, "tidal"), NullLogger.Instance, tidal.Endpoints);
+                    1024 * 1024), new StreamingSettings(TrackBuffer.Memory, StreamingSettings.DefaultWindowBytes,
+                    Path.Combine(_dir.Path, "streams")), Path.Combine(_dir.Path, "tidal"), NullLogger.Instance, tidal.Endpoints);
                 provider.Start();
                 return provider;
             });

@@ -32,6 +32,8 @@ public sealed partial class MultiroomClient
     public Task<IReadOnlyList<Favorite>> FavoritesAsync(CancellationToken ct) => GetAsync<IReadOnlyList<Favorite>>("favorites", ct);
     public Task<Favorite> AddFavoriteAsync(Track? track, RadioStation? station, CancellationToken ct) =>
         SendTypedAsync<Favorite>(HttpMethod.Post, "favorites", new { track, station }, ct);
+    public Task<Favorite> AddFavoriteAsync(Album album, CancellationToken ct) =>
+        SendTypedAsync<Favorite>(HttpMethod.Post, "favorites", new { album }, ct);
     public Task<JsonElement?> RemoveFavoriteAsync(long id, CancellationToken ct) => SendAsync(HttpMethod.Delete, $"favorites/{id}", null, ct);
     public Task<IReadOnlyList<LikedItem>> LikesAsync(CancellationToken ct) => GetAsync<IReadOnlyList<LikedItem>>("likes", ct);
     public Task<ProposalsView> ProposalsAsync(CancellationToken ct) => GetAsync<ProposalsView>("ai/proposals", ct);
@@ -40,6 +42,8 @@ public sealed partial class MultiroomClient
         SendTypedAsync<IReadOnlyList<ItemStatus>>(HttpMethod.Post, "items/status", new { items }, ct);
     public Task<LikedItem> AddLikeAsync(Track track, CancellationToken ct) =>
         SendTypedAsync<LikedItem>(HttpMethod.Post, "likes", new { track }, ct);
+    public Task<LikedItem> AddLikeAsync(Album album, CancellationToken ct) =>
+        SendTypedAsync<LikedItem>(HttpMethod.Post, "likes", new { album }, ct);
     public Task<LikedItem> AddRadioLikeAsync(Track track, CancellationToken ct) =>
         SendTypedAsync<LikedItem>(HttpMethod.Post, "likes", new { metadata = new { track.Title, track.Artist, track.Album } }, ct);
     public Task<JsonElement?> RemoveLikeAsync(long id, CancellationToken ct) =>

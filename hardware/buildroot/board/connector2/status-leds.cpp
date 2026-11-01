@@ -38,6 +38,23 @@ State statusState(const Value& response)
                ? State::Ready : State::Connecting;
 }
 
+#ifdef CONNECTOR3_STATUS_LEDS
+unsigned indication(State state)
+{
+    // MCU Indication values: initializing, connecting, waiting-for-setup,
+    // apps-running, error-firmware and off. The MCU animates all three LEDs.
+    switch (state)
+    {
+    case State::Boot: return 4;
+    case State::Connecting: return 5;
+    case State::Setup: return 6;
+    case State::Ready: return 10;
+    case State::Error: return 22;
+    case State::Off: return 0;
+    }
+    return 0;
+}
+#else
 std::pair<bool, bool> brightness(State state, uint64_t elapsedMs)
 {
     switch (state)
@@ -53,6 +70,7 @@ std::pair<bool, bool> brightness(State state, uint64_t elapsedMs)
     }
     return {false, false};
 }
+#endif
 
 #ifndef RAUMFELD_LEDS_TEST
 } // namespace
@@ -65,6 +83,9 @@ std::pair<bool, bool> brightness(State state, uint64_t elapsedMs)
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef CONNECTOR3_STATUS_LEDS
+#include "Connector3Mcu.h"
+#endif
 
 namespace {
 volatile std::sig_atomic_t stopped = 0;
@@ -89,6 +110,7 @@ bool readFile(const char* path, std::string& text)
     return count == 0 && text.size() <= 65536;
 }
 
+#ifndef CONNECTOR3_STATUS_LEDS
 bool writeFile(const std::string& path, const char* text, size_t length)
 {
     const int fd = open(path.c_str(), O_WRONLY | O_CLOEXEC);
@@ -97,6 +119,7 @@ bool writeFile(const std::string& path, const char* text, size_t length)
     close(fd);
     return ok;
 }
+#endif
 
 bool query(uint16_t port, const std::string& host, Value& response)
 {
@@ -140,24 +163,32 @@ bool query(uint16_t port, const std::string& host, Value& response)
 }
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+    if (argc > 2) return 2;
+    const char* configPath = argc == 2 ? argv[1] : "/etc/galdrun/client.json";
     std::string text, error;
     Value board;
     bool enabled = false;
     if (!readFile("/etc/galdrun-board.json", text) ||
         !multiroom::json::parse(text, board, error) ||
         !multiroom::json::getBool(board, "statusLeds", enabled) || !enabled) return 0;
+#ifndef CONNECTOR3_STATUS_LEDS
     const std::string ledA = "/sys/class/leds/raumfeld:1/";
     const std::string ledB = "/sys/class/leds/raumfeld:2/";
     if (!writeFile(ledA + "trigger", "none\n", 5) ||
         !writeFile(ledB + "trigger", "none\n", 5)) return 1;
+#endif
     std::signal(SIGTERM, stop);
     std::signal(SIGINT, stop);
     const uint64_t started = milliseconds();
     uint64_t nextPoll = 0, failedSince = 0, stateSince = started;
     State state = State::Boot;
+#ifdef CONNECTOR3_STATUS_LEDS
+    int previousIndication = -1;
+#else
     int previousA = -1, previousB = -1;
+#endif
     while (!stopped)
     {
         const uint64_t now = milliseconds();
@@ -168,7 +199,7 @@ int main()
             Value config, response;
             int64_t port = 4720;
             std::string host = "127.0.0.1";
-            if (readFile("/etc/galdrun/client.json", text) &&
+            if (readFile(configPath, text) &&
                 multiroom::json::parse(text, config, error))
             {
                 multiroom::json::getInt(config, "controlPort", port);
@@ -190,6 +221,20 @@ int main()
             else failedSince = 0;
             if (desired != state) { state = desired; stateSince = now; }
         }
+#ifdef CONNECTOR3_STATUS_LEDS
+        (void)stateSince;
+        const int pattern = static_cast<int>(indication(state));
+        if (previousIndication != pattern)
+        {
+            long mute = 0, volume = 0;
+            if (!multiroom::connector3McuRequest("indication " + std::to_string(pattern), mute, volume, error))
+            {
+                usleep(1000000);
+                continue;
+            }
+            previousIndication = pattern;
+        }
+#else
         const auto levels = brightness(state, milliseconds() - stateSince);
         if (previousA != levels.first)
         {
@@ -201,10 +246,16 @@ int main()
             if (!writeFile(ledB + "brightness", levels.second ? "1\n" : "0\n", 2)) return 1;
             previousB = levels.second;
         }
+#endif
         usleep(100000);
     }
+#ifdef CONNECTOR3_STATUS_LEDS
+    long mute = 0, volume = 0;
+    multiroom::connector3McuRequest("indication 0", mute, volume, error);
+#else
     writeFile(ledA + "brightness", "0\n", 2);
     writeFile(ledB + "brightness", "0\n", 2);
+#endif
     return 0;
 }
 #else

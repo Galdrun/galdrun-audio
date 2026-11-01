@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -7,15 +8,20 @@ using Multiroom.App.Api;
 namespace Multiroom.App;
 
 // One cover as a home shelf shows it: artwork, title, subtitle, what it is
-// (its badge), why it is proposed, and what queues it.
-public sealed record HomeItem(string Title, string Subtitle, string? Artwork, AddItems Items, MediaItem Media, string? Reason = null)
+// (its badge), why it is proposed, and what queues it. Start is the track of
+// Items' tracks to play first (a track picked from an album's or artist's list).
+public sealed record HomeItem(string Title, string Subtitle, string? Artwork, AddItems Items, MediaItem Media, string? Reason = null,
+    Track? Start = null)
 {
+    // A track of a list: the whole list queued, the track played first.
+    public static HomeItem InList(Track track, IReadOnlyList<Track> list) => Of(track)! with { Items = new(Tracks: list), Start = track };
     public string Kind => Media switch
     {
         Track => "Track", RadioStation => "Radio", Album => "Album", Artist => "Artist", MediaGroup or Audiobook => "Book", _ => ""
     };
 
-    public static HomeItem From(Favorite favorite) => new(favorite.Title, favorite.Item switch
+    // An album favourite opens and queues as its node, as a liked album does.
+    public static HomeItem From(Favorite favorite) => favorite.Item is Album album ? Of(album)! : new(favorite.Title, favorite.Item switch
     {
         Track track => track.Artist ?? track.Album ?? "",
         RadioStation station => station.Genre ?? "Station",
@@ -35,7 +41,7 @@ public sealed record HomeItem(string Title, string Subtitle, string? Artwork, Ad
 
     // An album, artist or book is its provider's node, queued whole; a book's
     // reference is "provider:node".
-    private static HomeItem? Of(MediaItem item, string? reason = null) => item switch
+    public static HomeItem? Of(MediaItem item, string? reason = null) => item switch
     {
         Track t => new(t.Title, t.Artist ?? t.Album ?? "", t.ArtworkId, new(Tracks: [t]), t, reason),
         RadioStation s => new(s.Name, s.Genre ?? "Station", s.ArtworkId, new(Station: s), s, reason),
@@ -64,12 +70,23 @@ public sealed partial class HomeShelf : ObservableObject
     [ObservableProperty] private IReadOnlyList<HomeItem> _all = [];
     public bool IsEmpty => Items.Count == 0;
     [ObservableProperty] private string _empty;
+    // A refresh keeps every cover that still shows the same, in place: the shelf never blanks and its covers
+    // never reload (coming back to Home re-reads it). Records compare their track lists by reference, so those by content.
     public void Set(IEnumerable<HomeItem?> items)
     {
-        All = items.OfType<HomeItem>().ToArray();
-        Items.Clear();
-        foreach (var item in All.Take(Size)) Items.Add(item);
+        var all = items.OfType<HomeItem>().Select((item, i) => i < All.Count && Same(All[i], item) ? All[i] : item).ToArray();
+        if (!all.SequenceEqual(All, ReferenceEqualityComparer.Instance)) All = all;
+        var shown = Math.Min(Size, all.Length);
+        for (var i = 0; i < shown; i++)
+        {
+            if (i >= Items.Count) Items.Add(all[i]);
+            else if (!ReferenceEquals(Items[i], all[i])) Items[i] = all[i];
+        }
+        while (Items.Count > shown) Items.RemoveAt(Items.Count - 1);
     }
+    private static bool Same(HomeItem a, HomeItem b) =>
+        a with { Items = a.Items with { Tracks = null } } == b with { Items = b.Items with { Tracks = null } }
+        && (a.Items.Tracks ?? []).SequenceEqual(b.Items.Tracks ?? []);
 }
 
 // The home page's shelves, as the server GUI's: what the AI proposes, the
@@ -232,11 +249,30 @@ public sealed partial class HomeViewModel : ObservableObject
         return execute(async (api, ct) =>
         {
             if (item is null || target is null) return;
-            await api.QueueAsync(target, item.Items with { Replace = true }, ct);
-            await api.TransportAsync(target, "play", null, ct);
+            await ReplaceAndPlayAsync(api, target, item, ct);
             PlayedIn?.Invoke(target);
             QueueChanged?.Invoke();
         });
+    }
+    // Play in a room, in the zone selected now.
+    [RelayCommand]
+    private Task PlayNowAsync() => zone() is { } target ? PlayInAsync(target)
+        : execute((_, _) => throw new ArgumentException("Choose or create a zone before playing music."));
+
+    // The item replaces the zone's queue and plays: from its Start track when it has one, found in the new queue.
+    private static async Task ReplaceAndPlayAsync(MultiroomClient api, string target, HomeItem item, CancellationToken ct)
+    {
+        var answer = await api.QueueAsync(target, item.Items with { Replace = true }, ct);
+        long? first = null;
+        if (item.Start is { } start && answer is { } json)
+        {
+            QueueState? queue;
+            try { queue = json.Deserialize<QueueState>(MultiroomClient.Json); }
+            catch (JsonException) { queue = null; }
+            if (queue is { Items: { } items })
+                first = items.FirstOrDefault(q => q.Track is { } t && t.ProviderId == start.ProviderId && t.ProviderItemId == start.ProviderItemId)?.Id;
+        }
+        await api.TransportAsync(target, "play", first, ct);
     }
 
     [RelayCommand]
@@ -258,8 +294,7 @@ public sealed partial class HomeViewModel : ObservableObject
     {
         if (item is null) return;
         if (zone() is not { } target) throw new ArgumentException("Choose or create a zone before playing music.");
-        await api.QueueAsync(target, item.Items with { Replace = true }, ct);
-        await api.TransportAsync(target, "play", null, ct);
+        await ReplaceAndPlayAsync(api, target, item, ct);
         QueueChanged?.Invoke();
     });
 
@@ -275,7 +310,9 @@ public sealed partial class HomeViewModel : ObservableObject
         {
             if (item is null) return;
             if (zone() is not { } target) throw new ArgumentException("Choose or create a zone before adding music.");
-            await api.QueueAsync(target, item.Items with { Next = next }, ct);
+            // A track picked from a list is added alone.
+            var items = item.Start is { } start ? new AddItems(Tracks: [start]) : item.Items;
+            await api.QueueAsync(target, items with { Next = next }, ct);
             QueueChanged?.Invoke();
         });
     }

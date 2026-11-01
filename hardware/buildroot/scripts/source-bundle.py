@@ -41,10 +41,10 @@ def glibc_archive():
     return path
 
 
-def members(work):
+def members(work, trees=TREES):
     """(archive name, file) for every bundled file, firmware tree first."""
     found = {}
-    for tree in TREES:
+    for tree in trees:
         info = work / tree / "legal-info"
         hashes = {}
         for line in (info / "legal-info.sha256").read_text().splitlines():
@@ -67,7 +67,7 @@ def members(work):
         result += [(f"{prefix}{name}", info / name) for name in sorted(files)]
     result.append((f"toolchain/{GLIBC}.tar.gz", glibc_archive()))
     result.append((f"buildroot/{BUILDROOT}", project / "downloads" / BUILDROOT))
-    for tree in TREES:
+    for tree in trees:
         result.append((f"manifest/{tree}.csv", work / tree / "legal-info/manifest.csv"))
     return result
 

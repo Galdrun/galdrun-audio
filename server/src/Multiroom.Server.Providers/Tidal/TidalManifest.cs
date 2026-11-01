@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Multiroom.Server.Abstractions;
+using Multiroom.Server.Providers.Streaming;
 
 namespace Multiroom.Server.Providers.Tidal;
 
@@ -16,16 +17,16 @@ namespace Multiroom.Server.Providers.Tidal;
 // Encrypted manifests are refused. Decryption would belong here and nowhere
 // else, but no tier this server asks for is encrypted today.
 //
-// Grant is the tier Tidal answered with, which may be lower than the one
-// asked for (TidalProvider.GrantOf); the cache keeps it with the file.
-internal sealed record TidalManifest(string ContentType, IReadOnlyList<Uri> Segments, string Grant = TidalManifest.UnknownGrant)
+// It parses into a StreamManifest; TidalProvider adds the tier Tidal
+// granted, which may be lower than the one asked for (TidalProvider.GrantOf).
+internal static class TidalManifest
 {
     public const string UnknownGrant = "UNKNOWN";
 
     public const string BtsType = "application/vnd.tidal.bts";
     public const string DashType = "application/dash+xml";
 
-    public static Result<TidalManifest, ProviderError> Parse(string? mimeType, string? base64, string name)
+    public static Result<StreamManifest, ProviderError> Parse(string? mimeType, string? base64, string name)
     {
         string text;
         try
@@ -43,12 +44,12 @@ internal sealed record TidalManifest(string ContentType, IReadOnlyList<Uri> Segm
             DashType => ParseDash(text, name),
             _ => Result.Fail(ProviderError.Failed, $"{name}: unknown manifest type {mimeType ?? "(none)"}"),
         };
-        return parsed.IsSuccess && parsed.Value.Segments.Count == 0
+        return parsed.IsSuccess && parsed.Value.Pieces.Count == 0
             ? Result.Fail(ProviderError.Failed, $"{name}: the manifest names no media")
             : parsed;
     }
 
-    private static Result<TidalManifest, ProviderError> ParseBts(string text, string name)
+    private static Result<StreamManifest, ProviderError> ParseBts(string text, string name)
     {
         try
         {
@@ -66,7 +67,7 @@ internal sealed record TidalManifest(string ContentType, IReadOnlyList<Uri> Segm
                 }
                 urls.Add(uri);
             }
-            return new TidalManifest(root.Text("mimeType") ?? "application/octet-stream", urls);
+            return new StreamManifest(root.Text("mimeType") ?? "application/octet-stream", urls);
         }
         catch (JsonException)
         {
@@ -77,7 +78,7 @@ internal sealed record TidalManifest(string ContentType, IReadOnlyList<Uri> Segm
     // The one SegmentTemplate Tidal's audio MPDs carry: `initialization`,
     // `media` with $Number$, `startNumber`, and a SegmentTimeline whose S
     // elements each stand for 1 + r segments.
-    private static Result<TidalManifest, ProviderError> ParseDash(string text, string name)
+    private static Result<StreamManifest, ProviderError> ParseDash(string text, string name)
     {
         XDocument document;
         try
@@ -144,6 +145,6 @@ internal sealed record TidalManifest(string ContentType, IReadOnlyList<Uri> Segm
         var representation = elements.FirstOrDefault(e => e.Name.LocalName == "Representation");
         var type = representation?.Attribute("mimeType")?.Value ??
             elements.FirstOrDefault(e => e.Name.LocalName == "AdaptationSet")?.Attribute("mimeType")?.Value ?? "audio/mp4";
-        return new TidalManifest(type, segments);
+        return new StreamManifest(type, segments);
     }
 }

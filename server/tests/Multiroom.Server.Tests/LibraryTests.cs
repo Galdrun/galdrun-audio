@@ -454,7 +454,7 @@ public sealed class LibraryTests : IAsyncDisposable
             command.ExecuteNonQuery();
         }
 
-        Assert.Equal(30, _database.Migrate().Value);
+        Assert.Equal(31, _database.Migrate().Value);
 
         Assert.Equal(7, Count("SELECT track_id FROM library_file WHERE path = 'C:\\m\\one.wav'"));
         Assert.Equal(3, Count("SELECT artist_id FROM track WHERE id = 7"));
@@ -489,7 +489,7 @@ public sealed class LibraryTests : IAsyncDisposable
             command.ExecuteNonQuery();
         }
 
-        Assert.Equal(30, _database.Migrate().Value);
+        Assert.Equal(31, _database.Migrate().Value);
 
         var store = new PlaylistStore(_database);
         var entries = store.Entries(1).Value;
@@ -503,10 +503,46 @@ public sealed class LibraryTests : IAsyncDisposable
     }
 
     [Fact]
+    public void Favourites_and_a_books_parts_survive_the_rebuild_that_lets_an_album_in()
+    {
+        using (var connection = _database.Open())
+        {
+            // The schema as it was before album favourites (0031), with a book and a station kept by Alice.
+            var assembly = typeof(LibraryDatabase).Assembly;
+            var before = assembly.GetManifestResourceNames().Where(n => n.StartsWith("migrations/", StringComparison.Ordinal))
+                .Order(StringComparer.Ordinal).TakeWhile(n => !n.StartsWith("migrations/0031", StringComparison.Ordinal))
+                .Select(n => new StreamReader(assembly.GetManifestResourceStream(n)!).ReadToEnd());
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA foreign_keys = OFF;" + string.Join(Environment.NewLine, before) + """
+
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version VALUES (30);
+                INSERT INTO favorite (id, kind, provider_id, provider_item_id, title, added, user)
+                    VALUES (4, 'group', 'local', 'book:3', 'The Book', 0, ''),
+                           (7, 'station', 'webradio', 'fip', 'FIP', 1, 'Alice');
+                INSERT INTO favorite_part (favorite_id, position, provider_id, provider_item_id, title)
+                    VALUES (4, 0, 'local', 'track:2', 'Part One'), (4, 1, 'local', 'track:3', 'Part Two');
+                PRAGMA foreign_keys = ON;
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        Assert.Equal(31, _database.Migrate().Value);
+
+        var store = new PlaylistStore(_database);
+        var kept = store.Favorites(UserStore.Everyone).Value;
+        Assert.Equal([(4L, "The Book", ""), (7L, "FIP", "Alice")], kept.Select(f => (f.Id, f.Title, f.User)));
+        Assert.Equal(["Part One", "Part Two"], kept[0].Group!.Parts.Select(p => p.Track.Title));
+        var album = store.AddFavorite(new Album("local", "album:1", "Days", "Aurora")).Value;
+        Assert.Equal(new Album("local", "album:1", "Days", "Aurora"), album.Album);
+        Assert.Equal(album.Id, store.Favorited([new ItemRef(LikeKind.Album, "local", "album:1")]).Value[new ItemRef(LikeKind.Album, "local", "album:1")]);
+    }
+
+    [Fact]
     public async Task Migrating_twice_changes_nothing_and_a_newer_schema_is_refused()
     {
-        Assert.Equal(30, _database.Migrate().Value);
-        Assert.Equal(30, _database.Migrate().Value);
+        Assert.Equal(31, _database.Migrate().Value);
+        Assert.Equal(31, _database.Migrate().Value);
 
         await using (var connection = _database.Open())
         {

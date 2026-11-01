@@ -1,0 +1,66 @@
+Subject: [PATCH] PCI: imx6: enable the Connector 3 radio sleep clock
+
+Enable CLKO2 through CCF before power/reset release; cold boots cannot
+inherit the working vendor 32768 Hz configuration. Other boards are unchanged.
+
+--- a/drivers/pci/controller/dwc/pci-imx6.c
++++ b/drivers/pci/controller/dwc/pci-imx6.c
+@@ -1408,6 +1408,14 @@
+ 	ret = devm_clk_bulk_get(dev, imx_pcie->drvdata->clks_cnt, imx_pcie->clks);
+ 	if (ret)
+ 		return ret;
++
++	if (of_machine_is_compatible("fsl,imx7d-teufel-streamer")) {
++		struct clk *wifi_32k = devm_clk_get_enabled(dev, "wifi-32k");
++
++		if (IS_ERR(wifi_32k))
++			return dev_err_probe(dev, PTR_ERR(wifi_32k),
++					     "unable to enable Wi-Fi sleep clock\n");
++	}
+ 
+ 	if (imx_check_flag(imx_pcie, IMX_PCIE_FLAG_HAS_PHYDRV)) {
+ 		imx_pcie->phy = devm_phy_get(dev, "pcie-phy");
+--- a/Documentation/devicetree/bindings/pci/fsl,imx6q-pcie.yaml
++++ b/Documentation/devicetree/bindings/pci/fsl,imx6q-pcie.yaml
+@@ -39,7 +39,8 @@
+       - description: PCIe bus clock.
+       - description: PCIe PHY clock.
+       - description: Additional required clock entry for imx6sx-pcie,
+-           imx6sx-pcie-ep, imx8mq-pcie, imx8mq-pcie-ep.
++           imx6sx-pcie-ep, imx8mq-pcie, imx8mq-pcie-ep, or optional
++           radio sleep clock for imx7d-pcie.
+ 
+   clock-names:
+     minItems: 3
+@@ -158,7 +159,6 @@
+           enum:
+             - fsl,imx6q-pcie
+             - fsl,imx6qp-pcie
+-            - fsl,imx7d-pcie
+     then:
+       properties:
+         clocks:
+@@ -168,6 +168,23 @@
+             - const: pcie
+             - const: pcie_bus
+             - const: pcie_phy
++
++  - if:
++      properties:
++        compatible:
++          const: fsl,imx7d-pcie
++    then:
++      properties:
++        clocks:
++          minItems: 3
++          maxItems: 4
++        clock-names:
++          minItems: 3
++          items:
++            - const: pcie
++            - const: pcie_bus
++            - const: pcie_phy
++            - const: wifi-32k
+ 
+   - if:
+       properties:

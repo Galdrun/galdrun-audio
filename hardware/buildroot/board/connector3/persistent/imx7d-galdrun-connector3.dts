@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "imx7d-galdrun-connector3-ram.dts"
+#include "imx7d-galdrun-connector3-storage.dtsi"
+
+/ { model = "Galdrun Connector 3"; };
+
+&gpmi {
+    /delete-property/ galdrun,read-only;
+    partitions {
+        partition@9500000 { /delete-property/ read-only; };
+    };
+};

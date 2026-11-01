@@ -94,6 +94,40 @@ public sealed class StateAndArtworkTests
         Assert.Equal((2, "album:1"), (requests, told));
     }
 
+    [Fact]
+    public async Task Artwork_kept_on_disk_survives_a_new_cache_and_an_announcement_removes_it()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "galdrun-artwork-" + Guid.NewGuid().ToString("N"));
+        var requests = 0;
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp((_, _) =>
+        { requests++; return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([7, 8]) }); }));
+        var ct = TestContext.Current.CancellationToken;
+        try
+        {
+            using (var first = new ArtworkCache(api, folder)) Assert.Equal(new byte[] { 7, 8 }, await first.GetAsync("album:1", ct));
+            Assert.Single(Directory.GetFiles(folder));
+            using var second = new ArtworkCache(api, folder);
+            Assert.Equal(new byte[] { 7, 8 }, await second.GetAsync("album:1", ct)); Assert.Equal(1, requests);
+            await second.AnnounceAsync("album:1"); Assert.Empty(Directory.GetFiles(folder));
+            await second.GetAsync("album:1", ct); Assert.Equal(2, requests);
+        }
+        finally { if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Different_artworks_download_at_the_same_time()
+    {
+        var started = 0; var both = new TaskCompletionSource();
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (_, ct) =>
+        {
+            if (Interlocked.Increment(ref started) == 2) both.SetResult();
+            await both.Task.WaitAsync(ct); // Each download waits until the other one has started.
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([1]) };
+        }));
+        using var cache = new ArtworkCache(api); var ct = TestContext.Current.CancellationToken;
+        await Task.WhenAll(cache.GetAsync("album:1", ct), cache.GetAsync("album:2", ct)).WaitAsync(TimeSpan.FromSeconds(5), ct);
+    }
+
     // Server phase 40: a list entry is its item, of any kind, its picture by artworkId.
     [Fact]
     public void List_entries_read_their_item_of_every_kind_and_its_artwork_id()

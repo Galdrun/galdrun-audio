@@ -60,13 +60,13 @@ public sealed record Audiobook(string Reference, string Title, string? Author, A
         (long?)group.Duration?.TotalMilliseconds);
 }
 
-// A track, a station or a group (a book, with its parts as they were when it
-// was added), exactly one of the three. User as a like's.
+// A track, a station, a group (a book, with its parts as they were when it
+// was added) or an album, exactly one of the four. User as a like's.
 public sealed record Favorite(long Id, Track? Track, RadioStation? Station, DateTimeOffset Added,
-    QueueGroup? Group = null, string User = "") : IMediaEntry
+    QueueGroup? Group = null, string User = "", Album? Album = null) : IMediaEntry
 {
-    public string Title => Track?.Title ?? Group?.Title ?? Station!.Name;
+    public string Title => Track?.Title ?? Group?.Title ?? Album?.Title ?? Station!.Name;
 
     [JsonIgnore]
-    public MediaItem Item => (MediaItem?)Track ?? (MediaItem?)Group ?? Station!;
+    public MediaItem Item => (MediaItem?)Track ?? (MediaItem?)Group ?? (MediaItem?)Album ?? Station!;
 }

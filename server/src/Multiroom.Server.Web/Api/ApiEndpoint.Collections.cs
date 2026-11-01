@@ -179,11 +179,12 @@ public sealed partial class ApiEndpoint
     private async Task<Result<Favorite, LibraryError>> AddFavoriteAsync(FavoriteRequest request,
         CancellationToken cancellationToken) => request switch
     {
-        { Track: { } track, Station: null, Node: null } => playlists.AddFavorite(track, request.User),
-        { Track: null, Station: { } station, Node: null } => playlists.AddFavorite(station, request.User),
-        { Track: null, Station: null, Node: { } node } =>
+        { Track: { } track, Station: null, Node: null, Album: null } => playlists.AddFavorite(track, request.User),
+        { Track: null, Station: { } station, Node: null, Album: null } => playlists.AddFavorite(station, request.User),
+        { Track: null, Station: null, Node: null, Album: { } album } => playlists.AddFavorite(album, request.User),
+        { Track: null, Station: null, Node: { } node, Album: null } =>
             await FavoriteBookAsync(node, request.User, cancellationToken).ConfigureAwait(false),
-        _ => Result.Fail(LibraryError.InvalidArgument, "exactly one of track, station or node"),
+        _ => Result.Fail(LibraryError.InvalidArgument, "exactly one of track, station, album or node"),
     };
 
     // A node is a favourite only as a book: expanded and grouped as the

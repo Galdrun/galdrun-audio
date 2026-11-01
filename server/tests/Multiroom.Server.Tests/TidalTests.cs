@@ -4,20 +4,21 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using Microsoft.Extensions.Logging.Abstractions;
 using Multiroom.Server.Abstractions;
+using Multiroom.Server.Providers.Streaming;
 using Multiroom.Server.Providers.Tidal;
 using Multiroom.Server.Web.Media;
 
 namespace Multiroom.Server.Tests;
 
 // The Tidal provider against FakeTidal: device login and silent refresh,
-// the catalog normalized into the domain model, tracks reassembled into the
-// bounded cache and served by a real media endpoint with FFmpeg's headers,
-// and cover art. Nothing here touches the network.
+// the catalog normalized into the domain model, tracks streamed through the
+// provider's StreamWindow and served by a real media endpoint with FFmpeg's
+// headers, and cover art. The window itself: StreamWindowTests. Nothing here touches the network.
 public sealed class TidalTests : IAsyncDisposable
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
 
-    // The pieces a one-file track is fetched in (TrackCache.ChunkBytes).
+    // The pieces a one-file track is fetched in (StreamWindow.ChunkBytes).
     private const int Chunk = 1024 * 1024;
 
     private readonly TempDirectory _dir = new();
@@ -41,6 +42,8 @@ public sealed class TidalTests : IAsyncDisposable
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private string Directory => Path.Combine(_dir.Path, "tidal");
+
+    private string Streams => Path.Combine(_dir.Path, "streams");
 
     public async ValueTask DisposeAsync()
     {
@@ -107,7 +110,7 @@ public sealed class TidalTests : IAsyncDisposable
     {
         var tidal = await TidalAsync();
         var provider = new TidalProvider(
-            new TidalSettings(null, null, TidalQuality.Lossless, 64 * 1024 * 1024, 1024 * 1024),
+            new TidalSettings(null, null, TidalQuality.Lossless, 1024 * 1024), Streaming(),
             Directory, NullLogger.Instance, tidal.Endpoints);
         provider.Start();
         _providers.Add(provider);
@@ -126,7 +129,7 @@ public sealed class TidalTests : IAsyncDisposable
         var tidal = await TidalAsync();
         tidal.Seed(Directory);
         var provider = new TidalProvider(
-            new TidalSettings("other-client", null, TidalQuality.Lossless, 64 * 1024 * 1024, 1024 * 1024),
+            new TidalSettings("other-client", null, TidalQuality.Lossless, 1024 * 1024), Streaming(),
             Directory, NullLogger.Instance, tidal.Endpoints);
         provider.Start();
         _providers.Add(provider);
@@ -377,24 +380,27 @@ public sealed class TidalTests : IAsyncDisposable
             Assert.Equal(whole[(int)offset..], await response.Content.ReadAsByteArrayAsync(Ct));
         }
 
-        // Complete on disk, byte for byte, and answered from there: a second
-        // staging fetches nothing.
-        var tracks = Path.Combine(Directory, "tracks");
-        await Until(() => Task.FromResult(System.IO.Directory.GetFiles(tracks, "*.mp4").Length == 1));
-        Assert.Equal(whole, await File.ReadAllBytesAsync(Path.Combine(tracks, "2001-LOSSLESS.LOSSLESS.mp4"), Ct));
+        // A second staging while the first is in use shares it: nothing is
+        // fetched again, and nothing is written to disk in memory mode.
         var fetched = segments.Select((_, i) => tidal.FetchCount(i == 0 ? "d2001-init" : $"d2001-{i}")).Sum();
         Assert.Equal(whole, await ReadAllAsync(await ServeAsync((await provider.ResolveAsync(Track(2001), Ct)).Value)));
         Assert.Equal(fetched, segments.Select((_, i) => tidal.FetchCount(i == 0 ? "d2001-init" : $"d2001-{i}")).Sum());
         Assert.Single(tidal.Qualities);
+        Assert.False(System.IO.Directory.Exists(Path.Combine(Streams, "tidal")));
 
-        // Nothing outlives the run: disposing deletes the files, and a later
-        // run deletes what a crash left and fetches the track again.
+        // A later run deletes the pieces a crash left in disk mode and the
+        // track cache of earlier versions, and fetches the track again.
         provider.Dispose();
-        Assert.Empty(System.IO.Directory.GetFiles(tracks));
-        var leftover = Path.Combine(tracks, "2001-LOSSLESS.LOSSLESS.mp4");
-        await File.WriteAllBytesAsync(leftover, whole, Ct);
+        var leftover = Path.Combine(Streams, "tidal", "2001-LOSSLESS.LOSSLESS-1", "0");
+        var oldCache = Path.Combine(Directory, "tracks", "2001-LOSSLESS.LOSSLESS.mp4");
+        foreach (var file in new[] { leftover, oldCache })
+        {
+            System.IO.Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            await File.WriteAllBytesAsync(file, whole, Ct);
+        }
         var restarted = Provider();
-        Assert.False(File.Exists(leftover));
+        Assert.Empty(System.IO.Directory.GetFileSystemEntries(Path.Combine(Streams, "tidal")));
+        Assert.False(System.IO.Directory.Exists(Path.Combine(Directory, "tracks")));
         var again = (await restarted.ResolveAsync(Track(2001), Ct)).Value;
         Assert.Equal(new AudioFormat("FLAC", 44100, 16, 2), again.Format);
         Assert.Equal(whole, await ReadAllAsync(await ServeAsync(again)));
@@ -428,7 +434,7 @@ public sealed class TidalTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_track_says_the_tier_tidal_granted_also_from_the_cache_and_a_lower_one_shows_on_status()
+    public async Task A_track_says_the_tier_tidal_granted_also_when_shared_and_a_lower_one_shows_on_status()
     {
         var tidal = await TidalAsync();
         tidal.AddBtsTrack(3101, Bytes(5000, 3), granted: "HIGH");
@@ -444,11 +450,7 @@ public sealed class TidalTests : IAsyncDisposable
         await ReadAllAsync(await ServeAsync(high));
         await ReadAllAsync(await ServeAsync(named));
 
-        await Until(() => Task.FromResult(System.IO.Directory.GetFiles(Path.Combine(Directory, "tracks"), "*.flac").Length == 2));
-        Assert.True(File.Exists(Path.Combine(Directory, "tracks", "3101-LOSSLESS.HIGH.flac")));
-        Assert.True(File.Exists(Path.Combine(Directory, "tracks", "3102-LOSSLESS.LOSSLESS-48000-24.flac")));
-
-        // From the cache, without asking Tidal again.
+        // Shared while in use, without asking Tidal again.
         Assert.Equal(aac, (await provider.ResolveAsync(Track(3101), Ct)).Value.Format);
         Assert.Equal(new AudioFormat("FLAC", 48000, 24, 2), (await provider.ResolveAsync(Track(3102), Ct)).Value.Format);
         Assert.Equal(2, tidal.Qualities.Count);
@@ -474,49 +476,38 @@ public sealed class TidalTests : IAsyncDisposable
         Assert.Equal(ProviderError.Unavailable, preview.Failure.Code);
         Assert.Equal(ProviderError.NotFound, (await provider.ResolveAsync(new Track("tidal", "/etc/passwd", "x"), Ct)).Failure.Code);
 
-        // Nothing was cached, and no signed URL is in any message.
+        // Nothing is held, and no signed URL is in any message.
         Assert.Equal((0, 0L, 0), TrackHeld(provider));
         Assert.DoesNotContain("signed-secret", encrypted.Failure.Detail + preview.Failure.Detail, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task The_cache_evicts_the_least_recently_played_track_not_in_use_and_refuses_when_all_is_in_use()
+    public async Task A_released_track_is_freed_at_once_and_a_replay_downloads_it_again()
     {
         var tidal = await TidalAsync();
-        foreach (var id in new long[] { 1, 2, 3 })
-            tidal.AddBtsTrack(id, Bytes(100_000, (int)id));
-        var provider = Provider(cacheBytes: 250_000);
+        var data = Bytes(100_000, 1);
+        tidal.AddBtsTrack(1, data);
+        var provider = Provider(buffer: TrackBuffer.Disk);
+        var pieces = Path.Combine(Streams, "tidal");
 
-        async Task<ResolvedStream> Play(long id)
-        {
-            var resolved = await provider.ResolveAsync(Track(id), Ct);
-            Assert.True(resolved.IsSuccess, resolved.ToString());
-            return resolved.Value;
-        }
-
-        (await Play(1)).Release();
-        (await Play(2)).Release();
-        (await Play(1)).Release();
+        var first = (await provider.ResolveAsync(Track(1), Ct)).Value;
+        var shared = (await provider.ResolveAsync(Track(1), Ct)).Value;
+        // A probe, then its one piece, held on disk.
         Assert.Equal(2, tidal.FetchCount("t1"));
-        // 3 does not fit beside 1 and 2: 2 was played least recently.
-        var three = await Play(3);
-        Assert.Equal((2, 200_000L, 1), TrackHeld(provider));
-        (await Play(1)).Release();
-        Assert.Equal(2, tidal.FetchCount("t1"));
-        var two = await Play(2);
-        Assert.Equal(4, tidal.FetchCount("t2"));
-        // 2 and 3 are in use: 1 goes, and nothing more fits.
-        var full = await provider.ResolveAsync(Track(1), Ct);
-        Assert.Equal(ProviderError.Unavailable, full.Failure.Code);
-        Assert.Contains("do not fit the track cache", full.Failure.Detail, StringComparison.Ordinal);
-        Assert.Equal((2, 200_000L, 2), TrackHeld(provider));
-        Assert.Contains("track cache 2 track(s), 2 in use, 200000 of 250000 bytes", (await provider.GetStatusAsync(Ct)).Detail,
-            StringComparison.Ordinal);
+        Assert.Single(System.IO.Directory.GetDirectories(pieces));
+        Assert.Equal((1, 100_000L, 0), TrackHeld(provider));
+        Assert.Contains("tracks 1, readers 0, held 100000 bytes (disk, window 16777216 bytes)",
+            (await provider.GetStatusAsync(Ct)).Detail, StringComparison.Ordinal);
 
-        two.Release();
-        three.Release();
-        (await Play(1)).Release();
-        Assert.True(System.IO.Directory.GetFiles(Path.Combine(Directory, "tracks")).Length <= 2);
+        first.Release();
+        Assert.Equal(data, await ReadAllAsync(await ServeAsync(shared)));
+        shared.Release();
+        await Until(() => Task.FromResult(System.IO.Directory.GetDirectories(pieces).Length == 0));
+        Assert.Equal((0, 0L, 0), TrackHeld(provider));
+
+        var replay = (await provider.ResolveAsync(Track(1), Ct)).Value;
+        Assert.Equal(data, await ReadAllAsync(await ServeAsync(replay)));
+        Assert.Equal(4, tidal.FetchCount("t1"));
     }
 
     [Fact]
@@ -557,14 +548,14 @@ public sealed class TidalTests : IAsyncDisposable
     private const string PlaybackId = "fixture-playback";
     private const string PlaybackSecret = "fixture-playback-secret";
 
-    private TidalProvider Provider(bool seed = true, DateTimeOffset? expiresAt = null, long cacheBytes = 64 * 1024 * 1024,
-        long artworkCacheBytes = 1024 * 1024, bool playback = false)
+    private TidalProvider Provider(bool seed = true, DateTimeOffset? expiresAt = null,
+        long artworkCacheBytes = 1024 * 1024, bool playback = false, TrackBuffer buffer = TrackBuffer.Memory)
     {
         if (seed)
             _tidal!.Seed(Directory, expiresAt);
         var provider = new TidalProvider(
-            new TidalSettings(FakeTidal.ClientId, FakeTidal.ClientSecret, TidalQuality.Lossless, cacheBytes, artworkCacheBytes,
-                playback ? PlaybackId : null, playback ? PlaybackSecret : null),
+            new TidalSettings(FakeTidal.ClientId, FakeTidal.ClientSecret, TidalQuality.Lossless, artworkCacheBytes,
+                playback ? PlaybackId : null, playback ? PlaybackSecret : null), Streaming(buffer),
             Directory, NullLogger.Instance, _tidal!.Endpoints);
         provider.Start();
         _providers.Add(provider);
@@ -619,14 +610,18 @@ public sealed class TidalTests : IAsyncDisposable
 
     private static Track Track(long id, string title = "Fixture") => new("tidal", $"track:{id}", title);
 
+    private StreamingSettings Streaming(TrackBuffer buffer = TrackBuffer.Memory) =>
+        new(buffer, StreamingSettings.DefaultWindowBytes, Streams);
+
+    // The status's "tracks N, readers R, held B bytes": (N, B, R).
     private static (int, long, int) TrackHeld(TidalProvider provider)
     {
         var detail = provider.GetStatusAsync(CancellationToken.None).GetAwaiter().GetResult().Detail;
-        var part = detail[(detail.IndexOf("track cache ", StringComparison.Ordinal) + "track cache ".Length)..];
+        var part = detail[detail.IndexOf("tracks ", StringComparison.Ordinal)..];
         var words = part.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries);
-        return (int.Parse(words[0], System.Globalization.CultureInfo.InvariantCulture),
+        return (int.Parse(words[1], System.Globalization.CultureInfo.InvariantCulture),
             long.Parse(words[5], System.Globalization.CultureInfo.InvariantCulture),
-            int.Parse(words[2], System.Globalization.CultureInfo.InvariantCulture));
+            int.Parse(words[3], System.Globalization.CultureInfo.InvariantCulture));
     }
 
     private async Task<Uri> ServeAsync(ResolvedStream stream)

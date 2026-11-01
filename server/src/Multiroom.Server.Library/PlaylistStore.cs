@@ -46,6 +46,7 @@ public sealed class PlaylistStore(LibraryDatabase database)
     private const string TrackKind = "track";
     private const string GroupKind = "group";
     private const string StationKind = "station";
+    private const string AlbumKind = "album";
 
     // --- playlists ----------------------------------------------------------
 
@@ -382,6 +383,11 @@ public sealed class PlaylistStore(LibraryDatabase database)
         AddFavorite(StationKind, station.ProviderId, station.ProviderItemId, station.Name, null, null, null, null,
             null, user);
 
+    // An album, queued as its provider's node.
+    public Result<Favorite, LibraryError> AddFavorite(Album album, string? user = UserStore.Household) =>
+        AddFavorite(AlbumKind, album.ProviderId, album.ProviderItemId, album.Title, album.Artist, null, null, null,
+            null, user);
+
     // A group (a book) by the node it was expanded from, with its parts as
     // they are now. A node already a favourite answers the favourite it is,
     // its parts unchanged.
@@ -415,8 +421,8 @@ public sealed class PlaylistStore(LibraryDatabase database)
     }
 
     // The favourite id of each item that is a favourite in the user's scope
-    // (the user's own before the household's); the others, albums and
-    // artists (never favourites) included, are left out.
+    // (the user's own before the household's); the others, artists and
+    // books by reference (never favourites) included, are left out.
     public Result<Dictionary<ItemRef, long>, LibraryError> Favorited(IReadOnlyList<ItemRef> items,
         string? user = UserStore.Household) =>
         Read<Dictionary<ItemRef, long>>(c =>
@@ -425,7 +431,7 @@ public sealed class PlaylistStore(LibraryDatabase database)
             if (!scope.IsSuccess)
                 return scope.Failure;
             var found = new Dictionary<ItemRef, long>();
-            foreach (var item in items.Distinct().Where(i => i.Kind is LikeKind.Track or LikeKind.Station))
+            foreach (var item in items.Distinct().Where(i => i.Kind is LikeKind.Track or LikeKind.Station or LikeKind.Album))
             {
                 if (Rows(c, null, $"""
                         SELECT id FROM favorite WHERE kind = $kind AND provider_id = $provider AND provider_item_id = $item
@@ -513,6 +519,7 @@ public sealed class PlaylistStore(LibraryDatabase database)
     {
         { Track: { } t } => (TrackKind, t.ProviderId, t.ProviderItemId),
         { Station: { } s } => (StationKind, s.ProviderId, s.ProviderItemId),
+        { Album: { } a } => (AlbumKind, a.ProviderId, a.ProviderItemId),
         _ => (GroupKind, f.Group!.Source!, ""),
     };
 
@@ -626,6 +633,8 @@ public sealed class PlaylistStore(LibraryDatabase database)
             GroupKind => new Favorite(r.GetInt64(0), null, null, added, new QueueGroup(r.GetString(4), StringOrNull(r, 5),
                 null, LibraryCatalog.EnumOrNull<MediaType>(r, 13) ?? MediaType.Audiobook, $"{r.GetString(2)}:{r.GetString(3)}", []),
                 user),
+            AlbumKind => new Favorite(r.GetInt64(0), null, null, added, User: user,
+                Album: new Album(r.GetString(2), r.GetString(3), r.GetString(4), StringOrNull(r, 5))),
             _ => new Favorite(r.GetInt64(0), null, new RadioStation(r.GetString(2), r.GetString(3), r.GetString(4)), added,
                 User: user),
         };

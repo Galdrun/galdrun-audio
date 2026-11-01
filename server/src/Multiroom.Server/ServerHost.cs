@@ -83,6 +83,8 @@ public static partial class ServerHost
         logSettings.Changed += (_, level) => provider.SetMinimumLevel(ToLogLevel(level));
         if (!savedLevel.IsSuccess)
             provider.Write(LogLevel.Warning, "ServerHost", $"saved log level not used: {savedLevel.Failure}", null);
+        foreach (var warning in settings.Warnings ?? [])
+            provider.Write(LogLevel.Warning, "ServerHost", $"config: {warning}", null);
         builder.Services.AddSingleton(logSettings);
         builder.Logging.SetMinimumLevel(LogLevel.Trace);
         // Kestrel's hosting diagnostics log every request at info, and nothing
@@ -112,7 +114,8 @@ public static partial class ServerHost
         builder.Services.AddLocalFiles(Path.Combine(settings.DataDirectory, "local"));
         builder.Services.AddWebRadio(Path.Combine(settings.DataDirectory, "webradio"));
         // Tidal's apps are the config's alone: a change is an edit of the file.
-        builder.Services.AddTidal(settings.Tidal, Path.Combine(settings.DataDirectory, "tidal"));
+        // Every on-demand streaming provider takes the one streaming setting.
+        builder.Services.AddTidal(settings.Tidal, settings.Streaming, Path.Combine(settings.DataDirectory, "tidal"));
         if (settings.TuneIn is not null)
             builder.Services.AddTuneIn(settings.TuneIn, Path.Combine(settings.DataDirectory, "tunein"));
         builder.Services.AddSingleton<ProviderRegistry>();
