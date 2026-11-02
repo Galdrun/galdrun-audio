@@ -2,6 +2,120 @@
 
 ## Current state
 
+### 2026-11-02 (end of day): Bluetooth headphone room working live, not in an image
+
+Live on the NAND device via bind mounts over `/opt/galdrun-client/galdrun-client`
+and `/usr/sbin/galdrun-bluetooth` (gone after a reboot; the installed image is
+still `e7f66ba0...`). Working: headphone mode by BT long press and by the client
+page's new Bluetooth card (search with countdown, pick, disconnect, phone
+pairing), second client "<room> Headphones" on the raw bluez-alsa PCM (48 kHz
+2ch int16), Bluetooth name = room name, GUI headphone icon via MATP
+`bluetoothOutput` (core now also sends `room.capabilities` on arrival).
+User-tested with a LEXON MINO L: plays; about 20 ms late against RCA, to be set
+with the room's output latency. Fixes found live: discovery needs a lasting
+`bluetoothctl` with open input; the plug-wrapped `bluealsa` PCM let the server
+pick 8 channels; BlueZ dropped unpaired results after 30 s (now
+`TemporaryTimeout = 300`). Next: build/install an image with all of this, then
+check headphone resume after reboot and deep sleep. Not committed.
+
+### 2026-11-02 (night): BT button/LED image installed and tested
+
+`e7f66ba0...` is **installed in NAND** (backup pin `994044d6...` in
+`private/connector3/reinstall-backup-btled-20261102/`; one corrected NAND
+bitflip during install, readback passed). Cold boot: SSH key pinned from UART
+in `known_hosts_persistent_btled_20261102`, `RFKILL_INPUT` off, `bluetoothd` on
+the real address `50:1E:2D:3B:77:F7`, LED loop running. User-tested: BT click
+blinks within about a second, pairing, steady LED when connected, playback; a
+paired phone stays paired across a reboot (the phone reconnects when selected;
+the device does not call it, by the user's choice). Pressing BT while a phone
+plays opens pairing for another device and keeps the first playing (accepted).
+Note: BlueZ reports Pairable for up to 120 s after start while not
+discoverable. Not yet tested: Bluetooth after deep sleep.
+
+### 2026-11-02 (late): BT button/LED image built, then installed (above)
+
+The first Bluetooth image (`048624d6...`) is **installed in NAND** and passed
+cold boot, phone pairing and playback; its `bluetoothd` saw the placeholder
+address until the address-refresh fix (live test only). Successor USB write
+installer, SHA256
+**`e7f66ba004b755ec87a8683c8c624cd4ae08c3d9144ae76d34573b4e0ee2b773`**, frozen in
+`private/connector3/installer-btled-e7f66ba0-20261102/` (FIT `07b581e6...`,
+rootfs.ubi `53a9c76b...`). It adds: address refresh, RF-kill clear on start,
+`CONFIG_RFKILL_INPUT` off (it toggled the radio on every `KEY_BLUETOOTH`), the
+rear BT/Setup buttons (MCU IDs 4/8) with board-file bindings, the
+`btModeRec`/`btModePlay` actions, the BT LED loop (MCU `0x21`: 0 off, 1 blink,
+2 steady; headphone pulse 3 s on/1 s off in software), `dbus-send` pairing
+(no 10 s `bluetoothctl --timeout` delay) and `galdrun-connector3-mcu
+--request`. LED values and the button IDs were seen live; the LED loop,
+buttons and fast pairing passed a live test from `/run` bind mounts (no
+reboot). Helpers: `qualify-btled-installer-20261102.py --backup` (UART marker
+`GALDRUN_USB_IDENTITY_BTLED_20261102`; renames the previous USB backup, pin
+`71973d5f...`) and `install-btled-20261102.py`. Not yet run: USB boot, install,
+cold boot, pairing surviving a reboot, Bluetooth after deep sleep.
+
+### 2026-11-02 (night): Bluetooth installer image built, not yet booted
+
+USB write installer `private/connector3/installer-write/connect3.img`, SHA256
+**`048624d6918879ed41304466d3cd924e08f73852ab07d3e5be5e878366bdcc2f`**, frozen in
+`private/connector3/installer-bluetooth-048624d6-20261102/` (FIT
+`2b36005d...`, rootfs.ubi `1ade4c55...`). Built by the usual chain
+(`build-connector3-ram.sh` with the approved radio, `build-connector3-persistent.sh`,
+`build-connector3-installer.sh --write`); all verifiers passed. Content checked:
+BlueZ, bluez-alsa, `bt-agent`, `galdrun-bluetooth` (pairing storage on
+`/settings/bluetooth`, `pair` command), board flag `bluetooth`, the client with
+`BluetoothPlayback`, Bluetooth start in the persistent init and restart in
+`raumfeld-suspend`. Host tests passed: persistent init, suspend helper, RAM
+init, status LEDs. Not yet run: USB boot/qualify/install, cold boot, pairing
+after reboot, Bluetooth after deep sleep. The earlier optical-image helpers
+(`qualify-optical-installer-20261102.py`, `install-optical-20261102.py`,
+`verify-installed-optical-20261102.py`) pin that image's hashes and need
+copies for this one. Server/GUI side is in the local release: zone pause and
+resume around Bluetooth, blue badge on room tiles, headphone icon (unused until
+the headphone room exists).
+
+### 2026-11-02 (evening): Bluetooth A2DP receive works in RAM (TOSLINK test deferred)
+
+The 88W8897's Bluetooth is a plain H4 UART on UART5 (`ttymxc4`, 3 Mbit/s,
+RTS/CTS; vendor `hciattach ttymxc4 any 3000000 flow`), alive once mwifiex has
+loaded the approved PCIe firmware. The RAM profile now enables UART5 (vendor
+pins, 240 MHz parent), `BT_HCIUART_H4`, BlueZ 5.79 and bluez-alsa 4.3.1.
+`board/connector3/ram/galdrun-bluetooth` waits for the wireless interface
+(`mlan0`, not `wlan0`), runs `btattach`, sets the BD address to Wi-Fi MAC + 1
+via Marvell command 0xFC22 (firmware default `11:22:33:…` is a placeholder;
+the vendor's preferred `bt_addr` from the const partition is not read yet),
+applies the vendor -4 dBm power command, then starts bluetoothd and bluez-alsa.
+Live: Marvell BT 4.2, `50:1E:2D:3B:77:F7`, Audio Sink and Source UUIDs. With the
+client stopped, a manual `bluetoothctl` NoInputNoOutput agent and
+`bluealsa-aplay --pcm=plughw:CARD=Connector3,DEV=0`, the user paired a phone
+and **heard phone music on RCA**; bluez-alsa used ~9 % CPU. First pairing failed
+only because `PairableTimeout=60` had expired. RAM-only boot via
+`reference/connector3-ssh-archive/boot-bluetooth-ram-20261102.py`; the
+`mlan0`/address script fixes were tested live but not yet rebuilt.
+
+**Client integration (same evening):** `BluetoothPlayback` + `BluealsaReceiver`
+(see the client guide) take the room while a phone streams; the user heard it on
+RCA and the room returned 3 s after pausing. The room reports MATP `localSource:
+"bluetooth"` (a separate field, not a power state, per the user); core/server
+expose `localSource` and ServerGui shows a "playing Bluetooth" pill.
+Fixes found on hardware: the `bluealsa` PCM is plug-wrapped (disable resampling
+to get the transport rate) and a capture PCM needs an explicit `snd_pcm_start`.
+Deployed only by copying the client into the RAM system; the board file there
+was replaced with `"bluetooth": true` by hand. The pairing agent is still the
+manual `bluetoothctl` FIFO test.
+
+User spec for the rear BT button and its LED (MCU indicator `0x21`): short
+press = pairing for phones; long press = pairing for headphones. LED blinking =
+waiting for a device; steady = connected; slow pulse = headphone mode. The
+button's MCU event code is not yet known.
+
+Decided design (user): phone audio is a **local takeover** (client yields the
+card while a phone streams); Bluetooth headphones are an **extra room** served
+by a second client instance on bluez-alsa's PCM, groupable with RCA/TOS. Client
+Bluetooth goes behind a per-platform interface (later ESP32-S31, which has
+Classic BT). Pending: client integration, pairing mode (rear button 0x21 LED),
+restart after deep sleep (radio reset), MCU sample-rate setup for BT playback,
+persistent image, headphone room.
+
 ### 2026-11-02: TOSLINK (SAI2) image installed; optical listening test pending
 
 **Installed in NAND.** USB `2bd8f906...` booted (UART-attested), qualified,

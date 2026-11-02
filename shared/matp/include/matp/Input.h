@@ -72,7 +72,11 @@ enum class InputAction
     Action8,
     Action9,
     Action10,
-    DeepSleep
+    DeepSleep,
+    // Local Bluetooth modes on clients with Bluetooth: receive (a phone
+    // plays to this device) and play (to Bluetooth headphones).
+    BtModeRec,
+    BtModePlay
 };
 
 // Which volume a volume action or a mute changes: the room's own, or its

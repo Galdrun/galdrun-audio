@@ -548,7 +548,13 @@ bool Session::sendInputAction(const InputActionEvent& event)
 
 const char* Session::powerState() const
 {
-    return manualStandby_ ? "standbyManual" : standby_ ? "standby" : "on";
+    // A phone playing has the device on, whatever standby follows it.
+    return bluetooth_ ? "on" : manualStandby_ ? "standbyManual" : standby_ ? "standby" : "on";
+}
+
+const char* Session::localSource() const
+{
+    return bluetooth_ ? "bluetooth" : "";
 }
 
 bool Session::announceSleep(const std::string& wakeMac)
@@ -562,6 +568,11 @@ bool Session::announceSleep(const std::string& wakeMac)
     return send(MessageType::StreamReady, makeStreamReady(sessionId_, ready));
 }
 
+void Session::resumeStream()
+{
+    resumeAfterFailedSleep();
+}
+
 void Session::resumeAfterFailedSleep()
 {
     if (state_ == SessionState::Established && hasPrepareRequest_)
@@ -572,10 +583,17 @@ bool Session::setPower(bool on, std::string& error, bool automatic)
 {
     if (on)
     {
-        if (!standby_ && !manualStandby_)
+        if (!standby_ && !manualStandby_ && !bluetooth_)
             return true;
         standby_ = false;
         manualStandby_ = false;
+        if (bluetooth_)
+        {
+            // The phone's playback still holds the sound card. Its owner sees
+            // the state change, closes it and calls resumeStream().
+            bluetooth_ = false;
+            return true;
+        }
         if (state_ == SessionState::Established && hasPrepareRequest_ && !prepareStream())
         {
             error = "the stream could not be prepared after standby";
@@ -588,6 +606,9 @@ bool Session::setPower(bool on, std::string& error, bool automatic)
         return true;
     standby_ = true;
     manualStandby_ = !automatic;
+    // Already parked for the phone: this only sets what follows it.
+    if (bluetooth_)
+        return true;
     releaseStream();
     if (state_ == SessionState::Established && hasPrepareRequest_)
     {
@@ -601,6 +622,24 @@ bool Session::setPower(bool on, std::string& error, bool automatic)
             return false;
         }
     }
+    return true;
+}
+
+bool Session::setBluetooth(bool active, std::string& error)
+{
+    if (bluetooth_ == active)
+        return true;
+    bluetooth_ = active;
+    // Both directions re-report: prepareStream() releases first, and either
+    // prepares again or says why not (bluetooth, or the standby from before).
+    if (state_ == SessionState::Established && hasPrepareRequest_ && !prepareStream() && !active &&
+        !standby_ && !manualStandby_)
+    {
+        error = "the stream could not be prepared after bluetooth playback";
+        return false;
+    }
+    if (active)
+        releaseStream(); // also without a session: the sound card is wanted now
     return true;
 }
 
@@ -1022,7 +1061,9 @@ bool Session::prepareStream()
     releaseStream();
 
     StreamReady ready;
-    if (manualStandby_)
+    if (bluetooth_)
+        ready.reason = "bluetooth playback";
+    else if (manualStandby_)
         ready.reason = "manual standby";
     else if (stream_.prepare)
     {
@@ -1033,6 +1074,7 @@ bool Session::prepareStream()
         ready.reason = "this client has no playback path";
 
     ready.powerState = powerState();
+    ready.localSource = localSource();
     if (!send(MessageType::StreamReady, makeStreamReady(sessionId_, ready)))
         return false;
 
@@ -1064,7 +1106,7 @@ bool Session::prepareStream()
     // improvise. It says so and reports what it can play, so the server
     // chooses again -- unconditionally, because the server has just been told
     // that the choice it made from the last list does not work.
-    if (!manualStandby_)
+    if (!manualStandby_ && !bluetooth_)
         sendCapabilities();
     return false;
 }

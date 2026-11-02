@@ -29,6 +29,7 @@ ip link set lo up
 
 syslogd -O /run/system.log
 /etc/init.d/S45raumfeld-network start
+/usr/sbin/galdrun-bluetooth start >/run/bluetooth-start.log 2>&1 &
 
 # Retain clock/reset diagnostics for a warm-reboot recovery without a UART.
 mount -t debugfs debugfs /sys/kernel/debug

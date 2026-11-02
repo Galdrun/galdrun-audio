@@ -18,6 +18,8 @@ install -m 0644 "$release/licenses/"* "$target/opt/galdrun-client/licenses/"
 install -m 0644 "$release/build-info.txt" "$target/opt/galdrun-client/build-info.txt"
 install -m 0644 "$board/client-default.json" "$target/opt/galdrun-client/client-default.json"
 install -m 0644 "$board/client-board.json" "$target/etc/galdrun-board.json"
+install -m 0755 "$board/galdrun-bluetooth" "$target/usr/sbin/galdrun-bluetooth"
+install -D -m 0644 "$board/bluetooth-main.conf" "$target/etc/bluetooth/main.conf"
 common="$project/board/common/overlay"
 install -m 0755 "$common/usr/sbin/raumfeld-network" "$common/usr/sbin/raumfeld-wifi-scan" "$target/usr/sbin/"
 install -D -m 0755 "$common/etc/init.d/S45raumfeld-network" "$target/etc/init.d/S45raumfeld-network"
@@ -25,6 +27,8 @@ install -m 0600 "$common/etc/galdrun-network.conf" "$target/etc/galdrun-network.
 install -m 0600 "$board/network.conf" "$target/etc/raumfeld-network.conf"
 # Only the network supervisor starts these services.
 rm -f "$target/etc/init.d/S50hostapd" "$target/etc/init.d/S80dnsmasq" "$target/etc/init.d/S50wpa_supplicant"
+# galdrun-bluetooth starts D-Bus, BlueZ and bluez-alsa after the radio firmware.
+rm -f "$target/etc/init.d/S30dbus" "$target/etc/init.d/S40bluetoothd" "$target/etc/init.d/S"*bluealsa*
 # The standalone image talks directly to the MCU. The old D-Bus bridge depends
 # on the vendor OS and is built separately by its explicit vendor-test helper.
 rm -f "$target/usr/sbin/galdrun-connector3-buttons"

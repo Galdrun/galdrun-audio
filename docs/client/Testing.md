@@ -5,21 +5,22 @@
 
 
 ## Client
-| Device               | OS          | Soundcard                      | Chip    | API     | HPP | Tested  | Notes                           
-| -------------------- | ----------- | ------------------------------ | ------- | ------- | --- | ------- | -------
-| RPI 1 Model B 1.2    | DietPi      | [USB] DAC                      | KT0210  | ALSA    | N   | Yes     | Common
-| RPI 1 Model B 1.2    | DietPi      | [I2S] InnoMaker HiFi DAC       | PCM5122 | ALSA    | N   | Yes     | Custom Firmware
-| RPI 3 Model A        | DietPi      | [PWM] Headphone Jack           | BMC2835 | ALSA    | N   | Yes     | Custom Firmware
-| ESP32-S31 (Protoype) | freeRTOS    | [I2S] InnoMaker HiFi DAC       | PCM5122 | IDF-I2S |     |         |
-| ESP32-S31 Core Board | freeRTOS    | [I2S] InnoMaker HiFi DAC       | PCM5122 | IDF-I2S |     |         |
-| ESP32-A1S-Audio-Kit  | freeRTOS    | [I2S] DAC                      | ES8388  | IDF-I2S |     | Yes     | WLAN Bottleneck / Max. 96khz with 24bit on good conditions
-| Raumfeld Connector 2 | linux       | [I2S] DAC                      | CS4271  | ALSA    | N   | Yes     | Custom firmware 
-| Raumfeld Streamer    | linux       | [I2S] DAC                      |         | ALSA    | N   | Yes     | Custom firmware 
-| Native PC x64        | Windows 11  | [Buetooth] Jabra Evolve 75     |         | WASAPI  | N   | Yes     |
-| Native PC x64        | Windows 11  | [USB] DAC Behringer UMC202HD   | CS4272  | WASAPI  | N   | Yes     |
-| Native PC X64        | WSL-Ubuntu  | [Buetooth] Jabra Evolve 75     |         | ALSA    | N   | Yes     |
+| Device               | OS          | Soundcard                      | Chip        | API     | HPP | BTP | Tested | Notes                           
+| -------------------- | ----------- | ------------------------------ | ----------- | ------- | --- | --- |------- | -------
+| RPI 1 Model B 1.2    | DietPi      | [USB] DAC                      | KT0210      | ALSA    | N   |     | Yes    | Common
+| RPI 1 Model B 1.2    | DietPi      | [I2S] InnoMaker HiFi DAC       | PCM5122     | ALSA    | N   |     | Yes    | Custom Firmware
+| RPI 3 Model A        | DietPi      | [PWM] Headphone Jack           | BMC2835     | ALSA    | N   |     | Yes    | Custom Firmware
+| ESP32-S31 (Protoype) | freeRTOS    | [I2S] InnoMaker HiFi DAC       | PCM5122     | IDF-I2S |     |     |        |
+| ESP32-S31 Core Board | freeRTOS    | [I2S] InnoMaker HiFi DAC       | PCM5122     | IDF-I2S |     |     |        |
+| ESP32-A1S-Audio-Kit  | freeRTOS    | [I2S] DAC                      | ES8388      | IDF-I2S |     |     | Yes    | WLAN Bottleneck / Max. 96khz with 24bit on good conditions
+| Raumfeld Connector 2 | linux       | [I2S] DAC                      | CS4271      | ALSA    |     |     | Yes    | Custom firmware 
+| Raumfeld Streamer    | linux       | [I2S] DAC                      | CS4271      | ALSA    | Y   | Y   | Yes    | Custom firmware 
+| Native PC x64        | Windows 11  | [Buetooth] Jabra Evolve 75     |             | WASAPI  | N   |     | Yes    |
+| Native PC x64        | Windows 11  | [USB] DAC Behringer UMC202HD   | CS4272      | WASAPI  | N   |     | Yes    |
+| Native PC X64        | WSL-Ubuntu  | [Buetooth] Jabra Evolve 75     |             | ALSA    | N   |     | Yes    |
 
-HPP = Headphone pairable
+HPP = Headphone pairable (~170ms)
+BTP = BT Audio pairable
 
 ## Server / ServerCore
 
@@ -35,7 +36,7 @@ HPP = Headphone pairable
 
 
 ## In Research List
-| Raumfeld Streamer
+| *** Raumfeld Streamer
 | Raumfeld One S
 | Raumfeld Connector 1
 | Sonos Connect ZP90 

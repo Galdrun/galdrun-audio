@@ -458,6 +458,8 @@ public:
     [[nodiscard]] const std::string& powerState() const noexcept { return powerState_; }
     // With powerState "sleep": the MAC a Wake-on-LAN magic packet wakes.
     [[nodiscard]] const std::string& wakeOnLan() const noexcept { return wakeOnLan_; }
+    // "bluetooth" while a phone plays on the device instead; empty otherwise.
+    [[nodiscard]] const std::string& localSource() const noexcept { return localSource_; }
     Status<SessionError> wakeStream();
     [[nodiscard]] const AudioFormat& grantedFormat() const noexcept { return grantedFormat_; }
     [[nodiscard]] uint32_t grantedPeriodFrames() const noexcept { return grantedPeriodFrames_; }
@@ -593,6 +595,7 @@ private:
     bool streamStandby_ = false;
     std::string powerState_;
     std::string wakeOnLan_;
+    std::string localSource_;
     AudioFormat grantedFormat_;
     uint32_t grantedPeriodFrames_ = 0;
     std::string streamNotReadyReason_;

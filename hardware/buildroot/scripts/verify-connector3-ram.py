@@ -18,9 +18,11 @@ def verify(output, project):
     for option in ("FEC", "SMSC_PHY", "PCI_IMX6_HOST", "PCIEPORTBUS", "MWIFIEX_PCIE",
                    "SND_SOC_FSL_SAI", "SND_SOC_GALDRUN_CONNECTOR3", "INET", "DEVTMPFS",
                    "CPU_FREQ", "ARM_IMX_CPUFREQ_DT", "MFD_AXP20X_I2C", "REGULATOR_AXP20X",
-                   "SUSPEND"):
+                   "SUSPEND", "BT_HCIUART_H4"):
         if f"CONFIG_{option}=y" not in config:
             raise ValueError(f"Required built-in driver missing: {option}")
+    if "# CONFIG_RFKILL_INPUT is not set" not in config:
+        raise ValueError("The BT button's KEY_BLUETOOTH must not toggle the radio (RFKILL_INPUT)")
     cmdline = next(line for line in config.splitlines() if line.startswith("CONFIG_CMDLINE="))
     if "earlycon=ec_imx6q,0x30860000,115200" not in cmdline:
         raise ValueError("Early UART1 console missing")

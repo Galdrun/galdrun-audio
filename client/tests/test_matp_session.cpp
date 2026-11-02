@@ -1039,6 +1039,62 @@ MULTIROOM_TEST(matp_session_parks_audio_and_prepares_again_on_automatic_wake)
     CHECK_EQ(std::string(fixture.session.powerState()), std::string("on"));
 }
 
+MULTIROOM_TEST(matp_session_bluetooth_parks_the_room_and_returns_to_the_state_before)
+{
+    TestListener listener;
+    CHECK(listener.ready());
+    Fixture fixture(testIdentity());
+    StreamStub stub;
+    stub.hasBuffer = false;
+    stub.hasPlayback = false;
+    fixture.session.setStreamHooks(stub.hooks());
+    CHECK(fixture.start(listener));
+    CHECK(listener.acceptOne(2000));
+    Peer peer(fixture.session, listener);
+    establish(fixture, peer, "s-bluetooth");
+    matp::Message message;
+    prepare(peer, message, true, 4712);
+    std::string error, id;
+    matp::StreamReady ready;
+
+    // Over manual standby: reported, prepares refused, the standby comes back.
+    CHECK(fixture.session.setPower(false, error));
+    CHECK(peer.next(message, 3000));
+    CHECK(fixture.session.setBluetooth(true, error));
+    CHECK(peer.next(message, 3000));
+    CHECK(matp::parseStreamReady(message.payload, id, ready, error));
+    CHECK(!ready.ready && !ready.standby);
+    CHECK_EQ(ready.powerState, std::string("on"));
+    CHECK_EQ(ready.localSource, std::string("bluetooth"));
+    prepare(peer, message, true, 4712);
+    CHECK(matp::parseStreamReady(message.payload, id, ready, error));
+    CHECK_EQ(ready.localSource, std::string("bluetooth"));
+    CHECK_EQ(stub.prepares, uint32_t(1));
+    CHECK(fixture.session.setBluetooth(false, error));
+    CHECK(peer.next(message, 3000));
+    CHECK(matp::parseStreamReady(message.payload, id, ready, error));
+    CHECK_EQ(ready.powerState, std::string("standbyManual"));
+    CHECK(ready.localSource.empty());
+    CHECK_EQ(stub.prepares, uint32_t(1));
+
+    // Switched on during Bluetooth: nothing is prepared until the owner of
+    // the sound card has let it go and resumes the stream.
+    CHECK(fixture.session.setPower(true, error));
+    CHECK(peer.next(message, 3000));
+    CHECK_EQ(stub.prepares, uint32_t(2));
+    CHECK(fixture.session.setBluetooth(true, error));
+    CHECK(peer.next(message, 3000));
+    CHECK(fixture.session.setPower(true, error));
+    CHECK_EQ(std::string(fixture.session.localSource()), std::string());
+    CHECK_EQ(stub.prepares, uint32_t(2));
+    fixture.session.resumeStream();
+    CHECK(peer.next(message, 3000));
+    CHECK(matp::parseStreamReady(message.payload, id, ready, error));
+    CHECK(ready.ready);
+    CHECK_EQ(ready.powerState, std::string("on"));
+    CHECK_EQ(stub.prepares, uint32_t(3));
+}
+
 MULTIROOM_TEST(matp_session_manual_power_off_survives_prepare_until_power_on)
 {
     TestListener listener;

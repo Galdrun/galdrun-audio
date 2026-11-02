@@ -347,6 +347,7 @@ Status<SessionError> ClientSession::handleCapabilities(const matp::Message& mess
     capabilities_.formats = report.formats;
     capabilities_.preferredSampleRate = report.preferredSampleRate;
     capabilities_.accessMode = report.accessMode;
+    capabilities_.bluetoothOutput = report.bluetoothOutput;
     deviceName_ = report.deviceName.empty() ? report.deviceId : report.deviceName;
     hasCapabilities_ = true;
     hasHardwareVolume_ = report.hasHardwareVolume;
@@ -520,6 +521,7 @@ Status<SessionError> ClientSession::handleStreamReady(const matp::Message& messa
     streamStandby_ = ready.standby;
     powerState_ = ready.powerState;
     wakeOnLan_ = ready.wakeOnLan;
+    localSource_ = ready.localSource;
     grantedFormat_ = ready.ready ? ready.format : AudioFormat();
     grantedPeriodFrames_ = ready.ready ? ready.periodFrames : 0;
     streamNotReadyReason_ = ready.ready ? std::string() : ready.reason;

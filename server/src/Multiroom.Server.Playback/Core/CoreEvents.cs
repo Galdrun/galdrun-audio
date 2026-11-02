@@ -68,6 +68,9 @@ public sealed record RoomVolumeControl(string Client, CoreVolumeControl VolumeCo
 
 public sealed record RoomPowerState(string Client, string PowerState, string? WakeOnLan = null) : CoreEvent;
 
+// "bluetooth" while a phone plays on the room's device; null when that ends.
+public sealed record RoomLocalSource(string Client, string? LocalSource = null) : CoreEvent;
+
 // The room's name, as its client said it (MATP section 60), and a room the
 // core forgot (client.forget).
 public sealed record RoomName(string Client, string Name) : CoreEvent;

@@ -15,7 +15,7 @@
     <div class="device-summary"><span id="headerDevice" data-i18n="nav.audioClient"></span><span id="connection" class="connection" role="status" data-i18n="nav.loading"></span></div>
   </div>
   <nav class="section-menu" data-i18n-aria-label="nav.settingsSections"><div class="section-menu-links">
-    <a href="#card-status" data-i18n="nav.status"></a><a href="#card-wi-fi" data-i18n="nav.wiFi"></a><a href="#card-eth-address" data-i18n="nav.ethernet"></a><a href="#card-wifi-address" data-i18n="nav.wiFiAddress"></a><a href="#card-client" data-i18n="common.client"></a><a href="#card-audio" data-i18n="nav.audio"></a><a href="#card-cpu" data-i18n="nav.cpu"></a><a href="#card-leds" data-i18n="nav.leds"></a><a href="#card-power" data-i18n="common.power"></a><a href="#card-ssh" data-i18n="nav.ssh"></a><a href="#card-hardware" data-i18n="nav.buttons"></a>
+    <a href="#card-status" data-i18n="nav.status"></a><a href="#card-wi-fi" data-i18n="nav.wiFi"></a><a href="#card-eth-address" data-i18n="nav.ethernet"></a><a href="#card-wifi-address" data-i18n="nav.wiFiAddress"></a><a href="#card-client" data-i18n="common.client"></a><a href="#card-audio" data-i18n="nav.audio"></a><a href="#card-cpu" data-i18n="nav.cpu"></a><a href="#card-leds" data-i18n="nav.leds"></a><a href="#card-bluetooth" data-i18n="bluetooth.bluetooth"></a><a href="#card-power" data-i18n="common.power"></a><a href="#card-ssh" data-i18n="nav.ssh"></a><a href="#card-hardware" data-i18n="nav.buttons"></a>
   </div></nav>
 </header>
 
@@ -148,6 +148,18 @@
 <section id="ledBox" class="settings-card hidden" aria-labelledby="card-leds">
   <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 22h4M8 14a6 6 0 1 1 8 0c-1 1-1 2-1 4H9c0-2 0-3-1-4z"/></svg></div><div><h2 id="card-leds" tabindex="-1" data-i18n="leds.leds"></h2><p data-i18n="leds.controlStatusLights"></p></div></div>
   <div class="card-content fields"><label for="ledOff" data-i18n="leds.ledMode"></label><select id="ledOff"><option value="false" data-i18n="leds.onLightsOn"></option><option value="true" data-i18n="leds.offLightsOff"></option></select><p class="hint" data-i18n="leds.bootAndFirmware"></p></div>
+</section>
+
+<section id="bluetoothBox" class="settings-card hidden" aria-labelledby="card-bluetooth">
+  <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7l10 10-5 5V2l5 5L7 17"/></svg></div><div><h2 id="card-bluetooth" tabindex="-1" data-i18n="bluetooth.bluetooth"></h2><p data-i18n="bluetooth.phonesAndHeadphones"></p></div></div>
+  <div class="card-content fields">
+    <span class="field-label" data-i18n="bluetooth.phones"></span>
+    <div class="row"><span id="btPairingState"></span><button type="button" id="btPair" data-i18n="bluetooth.allowPairing"></button></div>
+    <span class="field-label" data-i18n="bluetooth.headphones"></span>
+    <div class="row"><span id="btHeadphones"></span><button type="button" id="btDisconnect" class="hidden" data-i18n="bluetooth.disconnect"></button><button type="button" id="btScan" data-i18n="bluetooth.search"></button></div>
+    <div id="btDevices" class="nets"></div>
+    <p class="hint" data-i18n="bluetooth.searchHint"></p>
+  </div>
 </section>
 
 <section id="powerBox" class="settings-card hidden" aria-labelledby="card-power">

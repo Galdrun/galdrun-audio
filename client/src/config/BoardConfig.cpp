@@ -14,10 +14,23 @@ json::Value read(const std::string& path)
     return board;
 }
 
+namespace {
+std::string& path()
+{
+    static std::string value = kPath;
+    return value;
+}
+} // namespace
+
+void usePath(const std::string& file)
+{
+    path() = file;
+}
+
 const json::Value& current()
 {
     // A function-local static: initialized once, safely from any thread.
-    static const json::Value board = read(kPath);
+    static const json::Value board = read(path());
     return board;
 }
 

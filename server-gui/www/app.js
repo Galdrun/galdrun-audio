@@ -206,6 +206,9 @@ const ICONS = {
   tower: '<circle cx="12" cy="9" r="1.6"/><path d="M12 10.6 8.5 21M12 10.6 15.5 21M9.7 17.3h4.6M8.3 5.6a5 5 0 0 0 0 6.8M15.7 5.6a5 5 0 0 1 0 6.8M5.4 3a9 9 0 0 0 0 12M18.6 3a9 9 0 0 1 0 12"/>',
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
   bars: '<path d="M6 20v-7M12 20V5M18 20v-10"/>',
+  bluetooth: '<path d="M7 7l10 10-5 5V2l5 5L7 17"/>',
+  // Headphones whose right cup is the Bluetooth rune: a room playing to Bluetooth headphones.
+  bluetoothHeadphones: '<path d="M4 15v-3a8 8 0 0 1 15.5-2.8"/><rect x="3" y="14" width="4" height="7" rx="1.5"/><path d="M15.5 13.5l5 5-2.5 2.5V11l2.5 2.5-5 5"/>',
   more: '<circle cx="12" cy="5" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="19" r="1.3" fill="currentColor"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
   power: '<path d="M12 2v10M6 5a9 9 0 1 0 12 0"/>',
@@ -732,6 +735,13 @@ $('#zoneNext').addEventListener('click', () => showZone(zoneInView() + 1));
 
 // What people call a room (server phase 39): its name, else its id.
 const roomName = (client) => S.rooms.find((r) => r.client === client)?.name ?? client;
+// The zone's rooms that a phone plays on over Bluetooth instead (localSource).
+const bluetoothRooms = (z) => S.rooms.filter((r) => r.actual?.localSource === 'bluetooth' &&
+  ((z.desired?.clients ?? []).includes(r.client) || (z.actual?.members ?? []).includes(r.client)));
+// The zone's rooms that are Bluetooth headphones or a speaker (bluetoothOutput).
+const headphoneRooms = (z) => S.rooms.filter((r) => r.actual?.capabilities?.bluetoothOutput &&
+  ((z.desired?.clients ?? []).includes(r.client) || (z.actual?.members ?? []).includes(r.client)));
+const bluetoothPill = (title) => h('span', { class: 'pill bluetooth', title }, icon('bluetooth'), tv('localSource', 'bluetooth'));
 
 // A room's image (server phase 39) by client: the version that names it
 // afresh after room.imageChanged, and the rooms known to have none.
@@ -760,6 +770,12 @@ function roomTile(client, extra) {
     ondragstart(e) { e.dataTransfer.setData(ROOM_TYPE, client); S.dragging = true; },
     ondragend() { S.dragging = false; flushDirty(); },
   }, icon('device'), roomImage(client),
+  // A phone plays on it over Bluetooth instead of its zone, or it is
+  // Bluetooth headphones / a speaker an appliance plays to.
+  room?.actual?.localSource === 'bluetooth'
+    ? h('span', { class: 'room-bt', title: tv('localSource', 'bluetooth') }, icon('bluetooth'))
+    : room?.actual?.capabilities?.bluetoothOutput &&
+      h('span', { class: 'room-bt', title: tt('room.bluetoothOutput') }, icon('bluetoothHeadphones')),
   h('span', { class: 'room-label' }, h('span', { class: 'dot' + (online ? ' on' : '') }), h('span', { class: 'room-name' }, roomName(client))),
   extra);
 }
@@ -2456,6 +2472,7 @@ function roomSettings(r) {
         pill(a?.connected ? 'good' : 'bad', tt(a ? (a.connected ? 'room.connected' : 'room.disconnected') : 'room.neverReported')),
         zone?.queue?.transport === 'playing' && pill('good', tt('room.playing')),
         health && pill(a.health.state === 'unstable' ? 'bad' : 'warn', `⚠ ${tv('state', a.health.state)}`, healthText(a.health)),
+        a?.localSource === 'bluetooth' && bluetoothPill(),
         a?.powerState && a.powerState !== 'on' && pill('warn', tt('room.powerState', { state: powerLabel(a.powerState) }))),
       title,
       zone && h('div', { class: 'room-hero-zone muted' }, zone.name ?? zone.zone),
@@ -3342,7 +3359,7 @@ function audioDevicePicker(ad, patch, path) {
 // for setVolume, scope for those and toggleMute -- the others are disabled, not
 // hidden, so the row does not jump while choosing.
 const INPUT_ACTIONS = ['none', 'play', 'pause', 'togglePause', 'stop', 'next', 'previous',
-  'volumeUp', 'volumeDown', 'setVolume', 'toggleMute', 'standbyOn', 'standbyOff', 'toggleStandby', 'deepSleep',
+  'volumeUp', 'volumeDown', 'setVolume', 'toggleMute', 'standbyOn', 'standbyOff', 'toggleStandby', 'deepSleep', 'btModeRec', 'btModePlay',
   // User actions: the server runs nothing, room.input on the event stream is all.
   ...Array.from({ length: 10 }, (_, i) => `action${i + 1}`)];
 const takesStep = (a) => a === 'volumeUp' || a === 'volumeDown';
@@ -3364,7 +3381,8 @@ function inputsEditor(client, inputs, path, deepSleep) {
       };
       const action = h('select', { name: 'action', value: b.action, onchange: (e) => enable(e.target.form.elements, e.target.value) },
         // deepSleep only where the client can run it, or to show a binding it has.
-        INPUT_ACTIONS.filter((a) => a !== 'deepSleep' || deepSleep || b.action === 'deepSleep')
+        // Bluetooth is not reported to the server: offered only where already bound (the client's own page offers it).
+        INPUT_ACTIONS.filter((a) => (a !== 'deepSleep' || deepSleep) && !a.startsWith('btMode') || b.action === a)
           .map((a) => h('option', { value: a }, a)));
       const form = h('form', {
         class: 'row',
@@ -3615,7 +3633,10 @@ function homeZones() {
         h('span', { class: 'cover-art' }, dropping.has(z.zone) ? h('span', { class: 'spinner', role: 'status', 'aria-label': tt('home.addingToQueue') })
           : z.desired?.clients?.[0] ? [roomImage(z.desired.clients[0]), art(p.item?.item.artworkId)] : p.cover()),
         h('div', { class: 'home-zone-text' },
-          h('a', { class: 'home-zone-name', href: '#/zones', onclick(e) { e.preventDefault(); } }, on && icon('bars'), z.name ?? z.zone),
+          h('a', { class: 'home-zone-name', href: '#/zones', onclick(e) { e.preventDefault(); } }, on && icon('bars'),
+            bluetoothRooms(z).length > 0 && h('span', { class: 'bluetooth', title: tv('localSource', 'bluetooth') }, icon('bluetooth')),
+            headphoneRooms(z).length > 0 && h('span', { class: 'bluetooth', title: tt('room.bluetoothOutput') }, icon('bluetoothHeadphones')),
+            z.name ?? z.zone),
           h('div', { class: 'home-zone-title' }, p.title),
           p.sub && h('div', { class: 'home-zone-sub' }, p.sub)),
         z.queue?.items.length ? h('span', { class: 'home-zone-play', onclick: (e) => e.stopPropagation() },
@@ -6521,7 +6542,7 @@ const EVENT_TYPES = [
   'room.unstable', 'room.stable', // server phase 34
   // What a room's client reports -- re-sent capabilities, sound cards, buffer,
   // volume control -- is announced when it arrives, so nothing waits and re-reads.
-  'room.capabilities', 'room.audioDevices', 'room.bufferConfig', 'room.volumeControl', 'room.powerState',
+  'room.capabilities', 'room.audioDevices', 'room.bufferConfig', 'room.volumeControl', 'room.powerState', 'room.localSource',
   'core.synchronised', 'core.eventsLost', 'queue.changed', 'queue.deleted', 'zone.volumeChanged', 'indexer.progress', 'library.folderChanged', 'events.lost',
   'system.metrics', 'rooms.sync',
   'ai.toolCalled', 'ai.commandStarted', 'ai.commandEnded', 'ai.request',

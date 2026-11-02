@@ -107,6 +107,8 @@ json::Value capabilitiesJson(const ClientCapabilities& capabilities, bool hasHar
         out["preferredSampleRate"] = json::Value(capabilities.preferredSampleRate);
     if (!capabilities.accessMode.empty())
         out["accessMode"] = json::Value(capabilities.accessMode);
+    if (capabilities.bluetoothOutput)
+        out["bluetoothOutput"] = json::Value(true);
     if (hasHardwareVolume)
         out["hardwareVolume"] = matp::makeHardwareVolume(hardwareVolume);
     // The device's verified clock trim, whether or not it is in use.
@@ -2286,6 +2288,16 @@ std::string ControlApi::eventLine(const ZoneEvent& event)
 
 // ---------------------------------------------------------------------------
 
+void ControlApi::publishCapabilities(const ClientSession& session)
+{
+    json::Value event = eventHead("room.capabilities");
+    event["client"] = json::Value(session.clientId().str());
+    event["device"] = json::Value(session.deviceName());
+    event["capabilities"] = capabilitiesJson(session.capabilities(), session.hasHardwareVolume(),
+                                             session.hardwareVolume(), session.hardwareClock());
+    publish(event);
+}
+
 ClientSessionHooks ControlApi::sessionHooks()
 {
     ClientSessionHooks hooks;
@@ -2311,6 +2323,9 @@ ClientSessionHooks ControlApi::sessionHooks()
             if (!wanted.empty())
                 event["zone"] = json::Value(wanted.str());
             publish(event);
+            // Its first report too: a reader that synchronised before the room
+            // came would otherwise not learn what it can do until a re-sync.
+            publishCapabilities(session);
         }
 
         if (zone == nullptr)
@@ -2341,6 +2356,14 @@ ClientSessionHooks ControlApi::sessionHooks()
             event["powerState"] = json::Value(session.powerState());
             if (!session.wakeOnLan().empty())
                 event["wakeOnLan"] = json::Value(session.wakeOnLan());
+            publish(event);
+        }
+        if ((previous ? previous->localSource : std::string()) != session.localSource())
+        {
+            json::Value event = eventHead("room.localSource");
+            event["client"] = json::Value(session.clientId().str());
+            if (!session.localSource().empty())
+                event["localSource"] = json::Value(session.localSource());
             publish(event);
         }
 
@@ -2465,14 +2488,7 @@ ClientSessionHooks ControlApi::sessionHooks()
 
     // What a room's client keeps and reports is announced as it arrives, so
     // that a reader never has to ask again to learn that it changed.
-    hooks.onCapabilitiesChanged = [this](const ClientSession& session) {
-        json::Value event = eventHead("room.capabilities");
-        event["client"] = json::Value(session.clientId().str());
-        event["device"] = json::Value(session.deviceName());
-        event["capabilities"] = capabilitiesJson(session.capabilities(), session.hasHardwareVolume(),
-                                                 session.hardwareVolume(), session.hardwareClock());
-        publish(event);
-    };
+    hooks.onCapabilitiesChanged = [this](const ClientSession& session) { publishCapabilities(session); };
 
     hooks.onAudioDevices = [this](const ClientSession& session,
                                   const matp::AudioDeviceList& devices) {
@@ -2643,6 +2659,8 @@ json::Value ControlApi::clientJson(const RoomRecord& room, uint64_t nowNs) const
         stream["ready"] = json::Value(room.streamReady);
         if (!room.powerState.empty())
             stream["powerState"] = json::Value(room.powerState);
+        if (!room.localSource.empty())
+            stream["localSource"] = json::Value(room.localSource);
         if (room.streamStandby)
             stream["standby"] = json::Value(true);
         if (room.streamReady)

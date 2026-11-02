@@ -665,6 +665,12 @@ so the room is not bitperfect end to end even where the server sends the source
 untouched, and the drift the client reports is that layer's clock rather than
 the card's.
 
+`bluetoothOutput: true` (optional, absent means false) says the device is
+Bluetooth headphones or a speaker the client plays to over the air, e.g. an
+appliance's headphone room. The receiver's own buffering is not in the delay
+the client measures; the room's output latency setting covers it. The core
+reports it in the room's `capabilities`, the server in `actual.capabilities`.
+
 The client decides it from its own configuration and the device; the server
 cannot set it. It changes only when the client selects its device again
 (`SET_AUDIO_DEVICE`, `RESCAN_AUDIO`, section 56), and this message is sent
@@ -796,6 +802,17 @@ once the device is open:
 ```
 
 `reason` is a human-readable diagnostic, not an enumeration to switch on.
+
+`localSource` names what plays on the device instead of the server's stream; it
+is the reason the stream is not ready, independent of power. The only value is
+`bluetooth` (a phone playing to the device), sent only with `ready: false`;
+absent means nothing local plays. While it holds, the client answers every
+PREPARE_STREAM with it and `powerState: "on"`. Switching the room on (StandbyOff)
+ends it and prepares the stream; when the phone stops, the client reports the
+state from before again without `localSource`. The core exposes it as
+`clients[].stream.localSource` and publishes `room.localSource` with `client` and
+`localSource` (absent when it ended) when it changes; the server exposes
+`actual.localSource` on rooms and forwards the event.
 
 Clients with power controls also include `powerState`: `on`, `standby`,
 `standbyManual`, `sleep` or `sleepButtonOnly`. (`off` meant manual standby before
@@ -3160,6 +3177,7 @@ bound to one action:
 | `toggleMute` | `scope` |
 | `standbyOn`, `standbyOff`, `toggleStandby` | -- (local standby; networking remains available) |
 | `deepSleep` | -- (local kernel sleep on supported Connector 2 firmware; physical POWER wake) |
+| `btModeRec`, `btModePlay` | -- (local Bluetooth on clients with it: open pairing for a phone that plays to the device, or for headphones the device plays to) |
 | `action1` ... `action10` | -- (user actions: the server runs nothing and only announces them as `room.input`) |
 
 `scope` is `room` (the default: the room's own volume) or `zone` (the zone's
@@ -3168,7 +3186,9 @@ not something ignored.
 
 Power actions are handled by the client without sending `INPUT_ACTION`.
 They remain valid bindings in `INPUT_CONTROLS` and `SET_INPUT_BINDINGS`.
-Unsupported clients reject `deepSleep` locally and do not report it (below). All `longPress` actions fire
+Unsupported clients reject `deepSleep` locally and do not report it (below).
+`btModeRec` and `btModePlay` are local in the same way; a client without
+Bluetooth rejects them. All `longPress` actions fire
 once after a two-second hold, without requiring release. Release afterward
 ends the gesture without firing a click or another action. Connector 2 POWER
 is configured to wake on press only, so releasing the sleep-entry hold does

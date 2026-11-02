@@ -275,6 +275,10 @@ bool currentCapabilities(const ClientRuntime& runtime, matp::CapabilityReport& r
     report.deviceName = device->name;
     report.preferredSampleRate = runtime.config->preferredSampleRate;
     report.accessMode = audioAccessModeName(runtime.accessMode);
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+    // The Bluetooth headphone room's own board file says so.
+    report.bluetoothOutput = board_config::enabled(board_config::current(), "bluetoothOutput");
+#endif
 
     // What the scan found. The control can still fail to open, and the room
     // then plays in software; SET_VOLUME is the same message either way.

@@ -42,6 +42,8 @@ function renderHardwareInputs(data, container, saveBindings) {
     standbyOn: '<path d="M12 2v10M6 5a9 9 0 1 0 12 0"/>',
     toggleStandby: '<path d="M12 2v10M6 5a9 9 0 1 0 12 0"/>',
     deepSleep: '<path d="M20 15A8 8 0 0 1 9 4a8 8 0 1 0 11 11Z"/>',
+    btModeRec: '<path d="M7 7l10 10-5 5V2l5 5L7 17"/>',
+    btModePlay: '<path d="M4 15v-3a8 8 0 0 1 15.5-2.8"/><rect x="3" y="14" width="4" height="7" rx="1.5"/><path d="M15.5 13.5l5 5-2.5 2.5V11l2.5 2.5-5 5"/>',
     room: '<path d="m3 10 9-7 9 7M5 9v12h14V9M10 21v-8h4v8"/>',
     zone: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'
   };
@@ -124,9 +126,11 @@ function renderHardwareInputs(data, container, saveBindings) {
         const action = document.createElement('select');
         action.setAttribute('aria-label', tt('inputs.gestureAction', {id: input.id, gesture: friendly(gesture)}));
         for (const value of ['none', 'play', 'pause', 'togglePause', 'stop', 'next', 'previous',
-          'volumeUp', 'volumeDown', 'setVolume', 'toggleMute', 'standbyOn', 'standbyOff', 'toggleStandby', 'deepSleep', ...userActions])
-          // Deep sleep only where the client can do it, or to show a binding it already has.
-          if (value !== 'deepSleep' || data.deepSleep || binding.action === 'deepSleep') action.add(new Option(value === 'none' ? tt('inputs.unassigned') : friendly(value), value));
+          'volumeUp', 'volumeDown', 'setVolume', 'toggleMute', 'standbyOn', 'standbyOff', 'toggleStandby', 'deepSleep',
+          'btModeRec', 'btModePlay', ...userActions])
+          // Deep sleep and Bluetooth only where the client can do them, or to show a binding it already has.
+          if ((value !== 'deepSleep' || data.deepSleep) && (!value.startsWith('btMode') || data.bluetooth) || binding.action === value)
+            action.add(new Option(value === 'none' ? tt('inputs.unassigned') : friendly(value), value));
         action.value = binding.action;
         label.htmlFor = 'binding-' + container.id + '-' + editors.length + '-' + content.length;
         action.id = label.htmlFor;

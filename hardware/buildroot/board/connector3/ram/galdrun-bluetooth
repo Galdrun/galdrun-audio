@@ -1,0 +1,355 @@
+#!/bin/sh
+# Start/stop the 88W8897 Bluetooth radio, BlueZ and bluez-alsa.
+# The radio answers on UART5 only after mwifiex has downloaded the combined
+# PCIe firmware, so this runs after networking and again after a radio reset.
+# Pairing is only open after "pair" (discoverable/pairable for 120 s, see
+# /etc/bluetooth/main.conf); paired devices reconnect at any time.
+# "headphones" toggles headphone mode: the device then also plays to
+# Bluetooth headphones through a second client, its own room.
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+tty=/dev/ttymxc4
+log=/run/bluetooth.log
+mcu=${GALDRUN_MCU:-/usr/sbin/galdrun-connector3-mcu}
+pairing=/run/bluetooth-pairing          # "<until epoch> <links when opened>"
+headphones=/run/bluetooth-headphones    # headphone mode is playing
+search=/run/bluetooth-headphones-search # looking for headphones to pair
+scan_file=/run/bluetooth-scan            # the settings page's last scan
+led_pid=/run/bluetooth-led.pid
+resume_pid=/run/bluetooth-headphones-resume.pid
+client_pid=/run/galdrun-headphones.pid
+# The headphone room's config and its headphones' address ("device"); kept on
+# the settings volume, so headphone mode resumes after a reboot.
+if [ -d /settings ]; then hp=/settings/headphones; else hp=/run/headphones; fi
+
+# Bluetooth ACL links show up as hci0:<handle>.
+links() {
+    ls /sys/class/bluetooth | grep -c :
+}
+
+# The rear BT LED (MCU BluetoothIndication: 0 off, 1 blinking, 2 steady):
+# blinking while a pairing window waits for a new device or headphones are
+# searched for, a slow software pulse in headphone mode, steady while a device
+# is connected, else off.
+led_loop() {
+    last=
+    tick=0
+    while :; do
+        now=$(date +%s)
+        count=$(links)
+        value=0
+        if [ -f "$pairing" ] && read until base <"$pairing"; then
+            if [ "$now" -lt "$until" ] && [ "$count" -le "$base" ]; then
+                value=1
+            else
+                rm -f "$pairing"
+            fi
+        fi
+        if [ -f "$search" ]; then
+            value=1
+        elif [ "$value" = 0 ] && [ -f "$headphones" ]; then
+            # 3 s on, 1 s off: unlike the MCU's ~1 Hz pairing blink.
+            value=$((tick % 4 < 3 ? 2 : 0))
+        elif [ "$value" = 0 ] && [ "$count" -gt 0 ]; then
+            value=2
+        fi
+        [ "$value" = "$last" ] || "$mcu" --request "bluetooth $value" >/dev/null && last=$value
+        tick=$((tick + 1))
+        sleep 1
+    done
+}
+
+# One org.bluez call; quiet, bounded by $timeout ms (default 5 s).
+call() {
+    path=$1 method=$2
+    shift 2
+    dbus-send --system --print-reply --reply-timeout="${timeout:-5000}" --dest=org.bluez \
+        "$path" "$method" "$@" >/dev/null 2>&1
+}
+
+# Sets an org.bluez.Adapter1 property of hci0: name, then "type:value".
+# Straight to BlueZ: bluetoothctl either waits for bluetoothd without end
+# or, with --timeout, always for the whole timeout.
+adapter() {
+    timeout=3000 call /org/bluez/hci0 org.freedesktop.DBus.Properties.Set \
+        string:org.bluez.Adapter1 "string:$1" "variant:$2"
+}
+
+device_path() {
+    echo "/org/bluez/hci0/dev_$(echo "$1" | tr : _)"
+}
+
+# --- headphone mode --------------------------------------------------------
+
+# Unpaired audio devices heard in a running scan, one per line:
+# "<rank> <rssi> <address> <icon> <name>". Rank 2: headphones/headset or an
+# A2DP sink; 1: other audio (a TV, a soundbar). RSSI -999 when not heard yet.
+audio_devices() {
+    for address in $(bluetoothctl devices | cut -d ' ' -f 2); do
+        info=$(bluetoothctl info "$address")
+        case "$info" in *'Paired: no'*) ;; *) continue ;; esac
+        icon=$(echo "$info" | sed -n 's/^\tIcon: //p')
+        rank=0
+        case "$icon" in audio-head*) rank=2 ;; audio-*) rank=1 ;; esac
+        echo "$info" | grep -q 0000110b- && rank=2
+        [ "$rank" -gt 0 ] || continue
+        # "RSSI: 0xffffffc4 (-60)"; a device not heard this scan has none.
+        rssi=$(echo "$info" | sed -n 's/.*RSSI:.*(\(-*[0-9]*\)).*/\1/p' | head -n 1)
+        name=$(echo "$info" | sed -n 's/^\tName: //p')
+        echo "$rank ${rssi:--999} $address ${icon:-audio} ${name:-$address}"
+    done
+}
+
+# BlueZ ends a discovery when the D-Bus client that started it leaves, so it
+# has to be one that stays: bluetoothctl for its whole --timeout. Its input
+# must stay open as long: at end of input it quits at once. Also records when
+# the search ends ($search holds that epoch) for the LED and the settings page.
+scan_for() {
+    echo "$(($(date +%s) + $1))" >"$search"
+    sleep "$(($1 + 1))" | bluetoothctl --timeout "$1" scan on >/dev/null 2>&1 &
+    scanner=$!
+}
+
+# For the BT button: the nearest headphones or speaker in pairing mode, by
+# rank then signal, so a TV across the room loses to the speaker held next to
+# the device. Stops after 10 s once a rank-2 device is heard, else at 30 s.
+find_headphones() {
+    scan_for 30
+    found=
+    for attempt in $(seq 1 30); do
+        sleep 1
+        best=$(audio_devices | sort -k1,1nr -k2,2nr | head -n 1)
+        found=$(echo "$best" | cut -d ' ' -f 3)
+        [ -n "$found" ] && [ "$attempt" -ge 10 ] && [ "${best%% *}" = 2 ] && break
+    done
+    kill "$scanner" 2>/dev/null
+    [ -n "$found" ] && echo "$found"
+}
+
+# For the settings page: a 20 s scan writing what it hears to $scan_file
+# ("<rssi> <address> <icon> <name>" per line, nearest first) every second.
+scan_list() {
+    rm -f "$scan_file"
+    scan_for 20
+    end=$(($(date +%s) + 20))
+    while [ "$(date +%s)" -lt "$end" ]; do
+        sleep 1
+        audio_devices | sort -k1,1nr -k2,2nr | cut -d ' ' -f 2- >"$scan_file.new" &&
+            mv "$scan_file.new" "$scan_file"
+    done
+    kill "$scanner" 2>/dev/null
+    rm -f "$search"
+}
+
+# The headphone room: a second client whose "default" sound card is the
+# headphones through bluez-alsa, with its own board file: none of the board's
+# features, only "bluetoothOutput" (reported to the server for its icon).
+start_client() {
+    main=/settings/client.json
+    [ -f "$main" ] || main=/run/client.json
+    if [ ! -s "$hp/client.json" ]; then
+        name=$(sed -n 's/^ *"name": *"\(.*\)",*$/\1/p' "$main" | head -n 1)
+        server=$(sed -n 's/^ *"server": *"\(.*\)",*$/\1/p' "$main" | head -n 1)
+        cat >"$hp/client.json" <<EOF
+{
+  "active": true,
+  "server": "$server",
+  "clientId": "",
+  "name": "$name Headphones",
+  "audioDeviceId": "default",
+  "audioAccessMode": "shared",
+  "controlPort": 4730,
+  "controlBindAddress": "0.0.0.0",
+  "inputs": []
+}
+EOF
+    fi
+    echo '{"bluetoothOutput": true}' >"$hp/board.json"
+    # The plugin itself, not the "bluealsa" plug wrapper: that accepts any
+    # format, and the server would pick one the link cannot carry (8 channels).
+    printf 'pcm.!default {\n  type bluealsa\n  device "%s"\n  profile "a2dp"\n}\n' "$1" >"$hp/.asoundrc"
+    HOME=$hp LD_LIBRARY_PATH=/opt/galdrun-client/lib /opt/galdrun-client/galdrun-client \
+        --config "$hp/client.json" --audio-cache "$hp/audio_devices.json" \
+        --board-file "$hp/board.json" --rescan-audio --log-file /run/galdrun-headphones.log \
+        >/dev/null 2>&1 </dev/null &
+    echo $! >"$client_pid"
+    touch "$headphones"
+}
+
+stop_client() {
+    for pid_file in "$resume_pid" "$client_pid"; do
+        [ -f "$pid_file" ] || continue
+        pid=$(cat "$pid_file")
+        kill "$pid" 2>/dev/null
+        for attempt in 1 2 3 4 5; do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+        done
+        rm -f "$pid_file"
+    done
+    rm -f "$headphones"
+}
+
+# Connects the headphones, then starts their room. Waits for them as long as
+# headphone mode is on: they may be switched off at boot or out of range.
+resume_headphones() {
+    while [ -s "$hp/device" ]; do
+        address=$(cat "$hp/device")
+        if timeout=20000 call "$(device_path "$address")" org.bluez.Device1.Connect; then
+            start_client "$address"
+            return 0
+        fi
+        sleep 10
+    done
+}
+
+# Headphone mode with the given device (settings page), else the saved one,
+# else the nearest found (BT button).
+headphones_on() {
+    # bluetoothctl below waits for bluetoothd without end.
+    pidof bluetoothd >/dev/null || return 1
+    address=${1:-$(cat "$hp/device" 2>/dev/null)}
+    if [ -z "$address" ] || ! bluetoothctl info "$address" | grep -q 'Paired: yes'; then
+        # The LED blinks through the search and the pairing.
+        echo "$(($(date +%s) + 30))" >"$search"
+        [ -n "$address" ] || address=$(find_headphones) ||
+            { rm -f "$search"; echo 'Bluetooth: no headphones found' >>"$log"; return 1; }
+        # Chosen on the settings page: BlueZ may have dropped it since the
+        # search. Listen for it again, briefly.
+        if ! bluetoothctl info "$address" >/dev/null 2>&1; then
+            scan_for 15
+            for attempt in $(seq 1 15); do
+                sleep 1
+                bluetoothctl info "$address" >/dev/null 2>&1 && break
+            done
+            kill "$scanner" 2>/dev/null
+        fi
+        echo "Bluetooth: pairing $address ($(bluetoothctl info "$address" | sed -n 's/^\tName: //p'))" >>"$log"
+        dbus-send --system --print-reply --reply-timeout=30000 --dest=org.bluez \
+            "$(device_path "$address")" org.bluez.Device1.Pair >/dev/null 2>>"$log" ||
+            { rm -f "$search"; echo "Bluetooth: pairing $address failed" >>"$log"; return 1; }
+        rm -f "$search"
+        call "$(device_path "$address")" org.freedesktop.DBus.Properties.Set \
+            string:org.bluez.Device1 string:Trusted variant:boolean:true
+    fi
+    mkdir -p "$hp" && echo "$address" >"$hp/device" &&
+        bluetoothctl info "$address" | sed -n 's/^	Name: //p' >"$hp/name"
+    resume_headphones >/dev/null 2>&1 &
+    echo $! >"$resume_pid"
+}
+
+headphones_off() {
+    address=$(cat "$hp/device" 2>/dev/null)
+    rm -f "$hp/device" "$hp/name"
+    stop_client
+    [ -z "$address" ] || call "$(device_path "$address")" org.bluez.Device1.Disconnect
+}
+
+# ---------------------------------------------------------------------------
+
+stop() {
+    stop_client
+    if [ -f "$led_pid" ]; then
+        kill "$(cat "$led_pid")" 2>/dev/null
+        rm -f "$led_pid" "$pairing" "$search"
+        "$mcu" --request 'bluetooth 0' >/dev/null
+    fi
+    killall bt-agent bluealsad bluealsa bluetoothd btattach 2>/dev/null
+    for attempt in 1 2 3 4 5; do
+        pidof btattach bluetoothd >/dev/null || return 0
+        sleep 1
+    done
+    killall -9 bluealsad bluealsa bluetoothd btattach 2>/dev/null
+}
+
+wifi_address() {
+    for net in /sys/class/net/*; do
+        [ -e "$net/phy80211" ] && cat "$net/address" && return 0
+    done
+    return 1
+}
+
+start() {
+    for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+        mac=$(wifi_address) && break
+        sleep 1
+    done
+    [ -n "$mac" ] || { echo 'Bluetooth: radio firmware not loaded'; return 1; }
+    # Pairings live in the settings volume on the read-only persistent root.
+    if [ -d /settings ] && ! grep -q ' /var/lib/bluetooth ' /proc/mounts; then
+        mkdir -p /settings/bluetooth && chmod 700 /settings/bluetooth &&
+            mount --bind /settings/bluetooth /var/lib/bluetooth ||
+            { echo 'Bluetooth: pairing storage unavailable'; return 1; }
+    fi
+    if ! pidof dbus-daemon >/dev/null; then
+        mkdir -p /run/dbus
+        dbus-uuidgen --ensure=/etc/machine-id
+        dbus-daemon --system
+    fi
+    # Same transport as the vendor's "hciattach ttymxc4 any 3000000 flow".
+    btattach -B "$tty" -P h4 -S 3000000 >>"$log" 2>&1 &
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        [ -e /sys/class/bluetooth/hci0 ] && break
+        sleep 1
+    done
+    [ -e /sys/class/bluetooth/hci0 ] || { echo 'Bluetooth: hci0 missing'; stop; return 1; }
+    # A controller attached again after a stop can come up soft-blocked.
+    for rfkill in /sys/class/rfkill/rfkill*; do
+        [ "$(cat "$rfkill/type" 2>/dev/null)" = bluetooth ] && echo 0 >"$rfkill/soft"
+    done
+    # The firmware's address is a placeholder. Like the vendor's fallback, use
+    # the Wi-Fi MAC + 1 (Marvell vendor command 0xFC22, little-endian address).
+    # ponytail: the vendor prefers bt_addr from the factory const partition.
+    set -- $(printf '%012x' $((0x$(echo "$mac" | tr -d :) + 1)) | sed 's/../& /g')
+    # Vendor regulatory setting: reduce the output power by 4 dBm. The reset
+    # applies the address and power.
+    hciconfig hci0 up &&
+        hcitool -i hci0 cmd 0x3F 0x0022 0xFE 0x06 0x$6 0x$5 0x$4 0x$3 0x$2 0x$1 >>"$log" &&
+        hcitool -i hci0 cmd 0x3F 0x0057 0xD8 0xC4 0x50 0x00 0x05 0x00 0x00 0x80 0x00 0x00 0x08 0x00 >>"$log" &&
+        hcitool -i hci0 cmd 0x03 0x0003 >>"$log" &&
+        hciconfig hci0 down || { echo 'Bluetooth: power setup failed'; stop; return 1; }
+    # The kernel reads the address at power-up: once more, so bluetoothd (and
+    # the pairing storage named after it) see the new one, as the vendor did.
+    hciconfig hci0 up && hciconfig hci0 down ||
+        { echo 'Bluetooth: address refresh failed'; stop; return 1; }
+    /usr/libexec/bluetooth/bluetoothd >>"$log" 2>&1 &
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        dbus-send --system --print-reply --dest=org.bluez / org.freedesktop.DBus.Peer.Ping \
+            >/dev/null 2>&1 && break
+        sleep 1
+    done
+    # Accepts pairing (just works, no PIN) and the A2DP connection of paired devices.
+    bt-agent -c NoInputNoOutput >>"$log" 2>&1 &
+    daemon=$(command -v bluealsad || command -v bluealsa)
+    "$daemon" -S -p a2dp-sink -p a2dp-source >>"$log" 2>&1 &
+    led_loop >/dev/null 2>&1 &
+    echo $! >"$led_pid"
+    if [ -s "$hp/device" ]; then
+        resume_headphones >/dev/null 2>&1 &
+        echo $! >"$resume_pid"
+    fi
+}
+
+pair() {
+    adapter Pairable boolean:true && adapter Discoverable boolean:true &&
+        echo "$(($(date +%s) + 120)) $(links)" >"$pairing"
+}
+
+case "$1" in
+start) start ;;
+stop) stop ;;
+restart) stop; start ;;
+pair) pair ;;
+# btModePlay: headphone mode on, or off again.
+headphones) if [ -s "$hp/device" ]; then headphones_off; else headphones_on; fi ;;
+# The settings page: list audio devices nearby, use one, or stop.
+scan) pidof bluetoothd >/dev/null && scan_list ;;
+headphones-on)
+    # Another device than the current one: that one first.
+    [ ! -s "$hp/device" ] || [ "$(cat "$hp/device")" = "$2" ] || headphones_off
+    [ -s "$hp/device" ] || headphones_on "$2" ;;
+headphones-off) headphones_off ;;
+# The name phones see: the client passes its room name.
+alias) adapter Alias "string:$2" ;;
+*) echo "Usage: $0 {start|stop|restart|pair|headphones|scan|headphones-on ADDRESS|headphones-off|alias NAME}" >&2
+   exit 2 ;;
+esac

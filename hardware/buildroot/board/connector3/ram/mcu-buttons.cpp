@@ -27,10 +27,13 @@
 
 namespace {
 struct Button { unsigned id; unsigned short key; };
-constexpr std::array<Button, 9> buttons{{
+// 0-3, 5-7, 9, 10: the top touch fields; 4 and 8: the rear BT and Setup buttons
+// (identified on hardware 2026-11-02; same press/release states).
+constexpr std::array<Button, 11> buttons{{
     {0, KEY_1}, {1, KEY_2}, {2, KEY_3},
     {6, KEY_PREVIOUSSONG}, {5, KEY_PLAYPAUSE}, {7, KEY_NEXTSONG},
-    {3, KEY_PROG1}, {10, KEY_VOLUMEDOWN}, {9, KEY_VOLUMEUP}
+    {3, KEY_PROG1}, {10, KEY_VOLUMEDOWN}, {9, KEY_VOLUMEUP},
+    {4, KEY_BLUETOOTH}, {8, KEY_SETUP}
 }};
 using Header = std::array<uint8_t, 12>;
 volatile std::sig_atomic_t running = 1;
@@ -275,6 +278,15 @@ void handleAudio(int listener, int uart, int input, std::array<bool, buttons.siz
             ok = exchange(uart, input, pressed, bytes, 0, 0x20, value);
         }
     }
+    // The rear BT button's LED (BluetoothIndication), write-only like the above.
+    // Seen on hardware: 0 off, 1 blinking (pairing), 2-4 steady, 5 off.
+    if (operation == "bluetooth") {
+        ok = bool(requestLine >> requested) && !(requestLine >> extra) && requested <= 5;
+        if (ok) {
+            uint32_t value = requested;
+            ok = exchange(uart, input, pressed, bytes, 0, 0x21, value);
+        }
+    }
     uint32_t mute = 0, volume = 0;
     if (ok) ok = exchange(uart, input, pressed, bytes, 1, 0x10, mute) &&
                  exchange(uart, input, pressed, bytes, 1, 0x11, volume) && mute <= 1 && volume <= 100;
@@ -405,9 +417,32 @@ void selfTest()
 }
 }
 
+// One request line to the running service, for scripts: prints its reply.
+int request(const char* line)
+{
+    const int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    sockaddr_un address{};
+    address.sun_family = AF_UNIX;
+    std::strncpy(address.sun_path, audioSocket, sizeof(address.sun_path) - 1);
+    if (fd < 0 || connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
+        std::perror("MCU socket"); if (fd >= 0) close(fd); return 1;
+    }
+    timeval timeout{3, 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    const std::string text = std::string(line) + "\n";
+    std::string reply;
+    char c;
+    if (send(fd, text.data(), text.size(), MSG_NOSIGNAL) == ssize_t(text.size()))
+        while (reply.size() < 128 && recv(fd, &c, 1, 0) == 1) reply += c;
+    close(fd);
+    std::fputs(reply.c_str(), stdout);
+    return reply.compare(0, 3, "ok ") == 0 ? 0 : 1;
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::strcmp(argv[1], "--self-test") == 0) { selfTest(); return 0; }
+    if (argc == 3 && std::strcmp(argv[1], "--request") == 0) return request(argv[2]);
     if (argc != 2) { std::fprintf(stderr, "Usage: %s UART\n", argv[0]); return 2; }
     const int uart = open(argv[1], O_RDWR | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
     if (uart < 0) { std::perror("MCU UART"); return 1; }
@@ -430,7 +465,7 @@ int main(int argc, char** argv)
     }
     const int listener = createAudioSocket();
     if (listener < 0) std::perror("MCU audio socket");
-    std::fprintf(stderr, "Connector 3 MCU touch device ready: 9 buttons\n");
+    std::fprintf(stderr, "Connector 3 MCU touch device ready: %zu buttons\n", buttons.size());
     while (running && ok) {
         pollfd events[2]{{uart, POLLIN, 0}, {listener, POLLIN, 0}};
         const int ready = poll(events, 2, 500);

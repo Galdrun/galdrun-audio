@@ -1,3 +1,4 @@
+#include "app/BluetoothPlayback.h"
 #include "app/ClientCommandHandler.h"
 #include "app/CommandLine.h"
 #include "app/DeviceSelection.h"
@@ -11,6 +12,9 @@
 #include "config/ClientConfig.h"
 #if defined(__linux__) && !defined(ESP_PLATFORM)
 #include "config/CpuSettings.h"
+#if !defined(ESP_PLATFORM)
+#include "config/BoardConfig.h"
+#endif
 #include "config/DacSettings.h"
 #endif
 #include "control/CommandQueue.h"
@@ -136,6 +140,10 @@ int main(int argc, char** argv)
 
     if (options.hasLogLevel)
         log::setLevel(options.logLevel);
+#if !defined(ESP_PLATFORM)
+    if (!options.boardFile.empty())
+        board_config::usePath(options.boardFile);
+#endif
 
     // Before the first line worth keeping. A file that cannot be opened is a
     // warning and not a reason to refuse to start: stderr still works, and a
@@ -368,10 +376,18 @@ int main(int argc, char** argv)
             MULTIROOM_WARN("no discovery beacon: %s", beaconError.c_str());
 
         // Buttons and encoders. Discovered before the pump takes the list,
-        // whose length must not change after.
+        // whose length must not change after. The board's fixed buttons come
+        // first, so a device client.json names still gets keys added later.
+#if !defined(ESP_PLATFORM)
+        client_config::appendBoardInputs(board_config::current(), config.inputs);
+#endif
         appendDiscoveredInputs(config.inputs);
         InputPump inputs(config.inputs);
         inputs.start(runtime, control, queue, config.inputGpioChip);
+
+        // After the stream's playback: it is torn down first, so the phone's
+        // audio never outlives the engine it would hand the device back to.
+        BluetoothPlayback bluetooth(runtime);
 
         std::string audioError;
         if (!playback.start(audioError))
@@ -381,6 +397,7 @@ int main(int argc, char** argv)
         }
         else
         {
+            bluetooth.start();
             MULTIROOM_INFO("running; control commands on %s:%u, Ctrl-C to stop",
                      config.controlBindAddress.c_str(),
                      static_cast<unsigned>(control.boundPort()));
@@ -413,6 +430,7 @@ int main(int argc, char** argv)
                 session.poll(nowNs);
                 step(LoopTiming::Session);
                 playback.poll();
+                bluetooth.poll(nowNs);
                 handler.pollPower(nowNs);
                 step(LoopTiming::Playback);
                 beaconInfo.clientId = config.clientId; // setClientId changes it

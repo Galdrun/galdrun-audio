@@ -5,6 +5,7 @@
 
 #include "util/FileUtil.h"
 #include "util/Json.h"
+#include "util/Logger.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -359,6 +360,26 @@ bool parseServerAddress(const std::string& text, std::string& host, uint16_t& po
 }
 
 namespace client_config {
+
+void appendBoardInputs(const json::Value& board, std::vector<InputDefinition>& inputs)
+{
+    const json::Value* listed = board.find("inputs");
+    if (listed == nullptr || !listed->isArray())
+        return;
+    for (size_t i = 0; i < listed->size(); ++i)
+    {
+        InputDefinition input;
+        std::string error;
+        if (!inputFromJson(listed->at(i), input, error))
+        {
+            MULTIROOM_WARN("board inputs[%lu]: %s", static_cast<unsigned long>(i), error.c_str());
+            continue;
+        }
+        if (std::none_of(inputs.begin(), inputs.end(),
+                         [&](const InputDefinition& known) { return known.control.id == input.control.id; }))
+            inputs.push_back(input);
+    }
+}
 
 json::Value inputToJson(const InputDefinition& input, bool electrical)
 {

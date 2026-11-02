@@ -1814,6 +1814,75 @@ this unit's existing Ethernet MAC, and private network settings are loaded in
 a separate ignored overlay, never in the generic artifacts. This successful
 kexec boot is not a persistent installer or a cold-boot qualification.
 
+## Bluetooth (A2DP receive)
+
+The 88W8897's Bluetooth function is a plain H4 UART on UART5 (`ttymxc4`,
+3 Mbit/s, RTS/CTS, vendor pins and 240 MHz parent in the RAM DT), answering
+once mwifiex has loaded the approved PCIe firmware; the vendor ran
+`hciattach ttymxc4 any 3000000 flow`. The kernel has `BT_HCIUART_H4`; the image
+carries BlueZ 5.79, bluez-alsa 4.3.1 (SBC only) and bluez-tools' `bt-agent`.
+
+`board/connector3/ram/galdrun-bluetooth` (in `hardware/buildroot/`, installed
+as `/usr/sbin/galdrun-bluetooth`) is started by both inits after networking
+and again by `raumfeld-suspend` after deep sleep (the radio reload resets it):
+
+- waits for the wireless interface (`mlan0`), runs `btattach`;
+- sets the BD address to Wi-Fi MAC + 1 with Marvell command `0xFC22` (the
+  firmware default `11:22:33:…` is a placeholder; the vendor's preferred
+  `bt_addr` from the factory const partition is not read yet);
+- applies the vendor's -4 dBm output-power command (`0xFC57`);
+- starts D-Bus, `bluetoothd` (`/etc/bluetooth/main.conf`: name "Galdrun
+  Connector 3", loudspeaker class, 120 s discoverable/pairable windows),
+  `bt-agent -c NoInputNoOutput` and `bluealsa -p a2dp-sink -p a2dp-source`;
+- on the persistent image binds `/settings/bluetooth` over `/var/lib/bluetooth`
+  so pairings survive reboots and updates.
+
+Pairing is closed until `galdrun-bluetooth pair` opens a 120 s
+discoverable/pairable window; paired phones reconnect at any time. The rear
+**BT** and **Setup** buttons report through the MCU like the touch fields
+(button IDs 4 and 8, found on hardware 2026-11-02; a hold also sends `0x0010`
+repeats and `0x0005` after about 2 s, which the service ignores).
+`mcu-buttons.cpp` maps them to `KEY_BLUETOOTH` (237) and `KEY_SETUP` (141). The
+board file's `inputs` binds BT click to `btModeRec` (runs `galdrun-bluetooth
+pair`) and long press to `btModePlay` (`galdrun-bluetooth headphones`, not
+available until the headphone room exists); Setup is unassigned.
+
+The BT LED is MCU command `0x21` (BluetoothIndication, write-only), tested on
+hardware: **0 off, 1 blinking (~1 Hz, "pairing"), 2–4 steady, 5–6 off**; no
+slow pulse exists. `galdrun-connector3-mcu --request "bluetooth <0-5>"` sends
+one request line to the running service (also usable for `indication`).
+`galdrun-bluetooth` runs an LED loop (1 s tick, MCU written only on change):
+blinking while a `pair` window is open and no new link has appeared, a
+software slow pulse (3 s on, 1 s off, distinct from the ~1 Hz blink) while
+`/run/bluetooth-headphones` exists, steady while any ACL link exists
+(`/sys/class/bluetooth/hci0:*`), else off. `pair` sets the BlueZ adapter
+properties with `dbus-send`: `bluetoothctl --timeout` always waits its whole
+timeout, and without it waits forever when `bluetoothd` is down.
+
+The kernel must not have `CONFIG_RFKILL_INPUT`: its input handler toggles the
+Bluetooth soft block on every `KEY_BLUETOOTH`, i.e. every BT button press
+(found on hardware; `verify-connector3-ram.py` checks it). `galdrun-bluetooth
+start` also clears a Bluetooth soft block before powering the controller.
+
+**Headphones/speakers:** BT long press or the client page's Bluetooth card
+(search lists nearby audio devices, nearest first, then pick one). The helper
+pairs and connects it, saves it in `/settings/headphones/` (resumed after
+reboot/deep sleep) and starts the headphone room (second client, port 4730,
+raw bluez-alsa PCM). Searches keep a `bluetoothctl --timeout N scan on` with an
+open input (`sleep | bluetoothctl`): BlueZ ends a discovery when its D-Bus
+client leaves, and bluetoothctl quits at end of input. `TemporaryTimeout = 300`
+keeps unpaired search results pairable from the page. The BT button picks the
+strongest headphones/headset/A2DP-sink first (a TV is only "audio"). Tested
+with a LEXON MINO L: plays, about 20 ms late against RCA, which the room's
+output latency setting covers (the speaker's buffering is not in bluez-alsa's
+delay).
+
+The client (board flag `"bluetooth": true`) plays a streaming phone on the
+selected output through its own engine and reports MATP `localSource:
+"bluetooth"`; see the [client guide](../agents/client.md). Verified on RAM:
+pairing, audible RCA playback at 44.1 kHz, room hand-back after a pause, and
+the server/ServerGui state. Headphone output (A2DP source) is not built yet.
+
 ## Output routing, LEDs and the custom-kernel image
 
 The live vendor DT labels playback **link@1** as `i2s out` on SAI1
@@ -1952,7 +2021,7 @@ for the installed persistent NAND image, compared with the stock firmware.
 | Indicators | **Done:** MCU status patterns (boot/connecting/setup/ready/error/off) and saved LED-off. Missing: global LED brightness (`0x22`) and the rear Bluetooth indicator (`0x21`). |
 | Wi-Fi | Association, DHCP, WLAN-only SSH/traffic and resume from deep sleep verified. Reconnect, setup-AP fallback and sustained traffic remain unqualified. |
 | Ethernet | 100 Mbit/s full duplex and wake verified. Repeated boot/link acquisition unqualified. |
-| Bluetooth | **Missing.** Stock has a Bluetooth audio sink (`rf-bluetoothd`); Galdrun has no Bluetooth stack. |
+| Bluetooth | **Phone receive implemented** (see [Bluetooth](#bluetooth-a2dp-receive)); heard on RCA in RAM. Persistent image built, not yet installed. Missing: BT button/LED pairing mode, factory `bt_addr`, headphone room (A2DP source). |
 | USB | Host mode is enabled only for the installer stick; stock media-from-USB use is not established. |
 | Streaming services | Stock Google Cast, Spotify Connect and the Raumfeld UPnP renderer are proprietary and not carried over; Galdrun's server provides sources instead. |
 | Recovery | Qualify failed-start recovery, including failures before `/init` or SSH. The software guard cannot recover a hung kernel. |

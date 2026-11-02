@@ -68,6 +68,8 @@ elseif(UNIX AND NOT APPLE)
                                     src/audio/linux/AlsaMixer.cpp
                                     src/audio/linux/Connector3Mcu.cpp
                                     src/audio/linux/AlsaDacSettings.cpp
+                                    src/bluetooth/linux/BluealsaReceiver.cpp
+                                    src/bluetooth/linux/BluetoothSettings.cpp
                                     src/net/NetworkSettings.cpp
                                     src/config/CpuSettings.cpp
                                     src/net/SshSettings.cpp

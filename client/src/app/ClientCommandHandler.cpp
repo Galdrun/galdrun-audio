@@ -12,6 +12,7 @@
 #include "util/FileUtil.h"
 #if defined(__linux__) && !defined(ESP_PLATFORM)
 #include "net/NetworkSettings.h"
+#include "bluetooth/linux/BluetoothSettings.h"
 #include "config/BoardConfig.h"
 #include "config/CpuSettings.h"
 #include "net/SshSettings.h"
@@ -77,6 +78,7 @@ bool requestRestart(ClientRuntime& runtime, std::string& error)
 
 #if defined(__linux__) && !defined(ESP_PLATFORM)
 const char* const kDeepSleepHelper = "/usr/sbin/raumfeld-suspend";
+const char* const kBluetoothHelper = bluetooth_settings::kHelper;
 
 std::string firstLine(const std::string& path)
 {
@@ -138,6 +140,47 @@ ServerConnectionState currentServerState(const ClientRuntime& runtime)
 }
 
 } // namespace
+
+bool bluetoothSupported()
+{
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+    return board_config::enabled(board_config::current(), "bluetooth") &&
+           ::access(kBluetoothHelper, X_OK) == 0;
+#else
+    return false;
+#endif
+}
+
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+// One run of the image's Bluetooth helper ("pair", "headphones", "scan", ...),
+// reaped by pollPower. One at a time: they share the radio.
+static bool startBluetoothHelper(ClientRuntime& runtime, const char* command,
+                                 const std::string& argument, std::string& error)
+{
+    if (!bluetoothSupported())
+    {
+        error = "this client has no Bluetooth";
+        return false;
+    }
+    if (runtime.bluetoothProcess != 0)
+    {
+        error = "a Bluetooth operation is already running";
+        return false;
+    }
+    char* const arguments[] = {const_cast<char*>(kBluetoothHelper), const_cast<char*>(command),
+                               argument.empty() ? nullptr : const_cast<char*>(argument.c_str()),
+                               nullptr};
+    pid_t child = 0;
+    const int result = ::posix_spawn(&child, kBluetoothHelper, nullptr, nullptr, arguments, environ);
+    if (result != 0)
+    {
+        error = std::string("could not start the Bluetooth helper: ") + std::strerror(result);
+        return false;
+    }
+    runtime.bluetoothProcess = static_cast<int>(child);
+    return true;
+}
+#endif
 
 // Only the Connector 2 firmware ships the suspend helper.
 bool deepSleepSupported()
@@ -401,6 +444,17 @@ bool ClientCommandHandler::dispatchInputAction(const matp::InputActionEvent& eve
         return false;
 #endif
     }
+    if (action == InputAction::BtModeRec || action == InputAction::BtModePlay)
+    {
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+        // Rec: phones may pair and play to this device. Play: headphones.
+        return startBluetoothHelper(runtime_, action == InputAction::BtModeRec ? "pair" : "headphones",
+                                    std::string(), error);
+#else
+        error = "Bluetooth is not supported on this platform";
+        return false;
+#endif
+    }
     if (action == InputAction::StandbyOff || action == InputAction::StandbyOn ||
         action == InputAction::ToggleStandby)
     {
@@ -437,6 +491,16 @@ void ClientCommandHandler::pollPower(uint64_t nowNs)
                 MULTIROOM_WARN("restart helper failed; see system log");
         }
     }
+    if (runtime_.bluetoothProcess != 0)
+    {
+        int status = 0;
+        if (::waitpid(runtime_.bluetoothProcess, &status, WNOHANG) > 0)
+        {
+            runtime_.bluetoothProcess = 0;
+            if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+                MULTIROOM_WARN("Bluetooth helper failed; see /run/bluetooth.log");
+        }
+    }
     if (runtime_.deepSleepProcess != 0)
     {
         int status = 0;
@@ -452,9 +516,11 @@ void ClientCommandHandler::pollPower(uint64_t nowNs)
         }
     }
 #endif
-    const bool idle = runtime_.timelineState == TimelineState::Idle ||
-                      runtime_.timelineState == TimelineState::Paused ||
-                      runtime_.timelineState == TimelineState::Stopped;
+    // A phone playing over Bluetooth is not idle, whatever the timeline does.
+    const bool idle = (runtime_.timelineState == TimelineState::Idle ||
+                       runtime_.timelineState == TimelineState::Paused ||
+                       runtime_.timelineState == TimelineState::Stopped) &&
+                      !(runtime_.session != nullptr && *runtime_.session->localSource() != '\0');
 
     // Deep sleep counts from the same idle start, on through standby: a
     // parked room is still idle. Playback restarts the count.
@@ -595,6 +661,7 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
         response["standbyAfterSeconds"] = json::Value(runtime_.config->standbyAfterSeconds);
         response["deepSleepAfterSeconds"] = json::Value(runtime_.config->deepSleepAfterSeconds);
         response["deepSleep"] = json::Value(deepSleepSupported());
+    response["bluetooth"] = json::Value(bluetoothSupported());
         return response;
     }
     case ControlCommand::GetActive:
@@ -847,6 +914,50 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
         return request.command == ControlCommand::GetSsh ? response :
                makeControlError(request, control_error::kUnavailable,
                                 "SSH is managed by this device's operating system");
+    }
+    case ControlCommand::GetBluetooth:
+    case ControlCommand::ScanBluetooth:
+    case ControlCommand::SetBluetoothHeadphones:
+    case ControlCommand::PairBluetooth:
+    {
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+        if (!bluetoothSupported())
+            return makeControlError(request, control_error::kUnavailable, "this client has no Bluetooth");
+        std::string error;
+        bool started = true;
+        if (request.command == ControlCommand::ScanBluetooth)
+            started = startBluetoothHelper(runtime_, "scan", std::string(), error);
+        else if (request.command == ControlCommand::PairBluetooth)
+            started = startBluetoothHelper(runtime_, "pair", std::string(), error);
+        else if (request.command == ControlCommand::SetBluetoothHeadphones)
+        {
+            // {"address": "AA:BB:..."} plays to that device, {"address": null} stops.
+            const json::Value* address = request.params.find("address");
+            std::string text;
+            if (address == nullptr || request.params.members().size() != 1 ||
+                (!address->isNull() &&
+                 (!json::getString(request.params, "address", text) || !bluetooth_settings::validAddress(text))))
+                return makeControlError(request, control_error::kInvalidArgument,
+                                        "params must be {\"address\": \"AA:BB:CC:DD:EE:FF\"} or {\"address\": null}");
+            started = address->isNull() ? startBluetoothHelper(runtime_, "headphones-off", std::string(), error)
+                                        : startBluetoothHelper(runtime_, "headphones-on", text, error);
+        }
+        if (!started)
+            return makeControlError(request, control_error::kUnavailable, error);
+        json::Value response = makeControlSuccess(request);
+        json::Value bluetooth = bluetooth_settings::status();
+        bluetooth["busy"] = json::Value(runtime_.bluetoothProcess != 0);
+        // The helper has not started yet: its last list is not this search's.
+        if (request.command == ControlCommand::ScanBluetooth)
+        {
+            bluetooth["scanning"] = json::Value(true);
+            bluetooth["devices"] = json::Value::makeArray();
+        }
+        response["bluetooth"] = bluetooth;
+        return response;
+#else
+        return makeControlError(request, control_error::kUnavailable, "this client has no Bluetooth");
+#endif
     }
     case ControlCommand::ScanNetworks:
     case ControlCommand::GetNetworks:
@@ -1240,6 +1351,7 @@ json::Value ClientCommandHandler::handleInputs(const ControlRequest& request) co
     json::Value response = makeControlSuccess(request);
     response["inputs"] = inputs;
     response["deepSleep"] = json::Value(deepSleepSupported());
+    response["bluetooth"] = json::Value(bluetoothSupported());
     if (!runtime_.inputBackend.empty())
         response["backend"] = json::Value(runtime_.inputBackend);
     if (!runtime_.inputBackendError.empty())

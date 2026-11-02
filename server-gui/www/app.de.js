@@ -341,6 +341,7 @@ i18n.add('de-AT', {
   'room.neverReported': 'Nie gemeldet',
   'room.playing': 'Spielt',
   'room.powerState': 'Energie: {state}',
+  'room.bluetoothOutput': 'Bluetooth-Kopfhörer / -Lautsprecher',
   'room.household': 'Haushalt',
   'room.clientId': 'Client-ID',
   'room.rejoinSent': 'Neubeitritt gesendet',
@@ -1274,6 +1275,8 @@ i18n.add('de-AT', {
   'power.sleep': 'Tiefschlaf',
   'power.sleepButtonOnly': 'Tiefschlaf, POWER drücken',
   'power.unknown': 'unbekannt',
+  // localSource: was auf dem Gerät statt des Streams spielt
+  'localSource.bluetooth': 'spielt Bluetooth',
   // kind
   'kind.album': 'Album',
   'kind.artist': 'Interpret',

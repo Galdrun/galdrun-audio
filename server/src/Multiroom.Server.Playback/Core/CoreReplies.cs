@@ -308,6 +308,10 @@ public enum InputAction
     Action9,
     Action10,
     DeepSleep,
+    // Local Bluetooth modes (receive from a phone, play to headphones): like
+    // DeepSleep, the client runs them itself and never sends them.
+    BtModeRec,
+    BtModePlay,
 }
 
 // Which volume an action changes: the room's own, or its zone's factor over
@@ -330,7 +334,9 @@ public sealed record CoreAudioDevice(string Id, string Name, bool IsDefault);
 // MATP section 12 carried it), which is not the same as Available false.
 // AccessMode is "exclusive" or "shared", and absent the same way.
 public sealed record CoreCapabilities(IReadOnlyList<AudioFormatInfo> Formats, uint? PreferredSampleRate = null,
-    CoreHardwareVolume? HardwareVolume = null, string? AccessMode = null, CoreHardwareClock? HardwareClock = null);
+    CoreHardwareVolume? HardwareVolume = null, string? AccessMode = null, CoreHardwareClock? HardwareClock = null,
+    // Bluetooth headphones or a speaker the client plays to over the air.
+    bool? BluetoothOutput = null);
 
 // The device's verified clock trim, in whole ppm around its nominal rate;
 // absent for a client without a drift-correction setting.
@@ -344,7 +350,7 @@ public sealed record CoreHardwareVolume(bool Available, string? Control = null, 
     double? MinDb = null, double? MaxDb = null, bool? HasMute = null);
 
 public sealed record CoreStreamAnswer(bool Ready, AudioFormatInfo? Format = null, string? Reason = null,
-    string? PowerState = null);
+    string? PowerState = null, string? LocalSource = null);
 
 // The settings as stored in the core. AudioControlIsDefault says the room has
 // no value of its own and follows the core's default; volume, mute, latency

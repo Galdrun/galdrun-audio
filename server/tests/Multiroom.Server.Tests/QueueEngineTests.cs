@@ -604,6 +604,38 @@ public sealed partial class QueueEngineTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_zone_pauses_while_its_only_room_plays_bluetooth_and_plays_on_after()
+    {
+        await PlayingAsync("A", "B");
+        await EmitAsync("""{"event":"room.connected","client":"roomA","deviceName":"Card","reconnect":false,"zone":"living"}""");
+        var before = _core.All.Count;
+
+        await EmitAsync("""{"event":"room.localSource","client":"roomA","localSource":"bluetooth"}""");
+        await Until(() => Queue().Transport == QueueTransport.Paused);
+        await EmitAsync("""{"event":"room.localSource","client":"roomA"}""");
+        await Until(() => Sent(before).Count == 2);
+
+        Assert.Equal(["zone.pause", "zone.play"], Sent(before).Select(c => c.Command));
+    }
+
+    [Fact]
+    public async Task A_caller_pause_during_bluetooth_is_not_undone_afterwards()
+    {
+        await PlayingAsync("A", "B");
+        await EmitAsync("""{"event":"room.connected","client":"roomA","deviceName":"Card","reconnect":false,"zone":"living"}""");
+        await EmitAsync("""{"event":"room.localSource","client":"roomA","localSource":"bluetooth"}""");
+        await Until(() => Queue().Transport == QueueTransport.Paused);
+        Ok(await _engine.PauseAsync(Zone, Ct));
+        var before = _core.All.Count;
+
+        await EmitAsync("""{"event":"room.localSource","client":"roomA"}""");
+        // A later event through the same engine: the one before it was handled.
+        Ok(await _engine.PauseAsync(Zone, Ct));
+
+        Assert.Equal(["zone.pause"], Sent(before).Select(c => c.Command));
+    }
+
+    [Fact]
     public async Task Pause_resume_stop_and_what_cannot_be_done_now()
     {
         var (tracks, _) = await PlayingAsync("A", "B");

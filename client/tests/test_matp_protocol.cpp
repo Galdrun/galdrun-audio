@@ -27,6 +27,37 @@ MULTIROOM_TEST(matp_standby_is_optional_and_requires_a_non_ready_stream)
     CHECK(!matp::parseStreamReady(message, id, parsed, error));
 }
 
+MULTIROOM_TEST(matp_bluetooth_output_is_an_optional_capability)
+{
+    matp::CapabilityReport report, parsed;
+    std::string error;
+    auto message = matp::makeAudioCapabilities(report);
+    CHECK(message.find("bluetoothOutput") == nullptr);
+    report.bluetoothOutput = true;
+    message = matp::makeAudioCapabilities(report);
+    CHECK(matp::parseAudioCapabilities(message, parsed, error));
+    CHECK(parsed.bluetoothOutput);
+    message["bluetoothOutput"] = json::Value("yes");
+    CHECK(!matp::parseAudioCapabilities(message, parsed, error));
+}
+
+MULTIROOM_TEST(matp_local_source_is_optional_bluetooth_and_only_when_not_ready)
+{
+    matp::StreamReady ready, parsed;
+    std::string id, error;
+    ready.powerState = "on";
+    ready.localSource = "bluetooth";
+    auto message = matp::makeStreamReady("s-local", ready);
+    CHECK(matp::parseStreamReady(message, id, parsed, error));
+    CHECK_EQ(parsed.localSource, std::string("bluetooth"));
+    CHECK_EQ(parsed.powerState, std::string("on"));
+    message["localSource"] = json::Value("radio");
+    CHECK(!matp::parseStreamReady(message, id, parsed, error));
+    message["localSource"] = json::Value("bluetooth");
+    message["ready"] = json::Value(true);
+    CHECK(!matp::parseStreamReady(message, id, parsed, error));
+}
+
 MULTIROOM_TEST(matp_power_state_is_optional_and_rejects_invalid_or_conflicting_states)
 {
     matp::StreamReady ready, parsed;

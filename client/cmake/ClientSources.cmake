@@ -3,6 +3,7 @@
 # (../esp32/main/CMakeLists.txt), which add their own platform files; neither
 # list globs.
 set(MULTIROOM_CLIENT_COMMON_SOURCES
+    src/app/BluetoothPlayback.cpp
     src/app/ClientCommandHandler.cpp
     src/app/CommandLine.cpp
     src/app/DeviceSelection.cpp
@@ -27,6 +28,7 @@ set(MULTIROOM_CLIENT_COMMON_SOURCES
     src/audio/TimelineSource.cpp
     src/audio/ToneGenerator.cpp
     src/audio/VolumeControl.cpp
+    src/bluetooth/BluetoothReceiver.cpp
     src/config/ClientConfig.cpp
     src/control/ClientStatus.cpp
     src/control/CommandQueue.cpp

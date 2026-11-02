@@ -207,6 +207,11 @@ bool deserialize(const std::string& text, ClientConfig& out, std::string& error)
 // what only client.json needs (activeLow, pull, stepsPerDetent).
 json::Value inputToJson(const InputDefinition& input, bool electrical);
 
+// The board file's "inputs" (same entries as client.json) that client.json
+// does not have by id: a firmware image's fixed buttons reach a client.json
+// written before it knew them. Invalid entries are logged and skipped.
+void appendBoardInputs(const json::Value& board, std::vector<InputDefinition>& inputs);
+
 // The i2sExternalFormats array, as client.json and the ESP32 settings page
 // carry it: [{"sampleRate": 48000, "sampleType": "s24le"}, ...], two channels
 // each. Parsing checks the shape only; range, layout and duplicates are

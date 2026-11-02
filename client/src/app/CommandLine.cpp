@@ -188,6 +188,11 @@ int argc, const char* const argv[], CommandLineOptions& out,
                 return false;
             options.hasLogFile = true;
         }
+        else if (matchOption(argument, "board-file", hasInlineValue, inlineValue))
+        {
+            if (!readValue(options.boardFile))
+                return false;
+        }
         else if (matchOption(argument, "log-level", hasInlineValue, inlineValue))
         {
             std::string value;
@@ -270,6 +275,7 @@ const char* usageText()
            "  --control-port <port>    port the control API listens on\n"
            "  --log-level <level>      error | warn | info | debug | trace\n"
            "  --log-file <path>        append the log to this file as well as stderr\n"
+           "  --board-file <path>      read this board file instead of the image's\n"
            "  --version                print version and exit\n"
            "  --help                   print this help and exit\n"
            "\n"

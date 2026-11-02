@@ -18,6 +18,7 @@ const InputAction kActions[] = {InputAction::None,       InputAction::Play,
                                 InputAction::ToggleMute, InputAction::StandbyOn,
                                 InputAction::StandbyOff, InputAction::ToggleStandby,
                                 InputAction::DeepSleep,
+                                InputAction::BtModeRec,  InputAction::BtModePlay,
                                 InputAction::Action1,
                                 InputAction::Action2,    InputAction::Action3,
                                 InputAction::Action4,    InputAction::Action5,
@@ -81,8 +82,8 @@ bool bindingFromJson(const json::Value& object, InputBinding& out, const std::st
     {
         error = context + ": action must be one of none, play, pause, togglePause, stop, next, "
                           "previous, volumeUp, volumeDown, setVolume, toggleMute, standbyOn, "
-                          "standbyOff, toggleStandby, deepSleep, action1 to "
-                          "action10";
+                          "standbyOff, toggleStandby, deepSleep, btModeRec, btModePlay, "
+                          "action1 to action10";
         return false;
     }
 
@@ -239,6 +240,10 @@ const char* inputActionName(InputAction action)
         return "toggleStandby";
     case InputAction::DeepSleep:
         return "deepSleep";
+    case InputAction::BtModeRec:
+        return "btModeRec";
+    case InputAction::BtModePlay:
+        return "btModePlay";
     case InputAction::Action1:
         return "action1";
     case InputAction::Action2:

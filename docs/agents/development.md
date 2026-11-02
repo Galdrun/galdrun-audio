@@ -13,6 +13,7 @@ for the source directory, generator and options.
 | `scripts/build-server-core.ps1`, `scripts/build-server-core.sh` | Build/export the C++ audio engine and its runtime libraries to `releases/server-core/` (`windows-x64`, `windows-armv8`, `linux-x64`, `linux-armv7`/`armv8`/`armv9`; no `linux-x86`) |
 | `scripts/build-server.ps1`, `scripts/build-server.sh` | Publish self-contained .NET server releases, including the browser GUI, to `releases/server/` (same targets as the core; `linux-armv9` is the `linux-arm64` build under its own name). `rpi3`/`rpi4`/`rpi5` (`raspberrypi`) build Pi server SD images into `releases/server/raspberrypi/`: core and client image first, then `hardware/buildroot/scripts/build-server-image.sh` |
 | `scripts/release/package.py` (gitignored, local) | Pack `releases/` into release archives, plus one `galdrun-server-bundle-*` per target with both server and core, using `scripts/release/bundle/` (README, `start.sh`, `start.cmd`/`start.ps1`) |
+| `scripts/check-agent-docs.py` | Check that links and backticked paths in `AGENTS.md` and `docs/agents/` still exist; run after moving/renaming files or editing these guides |
 | `scripts/copy-server-gui.ps1` | Copy `server-gui/www/` and shared web assets into an existing server release's `gui/`; defaults to `windows-x64`, accepts `-Target <target>` |
 | `scripts/build-mobile-gui.ps1`, `scripts/build-mobile-gui.sh` | Publish the Avalonia desktop app; these scripts do not build Android/iOS |
 | `scripts/start-mobile-gui.ps1` | Start the Avalonia desktop app from the `windows-x64` release at phone size (`-Desktop`: desktop size); does not build |
@@ -194,7 +195,7 @@ WLAN initialization, DHCP and Wi-Fi-only SSH/traffic have since been verified
 under 6.12.112 with this device's local 15.87.19.p14 radio firmware. The generic
 upstream radio firmware still fails. The optional second argument to
 `hardware/buildroot/scripts/build-connector3-ram.sh` selects that hash-checked
-local file and writes private artifacts under `private/connector3/ram-local/`.
+local file and writes private artifacts under `private/connector3/ram-local/`. <!-- path-check: ignore -->
 See the hardware guide's [session handoff](../hardware/connector3.md#wlan-fix-and-session-handoff-2026-10-29)
 for evidence and the final build's hash-bound hardware verification. Audible playback
 and cold boot remain unqualified. Firmware selection/cache isolation is checked

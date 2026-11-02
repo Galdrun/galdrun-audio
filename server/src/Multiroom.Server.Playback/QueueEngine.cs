@@ -233,6 +233,19 @@ public sealed partial class QueueEngine : IQueueEngine, ICoreEventSubscriber
             return;
         }
 
+        // A phone took a zone's only room over Bluetooth, or let it go: the
+        // zone pauses rather than failing its next track with no room ready,
+        // and plays on afterwards (BluetoothAsync). Rooms beside it play on.
+        if (coreEvent is RoomLocalSource local &&
+            Link.Model.Current.Rooms.GetValueOrDefault(local.Client)?.Zone is { } roomZone &&
+            Link.Model.Current.Rooms.Values.Count(r => r.Zone == roomZone) == 1 &&
+            _sessions.TryGetValue(roomZone, out var only))
+        {
+            await only.RunAsync(() => only.BluetoothAsync(local.LocalSource is not null), cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
         // The core's own events.lost is followed by a resync and its
         // CoreSynchronised, and until then the model is behind. Events CoreLink
         // dropped on the way to its handlers left the model right.

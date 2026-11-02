@@ -341,6 +341,7 @@ i18n.add('en-US', {
   'room.neverReported': 'Never reported',
   'room.playing': 'Playing',
   'room.powerState': 'Power: {state}',
+  'room.bluetoothOutput': 'Bluetooth headphones / speaker',
   'room.household': 'Household',
   'room.clientId': 'client id',
   'room.rejoinSent': 'rejoin sent',
@@ -1275,6 +1276,8 @@ i18n.add('en-US', {
   'power.sleep': 'deep sleep',
   'power.sleepButtonOnly': 'deep sleep, press POWER',
   'power.unknown': 'unknown',
+  // localSource: what plays on a room's device instead of its stream
+  'localSource.bluetooth': 'playing Bluetooth',
   // kind
   'kind.album': 'album',
   'kind.artist': 'artist',

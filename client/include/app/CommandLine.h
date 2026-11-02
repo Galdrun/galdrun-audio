@@ -41,6 +41,11 @@ struct CommandLineOptions
     bool hasLogFile = false;
     std::string logFile;
 
+    // --board-file: the board file this run reads instead of the image's
+    // /etc/<brand>-board.json. A second client on one appliance (Bluetooth
+    // headphones) passes an empty one, so it claims none of the board's features.
+    std::string boardFile;
+
     // Seconds of test tone to play before exiting; 0 means no playback. The
     // bring-up path until the server delivers audio.
     uint32_t testToneSeconds = 0;

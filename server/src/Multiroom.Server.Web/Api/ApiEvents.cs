@@ -157,6 +157,7 @@ public sealed class ApiEvents : ICoreEventSubscriber, IDisposable
             RoomBufferConfig => "room.bufferConfig",
             RoomVolumeControl => "room.volumeControl",
             RoomPowerState => "room.powerState",
+            RoomLocalSource => "room.localSource",
             RoomName => "room.name",
             // RoomForgotten is not passed on: DELETE rooms/{client} publishes
             // room.forgotten itself, core or no core.

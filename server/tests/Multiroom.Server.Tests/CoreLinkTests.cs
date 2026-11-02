@@ -171,6 +171,10 @@ public sealed class CoreLinkTests : IAsyncDisposable
     [InlineData(InputAction.StandbyOn, "standbyOn")]
     [InlineData(InputAction.ToggleStandby, "toggleStandby")]
     [InlineData(InputAction.DeepSleep, "deepSleep")]
+    // An action the server does not know fails the whole status read, every
+    // room's live figures with it: each one the client has must be here.
+    [InlineData(InputAction.BtModeRec, "btModeRec")]
+    [InlineData(InputAction.BtModePlay, "btModePlay")]
     public async Task Power_bindings_round_trip_through_the_core(InputAction action, string name)
     {
         await StartAsync();

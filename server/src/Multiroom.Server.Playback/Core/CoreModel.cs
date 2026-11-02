@@ -35,7 +35,9 @@ public sealed record CoreRoom(
     bool? DeepSleep = null,
     // With PowerState "sleep": the MAC its Wake-on-LAN magic packet names.
     string? WakeOnLan = null,
-    bool Active = true);
+    bool Active = true,
+    // What plays on the device instead of its stream: "bluetooth" (a phone).
+    string? LocalSource = null);
 
 // Whether a room in a zone keeps falling behind (the core's phase 41, this
 // server's phase 34): absent for a room in no zone. Rejoins is the episode's
@@ -158,7 +160,8 @@ public sealed class CoreModel(TimeProvider? time = null)
         c.DriftCorrection,
         c.DeepSleep,
         c.WakeOnLan,
-        c.Active);
+        c.Active,
+        c.Stream?.LocalSource);
 
     // A core before its phase 41, or a room in no zone, says nothing.
     private static CoreRoomHealth? HealthOf(CoreClientInfo c, CoreRoom? room, DateTimeOffset now)
@@ -239,6 +242,7 @@ public sealed class CoreModel(TimeProvider? time = null)
             Connected = true,
             PowerState = null,
             WakeOnLan = null,
+            LocalSource = null,
             Device = e.DeviceName,
             Address = e.Address ?? r.Address,
             Zone = e.Zone ?? r.Zone,
@@ -252,6 +256,7 @@ public sealed class CoreModel(TimeProvider? time = null)
             // An announced deep sleep is why it went away.
             PowerState = r.PowerState is "sleep" or "sleepButtonOnly" ? r.PowerState : null,
             WakeOnLan = r.PowerState == "sleep" ? r.WakeOnLan : null,
+            LocalSource = null,
             System = null,
             SystemAgeMs = null,
             AudioDevices = null,
@@ -305,6 +310,7 @@ public sealed class CoreModel(TimeProvider? time = null)
             WakeOnLan = e.WakeOnLan,
             NotReadyReason = e.PowerState == "on" ? null : r.NotReadyReason,
         }),
+        RoomLocalSource e => Room(m, e.Client, r => r with { LocalSource = e.LocalSource }),
         // Kept through a disconnect, like the address: a room that is away is
         // still shown by its name (MATP section 60).
         RoomName e => Room(m, e.Client, r => r with { Name = e.Name }),

@@ -165,6 +165,12 @@ a { color: var(--accent); }
 .pill.bad { border-color: #ebc4bf; background: #f9ecea; }
 .pill.warn { border-color: #e8d3a6; background: #fbf4e3; }
 .pill.badge { font-weight: 650; }
+/* A phone playing on a room over Bluetooth: blue, as Bluetooth is. */
+.pill.bluetooth { display: inline-flex; align-items: center; gap: 4px; color: #1f6fd1; border-color: #b7cff0; background: #e9f1fc; }
+.pill.bluetooth svg, .home-zone-name .bluetooth svg { width: 13px; height: 13px; color: #1f6fd1; }
+.home-zone-name .bluetooth { display: inline-flex; }
+.room-tile > .room-bt { position: absolute; top: 4px; left: 4px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #1f6fd1; box-shadow: 0 1px 3px #0004; }
+.room-tile > .room-bt svg { width: 13px; height: 13px; margin: 0; opacity: 1; color: white; }
 .radio-mark { margin-right: 5px; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }

@@ -2045,6 +2045,8 @@ MULTIROOM_TEST(control_api_announces_rooms_as_they_come_join_move_fall_silent_an
     Room first(rig, "roomA", {formatOf(kRate)}, 1);
     first.connect();
     json::Value event = expectEvent(feed, "room.connected");
+    // Then what it can do, so a reader that synchronised before it knows.
+    CHECK(expectEvent(feed, "room.capabilities").find("capabilities")->find("formats") != nullptr);
     CHECK_EQ(text(event, "client"), std::string("roomA"));
     CHECK_EQ(text(event, "deviceName"), std::string("roomA device"));
     CHECK(!flag(event, "reconnect"));
@@ -2079,6 +2081,7 @@ MULTIROOM_TEST(control_api_announces_rooms_as_they_come_join_move_fall_silent_an
     Room back(rig, "roomA", {formatOf(kRate)}, 2);
     back.connect();
     event = expectEvent(feed, "room.connected");
+    expectEvent(feed, "room.capabilities");
     CHECK(flag(event, "reconnect"));
     CHECK_EQ(text(event, "zone"), std::string("living"));
     CHECK_EQ(text(expectEvent(feed, "room.joined"), "zone"), std::string("living"));
@@ -2101,6 +2104,7 @@ MULTIROOM_TEST(control_api_announces_rooms_as_they_come_join_move_fall_silent_an
     Room busy(rig, "roomB", {formatOf(kRate)}, 3, false);
     busy.connect();
     expectEvent(feed, "room.connected");
+    expectEvent(feed, "room.capabilities");
     CHECK(isOk(caller.request(
         R"({"command":"zone.setClients","params":{"zone":"kitchen","clients":["roomA","roomB"]}})")));
     answerRenegotiations(rig, handled, {{"roomA", &back}, {"roomB", &busy}});
@@ -3103,6 +3107,7 @@ MULTIROOM_TEST(control_api_announces_a_room_s_inputs_and_rebinds_them)
     Room room(rig, "roomA", {formatOf(kRate)}, 1);
     room.connect();
     expectEvent(feed, "room.connected");
+    expectEvent(feed, "room.capabilities");
 
     const char* const rebind =
         R"({"command":"client.setInputBindings","params":{"client":"roomA","inputId":"play","bindings":{"doubleClick":{"action":"next"}}}})";
@@ -3297,6 +3302,7 @@ MULTIROOM_TEST(control_api_announces_what_a_room_reports_so_nothing_has_to_be_po
     Room room(rig, "roomA", {formatOf(kRate)}, 1);
     room.connect();
     expectEvent(feed, "room.connected");
+    expectEvent(feed, "room.capabilities");
 
     room.reportVolumeConfig(matp::VolumeControlMode::Hardware, matp::VolumeControlMode::Disabled);
     json::Value event = expectEvent(feed, "room.volumeControl");
@@ -3369,6 +3375,7 @@ MULTIROOM_TEST(control_api_shows_a_room_s_name_keeps_it_while_away_and_relays_a_
     Room room(rig, "3f9c2a71e04b8d15", {formatOf(kRate)}, 1);
     room.connect();
     expectEvent(feed, "room.connected");
+    expectEvent(feed, "room.capabilities");
 
     // A room that never said a name may not know section 60.
     const char* const rename =

@@ -17,8 +17,11 @@ constexpr const char* kPath = "/etc/" MULTIROOM_BRAND_SLUG "-board.json";
 // which is every board that is not a firmware image.
 json::Value read(const std::string& path);
 
-// read(kPath), the first time it is asked for.
+// read(kPath), or of the path usePath() set, the first time it is asked for.
 const json::Value& current();
+
+// Before anything asks for current(): read this file instead of kPath.
+void usePath(const std::string& path);
 
 // True only when `key` is the JSON value true: how the file opts a feature in.
 bool enabled(const json::Value& board, const char* key);

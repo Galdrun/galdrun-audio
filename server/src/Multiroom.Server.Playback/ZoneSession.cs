@@ -55,6 +55,7 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
     private int _currentPart;
     private NowPlaying? _nowPlaying;
     private QueueTransport _transport;
+    private bool _pausedForBluetooth; // see BluetoothAsync
     private RepeatMode _repeat;
     private bool _shuffle;
     private bool _zoneCreated;
@@ -254,6 +255,7 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
 
     public async Task<Failure<QueueError>?> PlayAsync(QueueItemId? item, bool fromStart = false)
     {
+        _pausedForBluetooth = false;
         if (item is { } named)
         {
             if (ItemOf(named) is not { } chosen)
@@ -286,6 +288,7 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
 
     public async Task<Failure<QueueError>?> PauseAsync()
     {
+        _pausedForBluetooth = false;
         var paused = await SendAsync(new ZonePause(zone)).ConfigureAwait(false);
         if (!paused.IsSuccess)
             return paused.Failure;
@@ -294,9 +297,29 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
         return null;
     }
 
+    // The zone's only room plays a phone over Bluetooth (active), or that
+    // ended: a playing zone is paused for it and played on afterwards. Any
+    // caller's play, pause or stop in between decides instead.
+    public async Task<Failure<QueueError>?> BluetoothAsync(bool active)
+    {
+        if (active)
+        {
+            if (_transport is not (QueueTransport.Starting or QueueTransport.Playing))
+                return null;
+            var failure = await PauseAsync().ConfigureAwait(false);
+            _pausedForBluetooth = failure is null;
+            return failure;
+        }
+        if (!_pausedForBluetooth)
+            return null;
+        _pausedForBluetooth = false;
+        return _transport == QueueTransport.Paused ? await PlayAsync(null).ConfigureAwait(false) : null;
+    }
+
     // A caller's stop: the next play starts the current item from its start.
     public async Task<Failure<QueueError>?> StopAsync()
     {
+        _pausedForBluetooth = false;
         var failure = await StopCoreAsync().ConfigureAwait(false);
         if (failure is null)
             _playhead = null;

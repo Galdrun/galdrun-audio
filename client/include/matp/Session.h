@@ -234,6 +234,17 @@ public:
     // Automatic standby wakes on PREPARE_STREAM; manual off needs StandbyOff.
     bool setPower(bool on, std::string& error, bool automatic = false);
     const char* powerState() const;
+    // "bluetooth" while setBluetooth(true) holds; empty otherwise.
+    const char* localSource() const;
+    // A local source (a phone over Bluetooth) has the sound card: parks the
+    // room's audio like manual standby and reports localSource "bluetooth"
+    // with powerState "on".
+    // Ending it returns to the standby state from before; switching the room
+    // on with setPower(true) ends it as well.
+    bool setBluetooth(bool active, std::string& error);
+    // After setPower(true) ended Bluetooth playback and its owner closed the
+    // sound card: prepares the stream again.
+    void resumeStream();
     // Deep sleep is about to stop this client: the server keeps the state
     // through the disconnect, and with `wakeMac` can wake it with a magic
     // packet. resumeAfterFailedSleep reports the real state again when the
@@ -489,6 +500,7 @@ private:
     bool streamPrepared_ = false;
     bool standby_ = false;
     bool manualStandby_ = false;
+    bool bluetooth_ = false;
     bool hasPrepareRequest_ = false;
     PrepareStream prepareRequest_;
     uint32_t scheduledStarts_ = 0;

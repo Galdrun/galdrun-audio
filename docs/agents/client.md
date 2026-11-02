@@ -43,6 +43,7 @@ device with silence; only the scheduled `START_AT` makes buffered PCM audible.
 | Windows / Linux / ESP32 audio | `src/audio/windows/WasapiBackend.cpp`, `src/audio/linux/AlsaBackend.cpp`, `src/audio/esp32/I2sBackend.cpp` / `Es8388.cpp` |
 | Settings commands/status/device web UI | `src/app/ClientCommandHandler.cpp`, `src/control/ControlProtocol.cpp`, `ControlHttp.cpp`, `ControlServer.cpp`, `ClientStatus.cpp` |
 | Device restart / profile reboot | Local `restart` command and `getPower.restart` in `ClientCommandHandler.cpp`; Buildroot `board/common/overlay/usr/sbin/galdrun-restart`; ESP32 `WebUi.cpp` `/api/restart`. Pi `S41galdrun-audio-profile` invalidates the device cache before startup when the boot profile changes. |
+| Bluetooth receive (phone takeover) | `include/bluetooth/BluetoothReceiver.h` (per-platform interface), `src/bluetooth/linux/BluealsaReceiver.cpp`, `src/app/BluetoothPlayback.cpp`; `Session::setBluetooth` reports MATP `localSource: "bluetooth"` |
 | Buttons/encoders and gesture dispatch | `src/input/InputController.cpp`, platform input backends, `src/app/InputPump.cpp`, `InputSettings.cpp` |
 | Linux networking, CPU, SSH, DAC options | `src/net/NetworkSettings.cpp`, `SshSettings.cpp`, `src/config/CpuSettings.cpp`, `src/audio/linux/AlsaDacSettings.cpp` |
 | Raspberry Pi Buildroot images/profiles/GPIO wiring | Root `hardware/buildroot/board/rpi/README.md`, `board/rpi/audio-profiles.json`, `board/rpi/inputs.json`, `configs/raumfeld_rpi{1,3,4,5}_defconfig`; `S42galdrun-gpio` resolves the Pi 4/5 controller, `S94galdrun-inputs` seeds header-specific inputs on first boot; shared services in `board/common/` |
@@ -75,6 +76,42 @@ come from root `shared/matp/include/`, not a second client definition.
   `StreamPlayback` and `PlaybackSupervisor` when changing device ownership.
 - ARMv6 is supported: keep shared/client code C++17 and preserve the 32-bit
   atomic/wrap handling used by ring indices and render counters.
+
+A board file may list `inputs` (client.json's format):
+`client_config::appendBoardInputs` adds those whose id `client.json` lacks at
+startup, before device discovery, so fixed buttons added to an image reach an
+older settings volume. Connector 3 lists its rear BT/Setup buttons there.
+`btModeRec`/`btModePlay` are local input actions (like `deepSleep`): with the
+board flag `bluetooth` the client runs the image helper
+`/usr/sbin/galdrun-bluetooth pair|headphones`; the inputs response's
+`bluetooth` gates them in the shared inputs editor.
+
+Bluetooth headphones/speakers (A2DP source) are a **second client process**
+started by the image helper (`galdrun-bluetooth headphones|headphones-on
+ADDRESS|headphones-off`): its own `client.json`, control port 4730 and
+`--board-file` containing only `{"bluetoothOutput": true}` (so it claims no
+board feature and reports `bluetoothOutput` in AUDIO_CAPABILITIES), and a
+`$HOME/.asoundrc` whose `default` is the raw `type bluealsa` PCM -- the `bluealsa`
+alias is plug-wrapped and lets the server pick formats the link cannot carry.
+The receiver (`BluealsaReceiver`) backs off opening the phone PCM on links
+without one (headphones), and sets BlueZ's alias to the room name via
+`IBluetoothReceiver::setName`. The settings page's Bluetooth card uses
+`getBluetooth`/`scanBluetooth`/`setBluetoothHeadphones`/`pairBluetooth`
+(`src/bluetooth/linux/BluetoothSettings.cpp` reads the helper's files); all
+helper runs share `bluetoothProcess`, one at a time.
+
+Bluetooth (board flag `bluetooth`): the platform receiver only delivers the
+phone's 16-bit PCM on its own thread. `BluetoothPlayback` (owner loop) takes the
+room after 0.3 s of audio: `Session::setBluetooth(true)` releases the server's
+stream and card synchronously and reports `localSource: "bluetooth"` (power
+stays `on`; it is not a power state); its own engine then plays
+at the phone's rate in the selected device's format, so MCU rate and hardware
+volume follow. 3 s without audio restores the earlier power state. Switching the
+room on during it only clears the state; `BluetoothPlayback` closes its card
+first and then calls `Session::resumeStream()`, because both cannot hold the
+exclusive device. Phone and card clocks are not locked: the 500 ms ring drops or
+underruns rarely. BlueZ, pairing and bluez-alsa are image services
+(Connector 3: `hardware/buildroot/board/connector3/ram/galdrun-bluetooth`).
 
 ## Configuration and checks
 

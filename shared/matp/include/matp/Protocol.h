@@ -313,6 +313,10 @@ struct CapabilityReport
     // not: unknown rather than either. `formats` are the ones of this mode.
     std::string accessMode;
 
+    // The device is Bluetooth headphones or a speaker this client plays to
+    // over the air (it may be late by the receiver's own buffering).
+    bool bluetoothOutput = false;
+
     // False when the client did not say, which a client from before the field
     // existed does not: unknown rather than "none".
     bool hasHardwareVolume = false;
@@ -535,6 +539,9 @@ struct StreamReady
     // Only with powerState "sleep": the wired MAC address a Wake-on-LAN magic
     // packet wakes, as six lower-case hex pairs separated by colons.
     std::string wakeOnLan;
+    // What plays on the device instead of the server's stream, which is why it
+    // is not ready: "bluetooth" (a phone). Empty when nothing local plays.
+    std::string localSource;
 
     // Only when ready: the actuator the opened device is ready for. A
     // SESSION_CONFIG that selected hardwareClock and an answer without it is

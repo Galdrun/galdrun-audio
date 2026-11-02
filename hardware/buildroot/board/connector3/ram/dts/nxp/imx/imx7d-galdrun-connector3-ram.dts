@@ -183,6 +183,20 @@
     status = "okay";
 };
 
+/*
+ * The 88W8897's Bluetooth function is an H4 UART at 3 Mbit/s with RTS/CTS,
+ * running once the PCIe Wi-Fi firmware has loaded (vendor serial4/ttymxc4).
+ * 3 Mbit/s needs the 240 MHz parent, as in the vendor DT.
+ */
+&uart5 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_uart5>;
+    assigned-clocks = <&clks IMX7D_UART5_ROOT_SRC>;
+    assigned-clock-parents = <&clks IMX7D_PLL_SYS_MAIN_240M_CLK>;
+    uart-has-rtscts;
+    status = "okay";
+};
+
 &fec2 {
     fsl,magic-packet;
     pinctrl-names = "default";
@@ -269,6 +283,14 @@
         fsl,pins = <
             MX7D_PAD_UART3_RX_DATA__UART3_DCE_RX 0x60
             MX7D_PAD_UART3_TX_DATA__UART3_DCE_TX 0x60
+        >;
+    };
+    pinctrl_uart5: uart5grp {
+        fsl,pins = <
+            MX7D_PAD_I2C4_SCL__UART5_DCE_RX 0x79
+            MX7D_PAD_I2C4_SDA__UART5_DCE_TX 0x79
+            MX7D_PAD_I2C3_SCL__UART5_DCE_CTS 0x79
+            MX7D_PAD_I2C3_SDA__UART5_DCE_RTS 0x79
         >;
     };
     pinctrl_enet2: enet2grp {

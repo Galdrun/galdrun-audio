@@ -53,6 +53,7 @@ bool RoomDirectory::onCapabilities(const ClientSession& session)
         clearLiveReports(record);
         record.powerState.clear();
         record.wakeOnLan.clear();
+        record.localSource.clear();
         record.grantedFormat = AudioFormat();
         record.streamNotReadyReason.clear();
         record.hasReport = false;
@@ -85,6 +86,7 @@ void RoomDirectory::onStreamReady(const ClientSession& session)
     record.streamStandby = session.streamStandby();
     record.powerState = session.powerState();
     record.wakeOnLan = session.wakeOnLan();
+    record.localSource = session.localSource();
     record.grantedFormat = session.streamReady() ? session.grantedFormat() : AudioFormat();
     record.streamNotReadyReason = session.streamReady() ? std::string()
                                                         : session.streamNotReadyReason();
@@ -186,6 +188,7 @@ bool RoomDirectory::onClosed(const ClientSession& session)
     RoomRecord& record = found->second;
     record.connected = false;
     clearLiveReports(record);
+    record.localSource.clear();
     // An announced deep sleep is why it went away; that stays true until the
     // room's next session.
     if (record.powerState != "sleep" && record.powerState != "sleepButtonOnly")

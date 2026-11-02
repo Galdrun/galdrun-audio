@@ -1,0 +1,13 @@
+name: Agent docs
+
+on:
+  push:
+    paths: ['**/*.md', 'client/**', 'server/**', 'server-core/**', 'server-gui/**', 'shared/**', 'scripts/**']
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/check-agent-docs.py

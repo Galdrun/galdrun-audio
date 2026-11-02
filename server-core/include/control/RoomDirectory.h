@@ -114,6 +114,7 @@ struct RoomRecord
     bool streamStandby = false;
     std::string powerState;
     std::string wakeOnLan; // with powerState "sleep", kept while it is away
+    std::string localSource; // "bluetooth" while a phone plays on the device
     AudioFormat grantedFormat;
     std::string streamNotReadyReason;
 

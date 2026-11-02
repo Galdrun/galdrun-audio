@@ -82,6 +82,7 @@ public sealed partial class CoreLink : BackgroundService
         ["room.bufferConfig"] = typeof(RoomBufferConfig),
         ["room.volumeControl"] = typeof(RoomVolumeControl),
         ["room.powerState"] = typeof(RoomPowerState),
+        ["room.localSource"] = typeof(RoomLocalSource),
         ["room.name"] = typeof(RoomName),
         ["room.forgotten"] = typeof(RoomForgotten),
         ["events.lost"] = typeof(EventsLost),

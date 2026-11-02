@@ -7,6 +7,29 @@
 
 using namespace multiroom;
 
+// The Connector 3 board file's rear buttons reach a client.json that predates
+// them, and keep whatever client.json already says for the same id.
+MULTIROOM_TEST(config_connector3_board_inputs_add_missing_buttons_only)
+{
+    const std::string source = __FILE__;
+    const json::Value board = board_config::read(source.substr(0, source.find_last_of("/\\") + 1) +
+                                                 "../../hardware/buildroot/board/connector3/ram/client-board.json");
+    std::vector<InputDefinition> inputs(1);
+    inputs[0].control.id = "Setup";
+    inputs[0].control.kind = matp::InputKind::Button;
+    client_config::appendBoardInputs(board, inputs);
+    CHECK_EQ(inputs.size(), size_t(2));
+    CHECK(inputs[0].device.empty());
+    CHECK_EQ(inputs[1].control.id, std::string("Bluetooth"));
+    CHECK_EQ(inputs[1].code, uint16_t(237));
+    CHECK(inputs[1].control.bindings[static_cast<size_t>(matp::InputGesture::Click)].action ==
+          matp::InputAction::BtModeRec);
+    CHECK(inputs[1].control.bindings[static_cast<size_t>(matp::InputGesture::LongPress)].action ==
+          matp::InputAction::BtModePlay);
+    client_config::appendBoardInputs(board, inputs);
+    CHECK_EQ(inputs.size(), size_t(2));
+}
+
 MULTIROOM_TEST(config_rpi_board_wiring_uses_valid_client_inputs_and_bindings)
 {
     const std::string source = __FILE__;

@@ -66,6 +66,7 @@ struct ClientRuntime
     uint64_t deepSleepIdleSinceNs = 0;
     int deepSleepProcess = 0; // Linux helper; reaped if it fails before stopping us
     int restartProcess = 0; // appliance restart helper; waits for the API reply
+    int bluetoothProcess = 0; // Bluetooth mode helper (btModeRec/btModePlay)
 
     // Scheduled playback (MATP sections 20 and 21), published by the main
     // thread for the same reason the playback fields below are: reading it
@@ -199,6 +200,9 @@ void sampleSystem(ClientRuntime& runtime, uint64_t nowNs);
 
 // Whether this client can run the deepSleep input action.
 bool deepSleepSupported();
+// Whether this client can run the btModeRec/btModePlay input actions: a
+// board with Bluetooth and its helper.
+bool bluetoothSupported();
 
 class ClientCommandHandler : public IControlHandler
 {

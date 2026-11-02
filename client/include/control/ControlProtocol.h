@@ -77,7 +77,11 @@ enum class ControlCommand
     StandbyOn,
     ToggleStandby,
     DeepSleep,
-    Restart
+    Restart,
+    GetBluetooth,
+    ScanBluetooth,
+    SetBluetoothHeadphones,
+    PairBluetooth
 };
 
 const char* controlCommandName(ControlCommand command);

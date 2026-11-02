@@ -41,6 +41,8 @@ hostname connector3
 ip link set lo up
 syslogd -O /run/system.log
 /etc/init.d/S45raumfeld-network start
+# Waits for the radio firmware the network start loads.
+/usr/sbin/galdrun-bluetooth start >/run/bluetooth-start.log 2>&1 &
 mkdir -p /run/sshd
 /etc/init.d/S50sshd start || failed 'SSH startup failed'
 sync

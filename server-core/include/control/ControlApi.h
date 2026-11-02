@@ -140,6 +140,8 @@ public:
     // main.cpp's until the zone a room belongs in became the API's to say.
     // Called on the MATP listener's thread.
     [[nodiscard]] ClientSessionHooks sessionHooks();
+    // room.capabilities: on a room's arrival and on every re-sent report.
+    void publishCapabilities(const ClientSession& session);
     void clientActiveChanged(const std::string& client, bool active);
 
     // This process's own figures for `server.system` (phase 34), sampled when

@@ -45,12 +45,25 @@ replays by the core. Audible `sourceStarted` events and playhead state differ
 from the source currently being decoded. Groups contain parts; chapters of
 one file may share one staged source and use seek for navigation.
 
+A room's `localSource` (MATP; `bluetooth` while a phone plays on its device)
+is a room fact, not a power state (`actual.localSource`, event
+`room.localSource`). When it starts on a playing zone's **only** room,
+`QueueEngine` pauses the zone (`ZoneSession.BluetoothAsync`) so the next track
+does not fail with no room ready; when it ends, the zone plays on. A caller's
+play, pause or stop in between cancels that resume. Zones with other rooms play on.
+
 `CoreLink` connects to the core's JSON-line API, subscribes, reads status and
 reconciles `DesiredState` against `CoreModel`. The core can restart without
 knowing any previous desired memberships/settings. Model changes happen in
 wire order on the reader; event subscribers run through a separate bounded
 dispatch queue. Never block the reader on downstream work. Lost events trigger
 resynchronization; a stale event for replaced staging must not advance a queue.
+
+Core replies are read strictly into records and enums (`CoreLink.Json`). A value
+the server does not know -- e.g. a new MATP input action in a room's bindings --
+fails the whole `status` read, and with it every room's live sync, buffer and
+system figures (`SystemMonitor` reports `coreUnavailable`). Add new MATP enum
+values (`InputAction` in `Core/CoreReplies.cs`) together with the client.
 
 The core's `clients[].active` (default true for older cores) comes from client
 discovery, including disabled clients that have not connected since a restart.

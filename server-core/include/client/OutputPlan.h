@@ -151,6 +151,9 @@ struct ClientCapabilities
     // never planned on: `formats` are already the ones of this mode.
     std::string accessMode;
 
+    // Bluetooth headphones or a speaker (AUDIO_CAPABILITIES bluetoothOutput).
+    bool bluetoothOutput = false;
+
     // The client reads DRIFT_FEEDBACK, and the trim its session selected and
     // the opened device confirmed -- available only then. A room with one is
     // corrected through it rather than by resampling.

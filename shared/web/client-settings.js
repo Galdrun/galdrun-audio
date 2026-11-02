@@ -388,6 +388,59 @@ for (const command of ['standbyOn', 'standbyOff']) $(command).onclick = async ()
   }
 };
 
+// Bluetooth: phones pair to play here; headphones or a speaker this device
+// plays to (a room of their own). The device's helper does the work in the
+// background; while it does, the card asks again every second.
+let bluetoothEnabled = false, bluetoothTimer = 0;
+
+function renderBluetooth(b) {
+  $('btPairingState').textContent = tt(b.pairing ? 'bluetooth.pairingOpen' : 'bluetooth.pairingClosed');
+  const h = b.headphones;
+  $('btHeadphones').textContent = h ? tt(h.playing ? 'bluetooth.playingTo' : 'bluetooth.connectingTo', {name: h.name || h.address})
+    : b.scanning ? tt(b.scanSeconds ? 'bluetooth.searchingFor' : 'bluetooth.searching', {seconds: b.scanSeconds})
+    : tt('bluetooth.none');
+  show('btDisconnect', !!h);
+  for (const id of ['btPair', 'btScan', 'btDisconnect']) $(id).disabled = b.busy;
+  $('btDevices').replaceChildren(...b.devices.map(d => {
+    const choice = document.createElement('button');
+    choice.type = 'button';
+    choice.disabled = b.busy;
+    const name = document.createElement('span');
+    name.textContent = d.name;
+    const signal = document.createElement('span');
+    signal.className = 'sig';
+    signal.textContent = d.rssi === undefined ? '' : d.rssi + ' dBm';
+    choice.append(name, signal);
+    choice.onclick = () => bluetoothCommand('setBluetoothHeadphones', {address: d.address});
+    return choice;
+  }));
+  clearTimeout(bluetoothTimer);
+  bluetoothTimer = b.busy || b.scanning ? setTimeout(refreshBluetooth, 1000) : 0;
+}
+
+async function refreshBluetooth() {
+  try { renderBluetooth((await api('getBluetooth')).bluetooth); } catch { /* the next refresh tries again */ }
+}
+
+async function loadBluetooth() {
+  try {
+    const r = await api('getBluetooth');
+    bluetoothEnabled = true;
+    renderBluetooth(r.bluetooth);
+  } catch {
+    bluetoothEnabled = false; // a client without Bluetooth answers "unavailable"
+  }
+  show('bluetoothBox', bluetoothEnabled);
+}
+
+async function bluetoothCommand(command, params) {
+  try { renderBluetooth((await api(command, params)).bluetooth); } catch (e) { msg(e.message, true); }
+}
+
+$('btPair').onclick = () => bluetoothCommand('pairBluetooth');
+$('btScan').onclick = () => { $('btDevices').replaceChildren(); bluetoothCommand('scanBluetooth'); };
+$('btDisconnect').onclick = () => bluetoothCommand('setBluetoothHeadphones', {address: null});
+
 async function loadLeds() {
   const r = await api('getLeds');
   ledsEnabled = r.supported;
@@ -693,6 +746,8 @@ async function controlRefresh(initial = false) {
       $('cpuNow').textContent = tt('page.nowRunningAt', {mhz: r.cpu.currentMhz});
     }
     if (sshEnabled && ssh.enabled && !ssh.running) renderSshState((await api('getSsh')).ssh);
+    // The BT button changes it too; while busy the card polls by itself.
+    if (bluetoothEnabled && !bluetoothTimer) await refreshBluetooth();
     connectHardwareInputEvents($('hardwareInputs'), '/api/input-events');
     if (s.platform === 'linux') {
       show('hardwareBox', true);
@@ -721,7 +776,7 @@ async function controlLoad() {
   $('clientId').value = saved.clientId;
   $('server').value = saved.server;
   $('active').value = saved.active;
-  await Promise.all([loadDevices(), loadNetwork(), loadCpu(), loadDac(), loadLeds(), loadPower(), loadSsh(), loadAudioProfile()]);
+  await Promise.all([loadDevices(), loadNetwork(), loadCpu(), loadDac(), loadLeds(), loadBluetooth(), loadPower(), loadSsh(), loadAudioProfile()]);
   ready = true;
   updateSave();
 }

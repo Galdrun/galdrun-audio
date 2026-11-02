@@ -19,6 +19,7 @@ and commands are listed in [docs/agents/development.md](docs/agents/development.
 | The wire protocol between core and clients (`shared/matp/`, `client/src/matp/`, `server-core/src/matp/`, `server-core/src/client/`) | [docs/protocol/MATP-AudioTransferProtocol.md](docs/protocol/MATP-AudioTransferProtocol.md) |
 | Porting the client firmware to a Raumfeld device (`hardware/buildroot/`) | [docs/hardware/raumfeld/connector2.md](docs/hardware/raumfeld/connector2.md) |
 | Connector 3 / Teufel Streamer verified USB beta update, SSH and experimental kexec RAM build | [docs/hardware/connector3.md](docs/hardware/connector3.md) |
+| Connector 3 Bluetooth (phone receive, BT button/LED, headphone room) and next steps | [docs/hardware/connector3-handover-2026-11-03.md](docs/hardware/connector3-handover-2026-11-03.md) |
 | Connector 3 source-built USB RAM diagnostics and earlier investigation | [docs/hardware/raumfeld/connector3.md](docs/hardware/raumfeld/connector3.md) |
 
 ## Local processes and builds
@@ -60,3 +61,12 @@ update the protocol document in the same change.
 - Keep the matching agent guide current when moving entry points or changing
   ownership, build commands, or cross-component behavior. Link to authoritative
   code/protocol definitions instead of copying large inventories into these docs.
+  Record a new invariant or design decision, with its reason, in the guide's
+  invariants section. Skip doc edits for changes that alter none of these.
+- `python scripts/check-agent-docs.py` checks that links and backticked paths in
+  these guides still exist (CI runs it too). Mark an intentional output path
+  with `<!-- path-check: ignore -->` on its line. In Claude Code, a Stop hook
+  (`.claude/hooks/doc-reminder.py`) runs it and names the affected guide when a
+  turn adds/removes files or edits contract/build files.
+- Large docs (`docs/protocol/`, `docs/hardware/`) are references: search them
+  for the relevant heading and read that section, not the whole file.

@@ -36,6 +36,7 @@ wol=
 old_wol=
 radio=
 network_stopped=0
+bluetooth_stopped=0
 restore() {
     result=$?
     trap - EXIT
@@ -52,6 +53,11 @@ restore() {
     fi
     if [ "$network_stopped" -eq 1 ]; then
         /etc/init.d/S45raumfeld-network start || result=1
+    fi
+    # The radio's firmware was reloaded: attach Bluetooth again, in the
+    # background (it waits for the Wi-Fi interface).
+    if [ "$bluetooth_stopped" -eq 1 ]; then
+        /usr/sbin/galdrun-bluetooth start >>/run/bluetooth-start.log 2>&1 &
     fi
     if [ "$client_stopped" -eq 1 ] && ! kill -0 "$client" 2>/dev/null; then
         nohup /opt/galdrun-client/galdrun-client --config "$settings/client.json" \
@@ -106,6 +112,11 @@ if [ -n "$client" ]; then
 fi
 # This built-in PCIe driver hangs in wiphy_resume. Detach it through the
 # standard driver interface, then bind it and restore saved networking on wake.
+# Bluetooth runs on the same radio and is attached again after its firmware.
+if pidof btattach >/dev/null && [ -x /usr/sbin/galdrun-bluetooth ]; then
+    bluetooth_stopped=1
+    /usr/sbin/galdrun-bluetooth stop
+fi
 if [ -L /sys/bus/pci/drivers/mwifiex_pcie/0000:01:00.0 ]; then
     network_stopped=1
     /etc/init.d/S45raumfeld-network stop

@@ -96,6 +96,9 @@ Port `4713` is newline-delimited JSON: `{command, params, id}` requests,
 fields are rejected. `zone.setClients` replaces the complete membership.
 Subscribers with overflowing event queues receive `events.lost` and must read
 `status` again. The control API is unauthenticated and defaults to loopback.
+`room.capabilities` follows every `room.connected` (and every re-sent
+AUDIO_CAPABILITIES), so a subscriber that synchronised before a room arrived
+learns what it can do (e.g. `bluetoothOutput`) without a re-sync.
 
 Discovery's optional `active` flag defaults to true. Disabled clients keep
 announcing `active: false`; `discovery.clients` hides them, while internal

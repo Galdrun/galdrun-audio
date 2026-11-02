@@ -31,6 +31,8 @@ __pycache__/
 /roadmap/
 /.mcp.json
 /.playwright-mcp/
+/.claude/.doc-state/
+/.claude/settings.local.json
 # Local release tooling
 /release.ps1
 /scripts/release/

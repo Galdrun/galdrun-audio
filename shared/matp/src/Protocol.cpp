@@ -719,6 +719,8 @@ json::Value makeAudioCapabilities(const CapabilityReport& report)
     root["formats"] = formats;
     if (!report.accessMode.empty())
         root["accessMode"] = json::Value(report.accessMode);
+    if (report.bluetoothOutput)
+        root["bluetoothOutput"] = json::Value(true);
     if (report.hasHardwareVolume)
         root["hardwareVolume"] = makeHardwareVolume(report.hardwareVolume);
     if (report.driftFeedback)
@@ -801,6 +803,12 @@ bool parseAudioCapabilities(const json::Value& payload, CapabilityReport& out,
 
     if (!optionalStringFromJson(payload, "accessMode", report.accessMode, error))
         return false;
+    if (payload.find("bluetoothOutput") != nullptr &&
+        !json::getBool(payload, "bluetoothOutput", report.bluetoothOutput))
+    {
+        error = "bluetoothOutput must be a boolean";
+        return false;
+    }
     if (!report.accessMode.empty() && report.accessMode != "exclusive" &&
         report.accessMode != "shared")
     {
@@ -1323,6 +1331,8 @@ json::Value makeStreamReady(const std::string& sessionId, const StreamReady& rea
         root["powerState"] = json::Value(ready.powerState);
     if (!ready.wakeOnLan.empty())
         root["wakeOnLan"] = json::Value(ready.wakeOnLan);
+    if (!ready.ready && !ready.localSource.empty())
+        root["localSource"] = json::Value(ready.localSource);
     if (!ready.ready && ready.standby)
         root["standby"] = json::Value(true);
 
@@ -1382,6 +1392,14 @@ bool parseStreamReady(const json::Value& payload, std::string& sessionId, Stream
                     "agree with ready and standby";
             return false;
         }
+    }
+
+    if (payload.find("localSource") != nullptr &&
+        (!json::getString(payload, "localSource", result.localSource) ||
+         result.localSource != "bluetooth" || result.ready))
+    {
+        error = "localSource must be bluetooth and requires ready=false";
+        return false;
     }
 
     // "sleep" is the one state a server can end, so it names what to wake.
