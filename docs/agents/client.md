@@ -143,17 +143,24 @@ connects the AXP152 DCDC4 supply (small regulator patch under that board's
 `patches/linux/`). Only 792/996 MHz are exposed. The selected speed is stored in
 `/etc/galdrun-cpu.conf`; RAM deployments must preserve it in their private
 overlay. `test_connector3_cpu_power_web.cjs <url>` is an explicit hardware
-integration check that changes/restores speed and standby. Suspend-to-idle
-being present does not qualify deep sleep: no Connector 3 suspend helper is
-shipped until a platform deep-suspend and wake path works.
+integration check that changes/restores speed and standby. Connector 3's
+persistent image installs `board/connector3/raumfeld-suspend`; the existing
+client detects that executable to enable manual and timed deep sleep.
 `connector3-pm.c` powers off CPU0 through the secure PSCI monitor, with DDR
 self-refresh and SCU/peripheral power retained for Ethernet wake. Stock PLL
 handling is preserved. The monitor must restore CNTFRQ, and CPU-PM notifications
 restore CNTKCTL. The older nonsecure `connector3-suspend.S` path is unused.
-The kernel port requires an
-explicit `galdrun,experimental-suspend` root DT property (or boot parameter
-`connector3_suspend=1`). The normal image does not enable it. The explicit
-hardware diagnostic is `hardware/buildroot/scripts/test-connector3-suspend.sh`;
+The persistent DT enables `galdrun,cpu-core-suspend`; private RAM tests may use
+`galdrun,experimental-suspend` or boot parameter `connector3_suspend=1`.
+The helper detaches the built-in WLAN driver before native PCIe suspend/reset,
+then binds it and restarts saved networking on wake. Keep native PCIe resume
+enabled: the retired retention bypass loses the radio link. Ethernet supports
+magic wake; the top touch controls wake through MCU UART. WLAN-only deep sleep
+uses local touch wake, with Wi-Fi restored afterward; no WoWLAN is advertised.
+The idle deep-sleep timer only fires with a wired wake path to the server
+(`wiredWakeAvailable`, all boards); explicit requests still sleep over WLAN.
+The explicit hardware diagnostic invokes the helper with RTC fallback:
+`hardware/buildroot/scripts/test-connector3-suspend.sh`;
 read the current hardware checkpoint before running it.
 Connector 3's `board/connector3/ram/mcu-buttons.cpp` (under
 `hardware/buildroot/`) also owns audio MCU initialization and its root-only

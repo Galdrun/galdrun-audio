@@ -1,5 +1,18 @@
 # Connector 3 / Teufel Streamer: SSH access and experimental RAM build
 
+## Deep sleep qualified on NAND; TOSLINK in progress — 2026-11-02
+
+Installed FIT `99cba8fd...` passed on NAND without USB: RCA music (user
+confirmed), manual standby, deep sleep with server Ethernet wake (GPCv2 102) and
+top-touch wake (MCU UART, GPCv2 28), and settings across a physical power cycle.
+Joined record: `hardware/buildroot/output/connector3-persistent/hardware-verification.json`.
+Stock firmware never kernel-suspends this S810 board (`Hardware::shouldSuspend()`
+is false whenever `hasMcu()`); its standby keeps Linux and WLAN up. Galdrun's
+idle deep-sleep timer therefore only fires with a wired wake path; explicit
+requests still sleep over WLAN. TOSLINK output (SAI2, ALSA PCM 1) is
+implemented and awaiting a hardware test; see the remaining-work table below and the
+[handover](connector3-handover-2026-10-31.md#current-state).
+
 ## Reinstall, audio and status LEDs qualified — 2026-11-01
 
 The rebuilt USB installer `a9c033fb...` installed normal FIT `e9542fdc...` with
@@ -1924,21 +1937,24 @@ The earlier bring-up kernel disabled suspend and consequently lacked ARM SMP
 RAM-to-RAM kexec. Its base DT still lacks platform deep suspend; only s2idle
 is available. Save live RAM settings privately before any reload or reboot.
 
-## Remaining work and retest (2026-10-29)
+## Remaining work and retest (updated 2026-11-02)
 
-This checklist distinguishes implemented source from qualified hardware behavior.
-It describes the custom-kernel RAM profile, not the installed vendor beta.
+This checklist distinguishes implemented source from qualified hardware behavior
+for the installed persistent NAND image, compared with the stock firmware.
 
-| Area | Remaining work |
+| Area | State / remaining work |
 | --- | --- |
-| Power | CPU clock/792–996 MHz selection, voltage transitions and saved-speed restore verified. The opt-in CPU-off/DDR self-refresh port passed RTC wake on diagnostic builds; Ethernet wake remains unqualified and appliance Deep Sleep stays hidden. CPU idle remains disabled and only CPU0 is enabled. See the latest checkpoint above. |
-| Wi-Fi | Initialization, scan, association, DHCP and WLAN-only SSH/traffic verified with the local 15.87.19.p14 radio firmware, including the final clean rebuilt image. Reconnect, setup-AP fallback and sustained traffic remain unqualified. Generic upstream radio firmware still times out on `0xfa`. |
-| Ethernet | Previously verified at 100 Mbit/s full duplex under both kernels. Repeated boot/link acquisition still needs qualification; transient no-carrier does not establish a cable fault. |
-| Audio | Verify audible RCA and optical playback, MCU mute/volume behavior, sample rates and sustained/grouped playback. The custom DTS describes SAI1 only; the vendor's SAI2 digital playback path and simultaneous output are missing. Format negotiation alone is not an audio test. |
-| Touch controls | Native UART/uinput implementation and nine bindings exist. Verify physical events through the final native daemon and client, including hold/retry behavior. The earlier vendor bridge's physical test is separate. |
-| Indicators | Implement MCU LED-strip/Bluetooth-indicator patterns and brightness; the two-GPIO-LED implementation does not apply. |
-| Other hardware | Bluetooth and USB support are disabled in this RAM profile. These are separate bring-up tasks if required for the finished firmware. |
-| Installation | Persistent root filesystem/settings, a qualified USB installer/update/rollback path and cold boot. MTD/MMC/storage drivers are deliberately absent from the RAM kernel. The existing diagnostic FIT slot cannot contain the full bundle unchanged. |
+| Installation | **Done.** USB installer, backups, install/readback, rollback and NAND cold boot qualified. Updates still need the USB installer: there is no network update path (stock has one). |
+| Power | **Done:** 792–996 MHz CPU speed control, manual/automatic standby, deep sleep with Ethernet magic-packet and touch wake on NAND. WLAN cannot wake deep sleep (radio unbound; stock never deep-sleeps either), so the idle timer needs a wired wake path. Deep-sleep power draw is unmeasured. |
+| Audio (RCA) | **Done:** automatic MCU rate setup, MCU volume/mute, audible 44.1 kHz music on NAND. 88.2–192 kHz, long-running and grouped playback remain unqualified. |
+| Audio (TOSLINK) | **Implemented, untested:** SAI2 (vendor `spdif out` I2S link) is ALSA PCM 1 (`hw:CARD=Connector3,DEV=1`, "Digital"). It shares the audio PLL with RCA: both can run together only in the same 44.1k/48k family. It uses software volume; whether the MCU must enable the transmitter is unknown. Stock feeds both outputs at once; Galdrun plays to the selected PCM only. |
+| Touch controls | **Done:** nine native bindings and touch wake. Hold/long-press behavior unqualified. |
+| Indicators | **Done:** MCU status patterns (boot/connecting/setup/ready/error/off) and saved LED-off. Missing: global LED brightness (`0x22`) and the rear Bluetooth indicator (`0x21`). |
+| Wi-Fi | Association, DHCP, WLAN-only SSH/traffic and resume from deep sleep verified. Reconnect, setup-AP fallback and sustained traffic remain unqualified. |
+| Ethernet | 100 Mbit/s full duplex and wake verified. Repeated boot/link acquisition unqualified. |
+| Bluetooth | **Missing.** Stock has a Bluetooth audio sink (`rf-bluetoothd`); Galdrun has no Bluetooth stack. |
+| USB | Host mode is enabled only for the installer stick; stock media-from-USB use is not established. |
+| Streaming services | Stock Google Cast, Spotify Connect and the Raumfeld UPnP renderer are proprietary and not carried over; Galdrun's server provides sources instead. |
 | Recovery | Qualify failed-start recovery, including failures before `/init` or SSH. The software guard cannot recover a hung kernel. |
 
 ### Earlier failed tests before the COM5 console was established

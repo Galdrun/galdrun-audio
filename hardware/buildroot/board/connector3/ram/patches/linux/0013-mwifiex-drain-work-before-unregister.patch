@@ -1,0 +1,22 @@
+From: Galdrun <galdrun@localhost>
+Subject: [PATCH] mwifiex: pcie: drain recovery work before clearing adapter
+
+Unbinding can time out a firmware command and queue dump/reset work. The
+worker dereferences card->adapter, but unregister_dev clears it before
+cleanup_pcie eventually drains that worker. Drain it while the adapter is
+still valid, retaining the existing reset-path exception to avoid waiting
+on the worker from its own PCI reset callback.
+
+--- a/drivers/net/wireless/marvell/mwifiex/pcie.c
++++ b/drivers/net/wireless/marvell/mwifiex/pcie.c
+@@ -3202,6 +3202,10 @@ static void mwifiex_unregister_dev(struct mwifiex_adapter *adapter)
+ 		if (card->msi_enable)
+ 			pci_disable_msi(pdev);
+ 	}
++	/* Drain dump/reset work before invalidating its adapter pointer. */
++	if (!card->pci_reset_ongoing)
++		cancel_work_sync(&card->work);
++
+ 	card->adapter = NULL;
+ }
+ 

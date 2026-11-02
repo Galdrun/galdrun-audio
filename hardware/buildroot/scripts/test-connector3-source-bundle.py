@@ -28,4 +28,8 @@ with tarfile.open(path) as archive:
     assert any('optee-os' in name for name in manifest)
     assert 'toolchain/gcc-13.3.0.tar.xz' in manifest and 'toolchain/gcc-14.3.0.tar.xz' in manifest
     assert 'project-source/hardware/buildroot/board/connector2/status-leds.cpp' in manifest, 'Shared Connector 3 LED monitor source missing'
+    prefix = 'project-source/hardware/buildroot/board/connector3/'
+    assert prefix+'raumfeld-suspend' in manifest, 'Connector 3 sleep helper source missing'
+    assert prefix+'ram/patches/linux/0013-mwifiex-drain-work-before-unregister.patch' in manifest, 'WLAN recovery lifetime fix missing'
+    assert prefix+'ram/patches/linux/0009-connector3-retain-pcie-in-suspend.patch' not in manifest, 'Retired PCIe bypass still packaged'
 print('Connector 3 source archive: all file hashes match; monitor/runtime/local sources present; no private paths')

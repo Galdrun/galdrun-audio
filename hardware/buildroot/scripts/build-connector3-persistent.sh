@@ -22,12 +22,33 @@ if [[ ! -f "$linux/Makefile" ]]; then
     cp -a --reflink=auto "$ram/build/linux-6.12.112" "$linux"
 fi
 cp "$ram/build/linux-6.12.112/.config" "$linux/.config"
+# Refresh the PM source even when the qualified audio RAM cache is reused.
+install -m 0644 "$board/../ram/connector3-pm.c" "$linux/arch/arm/mach-imx/connector3-pm.c"
+install -m 0644 "$board/../ram/galdrun-connector3-audio.c" "$linux/sound/soc/fsl/galdrun-connector3-audio.c"
+# Migrate older caches away from the retired PCIe retention experiment.
+python3 - "$linux/drivers/pci/controller/dwc/pci-imx6.c" <<'PY'
+from pathlib import Path
+import sys
+path=Path(sys.argv[1]);text=path.read_text()
+guard='''\t/* The Connector 3 suspend port retains the peripheral domain.
+\t * Its 88W8897 survives device host-sleep, but not a root-port reset
+\t * underneath the retained firmware/DMA state. Keep the link intact. */
+\tif (of_machine_is_compatible("fsl,imx7d-teufel-streamer"))
+\t\treturn 0;
+
+'''
+assert text.count(guard) in (0,2), 'Partial PCIe retention patch in build cache'
+if guard in text: path.write_text(text.replace(guard,''))
+PY
 cp "$board/imx7d-galdrun-connector3.dts" "$board/../imx7d-galdrun-connector3-storage.dtsi" \
     "$board/../ram/dts/nxp/imx/imx7d-galdrun-connector3-ram.dts" \
     "$linux/arch/arm/boot/dts/nxp/imx/"
 # Older qualified RAM caches predate the explicit radio sleep-clock consumer.
 if ! grep -Fq 'devm_clk_get_enabled(dev, "wifi-32k")' "$linux/drivers/pci/controller/dwc/pci-imx6.c"; then
     patch -d "$linux" -p1 <"$board/../ram/patches/linux/0012-connector3-wifi-sleep-clock.patch"
+fi
+if ! grep -Fq 'Drain dump/reset work before invalidating' "$linux/drivers/net/wireless/marvell/mwifiex/pcie.c"; then
+    patch -d "$linux" -p1 <"$board/../ram/patches/linux/0013-mwifiex-drain-work-before-unregister.patch"
 fi
 # Built-in PCIe/WLAN probes before the NAND root mounts; provide its approved
 # hardware firmware through the kernel's standard built-in firmware loader.
@@ -39,6 +60,7 @@ install -m 0644 "$ram/target/lib/firmware/imx/sdma/sdma-imx7d.bin" "$firmware/im
 printf '%s  %s\n' b2c5e7f4f88b061b92be8113ddd5ec688da94729c3a5d07bec9e334335499538 \
     "$firmware/mrvl/pcie8897_uapsta.bin" | sha256sum -c -
 "$linux/scripts/config" --file "$linux/.config" \
+    --enable SUSPEND --enable CPU_PM --enable ARM_PSCI_FW \
     --enable MTD --enable MTD_RAW_NAND --enable MTD_NAND_GPMI_NAND \
     --enable MTD_UBI --enable UBIFS_FS --enable UBIFS_FS_ZLIB \
     --disable MTD_BLOCK --disable MTD_PARTITIONED_MASTER --disable MTD_CMDLINE_PARTS \

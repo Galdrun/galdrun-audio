@@ -9,14 +9,20 @@
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 
+/* PCM 0: SAI1 to the RCA DAC. PCM 1: SAI2 to the TOSLINK transmitter. */
+#define CONNECTOR3_LINKS 2
+
 struct connector3_audio {
     struct snd_soc_card card;
-    struct snd_soc_dai_link link;
-    struct snd_soc_dai_link_component cpu, platform, codec;
-    struct clk_bulk_data clocks[3];
+    struct snd_soc_dai_link links[CONNECTOR3_LINKS];
+    struct snd_soc_dai_link_component cpus[CONNECTOR3_LINKS], platforms[CONNECTOR3_LINKS],
+                                      codecs[CONNECTOR3_LINKS];
+    struct clk_bulk_data clocks[4];
     bool clocks_enabled;
     struct mutex lock;
     unsigned long nominal_pll;
+    unsigned long mclk;
+    unsigned int configured; /* links with hw_params applied, one bit each */
     int drift;
 };
 
@@ -100,11 +106,22 @@ static int connector3_audio_hw_params(struct snd_pcm_substream *substream,
     struct snd_soc_dai *cpu = snd_soc_rtd_to_cpu(rtd, 0);
     unsigned int rate = params_rate(params);
     unsigned long mclk = rate % 11025 == 0 ? 22579200 : 24576000;
+    unsigned int self = BIT(rtd->num);
     int ret, enable_ret;
 
     if (params_channels(params) != 2 || mclk % (rate * 64))
         return -EINVAL;
     mutex_lock(&priv->lock);
+    /* Both SAIs share the PLL. While the other output is configured, join it
+     * only in the same clock family and leave the running clocks untouched. */
+    if (priv->configured & ~self) {
+        if (mclk != priv->mclk) {
+            ret = -EBUSY;
+            goto out;
+        }
+        goto configure_dai;
+    }
+    priv->configured &= ~self;
     /* Retune the shared PLL first: changing only the root divider rounds
      * 22.5792 MHz to 22.1184 MHz while the PLL remains at 884.736 MHz.
      * Both SAI and the carrier-board master clock use PLL / 36.
@@ -122,6 +139,8 @@ static int connector3_audio_hw_params(struct snd_pcm_substream *substream,
         ret = clk_set_rate(priv->clocks[1].clk, mclk);
     if (!ret)
         ret = clk_set_rate(priv->clocks[2].clk, mclk);
+    if (!ret)
+        ret = clk_set_rate(priv->clocks[3].clk, mclk);
     enable_ret = clk_bulk_prepare_enable(ARRAY_SIZE(priv->clocks), priv->clocks);
     priv->clocks_enabled = !enable_ret;
     if (ret || enable_ret) {
@@ -130,40 +149,65 @@ static int connector3_audio_hw_params(struct snd_pcm_substream *substream,
     }
     if (clk_get_rate(priv->clocks[0].clk) != mclk * 36 ||
         clk_get_rate(priv->clocks[1].clk) != mclk ||
-        clk_get_rate(priv->clocks[2].clk) != mclk)
+        clk_get_rate(priv->clocks[2].clk) != mclk ||
+        clk_get_rate(priv->clocks[3].clk) != mclk)
     {
         ret = -EINVAL;
         goto out;
     }
     priv->nominal_pll = mclk * 36;
+    priv->mclk = mclk;
     priv->drift = 0;
+configure_dai:
     ret = snd_soc_dai_set_tdm_slot(cpu, 3, 3, 2, 32);
     if (ret)
         goto out;
     ret = snd_soc_dai_set_sysclk(cpu, 1, mclk, SND_SOC_CLOCK_IN);
+    if (!ret)
+        priv->configured |= self;
 out:
     mutex_unlock(&priv->lock);
     return ret;
 }
 
+static int connector3_audio_hw_free(struct snd_pcm_substream *substream)
+{
+    struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+    struct connector3_audio *priv = snd_soc_card_get_drvdata(rtd->card);
+
+    mutex_lock(&priv->lock);
+    priv->configured &= ~BIT(rtd->num);
+    mutex_unlock(&priv->lock);
+    return 0;
+}
+
 static const struct snd_soc_ops connector3_audio_ops = {
     .startup = connector3_audio_startup, .hw_params = connector3_audio_hw_params,
+    .hw_free = connector3_audio_hw_free,
 };
 
 static void connector3_audio_release(void *data)
 {
     struct connector3_audio *priv = data;
+    int i;
+
     if (priv->clocks_enabled)
         clk_bulk_disable_unprepare(ARRAY_SIZE(priv->clocks), priv->clocks);
-    of_node_put(priv->cpu.of_node);
-    of_node_put(priv->codec.of_node);
+    for (i = 0; i < CONNECTOR3_LINKS; i++) {
+        of_node_put(priv->cpus[i].of_node);
+        of_node_put(priv->codecs[i].of_node);
+    }
 }
+
+static const char *const connector3_link_names[CONNECTOR3_LINKS][2] = {
+    { "Connector3 I2S", "Analog" }, { "Connector3 S/PDIF", "Digital" },
+};
 
 static int connector3_audio_probe(struct platform_device *pdev)
 {
     struct device *dev = &pdev->dev;
     struct connector3_audio *priv;
-    int ret;
+    int i, ret;
 
     priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
     if (!priv)
@@ -172,6 +216,7 @@ static int connector3_audio_probe(struct platform_device *pdev)
     priv->clocks[0].id = "pll";
     priv->clocks[1].id = "mclk";
     priv->clocks[2].id = "sai";
+    priv->clocks[3].id = "sai2";
     ret = devm_clk_bulk_get(dev, ARRAY_SIZE(priv->clocks), priv->clocks);
     if (ret)
         return dev_err_probe(dev, ret, "audio clocks unavailable\n");
@@ -180,30 +225,36 @@ static int connector3_audio_probe(struct platform_device *pdev)
         return ret;
     priv->clocks_enabled = true;
     priv->nominal_pll = clk_get_rate(priv->clocks[0].clk);
-    priv->cpu.of_node = of_parse_phandle(dev->of_node, "audio-cpu", 0);
-    priv->platform.of_node = priv->cpu.of_node;
-    priv->codec.of_node = of_parse_phandle(dev->of_node, "audio-codec", 0);
+    for (i = 0; i < CONNECTOR3_LINKS; i++) {
+        priv->cpus[i].of_node = of_parse_phandle(dev->of_node, "audio-cpu", i);
+        priv->platforms[i].of_node = priv->cpus[i].of_node;
+        priv->codecs[i].of_node = of_parse_phandle(dev->of_node, "audio-codec", i);
+    }
     ret = devm_add_action_or_reset(dev, connector3_audio_release, priv);
     if (ret)
         return ret;
-    if (!priv->cpu.of_node || !priv->codec.of_node)
-        return -EINVAL;
-    priv->codec.dai_name = "dit-hifi";
-    priv->link.name = "Connector3 I2S";
-    priv->link.stream_name = "Analog";
-    priv->link.cpus = &priv->cpu;
-    priv->link.num_cpus = 1;
-    priv->link.platforms = &priv->platform;
-    priv->link.num_platforms = 1;
-    priv->link.codecs = &priv->codec;
-    priv->link.num_codecs = 1;
-    priv->link.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBC_CFC;
-    priv->link.ops = &connector3_audio_ops;
+    for (i = 0; i < CONNECTOR3_LINKS; i++) {
+        struct snd_soc_dai_link *link = &priv->links[i];
+
+        if (!priv->cpus[i].of_node || !priv->codecs[i].of_node)
+            return -EINVAL;
+        priv->codecs[i].dai_name = "dit-hifi";
+        link->name = connector3_link_names[i][0];
+        link->stream_name = connector3_link_names[i][1];
+        link->cpus = &priv->cpus[i];
+        link->num_cpus = 1;
+        link->platforms = &priv->platforms[i];
+        link->num_platforms = 1;
+        link->codecs = &priv->codecs[i];
+        link->num_codecs = 1;
+        link->dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBC_CFC;
+        link->ops = &connector3_audio_ops;
+    }
     priv->card.owner = THIS_MODULE;
     priv->card.dev = dev;
     priv->card.name = "Connector3";
-    priv->card.dai_link = &priv->link;
-    priv->card.num_links = 1;
+    priv->card.dai_link = priv->links;
+    priv->card.num_links = CONNECTOR3_LINKS;
     priv->card.controls = connector3_controls;
     priv->card.num_controls = ARRAY_SIZE(connector3_controls);
     snd_soc_card_set_drvdata(&priv->card, priv);

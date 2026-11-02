@@ -50,16 +50,24 @@
         #sound-dai-cells = <0>;
     };
 
+    audio_digital_out: audio-digital-output {
+        compatible = "linux,spdif-dit";
+        #sound-dai-cells = <0>;
+    };
+
+    /* PCM 0 is the RCA path on SAI1; PCM 1 is the vendor's "spdif out" link
+     * on SAI2, an I2S feed for the TOSLINK transmitter. */
     sound {
         compatible = "galdrun,connector3-audio";
-        audio-cpu = <&sai1>;
-        audio-codec = <&audio_out>;
+        audio-cpu = <&sai1>, <&sai2>;
+        audio-codec = <&audio_out>, <&audio_digital_out>;
         /* Mainline leaves AUDIO_MCLK_ROOT_CLK unregistered; use its actual
          * divider. Retune the main PLL, not its rate-gated post-divider. */
         clocks = <&clks IMX7D_PLL_AUDIO_MAIN>,
                  <&clks IMX7D_AUDIO_MCLK_ROOT_DIV>,
-                 <&clks IMX7D_SAI1_ROOT_CLK>;
-        clock-names = "pll", "mclk", "sai";
+                 <&clks IMX7D_SAI1_ROOT_CLK>,
+                 <&clks IMX7D_SAI2_ROOT_CLK>;
+        clock-names = "pll", "mclk", "sai", "sai2";
         assigned-clocks = <&clks IMX7D_AUDIO_MCLK_ROOT_SRC>,
                           <&clks IMX7D_AUDIO_MCLK_ROOT_DIV>;
         assigned-clock-parents = <&clks IMX7D_PLL_AUDIO_POST_DIV>;
@@ -218,6 +226,17 @@
     status = "okay";
 };
 
+&sai2 {
+    #sound-dai-cells = <0>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_sai2>;
+    assigned-clocks = <&clks IMX7D_SAI2_ROOT_SRC>,
+                      <&clks IMX7D_SAI2_ROOT_CLK>;
+    assigned-clock-parents = <&clks IMX7D_PLL_AUDIO_POST_DIV>;
+    assigned-clock-rates = <0>, <24576000>;
+    status = "okay";
+};
+
 &iomuxc {
     pinctrl-names = "default";
     pinctrl-0 = <&pinctrl_preserved_gpio &pinctrl_32khz>;
@@ -275,6 +294,17 @@
             MX7D_PAD_ENET1_RGMII_TX_CTL__SAI1_RX_SYNC 0x1f
             MX7D_PAD_ENET1_RGMII_TXC__SAI1_RX_BCLK 0x1f
             MX7D_PAD_SAI1_RX_SYNC__SAI1_RX_SYNC 0x1f
+        >;
+    };
+    /* Vendor sai2grp, pad for pad. */
+    pinctrl_sai2: sai2grp {
+        fsl,pins = <
+            MX7D_PAD_SAI2_TX_SYNC__SAI2_TX_SYNC 0x1f
+            MX7D_PAD_SAI2_TX_BCLK__SAI2_TX_BCLK 0x1f
+            MX7D_PAD_SAI1_RX_BCLK__SAI2_RX_BCLK 0x1f
+            MX7D_PAD_SD2_CLK__SAI2_RX_SYNC 0x1f
+            MX7D_PAD_SAI2_TX_DATA__SAI2_TX_DATA0 0x1f
+            MX7D_PAD_SAI2_RX_DATA__SAI2_RX_DATA0 0x1f
         >;
     };
 };

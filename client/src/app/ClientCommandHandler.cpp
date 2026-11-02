@@ -114,6 +114,17 @@ std::string wiredWakeMac(const ClientRuntime& runtime)
 }
 #endif
 
+// Whether the server could wake the device again after deep sleep.
+bool wiredWakeAvailable(const ClientRuntime& runtime)
+{
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+    return !wiredWakeMac(runtime).empty();
+#else
+    (void)runtime;
+    return false;
+#endif
+}
+
 // The live connection state when there is a connection, and what the
 // configuration implies when there is not.
 ServerConnectionState currentServerState(const ClientRuntime& runtime)
@@ -461,11 +472,20 @@ void ClientCommandHandler::pollPower(uint64_t nowNs)
              static_cast<uint64_t>(runtime_.config->deepSleepAfterSeconds) * 1000000000ULL)
     {
         runtime_.deepSleepTimerRunning = false;
-        matp::InputActionEvent event;
-        event.binding.action = matp::InputAction::DeepSleep;
-        std::string error;
-        if (!dispatchInputAction(event, error))
-            MULTIROOM_WARN("automatic deep sleep: %s", error.c_str());
+        // Over Wi-Fi only a local button could wake the device, so only an
+        // explicit request may put it to sleep there.
+        if (!wiredWakeAvailable(runtime_))
+        {
+            MULTIROOM_INFO("automatic deep sleep skipped: no wired wake path to the server");
+        }
+        else
+        {
+            matp::InputActionEvent event;
+            event.binding.action = matp::InputAction::DeepSleep;
+            std::string error;
+            if (!dispatchInputAction(event, error))
+                MULTIROOM_WARN("automatic deep sleep: %s", error.c_str());
+        }
     }
 
     if (runtime_.config == nullptr || runtime_.config->standbyAfterSeconds == 0 ||

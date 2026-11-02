@@ -34,6 +34,11 @@ def verify(stage, manifest):
         raise ValueError('MCU audio and LED support missing')
     if not board.get('sshSettings') or 'usr/sbin/raumfeld-ssh' not in files or 'etc/init.d/S50sshd' not in files:
         raise ValueError('Standard platform SSH settings/startup is missing')
+    helper = root/'usr/sbin/raumfeld-suspend'
+    expected_helper = Path(__file__).resolve().parents[1]/'board/connector3/raumfeld-suspend'
+    if not helper.is_file() or not helper.stat().st_mode & stat.S_IXUSR or helper.read_bytes() != expected_helper.read_bytes():
+        raise ValueError('Current executable Connector 3 sleep helper missing')
+    subprocess.run(['sh', '-n', str(helper)], check=True)
     for applet in ('usr/bin/cryptpw', 'usr/sbin/chpasswd'):
         if applet not in files:
             raise ValueError('SSH password applet missing: '+applet)
@@ -78,6 +83,7 @@ def verify(stage, manifest):
         'mcu_audio_self_test_verified':True,
         'mcu_rate_initialization_self_test_verified':True,
         'mcu_status_leds_present':True,
+        'suspend_helper_sha256':hashlib.sha256(helper.read_bytes()).hexdigest(),
         'mcu_audio_helper_sha256':hashlib.sha256(files['usr/sbin/galdrun-connector3-mcu'][1]).hexdigest(),
         'release_ready':False,'hardware_verified':False,'persistent_install_verified':False,
         'artifacts_sha256':{name:hashlib.sha256((stage/name).read_bytes()).hexdigest()

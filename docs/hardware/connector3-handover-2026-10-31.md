@@ -2,7 +2,173 @@
 
 ## Current state
 
-### Sleep/deep-sleep parity investigation — 2026-11-01 (ongoing)
+### 2026-11-02: TOSLINK (SAI2) image installed; optical listening test pending
+
+**Installed in NAND.** USB `2bd8f906...` booted (UART-attested), qualified,
+fresh backups taken (USB + host `private/connector3/reinstall-backup-optical-20261102/`,
+manifest pin **`6e3bc14d94d3e52d21ac43caf438c6f1ce074c43cb41890aae99a0f776fd529d`**;
+the previous USB backup is kept as `galdrun-backup-before-optical-20261102`).
+Install exit 0 with readback; MTD0 protected, MTD1–3 unchanged. Cold boot without
+USB/Reset: `Galdrun Connector 3`, MTD flags 0×5/0x400, new SSH key pinned from UART
+in `known_hosts_persistent_optical_20261102`, installed client `ccb54615...`
+(new build), client connected on `DEV=0`. `/proc/asound/pcm` lists
+`00-00 Analog` and `00-01 Digital`. `test-nand-toslink-tone-20261102.py` played
+48 kHz and 44.1 kHz tones on `DEV=1` with no ALSA error
+(`nand-toslink-tone-20261102.txt`); the user has no optical receiver at hand yet,
+so **TOSLINK audibility is unconfirmed**. Not yet run on this install:
+`verify-installed-optical-20261102.py` and an RCA listening check.
+
+Optical output is implemented: `galdrun-connector3-audio.c` now registers two
+links, PCM 0 "Analog" (SAI1/RCA) and PCM 1 "Digital" (SAI2, the vendor's
+`spdif out` I2S link, pins copied from vendor `sai2grp`). Both share the audio
+PLL; a second stream joins only in the same 44.1k/48k family (`-EBUSY`
+otherwise). The persistent build now refreshes this driver in the reused RAM
+kernel tree; both verifiers assert the `sai2` clock. The image also carries the
+client change that skips automatic deep sleep without a wired wake path.
+
+Rebuilt RAM profile (`private/connector3/ram-local`), then persistent FIT
+**`200d81b8e0f17e25a8607e08def65032122462decd0ed1dbb2b6e4021db87b90`**
+(rootfs `81f80995...`, monitor `4fdd38d3...` unchanged). USB installer
+`private/connector3/installer-write/connect3.img`, SHA256
+**`2bd8f9068bf36b60ecf05ec6caa80ef337edc21db8f1c0ffa592467644b80b3b`**, frozen in
+`private/connector3/installer-optical-2bd8f906-20261102/`. Not yet booted.
+The previous sleep verification records were preserved as
+`output/connector3-persistent/hardware-verification-*-2026110{1,2}.json`.
+
+Flow (helpers in the reference archive): user copies `connect3.img` manually,
+boots USB with Reset held; UART marker `GALDRUN_USB_IDENTITY_OPTICAL_20261102`;
+`qualify-optical-installer-20261102.py --backup` (keeps the old USB backup as
+`galdrun-backup-before-optical-20261102`, old manifest `e3beacdf...`);
+`install-optical-20261102.py`; cold boot; UART marker
+`GALDRUN_NAND_OPTICAL_IDENTITY_20261102`; `verify-installed-optical-20261102.py first`;
+`test-nand-toslink-tone-20261102.py` (stops the client, plays 48k and 44.1k tones
+on `hw:CARD=Connector3,DEV=1`, restarts the client). Unknown: whether the MCU
+must enable the TOSLINK transmitter.
+
+### 2026-11-02 (resumed): NAND sleep image qualified on hardware
+
+The user resumed. Fresh COM5 capture (same master log/TX queue) attested
+model, release, MAC and the pinned NAND key (`known_hosts_persistent_sleep_20261102`).
+All on the installed FIT `99cba8fd...`, USB absent, no NAND writes:
+
+- `verify-installed-sleep-20261102.py first` passed; the user confirmed RCA
+  music audible (44100/int16). It saved standby delay 86400 for the reboot trial.
+- Deep sleep via client API + **server Wake** passed: **IRQ33 = GPCv2 102
+  ethernet**, secure resume, no Oops, services restarted, wake/console settings
+  restored. Runner `test-nand-server-wake-20261102.py` (NAND copies of the RAM
+  helpers: `arm-/read-nand-server-wake-20261102.sh`), evidence `nand-server-wake-*`.
+- **Touch wake** (top Play/Pause) passed: **IRQ31 = GPCv2 28 MCU UART** after
+  119 s, RTC fallback 600 s. `test-nand-touch-wake-20261102.py`, evidence
+  `nand-touch-wake-*` (report flag corrected after a whitespace regex bug).
+- Manual standby on/off via client API passed.
+- Physical power cycle (no USB/Reset): `verify-installed-sleep-20261102.py reboot`
+  passed, delay 86400 survived, original delays (0/0) restored. Playback resumed
+  without pressing Play because the server zone was still playing (existing
+  server behaviour; the user accepts it).
+
+Joined record: `output/connector3-persistent/hardware-verification.json`.
+WLAN magic wake remains unsupported (radio is unbound during sleep). Power
+consumption in deep sleep is still unmeasured. Earlier sections are history.
+
+### Sleep/deep-sleep parity investigation — 2026-11-01
+
+**STOPPED at the user's explicit request, 2026-11-02 (resumed later the same day, see above).**
+The new sleep image is **installed in NAND**. Installer exit0/readback passed;
+MTD0 stayed protected and MTD1–MTD3 hashes stayed unchanged. Fresh independent
+USB and host backups were verified before installation, manifest SHA256
+`e3beacdfa87e23f0e39946400e0cac8ea02d98af332ca77fd7f87d90e54a28f7`.
+Host copy: `private/connector3/reinstall-backup-sleep-20261102/`.
+Logs/results: `install-sleep-20261102.log/.json` and
+`fresh-usb-backup-sleep-20261102.json` in the reference archive.
+
+The user powered off, removed USB and booted normally without Reset. UART and
+a read-only snapshot confirmed `Galdrun Connector 3`, release
+`6.12.112-galdrun-connector3`, expected MAC, MTD0–4 RO / MTD5 RW, selected
+`s2idle [deep]`, and running client/LED/MCU services at **10.0.0.74**.
+The new persistent SSH key is UART-attested in
+`private/connector3/known_hosts_persistent_sleep_20261102`.
+`getPower` reports **on**, deep sleep supported, **standbyAfterSeconds=0** and
+**deepSleepAfterSeconds=0**. `getLeds` reports supported/off=false.
+Existing settings were synced; no sleep, playback or reboot test was started
+after the stop request. Final NAND listening, sleep/wake and reboot-persistence
+checks remain pending; **release_ready remains false**.
+
+Saved state: `private/connector3/installed-sleep-stop-20261102/` contains boot
+identity, runtime, settings/cache, MCU/client/LED logs, API snapshots, install
+and backup records, working-tree patch and the new kernel patch. Frozen payload:
+`private/connector3/persistent-installed-99cba8-sleep-20261102/`.
+Frozen USB: `private/connector3/installer-sleep-6277-installed-20261102/`.
+Task-owned UART capture is closed at the end of this save; local Galdrun
+core/server and the device are left running normally. Changes remain saved
+in the working tree; no commit was requested.
+
+The preceding RAM qualification used exact persistent kernel `3003af5e...`.
+Three idle/sleep/Ethernet-wake/radio-rebind cycles passed, IRQ32 after
+11/14/11 seconds, with real secure resume and no Oops:
+`radio-cancel-stress-20261102T104609.json` and its three logs. WLAN-only client
+API sleep also passed on this kernel, preserving manual standby, waking by
+RTC IRQ36 after 51 seconds, restoring wake/console settings and playing
+44.1 kHz audio (`radio-cancel-wifi-api-result-via-ethernet-20261102.txt`).
+Ethernet was temporarily disabled only in RAM for that repeat, then restored
+automatically, reproducing the WLAN-to-Ethernet transition without a cable change.
+Normal server Wake subsequently passed: client advertised wired sleep/MAC,
+the server wake command was acknowledged, and resume reported IRQ32.
+Evidence `server-wake-qualified-20261102.json`, `server-wake-proof-20261102.txt`.
+Its first SSH read was early; a subsequent pinned read succeeded. The proof's
+92-second RTC interval includes verification delay, not sleep duration.
+
+New USB file: `private/connector3/installer-write/connect3.img`, SHA256
+**`6277ff343970db54d37ef2bd75740c7cf69885ce0d3d8a139bbbba50db67f636`**.
+Payload FIT **`99cba8fd1ee623bc150c391df156407de4dd2b204f5f55ee68a227cf0258090e`**;
+monitor remains the exact qualified **`4fdd38d3...`** binary. Source archive
+`output/connector3-sources/connector3-sources-019ff9d8ac7a.tar`, SHA256
+`45106f5e54d794965cb7660dba4f7e13a12e6684b9ce8c488a537be4a7c9ad87`,
+662 hashes verified, no private inputs. Installer rebuilding now invalidates
+stale hardware qualification. USB `6277ff34...` cold boot/preflight and install
+readback have now passed. The old audio/LED installer remains preserved as a
+fallback; the current NAND image is the new `99cba8fd...` sleep candidate.
+
+**When the user resumes:** start fresh UART capture, retain the pinned NAND key
+and verify current state before testing. Do not reinstall: installation already
+completed. Next qualify NAND music, standby/deep sleep, Ethernet/touch wake and
+settings across reboot. The prepared private
+`verify-installed-sleep-20261102.py first` is **not read-only**: after checks it
+saves a one-day standby delay for a planned reboot trial; `reboot` mode verifies
+that trial and restores the original delays. Neither mode was run today. Use
+it deliberately only when continuing that test. `nand-command-20261102.py`
+uses the new pinned NAND key. Existing RAM diagnostics assert the RAM model;
+do not run them unchanged on NAND or classify changed Linux IRQ numbers as
+wake failures—identify Ethernet GPC102 / MCU UART GPC28 from `/proc/interrupts`.
+The USB still retains older backups separately, including
+`galdrun-backup-before-sleep-20261102` (old manifest `f0d187a3...`).
+
+**Earlier rejected candidate:** do not install host USB candidate `0ffe31e2...`.
+It was never installed and is explicitly rejected in its hardware report.
+The exact persistent kernel `21615af6...` passed client API deep sleep over
+WLAN, preserving manual standby, resuming by RTC IRQ36 after 49 seconds,
+restoring console/MCU wake settings, reconnecting WLAN and advancing audio
+(`persistent-kernel-api-sleep-result-20261102.txt`). But after Ethernet was
+reconnected, the next sleep attempt timed out firmware command 0xaa during
+radio removal, then crashed `mwifiex_pcie_work` on NULL `card->adapter`.
+NAND remains the old qualified audio/LED image; no sleep image was installed.
+
+Patch `0013-mwifiex-drain-work-before-unregister.patch` now drains recovery work
+before unregister clears that pointer, retaining the existing PCI-reset-path
+exception. Persistent rebuild passed: FIT `99cba8fd...`, kernel
+`3003af5e7e1db0643e4ad903d0a5abcfdccd4bd50ca19de3fb90f261692780e7`.
+RAM stage `private/connector3/sleep-radio-cancel-20261102/` uses that exact
+kernel with NAND disabled in DT. USB and RAM loaders target this stage;
+the requested recovery and repeated-cycle tests have now completed (see above).
+The host magic-packet test now waits for a fresh UART secure suspend entry,
+so a firmware shutdown delay cannot make it send all packets before sleep.
+
+The user confirmed RCA music over WLAN after recovery, but had pressed Play
+on the server. They explicitly accept requiring Play after the last room
+disappears; preserve existing playback policy. Do not claim automatic playback
+from that listening observation. The earlier qualified installer and monitor
+are frozen in `installer-audio-led-qualified-20261101/` and
+`monitor-audio-led-qualified-20261101/`. The exact hardware-tested timer-fixed
+monitor `4fdd38d3...` was promoted unchanged to production image inputs.
 
 #### Latest verified RAM state — Ethernet wake works with stock PLL
 
@@ -22,18 +188,75 @@ missed Ethernet wake even with the existing peripheral mapping restored
 Power consumption has not been measured. Earlier prototype `21f1bcbc...`
 also passed Ethernet wake (4 seconds, IRQ32, MAC event set).
 
-Current device: clean Ethernet-only RAM candidate
-`private/connector3/sleep-clean-pm-20261101/`, under the timer-fixed USB monitor.
-NAND and the qualified installer remain unchanged. Production DT still leaves
-suspend disabled; the client helper is not yet installed.
+**2026-11-02 recovery checkpoint:** UART identifies the current device as the
+verified NAND installation (`Galdrun Connector 3`, `6.12.112-galdrun-connector3`,
+MTD flags 0/0/0/0/0/0x400, `[s2idle]`). Do not use the private RAM SSH pin for
+this boot. NAND and the qualified installer remain unchanged. Production DT
+still leaves deep sleep disabled; the new helper is not installed in the image.
 
-Front POWER wake remains unqualified: the previous 60-second test returned by
-RTC without a confirmed press during sleep. User readiness has been requested
-for a coordinated repeat. There are no Ethernet link lights to observe; do not
-ask again. A WLAN-enabled private DT booted the radio, but the standard network
-manager disconnected WLAN because Ethernet was ready. A real WLAN-only test
-still requires unplugging Ethernet. Do not classify that intentional policy as
-a radio failure or claim Wake-on-WLAN support.
+`board/connector3/raumfeld-suspend` passed the exact RAM helper Ethernet test:
+result0, IRQ32, 10 seconds, client and LEDs restarted, power `on`. Evidence
+`sleep-helper-ethernet-20261101.txt` and matching host JSON. It uses existing
+BusyBox wget, preserves settings/manual standby and restores wake configuration.
+`test-connector3-suspend-helper.py` freshly passes success/failure cleanup tests.
+
+Connector 3 has **no separate Power button** in the native mapping: nine top
+touch controls, including Play/Pause. Earlier requests for a front POWER press
+were incorrect. **Local touch wake now passed:** with Ethernet wake disabled,
+the user tapped top Play/Pause during the 600-second window; real secure resume
+returned result0 after **32 seconds, IRQ31 (MCU UART/GPC28)**. Client and LED
+monitor restarted; `arch_sys_counter` remained selected. Evidence
+`touch-wake-long-result-20261102.txt`. The preceding 120-second run returned by
+RTC (IRQ36) and did not establish when the touch occurred. No more physical
+button qualification is needed for the Ethernet-only clean RAM kernel.
+There are no Ethernet link lights to observe; do not
+ask again. WLAN-only connectivity **was established** using the standard
+supervisor and saved settings: terminate the Ethernet udhcpc, wait for its exit
+(its final script raises the link), then bring eth0 down, with timed automatic
+Ethernet restoration. Evidence `sleep-clean-pm-wifi-connected-20261101.txt`:
+eth0 DOWN, mlan0 UP at 10.0.0.58. No cable change is needed.
+
+The first WLAN RTC/helper run timed out after 90 seconds; UART stopped at
+`Suspending console(s)`. **Its console_suspend was Y, whereas the successful
+Ethernet baseline used N.** This does not yet isolate WLAN as the cause. Next
+matched test keeps console awake and enables PM timing logs. Both USB-to-RAM
+and RAM-to-RAM loaders now target `sleep-clean-pm-wifi-20261101/`: kernel
+`d1043a93...`, WLAN DT `42b55890...`. The user has been asked to reboot the
+existing corrected USB loader using Reset; no new file copy is needed. Obtain
+fresh USB model/MTD/key attestation through UART before pinning SSH and loading
+RAM. Do not claim WLAN resume or Wake-on-WLAN support yet.
+
+**2026-11-02 matched repeat:** corrected USB was attested and booted kernel
+`d1043a93...` with WLAN DT `42b55890...`. Ethernet control with console_suspend=N
+reached real CPU resume, then stalled at `ieee80211 phy0: ... wiphy_resume`;
+`mwifiex_pcie` PCI resume had returned 0. This isolates a WLAN resume problem
+even when WLAN is down and Ethernet carries the connection. Evidence
+`sleep-helper-wifi-hardware-ethernet-control-20261102.txt` and master UART log.
+Next: recover the same USB (requested), load the Ethernet-only clean DT first
+for POWER qualification. USB loader script now targets `sleep-clean-pm-20261101`.
+The separate `test-radio-rebind-20261102.sh` is prepared to test native WLAN
+driver unbind/rebind **while awake**, before attempting that strategy around
+sleep. It has not run or been wired into the shipped helper. Do not repeat
+ordinary suspend with the radio bound until its resume problem is resolved.
+UART SysRq-w through a serial BREAK produced no further output in this stall.
+Capture was restarted as PID38108; no second COM5 owner should be opened.
+
+**Latest 2026-11-02 PCIe checkpoint:** awake WLAN driver unbind/rebind passed,
+including subsequent association (`radio-rebind-awake-check-20261102.txt`).
+The helper now detaches the built-in WLAN driver and restarts the standard
+network supervisor on restoration, but the first real sleep exposed PCIe
+inaccessibility on bind (`D3cold to D0, device inaccessible`, IRQ registration
+-22). This candidate is **not qualified**. Its normal PCIe resume was bypassed
+by patch 0009; unbinding alone cannot recover a lost link.
+
+New isolated kernel `3deb62f22fc1929d69ddcf6c520c47f65ab5b6a182dc3370af4039942bdfcd43`
+at `private/connector3/sleep-native-pcie-20261102/` removes only both early-return
+guards in the private PCIe source, allowing native PHY/link reset and MSI restore.
+The PM source remains `7751657c...`, with stock PLL unchanged. Build passed.
+USB-to-RAM loader now targets this candidate. Existing USB recovery is required
+again; no file copy or NAND write. Native PCIe candidate sleep remains untested.
+The helper also preserves/restores console_suspend and keeps the monitor UART
+clock available during sleep; cleanup regression tests pass.
 
 #### Earlier verified RAM baseline — keep stock PLL handling
 

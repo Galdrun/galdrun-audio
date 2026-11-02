@@ -33,8 +33,8 @@ def verify(output, project):
         return subprocess.check_output([str(fdtget), '-t', 's', str(dtb), '/sound', name], text=True).strip()
     if dt_property('compatible') != 'galdrun,connector3-audio':
         raise ValueError('Connector 3 clock-switching audio driver must own the card')
-    if dt_property('clock-names') != 'pll mclk sai':
-        raise ValueError('Connector 3 requires the PLL and both audio root clocks')
+    if dt_property('clock-names') != 'pll mclk sai sai2':
+        raise ValueError('Connector 3 requires the PLL and all audio root clocks')
     clock_header = (output / 'build/linux-6.12.112/include/dt-bindings/clock/imx7d-clock.h').read_text()
     clock_ids = {parts[1]: int(parts[2]) for line in clock_header.splitlines()
                  if (parts := line.split()) and len(parts) == 3 and parts[0] == '#define'
@@ -42,8 +42,9 @@ def verify(output, project):
     audio_clocks = subprocess.check_output(
         [str(fdtget), '-t', 'u', str(dtb), '/sound', 'clocks'], text=True).split()
     expected_clocks = [clock_ids[name] for name in (
-        'IMX7D_PLL_AUDIO_MAIN', 'IMX7D_AUDIO_MCLK_ROOT_DIV', 'IMX7D_SAI1_ROOT_CLK')]
-    if len(audio_clocks) != 6 or list(map(int, audio_clocks[1::2])) != expected_clocks:
+        'IMX7D_PLL_AUDIO_MAIN', 'IMX7D_AUDIO_MCLK_ROOT_DIV', 'IMX7D_SAI1_ROOT_CLK',
+        'IMX7D_SAI2_ROOT_CLK')]
+    if len(audio_clocks) != 8 or list(map(int, audio_clocks[1::2])) != expected_clocks:
         raise ValueError('Connector 3 must use registered, programmable mainline audio clocks')
     opps = subprocess.check_output([str(fdtget), '-l', str(dtb), '/opp-table'], text=True).split()
     if set(opps) != {'opp-792000000', 'opp-996000000'}:

@@ -28,6 +28,7 @@ mkdir -p "$stage/rootfs" "$stage/settings"
 chmod 0700 "$stage/settings"
 tar -xzf "$ram/rootfs.tar.gz" -C "$stage/rootfs"
 install -m 0755 "$project/board/connector3/persistent/init.sh" "$stage/rootfs/init"
+install -m 0755 "$project/board/connector3/raumfeld-suspend" "$stage/rootfs/usr/sbin/raumfeld-suspend"
 # Rebuild board userspace from the current source, even when reusing a RAM archive.
 "$tools/bin/arm-linux-g++" -std=c++17 -Os -Wall -Wextra -Werror -pthread \
     "$project/board/connector3/ram/mcu-buttons.cpp" -o "$stage/rootfs/usr/sbin/galdrun-connector3-mcu"

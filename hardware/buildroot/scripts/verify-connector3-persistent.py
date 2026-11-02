@@ -13,7 +13,8 @@ def verify(linux, diagnostic, signing, destination, rootfs):
     config = (linux / '.config').read_text().splitlines()
     for option in ('MTD', 'MTD_RAW_NAND', 'MTD_NAND_GPMI_NAND', 'MTD_UBI', 'UBIFS_FS',
                    'UBIFS_FS_ZLIB', 'FEC', 'MWIFIEX_PCIE', 'SND_SOC_GALDRUN_CONNECTOR3',
-                   'USB_CHIPIDEA_HOST', 'USB_STORAGE', 'VFAT_FS', 'CMDLINE_FORCE', 'IMX_SDMA'):
+                   'USB_CHIPIDEA_HOST', 'USB_STORAGE', 'VFAT_FS', 'CMDLINE_FORCE', 'IMX_SDMA',
+                   'SUSPEND', 'CPU_PM', 'ARM_PSCI_FW'):
         if f'CONFIG_{option}=y' not in config:
             raise ValueError(f'Required built-in driver/setting missing: {option}')
     for option in ('MODULES', 'MMC', 'ATA', 'MTD_BLOCK', 'MTD_PARTITIONED_MASTER', 'MTD_CMDLINE_PARTS'):
@@ -34,7 +35,7 @@ def verify(linux, diagnostic, signing, destination, rootfs):
         raise ValueError('Normal kernel must embed the exact approved radio firmware')
     cmdline = json.loads(next(line.split('=', 1)[1] for line in config if line.startswith('CONFIG_CMDLINE=')))
     tokens = cmdline.split()
-    for token in ('ubi.mtd=5,4096', 'root=ubi0:RootFS', 'rootfstype=ubifs', 'ro', 'init=/init'):
+    for token in ('ubi.mtd=5,4096', 'root=ubi0:RootFS', 'rootfstype=ubifs', 'ro', 'init=/init', 'maxcpus=1'):
         if tokens.count(token) != 1:
             raise ValueError(f'Persistent boot argument missing/duplicated: {token}')
     if 'rw' in tokens or sum(token.startswith('ubi.mtd=') for token in tokens) != 1:
@@ -54,6 +55,10 @@ def verify(linux, diagnostic, signing, destination, rootfs):
     if prop(pcie, 'assigned-clock-rates', 'u') != '0 0 0 32768':
         raise ValueError('Radio sleep clock must run at 32768 Hz')
 
+    if prop('/sound', 'clock-names') != 'pll mclk sai sai2':
+        raise ValueError('Analog and TOSLINK outputs must share the audio PLL clocks')
+    if prop('/soc/bus@30800000/spba-bus@30800000/sai@308b0000', 'status') != 'okay':
+        raise ValueError('TOSLINK output needs SAI2')
     controller = '/soc/nand-controller@33002000'
     if prop(controller, 'status') != 'okay' or prop(controller, 'galdrun,read-only', required=False) is not None:
         raise ValueError('Persistent rootfs needs the NAND controller without the diagnostic blanket write guard')
@@ -70,9 +75,24 @@ def verify(linux, diagnostic, signing, destination, rootfs):
             raise ValueError(f'Partition protection differs from normal-boot policy: {name}')
     if prop('/', 'galdrun,experimental-suspend', required=False) is not None:
         raise ValueError('Experimental deep sleep must stay disabled')
+    prop('/', 'galdrun,cpu-core-suspend')
+    if prop('/psci', 'compatible') != 'arm,psci-0.2' or prop('/psci', 'method') != 'smc':
+        raise ValueError('Deep sleep requires the qualified PSCI monitor interface')
+    for number in (0, 1):
+        if prop(f'/cpus/cpu@{number}', 'enable-method') != 'psci':
+            raise ValueError('CPU power control must use PSCI')
+    if prop('/cpus/cpu@1', 'status') != 'okay':
+        raise ValueError('Offline CPU1 must be present so the PM port can park it')
+    if 'Its 88W8897 survives device host-sleep' in (linux/'drivers/pci/controller/dwc/pci-imx6.c').read_text():
+        raise ValueError('Retired PCIe retention bypass prevents WLAN recovery')
+    if 'Drain dump/reset work before invalidating' not in (linux/'drivers/net/wireless/marvell/mwifiex/pcie.c').read_text():
+        raise ValueError('WLAN removal must drain recovery work before clearing its adapter')
     subprocess.run([sys.executable, str(Path(__file__).with_name('verify-connector3-diagnostic.py')),
                     str(diagnostic)], check=True)
     root_report = json.loads((rootfs / 'persistent-rootfs-verification.json').read_text())
+    helper = Path(__file__).resolve().parents[1]/'board/connector3/raumfeld-suspend'
+    if root_report.get('suspend_helper_sha256') != hashlib.sha256(helper.read_bytes()).hexdigest():
+        raise ValueError('Root filesystem must contain the current sleep helper')
     firmware_hashes = {name: hashlib.sha256(data).hexdigest() for name, data in embedded.items()}
     for name, digest in firmware_hashes.items():
         if root_report['content_audit']['hardware_firmware_sha256'].get('lib/firmware/' + name) != digest:
@@ -89,6 +109,8 @@ def verify(linux, diagnostic, signing, destination, rootfs):
         if not qualified['production_qualified'] or hashlib.sha256(monitor_path.read_bytes()).hexdigest() != qualified['sha256']:
             raise ValueError('Production monitor differs from the qualified binary')
         monitor_qualified = True
+    if not monitor_qualified or not qualified.get('cpu_suspend_timer_frequency_restored'):
+        raise ValueError('Deep sleep requires the hardware-qualified timer-fixed monitor')
     image, report = sign_fit(linux / 'arch/arm/boot/zImage', dtb, diagnostic, signing, 'persistent boot', monitor_path)
     report['monitor_production_qualified'] = monitor_qualified
     destination.mkdir(parents=True, exist_ok=True)
@@ -101,6 +123,9 @@ def verify(linux, diagnostic, signing, destination, rootfs):
                    'root_mount_read_only': True, 'rootfs': root_report,
                    'built_in_radio_sha256': DEVICE_RADIO_SHA256, 'wifi_sleep_clock_hz': 32768,
                    'built_in_firmware_sha256': firmware_hashes,
+                   'cpu_core_deep_sleep': True, 'ethernet_magic_wake': True,
+                   'mcu_touch_wake': True, 'wlan_magic_wake': False,
+                   'wlan_restart_on_resume': True,
                    'hardware_verified': False, 'persistent_install_verified': False, 'release_ready': False})
     (destination / 'persistent-verification.json').write_text(json.dumps(report, indent=2) + '\n')
     names = ('galdrun.itb', 'zImage', 'connector3.dtb', 'rootfs.ubi')

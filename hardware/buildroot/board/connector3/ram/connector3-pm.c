@@ -163,7 +163,8 @@ void __init connector3_pm_init(void)
     unsigned int i;
 
     if (!of_machine_is_compatible("fsl,imx7d-teufel-streamer") ||
-        !(suspend_enabled || of_property_read_bool(of_root, "galdrun,experimental-suspend")))
+        !(suspend_enabled || of_property_read_bool(of_root, "galdrun,cpu-core-suspend") ||
+          of_property_read_bool(of_root, "galdrun,experimental-suspend")))
         return;
     if (!psci_ops.cpu_suspend) {
         pr_err("Connector3 suspend requires the PSCI monitor\n");

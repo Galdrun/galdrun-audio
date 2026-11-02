@@ -29,7 +29,7 @@ HPP = Headphone pairable
 | Device               | PWR Control |   | PWR DEEP | PWR STAND | PWR PLAY  | DAC Control | Client Web | Bitperfect | WLAN       | LAN | Line In | HW Drift | BUTTONS                   | Type 
 | -------------------- | ----------- | - | -------- | --------- | --------- | ---------   | ---------- | ---------- | ---------- | --- | ------- | -------- | ------------------------- | ------------------
 | Raumfeld Connector 2 | FULL        |   | ~0.6 W   | ~2.0 W    | ~2.4 W    | ALSA/I2S    | Yes        | Yes        | Yes        | Yes | No      | Yes      | Power / Setup / Reset     | Custom Firmware
-| Raumfeld streamer    |             |   |          |           |           | ALSA/I2S    | Yes        | Yes        | Yes        | Yes | No      | Yes      |                           | Custom Firmware
+| Raumfeld Streamer    | FULL        |   | ~1.9 W   | ~2.7 W    | ~3.4 W    | ALSA/I2S    | Yes        | Yes        | Yes        | Yes | No      | Yes      | Vol+ / Vol- / Play / Next / Prev / 1 to 3 / Multipurpose | Custom Firmware
 | RPI 1 Model B 1.2    | NO          |   |          |           |           | ALSA/I2S    | Yes        | Yes        | Yes (USB)  | Yes | No      | Depends  | Depends                   | Custom Firmware
 | RPI 3 Model A        | NO          |   |          |           |           | ALSA/I2S    | Yes        | Yes        | Yes        | Yes | No      | Depends  | Depends                   | Custom Firmware
 

@@ -2,7 +2,18 @@
 #include "imx7d-galdrun-connector3-ram.dts"
 #include "imx7d-galdrun-connector3-storage.dtsi"
 
-/ { model = "Galdrun Connector 3"; };
+/ {
+    model = "Galdrun Connector 3";
+    galdrun,cpu-core-suspend;
+    psci {
+        compatible = "arm,psci-0.2";
+        method = "smc";
+    };
+};
+
+/* Linux runs CPU0 (maxcpus=1); the PM port parks firmware's offline CPU1. */
+&cpu0 { enable-method = "psci"; };
+&cpu1 { status = "okay"; enable-method = "psci"; };
 
 &gpmi {
     /delete-property/ galdrun,read-only;

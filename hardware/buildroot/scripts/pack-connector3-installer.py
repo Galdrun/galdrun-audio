@@ -106,6 +106,9 @@ def pack(output, storage, diagnostic, signing, destination, mode):
                            'installer ' + mode, monitor)
     payload = (output / 'inputs/payload.tar').read_bytes()
     image = fit + bytes(0xC00000 - len(fit)) + payload
+    hardware = destination / 'hardware-verification.json'
+    if hardware.exists():
+        hardware.replace(destination / 'hardware-verification.previous.json')
     (destination / 'connect3.img').write_bytes(image)
     (destination / 'connect3.img.sha256').write_text(hashlib.sha256(image).hexdigest() + '  connect3.img\n')
     report.update({'purpose': 'USB installer ' + mode, 'mode': mode, 'content_audit': audit,

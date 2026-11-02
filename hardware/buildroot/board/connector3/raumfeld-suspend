@@ -1,6 +1,6 @@
 #!/bin/sh
 # Explicit deep sleep. Standby keeps the network/client running.
-# Wired magic packets and MCU POWER can wake; WLAN-only wake uses POWER.
+# Wired magic packets and MCU touch controls are the intended wake sources.
 set -eu
 if [ "$#" -ne 0 ] || [ "$(id -u)" -ne 0 ]; then
     echo 'Usage: run raumfeld-suspend as root, with no arguments' >&2
@@ -29,15 +29,30 @@ if [ -n "$client" ]; then
     case "$power" in on|standby|standbyManual) ;; *) echo 'Cannot read client power state' >&2; exit 1 ;; esac
 fi
 old_mcu_wake=$(cat /sys/class/tty/ttymxc2/power/wakeup)
+old_console_suspend=$(cat /sys/module/printk/parameters/console_suspend)
 client_stopped=0
 leds_stopped=0
 wol=
 old_wol=
+radio=
+network_stopped=0
 restore() {
     result=$?
     trap - EXIT
     [ -z "$wol" ] || ethtool -s "$wol" wol "$old_wol" || result=1
     echo "$old_mcu_wake" >/sys/class/tty/ttymxc2/power/wakeup || result=1
+    echo "$old_console_suspend" >/sys/module/printk/parameters/console_suspend || result=1
+    if [ -n "$radio" ] && [ ! -L "/sys/bus/pci/drivers/mwifiex_pcie/$radio" ]; then
+        echo "$radio" >/sys/bus/pci/drivers/mwifiex_pcie/bind || result=1
+        for attempt in $(seq 1 30); do
+            [ -d /sys/class/net/mlan0/phy80211 ] && break
+            sleep 1
+        done
+        test -d /sys/class/net/mlan0/phy80211 || result=1
+    fi
+    if [ "$network_stopped" -eq 1 ]; then
+        /etc/init.d/S45raumfeld-network start || result=1
+    fi
     if [ "$client_stopped" -eq 1 ] && ! kill -0 "$client" 2>/dev/null; then
         nohup /opt/galdrun-client/galdrun-client --config "$settings/client.json" \
             --audio-cache "$settings/audio_devices.json" --log-file /run/galdrun-client.log \
@@ -89,7 +104,17 @@ if [ -n "$client" ]; then
     client_stopped=1
     stop_process "$client"
 fi
+# This built-in PCIe driver hangs in wiphy_resume. Detach it through the
+# standard driver interface, then bind it and restore saved networking on wake.
+if [ -L /sys/bus/pci/drivers/mwifiex_pcie/0000:01:00.0 ]; then
+    network_stopped=1
+    /etc/init.d/S45raumfeld-network stop
+    radio=0000:01:00.0
+    echo "$radio" >/sys/bus/pci/drivers/mwifiex_pcie/unbind
+fi
 echo enabled >/sys/class/tty/ttymxc2/power/wakeup
+# The secure monitor uses the console UART while returning to Linux.
+echo N >/sys/module/printk/parameters/console_suspend
 for net in /sys/class/net/*; do
     if [ -d "$net/phy80211" ] || [ -d "$net/wireless" ] || [ "$(cat "$net/type")" != 1 ] ||
        [ "$(cat "$net/carrier" 2>/dev/null)" != 1 ]; then continue; fi
