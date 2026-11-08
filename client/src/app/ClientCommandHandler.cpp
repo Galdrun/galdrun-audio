@@ -4,6 +4,7 @@
 #include "app/DeviceSelection.h"
 #include "app/InputSettings.h"
 #include "app/LoopTiming.h"
+#include "app/SelfUpdate.h"
 #include "app/TaskReport.h"
 #include "app/Version.h"
 #include "input/InputController.h"
@@ -588,6 +589,49 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
             return makeControlError(request, restartSupported() ? control_error::kFailed : control_error::kUnavailable, error);
         auto response = makeControlSuccess(request);
         response["restarting"] = json::Value(true);
+        return response;
+    }
+    case ControlCommand::GetUpdate:
+    {
+        auto response = makeControlSuccess(request);
+        const std::string reason = self_update::unsupportedReason();
+        response["version"] = json::Value(versionString());
+        response["target"] = json::Value(self_update::releaseTarget());
+        response["supported"] = json::Value(reason.empty());
+        if (!reason.empty())
+            response["reason"] = json::Value(reason);
+        response["trial"] = json::Value(runtime_.updateTrial);
+        response["updating"] = json::Value(!runtime_.updateAction.empty());
+        return response;
+    }
+    case ControlCommand::Update:
+    {
+        // The package is uploaded first (POST /api/update writes it); this
+        // hands over to the updater once the answer is out.
+        std::string sha256;
+        if (!json::getString(request.params, "sha256", sha256) || sha256.size() != 64 ||
+            sha256.find_first_not_of("0123456789abcdef") != std::string::npos)
+            return makeControlError(request, control_error::kInvalidArgument,
+                                    "sha256 must be 64 lower-case hex digits");
+        const std::string reason = self_update::unsupportedReason();
+        if (!reason.empty())
+            return makeControlError(request, control_error::kUnavailable, reason);
+        if (runtime_.updateTrial)
+            return makeControlError(request, control_error::kUnavailable,
+                                    "the last update is still on trial");
+        if (!fileutil::exists(self_update::packagePath()))
+            return makeControlError(request, control_error::kInvalidArgument,
+                                    "no package: upload it with POST /api/update");
+        if (runtime_.updateAction.empty())
+        {
+            runtime_.updateAction = "install";
+            runtime_.updateSha256 = sha256;
+            // Long enough for this answer to leave before the loop ends.
+            runtime_.updateAtNs = monotonicNowNs() + 500000000ULL;
+            MULTIROOM_INFO("update received; handing over to the updater");
+        }
+        auto response = makeControlSuccess(request);
+        response["updating"] = json::Value(true);
         return response;
     }
     case ControlCommand::GetPower:

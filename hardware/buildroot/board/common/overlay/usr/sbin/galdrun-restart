@@ -3,4 +3,8 @@
 set -eu
 sleep 2
 sync
-exec /sbin/reboot
+/sbin/reboot
+# An init without reboot handling (Connector 3 runs a shell as PID 1)
+# ignores the request: force it.
+sleep 10
+exec /sbin/reboot -f

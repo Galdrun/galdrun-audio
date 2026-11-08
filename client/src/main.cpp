@@ -4,6 +4,7 @@
 #include "app/DeviceSelection.h"
 #include "app/LoopTiming.h"
 #include "app/InputPump.h"
+#include "app/SelfUpdate.h"
 #include "app/SessionHooks.h"
 #include "app/StreamPlayback.h"
 #include "app/TestTone.h"
@@ -179,6 +180,22 @@ int main(int argc, char** argv)
     MULTIROOM_INFO(MULTIROOM_BRAND_SLUG "-client %s starting", versionString());
     const uint64_t startedAtNs = monotonicNowNs();
 
+    // An updated client that ended before confirming its trial (a crash, or
+    // no session in time) is replaced by the one before it.
+    const self_update::Trial trial = self_update::beginTrial(options.configPath);
+    if (trial == self_update::Trial::Failed)
+    {
+        MULTIROOM_WARN("the updated client ended before it was confirmed; rolling back");
+        log::closeLogFile();
+        std::string error;
+        if (self_update::handOver("rollback", std::string(), argc, argv, error))
+            return 0;
+        std::fprintf(stderr, "%s\n", error.c_str());
+        return 1;
+    }
+    if (trial == self_update::Trial::Running)
+        MULTIROOM_INFO("running an update on trial until the server session is established");
+
     const std::string configPath =
         options.configPath.empty() ? client_config::defaultPath() : options.configPath;
 
@@ -287,6 +304,7 @@ int main(int argc, char** argv)
     runtime.deviceCache = &cache;
     runtime.server = &connection;
     runtime.startedAtNs = startedAtNs;
+    runtime.updateTrial = trial == self_update::Trial::Running;
     runtime.rescanAudio = [&cachePath, &runtime](std::string& scanError) {
         if (!rescanAudioDevices(cachePath, runtime.config->i2s, *runtime.deviceCache, scanError))
             return false;
@@ -443,6 +461,26 @@ int main(int argc, char** argv)
                 inputs.poll(nowNs, handler);
                 step(LoopTiming::Inputs);
 
+                // A session proves the update; a client with no server to
+                // reach has nothing more to prove.
+                if (runtime.updateTrial &&
+                    (session.state() == matp::SessionState::Established ||
+                     config.server.empty() || !config.active))
+                {
+                    self_update::confirmTrial();
+                    runtime.updateTrial = false;
+                    MULTIROOM_INFO("update confirmed");
+                }
+                else if (runtime.updateTrial && runtime.updateAction.empty() &&
+                         nowNs - startedAtNs > self_update::kTrialTimeoutNs)
+                {
+                    MULTIROOM_WARN("the updated client reached no server session; rolling back");
+                    runtime.updateAction = "rollback";
+                    runtime.updateAtNs = nowNs;
+                }
+                if (!runtime.updateAction.empty() && nowNs >= runtime.updateAtNs)
+                    break;
+
                 // Sooner than the idle timeout when a gesture is about to be
                 // decided -- a click waits for its double-click window to
                 // close.
@@ -456,7 +494,8 @@ int main(int argc, char** argv)
                 loopTiming.endPass(monotonicNowNs());
             }
 
-            MULTIROOM_INFO("shutdown requested");
+            MULTIROOM_INFO(runtime.updateAction.empty() ? "shutdown requested"
+                                                        : "stopping for the updater");
         }
 
         // Before the runtime stops pointing at it: the status command reads
@@ -472,6 +511,17 @@ int main(int argc, char** argv)
     control.stop();
     connection.stop();
 
+    // A trial cut short by a stop is no failure: the next start tries again.
+    if (runtime.updateTrial && runtime.updateAction.empty())
+        self_update::deferTrial();
     log::closeLogFile();
+    if (!runtime.updateAction.empty())
+    {
+        std::string error;
+        if (self_update::handOver(runtime.updateAction, runtime.updateSha256, argc, argv, error))
+            return 0;
+        std::fprintf(stderr, "%s\n", error.c_str());
+        return 1;
+    }
     return exitCode;
 }

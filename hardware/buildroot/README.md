@@ -265,6 +265,14 @@ The board capability file enables these settings in the client page and ServerGu
   later slewing to 50 ppm (`board/common/overlay/etc/chrony.conf`). `CLOCK_MONOTONIC`
   follows NTP slewing, and Chrony's default slew rate made the server see false
   drift of thousands of ppm and rejoin rooms repeatedly after boot.
+  Sources are LAN only, never an Internet pool: `usr/sbin/galdrun-time-sources`
+  writes `/run/chrony-sources` with the router (DHCP's NTP option, else its
+  gateway; a static gateway likewise, from a udhcpc hook and `raumfeld-network`)
+  and, as fallback, the Galdrun core from `client.json`, which answers SNTP on
+  its beacon port 4721. Connector 3 has the same since 2026-11-08. The Pi server
+  image replaces that file with `board/rpi/server/chrony.conf` (router, then the
+  public pool): its core is the clients' fallback, and it answers only once its
+  clock is past 2026.
 - **Logs** stay in RAM: `/var/log` points to a 4 MiB tmpfs at `/run/log`; syslog
   rotates at 256 KiB, the client log at 1 MiB, each with one backup. Login history
   is not kept. Nothing logs to NAND.

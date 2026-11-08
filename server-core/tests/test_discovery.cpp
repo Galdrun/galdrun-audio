@@ -140,6 +140,53 @@ MULTIROOM_TEST(discovery_listener_hears_a_beacon_and_drops_noise)
     CHECK_EQ(kitchen->lastSeenNs, uint64_t(5000));
 }
 
+MULTIROOM_TEST(discovery_listener_answers_an_sntp_request_with_the_wall_clock)
+{
+    multiroomtest::ManualClock clock{0};
+    DiscoveredClients clients;
+    DiscoveryListenerSettings settings;
+    settings.bindAddress = "127.0.0.1";
+    settings.port = 0;
+    auto listener = DiscoveryListener::start(settings, clients, clock);
+    CHECK_OK(listener);
+
+    net::Library library;
+    const net::Socket socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons((*listener)->port());
+    std::string request(48, '\0');
+    request[0] = 0x23; // version 4, client
+    for (int i = 0; i < 8; ++i)
+        request[40 + i] = static_cast<char>(0xA0 + i); // the client's transmit stamp
+    CHECK(::sendto(socket, request.data(), 48, 0, reinterpret_cast<const sockaddr*>(&address),
+                   static_cast<int>(sizeof(address))) == 48);
+
+    fd_set readable;
+    FD_ZERO(&readable);
+    FD_SET(socket, &readable);
+    timeval timeout{};
+    timeout.tv_sec = 5;
+    CHECK(net::waitReady(socket, &readable, nullptr, nullptr, timeout) > 0);
+    char reply[64] = {};
+    CHECK(::recv(socket, reply, sizeof(reply), 0) == 48);
+    net::closeSocket(socket);
+
+    CHECK_EQ(static_cast<int>(static_cast<uint8_t>(reply[0])), 0x24); // version 4, server
+    CHECK_EQ(static_cast<int>(reply[1]), 3);
+    for (int i = 0; i < 8; ++i)
+        CHECK_EQ(static_cast<uint8_t>(reply[24 + i]), static_cast<uint8_t>(0xA0 + i));
+    uint64_t seconds = 0;
+    for (int i = 0; i < 4; ++i)
+        seconds = (seconds << 8) | static_cast<uint8_t>(reply[40 + i]);
+    const auto now = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+                         std::chrono::system_clock::now().time_since_epoch()).count());
+    CHECK(seconds - 2208988800ULL + 5 >= now && seconds - 2208988800ULL <= now + 5);
+    CHECK_EQ((*listener)->timeRequests(), uint64_t(1));
+    CHECK_EQ((*listener)->rejected(), uint64_t(0));
+}
+
 MULTIROOM_TEST(discovery_listener_announces_disabled_and_reactivated_clients_once_per_change)
 {
     multiroomtest::ManualClock clock{0};

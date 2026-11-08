@@ -611,7 +611,7 @@ bool ControlServer::Impl::serviceRead(Connection& connection)
     connection.inbox.append(readBuffer, static_cast<size_t>(received));
     processLines(connection);
 
-    if (connection.inbox.size() > kMaxRequestBytes)
+    if (connection.inbox.size() > httpRequestLimit(connection.inbox, kMaxRequestBytes))
     {
         json::Value response = json::Value::makeObject();
         response["ok"] = json::Value(false);

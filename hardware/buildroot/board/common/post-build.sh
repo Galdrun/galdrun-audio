@@ -28,6 +28,8 @@ release="$project/../../releases/client/${GALDRUN_CLIENT_TARGET:-linux-armv6}"
 }
 mkdir -p "$target/opt/galdrun-client/lib" "$target/opt/galdrun-client/licenses" "$target/etc/galdrun"
 install -m 0755 "$release/galdrun-client" "$target/opt/galdrun-client/galdrun-client"
+install -m 0755 "$release/galdrun-update.sh" "$target/opt/galdrun-client/galdrun-update.sh"
+chmod 0755 "$target/usr/sbin/galdrun-time-sources" "$target/usr/share/udhcpc/default.script.d/galdrun-time"
 for library in "$release/lib/"*; do
     if [[ -f $library ]]; then install -m 0644 "$library" "$target/opt/galdrun-client/lib/"; fi
 done

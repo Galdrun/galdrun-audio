@@ -1207,6 +1207,10 @@ body:has(#player:not([hidden])) { padding-bottom: var(--player-space); }
 .client-mark { display: inline-grid; cursor: help; }
 .client-mark svg { width: 20px; height: 20px; }
 .client-mark.muted { color: var(--muted); opacity: .6; }
+.client-version { white-space: nowrap; }
+.client-update-mark { display: inline-grid; vertical-align: middle; margin-left: 6px; padding: 0; border: 0; background: none; color: var(--good); cursor: pointer; }
+.client-update-mark:disabled { cursor: help; }
+.client-update-mark svg { width: 18px; height: 18px; }
 .client-table td.client-vol { width: 220px; min-width: 180px; }
 .client-table .client-volume { margin: 0; }
 /* A client's settings page: a header with the room's picture (faded in behind

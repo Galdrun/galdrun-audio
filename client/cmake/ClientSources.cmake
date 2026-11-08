@@ -10,6 +10,7 @@ set(MULTIROOM_CLIENT_COMMON_SOURCES
     src/app/InputPump.cpp
     src/app/InputSettings.cpp
     src/app/LoopTiming.cpp
+    src/app/SelfUpdate.cpp
     src/app/SessionHooks.cpp
     src/app/StreamPlayback.cpp
     src/app/TestTone.cpp

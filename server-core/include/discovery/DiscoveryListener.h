@@ -11,11 +11,18 @@
 //
 // Bound to every interface by default, because the beacons are broadcasts
 // that arrive on whichever card faces the client. IPv4 only, like the beacon.
+//
+// The one thing it answers: an SNTP request (RFC 4330, mode 3) gets this
+// host's wall clock, unless that is still before 2026 (not set yet). The Galdrun appliances fall back to it when their router
+// serves no time (hardware/buildroot galdrun-time-sources); this port is used
+// because it is already open to the network.
 
 #include "core/Error.h"
 #include "discovery/DiscoveredClients.h"
 #include "util/Clock.h"
 
+#include <array>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -45,6 +52,12 @@ struct DiscoveryListenerSettings
     std::function<void(const std::string&, bool)> onActiveChanged;
 };
 
+// The SNTP answer to a 48-byte client request, stamped with the times it was
+// received and is sent.
+std::array<uint8_t, 48> makeTimeReply(const uint8_t* request,
+                                      std::chrono::system_clock::time_point received,
+                                      std::chrono::system_clock::time_point transmitted);
+
 class DiscoveryListener
 {
 public:
@@ -62,6 +75,7 @@ public:
     [[nodiscard]] uint16_t port() const noexcept { return port_; }
     [[nodiscard]] uint64_t received() const noexcept; // beacons that parsed
     [[nodiscard]] uint64_t rejected() const noexcept; // datagrams that did not
+    [[nodiscard]] uint64_t timeRequests() const noexcept; // SNTP requests answered
 
     // False once the thread has given up on a failed select(), which nothing
     // here retries: the process is expected to stop and be restarted.

@@ -11,6 +11,7 @@ bash "$board/../diagnostic/post-build.sh" "$target"
 install -m 0755 "$board/init.sh" "$target/init"
 mkdir -p "$target/opt/galdrun-client/lib" "$target/opt/galdrun-client/licenses"
 install -m 0755 "$release/galdrun-client" "$target/opt/galdrun-client/galdrun-client"
+install -m 0755 "$release/galdrun-update.sh" "$target/opt/galdrun-client/galdrun-update.sh"
 for library in "$release/lib/"*; do
     [[ ! -f $library ]] || install -m 0644 "$library" "$target/opt/galdrun-client/lib/"
 done
@@ -21,7 +22,11 @@ install -m 0644 "$board/client-board.json" "$target/etc/galdrun-board.json"
 install -m 0755 "$board/galdrun-bluetooth" "$target/usr/sbin/galdrun-bluetooth"
 install -D -m 0644 "$board/bluetooth-main.conf" "$target/etc/bluetooth/main.conf"
 common="$project/board/common/overlay"
-install -m 0755 "$common/usr/sbin/raumfeld-network" "$common/usr/sbin/raumfeld-wifi-scan" "$target/usr/sbin/"
+install -m 0755 "$common/usr/sbin/raumfeld-network" "$common/usr/sbin/raumfeld-wifi-scan" \
+    "$common/usr/sbin/galdrun-restart" "$common/usr/sbin/galdrun-time-sources" "$target/usr/sbin/"
+install -D -m 0755 "$common/usr/share/udhcpc/default.script.d/galdrun-time" \
+    "$target/usr/share/udhcpc/default.script.d/galdrun-time"
+install -m 0644 "$common/etc/chrony.conf" "$target/etc/chrony.conf"
 install -D -m 0755 "$common/etc/init.d/S45raumfeld-network" "$target/etc/init.d/S45raumfeld-network"
 install -m 0600 "$common/etc/galdrun-network.conf" "$target/etc/galdrun-network.conf"
 install -m 0600 "$board/network.conf" "$target/etc/raumfeld-network.conf"

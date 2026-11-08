@@ -146,7 +146,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 elseif(WIN32)
     string(TOLOWER "windows-${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}" release_platform)
     set(release_dir "${CMAKE_CURRENT_SOURCE_DIR}/../releases/client/${release_platform}")
-    set(release_files "$<TARGET_FILE:multiroom-client>" "${CMAKE_CURRENT_SOURCE_DIR}/release/client.example.json")
+    set(release_files "$<TARGET_FILE:multiroom-client>" "${CMAKE_CURRENT_SOURCE_DIR}/release/client.example.json"
+        "${CMAKE_CURRENT_SOURCE_DIR}/release/galdrun-update.ps1")
     if(MSVC)
         # The MSVC runtime, app-local, so the target needs no redistributable.
         set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)

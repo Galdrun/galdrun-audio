@@ -35,11 +35,12 @@ def verify(linux, diagnostic, signing, destination, rootfs):
         raise ValueError('Normal kernel must embed the exact approved radio firmware')
     cmdline = json.loads(next(line.split('=', 1)[1] for line in config if line.startswith('CONFIG_CMDLINE=')))
     tokens = cmdline.split()
-    for token in ('ubi.mtd=5,4096', 'root=ubi0:RootFS', 'rootfstype=ubifs', 'ro', 'init=/init', 'maxcpus=1'):
+    for token in ('ubi.mtd=5,4096', 'root=ubi0:RootFS', 'rootfstype=ubifs', 'rw', 'init=/init', 'maxcpus=1'):
         if tokens.count(token) != 1:
             raise ValueError(f'Persistent boot argument missing/duplicated: {token}')
-    if 'rw' in tokens or sum(token.startswith('ubi.mtd=') for token in tokens) != 1:
-        raise ValueError('Only the intended rootfs may be attached, with a read-only root mount')
+    # Writable like Connector 2: the client updates itself in /opt/galdrun-client.
+    if 'ro' in tokens or sum(token.startswith('ubi.mtd=') for token in tokens) != 1:
+        raise ValueError('Only the intended rootfs may be attached, with a writable root mount')
     dtb = linux / 'arch/arm/boot/dts/nxp/imx/imx7d-galdrun-connector3.dtb'
     get = diagnostic / 'host/bin/fdtget'
 

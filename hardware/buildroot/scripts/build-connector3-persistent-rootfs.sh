@@ -71,6 +71,9 @@ make -C "$busybox" -j"${JOBS:-16}" "CROSS_COMPILE=$tools/bin/arm-linux-" \
 install -m 0755 "$busybox/busybox" "$stage/rootfs/bin/busybox"
 ln -sfn ../../bin/busybox "$stage/rootfs/usr/bin/cryptpw"
 ln -sfn ../../bin/busybox "$stage/rootfs/usr/sbin/chpasswd"
+# Applets from the common BusyBox fragment (as on Connector 2).
+ln -sfn ../../bin/busybox "$stage/rootfs/usr/bin/timeout"
+ln -sfn ../../bin/busybox "$stage/rootfs/usr/bin/nc"
 install -m 0644 "$busybox/.config" "$stage/rootfs/usr/share/licenses/busybox.config"
 toolchain_licenses="$stage/rootfs/usr/share/licenses/toolchain-external-bootlin"
 mkdir -p "$toolchain_licenses"
@@ -88,6 +91,9 @@ data=json.loads(defaults.read_text())
 assert not data.get('clientId') and not data.get('server')
 data['name']='Connector 3'
 defaults.write_text(json.dumps(data,indent=2)+'\n')
+# The RAM test image's name is not the installed device's (default device
+# name: /etc/hostname, used by raumfeld-network and the settings page).
+(root/'etc/hostname').write_text('connector3\n')
 board=root/'etc/galdrun-board.json'
 data=json.loads(board.read_text());data['board']='connector3';data['sshSettings']=True
 data['statusLeds']=True

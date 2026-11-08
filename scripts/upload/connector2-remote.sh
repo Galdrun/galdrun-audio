@@ -26,7 +26,8 @@ echo "New client: $version"
 /etc/init.d/S95galdrun-client stop
 cp -p "$dir/galdrun-client" "$dir/galdrun-client.previous"
 if ! { cp "$next/galdrun-client" "$dir/galdrun-client" && cp -R "$next/lib/." "$dir/lib/" &&
-        cp "$next/licenses/"* "$dir/licenses/" && cp "$next/build-info.txt" "$dir/build-info.txt"; }; then
+        cp "$next/licenses/"* "$dir/licenses/" && cp "$next/build-info.txt" "$dir/build-info.txt" &&
+        { [ ! -f "$next/galdrun-update.sh" ] || install -m 0755 "$next/galdrun-update.sh" "$dir/galdrun-update.sh"; }; }; then
     cp -p "$dir/galdrun-client.previous" "$dir/galdrun-client"
     /etc/init.d/S95galdrun-client start
     echo 'Copying failed; the previous client was restored and started.' >&2

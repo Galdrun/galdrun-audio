@@ -126,6 +126,51 @@ exclusive device. Phone and card clocks are not locked: the 500 ms ring drops or
 underruns rarely. BlueZ, pairing and bluez-alsa are image services
 (Connector 3: `hardware/buildroot/board/connector3/ram/galdrun-bluetooth`).
 
+## Self update
+
+`src/app/SelfUpdate.cpp` with the shipped updaters
+`release/galdrun-update.sh` (BusyBox sh) and `release/galdrun-update.ps1`.
+The server uploads a release package to `POST /api/update` on the control
+port (`X-Galdrun-Sha256`; `ControlHttp.cpp` buffers up to 32 MiB for this
+path only) and the `update` command schedules the hand-over; `getUpdate`
+reports `version`, `target`, `supported`/`reason` and `trial`. After the main
+loop has shut everything down, Linux `exec()`s the script, which checks the
+hash, unpacks to `.update/staged`, runs the new binary with `--version`, moves
+the replaced entries to `.update/previous` and `exec()`s the client with the
+same arguments: the PID never changes, so systemd and `S95galdrun-client`'s
+pidfile stay valid. Windows starts the script, exits, and the script waits
+for the PID, swaps and starts the client again. Every failure path ends by
+starting the current client.
+
+Invariant: the new version runs on trial (`.update/trial`: `pending` ->
+`running` at start). It confirms on an established session (or at once with
+no server/inactive); 180 s without one, or a start that finds `running`
+(the trial run crashed), rolls back through the same script. A normal stop
+during the trial resets it to `pending`. The trial file names the client's
+`--config`; another client in the same folder (Connector 3 headphone client)
+ignores it. A new update is refused while one is on trial. The script frees
+the last rollback copy (`.update/previous`) only after the checksum passed,
+before unpacking, so small volumes need room for only one extra copy.
+
+Invariant: the appliances never contact the Internet themselves. Time
+comes from the router, else from the core's SNTP answer on UDP 4721
+(`hardware/buildroot/board/common/overlay/usr/sbin/galdrun-time-sources`).
+
+Invariant: every Raumfeld/Buildroot appliance (Connector 2, Connector 3,
+Pi images) mounts its root file system **read-write** and the client updates
+itself in place in `/opt/galdrun-client`, the same way on each. Do not make a
+root read-only "for safety" or move the client elsewhere for one device:
+recovery never depends on it -- the factory bootloader's USB path is in
+partitions the system never writes (Connector 3 MTD0) -- and a read-only root
+only breaks the self update (2026-11-08: Connector 3 had one; reverted).
+The same goes for platform packages and helpers: Connector 3 gets what
+Connector 2 has (chrony, `galdrun-restart`, debug tools, BusyBox applets),
+in `board/connector3/ram/defconfig` and `ram/post-build.sh`.
+
+Unsupported: ESP32, unknown architectures, no updater beside the binary
+(installs from before this feature need one manual update), unwritable
+folders, and installs on tmpfs/ramfs (Connector 3 RAM test build).
+
 ## Configuration and checks
 
 `client.json` is persistent; CLI overrides apply to that run. `active: false`

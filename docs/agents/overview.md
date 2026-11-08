@@ -27,7 +27,7 @@ and removes zones left empty. The core itself exposes lower-level zone commands.
 | Core -> .NET server `4714` | HTTP `/media/{handle}` | Fetch original media bytes for FFmpeg |
 | Client -> core `4711` | TCP, framed MATP control | Handshake, scheduling, telemetry, room controls |
 | Client -> core `4712` | TCP | `STREAM_ATTACH`, then binary PCM packets from core |
-| Client -> core `4721` | UDP broadcast | Client discovery beacons |
+| Client -> core `4721` | UDP broadcast | Client discovery beacons; the same socket answers SNTP (appliance time fallback) |
 | Core -> .NET server `4722` | UDP broadcast | Core discovery beacons |
 | Browser -> .NET server `4723` | HTTP | GUI; proxies API requests |
 | API/MCP caller -> .NET server `4725` | HTTP | REST `/api/v1`, events, MCP |

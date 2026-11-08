@@ -3,7 +3,10 @@
 #include "net/Socket.h"
 #include "util/Logger.h"
 
+#include <array>
 #include <atomic>
+#include <chrono>
+#include <cstring>
 #include <thread>
 
 namespace multiroom {
@@ -16,7 +19,65 @@ constexpr int kMaxDatagramBytes = 2048;
 // Only how often the loop notices a stop request.
 constexpr int kSelectTimeoutMs = 200;
 
+constexpr size_t kNtpPacketBytes = 48;
+constexpr uint64_t kNtpEraOffsetSeconds = 2208988800ULL; // 1900 to 1970
+
+// 2026-01-01 UTC. A host clock before it has not been set (a Pi server
+// before its own sync): no answer then, so a device keeps its time rather
+// than going back to 1970.
+constexpr int64_t kPlausibleSinceUnixSeconds = 1767225600;
+
+bool clockIsSet(std::chrono::system_clock::time_point now)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count() >=
+           kPlausibleSinceUnixSeconds;
+}
+
+// An SNTP client request (RFC 4330): mode 3, version 1-4. A JSON beacon
+// starts with '{', which reads as version 7, so the two never mix.
+bool isTimeRequest(const char* data, int bytes)
+{
+    if (bytes < static_cast<int>(kNtpPacketBytes))
+        return false;
+    const auto first = static_cast<uint8_t>(data[0]);
+    const unsigned version = (first >> 3) & 7U;
+    return (first & 7U) == 3 && version >= 1 && version <= 4;
+}
+
+void putTimestamp(uint8_t* out, std::chrono::system_clock::time_point time)
+{
+    const auto sinceEpoch = std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch());
+    const uint64_t ns = static_cast<uint64_t>(sinceEpoch.count());
+    const uint64_t seconds = ns / 1000000000ULL + kNtpEraOffsetSeconds;
+    const uint64_t fraction = ((ns % 1000000000ULL) << 32) / 1000000000ULL;
+    for (int i = 0; i < 4; ++i)
+    {
+        out[i] = static_cast<uint8_t>(seconds >> (24 - 8 * i));
+        out[4 + i] = static_cast<uint8_t>(fraction >> (24 - 8 * i));
+    }
+}
+
 } // namespace
+
+std::array<uint8_t, 48> makeTimeReply(const uint8_t* request,
+                                      std::chrono::system_clock::time_point received,
+                                      std::chrono::system_clock::time_point transmitted)
+{
+    std::array<uint8_t, kNtpPacketBytes> reply{};
+    // No leap warning, the request's version, server mode. Stratum 3: this
+    // host's own clock, which it keeps from wherever its OS does.
+    reply[0] = static_cast<uint8_t>(request[0] & 0x38U) | 4U;
+    reply[1] = 3;
+    reply[2] = request[2];                 // poll interval, as asked
+    reply[3] = static_cast<uint8_t>(-20); // precision about 1 us
+    reply[9] = 0x01;                       // root dispersion ~ 15.6 ms
+    std::memcpy(&reply[12], "GLDR", 4);    // reference id
+    putTimestamp(&reply[16], received);    // reference
+    std::memcpy(&reply[24], request + 40, 8); // originate: the request's transmit
+    putTimestamp(&reply[32], received);
+    putTimestamp(&reply[40], transmitted);
+    return reply;
+}
 
 const char* errorName(DiscoveryListenerError error)
 {
@@ -106,6 +167,7 @@ public:
     [[nodiscard]] bool listening() const noexcept { return listening_.load(); }
     [[nodiscard]] uint64_t received() const noexcept { return received_.load(); }
     [[nodiscard]] uint64_t rejected() const noexcept { return rejected_.load(); }
+    [[nodiscard]] uint64_t timeRequests() const noexcept { return timeRequests_.load(); }
 
 private:
     void loop(const std::stop_token& stop)
@@ -155,6 +217,23 @@ private:
             if (bytes < 0)
                 return;
 
+            // Time for the Galdrun appliances when their router serves none
+            // (galdrun-time-sources on the devices): on this port because it
+            // is already open to the network, firewall included.
+            if (isTimeRequest(buffer, bytes))
+            {
+                const auto received = std::chrono::system_clock::now();
+                if (!clockIsSet(received))
+                    continue;
+                const auto reply = makeTimeReply(reinterpret_cast<const uint8_t*>(buffer), received,
+                                                 std::chrono::system_clock::now());
+                ::sendto(socket_, reinterpret_cast<const char*>(reply.data()),
+                         static_cast<int>(reply.size()), 0, reinterpret_cast<const sockaddr*>(&from),
+                         fromLength);
+                ++timeRequests_;
+                continue;
+            }
+
             matp::ClientBeacon beacon;
             std::string error;
             if (!matp::parseClientBeacon(std::string(buffer, static_cast<size_t>(bytes)), beacon,
@@ -188,6 +267,7 @@ private:
     std::atomic<bool> listening_{true};
     std::atomic<uint64_t> received_{0};
     std::atomic<uint64_t> rejected_{0};
+    std::atomic<uint64_t> timeRequests_{0};
     std::jthread thread_; // last: stopped before anything it reads
 };
 
@@ -228,6 +308,11 @@ uint64_t DiscoveryListener::received() const noexcept
 uint64_t DiscoveryListener::rejected() const noexcept
 {
     return impl_->rejected();
+}
+
+uint64_t DiscoveryListener::timeRequests() const noexcept
+{
+    return impl_->timeRequests();
 }
 
 } // namespace multiroom

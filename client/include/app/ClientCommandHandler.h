@@ -68,6 +68,14 @@ struct ClientRuntime
     int restartProcess = 0; // appliance restart helper; waits for the API reply
     int bluetoothProcess = 0; // Bluetooth mode helper (btModeRec/btModePlay)
 
+    // Self update (app/SelfUpdate.h): "install" or "rollback" once the main
+    // loop is to end at updateAtNs and hand over to the updater; empty while
+    // none is due. updateTrial while a new version has not yet confirmed.
+    std::string updateAction;
+    std::string updateSha256;
+    uint64_t updateAtNs = 0;
+    bool updateTrial = false;
+
     // Scheduled playback (MATP sections 20 and 21), published by the main
     // thread for the same reason the playback fields below are: reading it
     // here would mean a status request calling into the driver.

@@ -166,4 +166,13 @@ else cat "$last"; fi
     assert 'ubiformat' in log and 'flash_erase' in log, (result.stdout, result.stderr, log)
     assert 'nandwrite' not in log and f'{root}/dev/mtd4' not in log, log
     assert all(f'{root}/dev/mtd{number}' not in log for number in range(4)), log
-print('Connector 3 installer: protection/pin gates, inconsistent-backup refusal and failed-root rollback boundary passed')
+    # Without a backup (the self-installing USB image): the same install path,
+    # no rollback attempt, factory partitions never written.
+    calls.unlink()
+    result = run('--install')
+    assert result.returncode != 0
+    log = calls.read_text()
+    assert 'ubiformat' in log and 'no backup' in result.stderr, (result.stdout, result.stderr, log)
+    assert 'ROLLBACK' not in result.stdout, result.stdout
+    assert all(f'{root}/dev/mtd{number}' not in log for number in range(4)), log
+print('Connector 3 installer: protection/pin gates, inconsistent-backup refusal, failed-root rollback boundary and backup-free install passed')

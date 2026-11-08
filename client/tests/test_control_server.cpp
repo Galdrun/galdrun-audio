@@ -435,6 +435,38 @@ MULTIROOM_TEST(control_server_refuses_cross_site_http_requests)
     server.stop();
 }
 
+MULTIROOM_TEST(control_server_takes_a_large_update_upload_and_gates_it)
+{
+    net::Library library;
+    CountingHandler handler;
+    ControlServer server;
+    std::string error;
+    CHECK(server.start("127.0.0.1", 0, handler, error));
+
+    const auto upload = [](const std::string& contentType, const std::string& body) {
+        return "POST /api/update HTTP/1.1\r\nHost: 127.0.0.1:4720\r\nContent-Type: " +
+               contentType + "\r\nX-Galdrun-Sha256: " + std::string(64, 'a') +
+               "\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body;
+    };
+    // Far beyond the 64 KiB line cap: the whole body is read, then refused
+    // because the test binary has no updater beside it.
+    const std::string package(1024 * 1024, 'x');
+    const std::string response =
+        httpExchange(server.boundPort(), upload("application/octet-stream", package));
+    CHECK(startsWith(response, "HTTP/1.1 503 "));
+    CHECK(response.find("no updater") != std::string::npos);
+    // A cross-site form cannot send octet-stream without a preflight.
+    CHECK(startsWith(httpExchange(server.boundPort(), upload("text/plain", "x")), "HTTP/1.1 415 "));
+    // The cap still holds for every other request: refused on its headers,
+    // without the body (sending it would race the answer with a reset).
+    CHECK(startsWith(httpExchange(server.boundPort(),
+                                  "POST /api HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json"
+                                  "\r\nContent-Length: 1048576\r\n\r\n"),
+                     "HTTP/1.1 413 "));
+    CHECK_EQ(handler.calls.load(), 0);
+    server.stop();
+}
+
 namespace {
 std::string openInputFeed(TestClient& client, const std::string& origin = std::string())
 {

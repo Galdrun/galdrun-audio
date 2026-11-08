@@ -18,7 +18,10 @@ failed() {
 
 # The kernel must attach only mtd5; never format or attach factory settings.
 test "$(cat /sys/class/ubi/ubi0/mtd_num)" = 5 || failed 'unexpected UBI device'
-grep -Eq '^ubi0:RootFS / ubifs ro(,| )' /proc/mounts || failed 'rootfs must be read-only'
+# Writable like Connector 2 and the Pi images: the client updates itself in
+# /opt/galdrun-client. Recovery never depends on it: the factory bootloader's
+# USB path lives in MTD0, which this system never writes.
+grep -Eq '^ubi0:RootFS / ubifs rw(,| )' /proc/mounts || failed 'rootfs must be mounted read-write'
 mount -t ubifs ubi0:GaldrunSettings /settings || failed 'settings mount failed'
 # ponytail: keep all /etc for the first-install candidate; migrate selected
 # settings when the persistent firmware update format is implemented.
@@ -35,11 +38,22 @@ if [ ! -s /settings/client.json ]; then
     mv /settings/client.json.new /settings/client.json || failed 'client seed commit failed'
     sync
 fi
+# Settings seeded by earlier images kept the RAM test image's name.
+if [ "$(cat /settings/etc/hostname 2>/dev/null)" = connector3-ram ]; then
+    echo connector3 >/settings/etc/hostname
+fi
 mount --bind /settings/etc /etc || failed 'settings bind failed'
 
 hostname connector3
 ip link set lo up
 syslogd -O /run/system.log
+# LAN time like Connector 2 (chrony.conf, galdrun-time-sources): before the
+# network, whose DHCP hook names the router; the server's host now.
+mkdir -p /run/chrony-sources
+# No init scripts in this image: chronyd directly (/etc/chrony.conf). As
+# root: /etc comes from /settings and may predate the image's chrony user.
+/usr/sbin/chronyd -u root
+/usr/sbin/galdrun-time-sources
 /etc/init.d/S45raumfeld-network start
 # Waits for the radio firmware the network start loads.
 /usr/sbin/galdrun-bluetooth start >/run/bluetooth-start.log 2>&1 &

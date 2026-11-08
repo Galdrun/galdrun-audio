@@ -28,6 +28,7 @@ using Multiroom.Server.Providers.Tidal;
 using Multiroom.Server.Providers.TuneIn;
 using Multiroom.Server.Providers.WebRadio;
 using Multiroom.Server.Web.Api;
+using Multiroom.Server.Web.Updates;
 using Multiroom.Server.Web.Gui;
 using Multiroom.Server.Web.Media;
 
@@ -239,6 +240,10 @@ public static partial class ServerHost
         builder.Services.AddSingleton(new SystemMonitorOptions(settings.DataDirectory));
         builder.Services.AddSingleton<SystemMonitor>();
         builder.Services.AddHostedService(services => services.GetRequiredService<SystemMonitor>());
+        // Client packages kept here; the releases are read from GitHub.
+        builder.Services.AddSingleton(new ClientUpdatesOptions(Path.Combine(settings.DataDirectory, "client-updates"),
+            new Uri("https://api.github.com/repos/Galdrun/galdrun-audio/releases?per_page=20")));
+        builder.Services.AddSingleton<ClientUpdates>();
         builder.Services.AddSingleton<ApiEndpoint>();
         builder.Services.AddHostedService(services => services.GetRequiredService<ApiEndpoint>());
         // After the API, which it forwards /api to; stopped before it.

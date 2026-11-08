@@ -64,6 +64,8 @@ install -m 0644 "$files/server-default.json" "$root/opt/galdrun-server/server-de
 install -m 0644 "$files/core-default.json" "$root/opt/galdrun-core/core-default.json"
 install -m 0755 "$files/S90galdrun-core" "$root/etc/init.d/S90galdrun-core"
 install -m 0755 "$files/S91galdrun-server" "$root/etc/init.d/S91galdrun-server"
+# The server may reach the Internet for time; the clients take theirs from it.
+install -m 0644 "$files/chrony.conf" "$root/etc/chrony.conf"
 chown -R 0:0 "$root/opt/galdrun-server" "$root/opt/galdrun-core" "$root/var/lib/galdrun"
 chmod 0755 "$root/opt/galdrun-server/galdrun-server" "$root/opt/galdrun-core/galdrun-core"
 chmod 0700 "$root/var/lib/galdrun"

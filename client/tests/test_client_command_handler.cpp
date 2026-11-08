@@ -2,6 +2,8 @@
 
 #include "app/ClientCommandHandler.h"
 #include "app/DeviceSelection.h"
+#include "app/SelfUpdate.h"
+#include "app/Version.h"
 #include "app/StreamPlayback.h"
 #include "matp/Session.h"
 #include "net/ServerConnection.h"
@@ -112,6 +114,25 @@ MULTIROOM_TEST(restart_is_validated_and_unavailable_without_the_appliance_helper
         CHECK_EQ(fieldString(handler.handle(request), "error"), std::string(control_error::kUnavailable));
         CHECK_EQ(fixture.runtime.restartProcess, 0);
     }
+}
+
+MULTIROOM_TEST(update_reports_its_target_and_is_refused_without_an_updater)
+{
+    Fixture fixture;
+    ClientCommandHandler handler(fixture.runtime);
+    const auto info = handler.handle(makeRequest("getUpdate", ControlCommand::GetUpdate));
+    CHECK_EQ(fieldString(info, "version"), std::string(versionString()));
+    CHECK_EQ(fieldString(info, "target"), std::string(self_update::releaseTarget()));
+    // The test binary has no galdrun-update script beside it.
+    CHECK(!fieldBool(info, "supported", true));
+    CHECK(!fieldString(info, "reason").empty());
+
+    auto request = makeRequest("update", ControlCommand::Update);
+    request.params["sha256"] = json::Value("not-a-hash");
+    CHECK_EQ(fieldString(handler.handle(request), "error"), std::string(control_error::kInvalidArgument));
+    request.params["sha256"] = json::Value(std::string(64, 'a'));
+    CHECK_EQ(fieldString(handler.handle(request), "error"), std::string(control_error::kUnavailable));
+    CHECK(fixture.runtime.updateAction.empty());
 }
 
 MULTIROOM_TEST(power_commands_and_button_actions_work_without_a_server)

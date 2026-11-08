@@ -2,7 +2,7 @@
 # Explicit check/backup/install/rollback commands. Never updates MTD0-MTD3.
 set -eu
 action=${1:---check}
-case "$action" in --check|--backup|--install|--rollback) ;; *) echo 'Usage: galdrun-install --check|--backup|--install BACKUP_SHA256|--rollback BACKUP_SHA256' >&2; exit 2;; esac
+case "$action" in --check|--backup|--install|--rollback) ;; *) echo 'Usage: galdrun-install --check|--backup|--install [BACKUP_SHA256]|--rollback BACKUP_SHA256' >&2; exit 2;; esac
 fail() { echo "INSTALL REFUSED: $*" >&2; exit 1; }
 backup=/media/galdrun-backup
 model=$(tr -d '\000' </proc/device-tree/model)
@@ -58,7 +58,7 @@ verify_protected() {
     flags=$(cat /sys/class/mtd/mtd0/flags)
     [ $((flags & 0x400)) -eq 0 ] || return 1
     sha256sum /dev/mtd1 /dev/mtd2 /dev/mtd3 >/run/protected-current.sha256
-    sed '/  bootloader-raw$/d' "$backup/protected.sha256" >/run/protected-saved.sha256
+    sed '/  bootloader-raw$/d' "${protected_saved:-$backup/protected.sha256}" >/run/protected-saved.sha256
     cmp /run/protected-saved.sha256 /run/protected-current.sha256
 }
 if [ "$action" = --backup ]; then
@@ -92,12 +92,21 @@ if [ "$action" = --backup ]; then
 fi
 
 pin=${2:-}
-case "$pin" in ''|*[!0-9a-f]*) fail 'Supply the independently recorded backup manifest SHA256';; esac
-[ "${#pin}" = 64 ] || fail 'Invalid backup manifest SHA256'
-actual=$(sha256sum "$backup/backup.sha256" | cut -d ' ' -f 1)
-[ "$actual" = "$pin" ] || fail 'Backup manifest pin mismatch'
-(cd "$backup" && sha256sum -c backup.sha256) || fail 'Backup file checksum mismatch'
-verify_protected || fail 'Backup belongs to another device or factory state changed'
+if [ -n "$pin" ] || [ "$action" = --rollback ]; then
+    case "$pin" in ''|*[!0-9a-f]*) fail 'Supply the independently recorded backup manifest SHA256';; esac
+    [ "${#pin}" = 64 ] || fail 'Invalid backup manifest SHA256'
+    actual=$(sha256sum "$backup/backup.sha256" | cut -d ' ' -f 1)
+    [ "$actual" = "$pin" ] || fail 'Backup manifest pin mismatch'
+    (cd "$backup" && sha256sum -c backup.sha256) || fail 'Backup file checksum mismatch'
+    verify_protected || fail 'Backup belongs to another device or factory state changed'
+else
+    # No backup, the normal install (like Connector 2): a failed write stops
+    # here and the installer runs again from the stick; USB recovery is the
+    # factory bootloader in MTD0, which nothing writes. The factory partitions
+    # are still compared before and after.
+    sha256sum /dev/mtd1 /dev/mtd2 /dev/mtd3 >/run/protected-before.sha256
+    protected_saved=/run/protected-before.sha256
+fi
 [ -f /etc/galdrun-install-writes-enabled ] || fail 'This image is check/backup-only'
 [ "$model" = 'Galdrun Connector 3 installer write' ] || fail 'A separate write-capable installer boot is required'
 for number in 4 5; do
@@ -141,19 +150,25 @@ cleanup() {
         if [ -e /sys/class/ubi/ubi0/mtd_num ]; then
             ubidetach /dev/ubi_ctrl -m 5 || { echo 'Cannot detach UBI; raw rollback stopped.' >&2; exit "$result"; }
         fi
-        echo 'Installation failed; attempting rollback from the verified USB backup.' >&2
-        restore || echo 'ROLLBACK FAILED: retain USB and use the explicit rollback command.' >&2
+        if [ -n "$pin" ]; then
+            echo 'Installation failed; attempting rollback from the verified USB backup.' >&2
+            restore || echo 'ROLLBACK FAILED: retain USB and use the explicit rollback command.' >&2
+        else
+            echo 'Installation failed and there is no backup: start the USB installer again.' >&2
+        fi
     fi
     exit "$result"
 }
 trap cleanup EXIT
 trap 'exit 1' INT TERM
 # Verify the live originals still match the saved backup before the first erase.
-for number in 4 5; do
-    nanddump --quiet --omitoob --bb=skipbad "/dev/mtd$number" | sha256sum >/run/current.sha256
-    expected=$(sha256sum "$backup/mtd$number.bin" | cut -d ' ' -f 1)
-    [ "$(cut -d ' ' -f 1 /run/current.sha256)" = "$expected" ] || fail 'Original NAND changed after backup'
-done
+if [ -n "$pin" ]; then
+    for number in 4 5; do
+        nanddump --quiet --omitoob --bb=skipbad "/dev/mtd$number" | sha256sum >/run/current.sha256
+        expected=$(sha256sum "$backup/mtd$number.bin" | cut -d ' ' -f 1)
+        [ "$(cut -d ' ' -f 1 /run/current.sha256)" = "$expected" ] || fail 'Original NAND changed after backup'
+    done
+fi
 changed=1
 # Keep Bluetooth pairings, the headphone room and the SBC quality across the
 # reformat. Best effort: stock firmware has no GaldrunSettings volume. The

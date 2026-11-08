@@ -16,6 +16,7 @@ using Multiroom.Server.Library;
 using Multiroom.Server.Mcp;
 using Multiroom.Server.Playback;
 using Multiroom.Server.Playback.Core;
+using Multiroom.Server.Web.Updates;
 using Multiroom.Server.Providers;
 using Multiroom.Server.Providers.AddIns;
 using Multiroom.Server.Providers.Covers;
@@ -83,6 +84,7 @@ public sealed partial class ApiEndpoint(
     SongSuggestions suggestions,
     MultiroomAgent agent,
     AgentChatStore chats,
+    ClientUpdates clientUpdates,
     ILoggerFactory loggerFactory) : IHostedService, IAsyncDisposable
 {
     public const int DefaultLimit = 20;

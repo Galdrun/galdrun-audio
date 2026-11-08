@@ -1,5 +1,6 @@
 #include "control/ControlHttp.h"
 
+#include "app/SelfUpdate.h"
 #include "discovery/NodeId.h"
 #include "system/TextUtil.h"
 
@@ -16,6 +17,9 @@ namespace {
 // so that cap never answers an HTTP request with a JSON line.
 const size_t kMaxHeaderBytes = 8 * 1024;
 const size_t kMaxBodyBytes = 32 * 1024;
+// A client release package (a few MB); kept in memory until it is complete.
+const size_t kMaxUpdateBytes = 32 * 1024 * 1024;
+const char kUpdateRequest[] = "POST /api/update ";
 
 std::string trim(const std::string& text)
 {
@@ -82,6 +86,13 @@ bool looksLikeHttpRequest(const std::string& inbox)
     return false;
 }
 
+size_t httpRequestLimit(const std::string& inbox, size_t lineLimit)
+{
+    if (inbox.compare(0, sizeof(kUpdateRequest) - 1, kUpdateRequest) == 0)
+        return kMaxHeaderBytes + kMaxUpdateBytes;
+    return lineLimit;
+}
+
 bool serveHttpRequest(std::string& inbox, IControlHandler& handler, std::string& response,
                       bool* inputEvents)
 {
@@ -108,7 +119,9 @@ bool serveHttpRequest(std::string& inbox, IControlHandler& handler, std::string&
     std::string host;
     std::string contentType;
     std::string origin;
+    std::string sha256;
     size_t contentLength = 0;
+    const size_t bodyLimit = target == "/api/update" ? kMaxUpdateBytes : kMaxBodyBytes;
     for (size_t start = lineEnd + 2; start < headerEnd;)
     {
         const size_t end = inbox.find("\r\n", start);
@@ -125,11 +138,13 @@ bool serveHttpRequest(std::string& inbox, IControlHandler& handler, std::string&
             contentType = text_util::toLower(value);
         else if (name == "origin")
             origin = value;
+        else if (name == "x-galdrun-sha256")
+            sha256 = text_util::toLower(value);
         else if (name == "content-length")
         {
             char* rest = nullptr;
             const unsigned long long parsed = std::strtoull(value.c_str(), &rest, 10);
-            if (value.empty() || *rest != '\0' || parsed > kMaxBodyBytes)
+            if (value.empty() || *rest != '\0' || parsed > bodyLimit)
             {
                 inbox.clear();
                 response = textResponse("413 Payload Too Large", "invalid or too large body");
@@ -142,6 +157,34 @@ bool serveHttpRequest(std::string& inbox, IControlHandler& handler, std::string&
     const size_t bodyStart = headerEnd + 4;
     if (inbox.size() < bodyStart + contentLength)
         return false;
+
+    // The server's upload of a client release (app/SelfUpdate.h). Not a
+    // browser's: application/octet-stream needs a preflight cross-site.
+    if (target == "/api/update")
+    {
+        std::string reason;
+        if (method != "POST")
+            response = textResponse("405 Method Not Allowed", "use POST");
+        else if (contentType.compare(0, 24, "application/octet-stream") != 0)
+            response = textResponse("415 Unsupported Media Type", "the body must be application/octet-stream");
+        else if (!isTrustedHost(host))
+            response = textResponse("403 Forbidden", "open this page by the client's address");
+        else if (!(reason = self_update::unsupportedReason()).empty())
+            response = textResponse("503 Service Unavailable", reason);
+        else if (!self_update::writePackage(inbox.data() + bodyStart, contentLength, reason))
+            response = textResponse("500 Internal Server Error", reason);
+        else
+        {
+            json::Value request = json::Value::makeObject();
+            request["command"] = json::Value("update");
+            request["params"] = json::Value::makeObject();
+            request["params"]["sha256"] = json::Value(sha256);
+            response = makeResponse("200 OK", "application/json",
+                                    dispatchControlLine(json::serialize(request), handler));
+        }
+        inbox.clear();
+        return true;
+    }
     const std::string body = inbox.substr(bodyStart, contentLength);
     inbox.clear(); // one request per connection; anything after it is dropped
 

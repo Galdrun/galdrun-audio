@@ -1,0 +1,29 @@
+#!/bin/sh
+# Time from the LAN only, never an Internet pool: the router first (DHCP's
+# NTP server option, else its gateway; a static gateway likewise), the
+# Galdrun core in client.json as fallback -- it answers SNTP on its beacon
+# port 4721 (server-core DiscoveryListener). chronyd reads these from
+# /run/chrony-sources (sourcedir in /etc/chrony.conf) and uses whichever
+# answers.
+#   galdrun-time-sources router ADDRESS...   DHCP hook, static network setup
+#   galdrun-time-sources                     refresh the server entry only
+dir=/run/chrony-sources
+mkdir -p "$dir"
+if [ "${1:-}" = router ]; then
+    shift
+    : >"$dir/router.sources.new"
+    for address in "$@"; do
+        echo "server $address iburst prefer" >>"$dir/router.sources.new"
+    done
+    mv "$dir/router.sources.new" "$dir/router.sources"
+fi
+config=/settings/client.json
+[ -f "$config" ] || config=/etc/galdrun/client.json
+# "server": "10.0.0.6:4711" -> 10.0.0.6
+server=$(sed -n 's/.*"server"[[:space:]]*:[[:space:]]*"\([^":]*\)[:"].*/\1/p' "$config" 2>/dev/null | head -n 1)
+if [ -n "$server" ]; then
+    echo "server $server port 4721 iburst" >"$dir/galdrun.sources"
+else
+    rm -f "$dir/galdrun.sources"
+fi
+chronyc reload sources >/dev/null 2>&1 || :

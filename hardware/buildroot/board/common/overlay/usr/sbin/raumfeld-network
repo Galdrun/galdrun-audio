@@ -109,6 +109,7 @@ set_static() {
     prefix=$(printf '%s\n' "$mask" | awk -F. '{n=0; for(i=1;i<=4;i++){v=$i; while(v>0){n+=v%2;v=int(v/2)}} print n}')
     ip addr replace "$static_ip/$prefix" dev "$interface" || return 1
     if [ -n "$gateway" ]; then ip route replace default via "$gateway" dev "$interface" || return 1; fi
+    if [ -n "$gateway" ]; then /usr/sbin/galdrun-time-sources router "$gateway" || :; fi
     [ -n "$dns" ] || dns=$gateway
     if [ -n "$dns" ]; then printf 'nameserver %s # %s\n' "$dns" "$interface" > /etc/resolv.conf; else : > /etc/resolv.conf; fi
 }

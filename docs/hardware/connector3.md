@@ -1,5 +1,14 @@
 # Connector 3 / Teufel Streamer: SSH access and experimental RAM build
 
+> **Since 2026-11-08 the Connector 3 behaves like Connector 2:** the root file
+> system is read-write and the USB write installer installs by itself (no
+> backup, install, reboot); see
+> [the handover](connector3-handover-2026-11-05.md#self-update-installer-2026-11-08-installed).
+> The read-only root and the SSH-driven, host-pinned install described in the
+> sections below were not needed -- USB recovery is the factory bootloader in
+> MTD0, which nothing writes -- and must not come back. All Raumfeld devices
+> should behave the same.
+
 ## Deep sleep qualified on NAND; TOSLINK in progress — 2026-11-02
 
 Installed FIT `99cba8fd...` passed on NAND without USB: RCA music (user
@@ -48,6 +57,13 @@ physical power-off boot without USB also passed, including saved settings, SSH
 identity and factory protection. No flash operation is running. Later dated
 sections are earlier history. See the [current handover](connector3-handover-2026-10-31.md#current-state)
 for the completed Wi-Fi update, exact artifact hashes and remaining limits.
+
+> **Root is read-write since 2026-11-08** (kernel `rw`, `init` checks it), like
+> Connector 2 and the Pi images, so the client updates itself in
+> `/opt/galdrun-client` ([client guide](../agents/client.md#self-update)).
+> The read-only root described below for the October images was not needed
+> for recovery -- the USB recovery path is the factory bootloader in MTD0,
+> which the running system never writes -- and must not come back.
 
 Normal boot uses kernel `6.12.112-galdrun-connector3`, read-only `ubi0:RootFS`,
 writable `ubi0:GaldrunSettings` at `/settings`, and its saved `/etc` bind mount.
@@ -1214,7 +1230,7 @@ output and Galdrun playback are not established by the SSH result.
 
 The user supplied the public [SSH Streamer archive](https://drive.google.com/drive/folders/1-htQzqporcluONsyXVopgBq1JnFk1148).
 Downloads and prepared marker are in ignored
-[`hardware/buildroot/downloads/connector3-ssh-archive/`](../../hardware/buildroot/downloads/connector3-ssh-archive/).
+[`hardware/buildroot/downloads/connector3-ssh-archive/`](../../hardware/buildroot/downloads/connector3-ssh-archive/). <!-- path-check: ignore -->
 Do not commit or bundle the vendor images with a Galdrun release.
 
 | File | Bytes | SHA256 |
@@ -1468,7 +1484,7 @@ wsl -d Ubuntu -- bash /mnt/c/Projects/Codeing/GaldrunAudio/galdrun-audio/hardwar
 ```
 
 The build passed on **2026-10-28**. Outputs are in ignored
-[`hardware/buildroot/output/connector3-ram/`](../../hardware/buildroot/output/connector3-ram/):
+[`hardware/buildroot/output/connector3-ram/`](../../hardware/buildroot/output/connector3-ram/): <!-- path-check: ignore -->
 `zImage`, `connector3.dtb`, `rootfs.cpio.gz`, `rootfs.tar.gz`, static ARM `kexec`, `SHA256SUMS`, and
 `ram-verification.json`. These are RAM boot components, **not** a USB
 `connect3.img` installer. The build script first rebuilds the ARMv7 client and

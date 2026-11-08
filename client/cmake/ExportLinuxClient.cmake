@@ -4,7 +4,7 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different
 if(NOT copied EQUAL 0)
     message(FATAL_ERROR "Could not export ${BINARY}")
 endif()
-file(COPY "${SOURCE}/run.sh" DESTINATION "${DESTINATION}"
+file(COPY "${SOURCE}/run.sh" "${SOURCE}/galdrun-update.sh" DESTINATION "${DESTINATION}"
     FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 configure_file("${SOURCE}/README.md" "${DESTINATION}/README.md" COPYONLY)
 configure_file("${SOURCE}/client.example.json" "${DESTINATION}/client.example.json" COPYONLY)

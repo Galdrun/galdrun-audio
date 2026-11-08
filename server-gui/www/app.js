@@ -199,6 +199,7 @@ const ICONS = {
   link: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
   unlink: '<path d="M14.5 6.5l1-1a3.5 3.5 0 0 1 5 5l-3 3"/><path d="M9.5 17.5l-1 1a3.5 3.5 0 0 1-5-5l3-3"/><path d="M8 2v3M2 8h3M16 22v-3M22 16h-3"/>',
   alert: '<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.01"/>',
+  update: '<circle cx="12" cy="12" r="9"/><path d="M12 16.5V8M8.5 11.5L12 8l3.5 3.5"/>',
   grip: '<circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/>',
   // Where an item comes from, by provider (SOURCE_ICONS).
   nas: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.3h18M3 14.7h18M14 6.7h4M14 12h4M14 17.3h4"/><circle cx="6.5" cy="6.7" r=".6" fill="currentColor"/><circle cx="6.5" cy="12" r=".6" fill="currentColor"/><circle cx="6.5" cy="17.3" r=".6" fill="currentColor"/>',
@@ -2164,6 +2165,9 @@ async function moveRoom(client, zone) {
 // settings page, #/client/<id>.
 
 let discovered = null, discoveredError = ''; // GET clients/discovered, or why not
+// GET clients/updates by client id: each asks its client, so read when the
+// page opens and once a minute, not with every discovery tick.
+let clientUpdates = new Map(), clientUpdatesAt = 0;
 let roomOpen = null; // the client the settings page shows (#/client/<id>)
 
 function renderRooms() {
@@ -2308,7 +2312,11 @@ function clientRow(row) {
     h('td', { class: f.eqInfo[1] ?? '', title: f.eqInfo[2] ?? '' }, f.eqInfo[0]),
     h('td', { class: 'icon-col' }, clientLink(f)),
     h('td', { class: 'client-ip' }, f.ip),
-    h('td', {}, f.version),
+    h('td', { class: 'client-version' }, f.version, clientUpdates.get(f.id)?.available &&
+      h('button', { type: 'button', class: 'client-update-mark', disabled: !f.r,
+        title: tt('clients.updateAvailable', { version: clientUpdates.get(f.id).latest }),
+        'aria-label': tt('clients.updateAvailable', { version: clientUpdates.get(f.id).latest }),
+        onclick: () => openRoom(f.id) }, icon('update'))),
     h('td', { class: 'client-vol' }, clientVolume(f)),
     h('td', { class: 'client-spare' }),
     h('td', { class: 'client-tools' }, clientButtons(f, true)));
@@ -2642,9 +2650,12 @@ function deviceSettingsEditor(client, path) {
   const state = deviceSettings.get(client) ?? {};
   const reload = async () => {
     state.loading = true; deviceSettings.set(client, state); renderRooms();
-    // A device without Bluetooth refuses its read: the field is then left out, unexplained.
-    const results = await Promise.allSettled(['network', 'leds', 'power', 'bluetooth'].map((key) => api('GET', `${path}/${key}`, undefined, { quiet: key === 'bluetooth' })));
-    for (const [i, key] of ['network', 'leds', 'power', 'bluetooth'].entries()) {
+    // A device without Bluetooth refuses its read: the field is then left out,
+    // unexplained. The update read asks the client itself and may fail on
+    // its own (an old client): said in its row, never as a toast.
+    const keys = ['network', 'leds', 'power', 'bluetooth', 'update'];
+    const results = await Promise.allSettled(keys.map((key) => api('GET', `${path}/${key}`, undefined, { quiet: key === 'bluetooth' || key === 'update' })));
+    for (const [i, key] of keys.entries()) {
       state[key] = results[i].status === 'fulfilled' ? results[i].value : null;
       state[key + 'Error'] = results[i].status === 'rejected' ? results[i].reason.message : '';
     }
@@ -2661,6 +2672,16 @@ function deviceSettingsEditor(client, path) {
     try { state.power = { ...state.power, ...await api('POST', `${path}/power`, { action }) }; }
     finally { state.loading = false; renderRooms(); }
   }, message);
+  // The server uploads the package; the client restarts into it and comes
+  // back on its own, so its row is read again after a while.
+  const update = () => confirm(tt('room.updateConfirm', { name: client, version: state.update.latest })) && act(async () => {
+    state.loading = true; renderRooms();
+    try {
+      state.update = await api('POST', `${path}/update`);
+      setTimeout(reload, 30000);
+    } finally { state.loading = false; renderRooms(); }
+  }, 'room.updateStarted');
+  const u = state.update;
   const minutes = (seconds) => String(Math.round((seconds ?? 0) / 60));
   // Read once each time the settings page opens (showPage forgets the last read).
   if (!state.loaded && !state.loading) setTimeout(reload, 0);
@@ -2710,6 +2731,15 @@ function deviceSettingsEditor(client, path) {
     h('button', { class: 'primary', disabled: state.loading }, tt('room.apply')))),
     state.power?.supported && h('p', { class: 'small muted' }, tt('room.0SwitchesTimer')),
     (state.network?.supported === false && state.leds?.supported === false) && h('p', { class: 'small muted' }, tt('room.thisFirmwareHas')),
+    state.loaded && field('room.clientUpdate',
+      h('span', { class: 'pill' }, u?.version ?? '—'),
+      u?.available && h('button', { type: 'button', class: 'primary', disabled: state.loading || u.updating, onclick: update },
+        tt('room.updateTo', { version: u.latest })),
+      h('span', { class: 'small muted' }, !u ? state.updateError
+        : u.updating ? tt('room.updateRunning')
+          : u.trial ? tt('room.updateOnTrial')
+            : !u.supported ? u.reason
+              : u.available ? '' : u.latest ? tt('room.updateCurrent') : tt('room.updateNoPackage', { target: u.target }))),
   ];
 }
 
@@ -5492,7 +5522,16 @@ async function loadDiscovered() {
     discovered = null;
     discoveredError = e.message;
   }
+  if (Date.now() - clientUpdatesAt > 60000) loadClientUpdates();
   renderClients();
+}
+async function loadClientUpdates() {
+  clientUpdatesAt = Date.now();
+  try {
+    const list = await api('GET', 'clients/updates', undefined, { quiet: true });
+    clientUpdates = new Map(list.map((u) => [u.client, u]));
+    renderClients();
+  } catch { /* no icons: the room's own page says why */ }
 }
 // "seen" stays current while the page is open.
 setInterval(() => { if (page === 'rooms' && !document.hidden) loadDiscovered(); }, 5000);

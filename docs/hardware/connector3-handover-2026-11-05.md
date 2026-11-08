@@ -40,6 +40,79 @@ since 2026-11-02 is committed; `git status` shows all of it.
   written with `json.dump`). Send `echo UART_ALIVE` first; the first command
   can be lost.
 
+## Self-update installer (2026-11-08, installed)
+
+The root file system is now **read-write** (kernel `rw`, `init` checks it),
+like Connector 2: the client updates itself in place in `/opt/galdrun-client`
+([client guide](../agents/client.md#self-update)); `galdrun-update.sh` is in
+the image. Do not bring the read-only root back: USB recovery is the factory
+bootloader in MTD0, which the system never writes. A first build that copied
+the client to `/settings` instead (USB `10b117c2...`) is superseded; do not
+install it.
+
+**The write installer installs itself** since this build, like Connector 2:
+after the preflight it installs **without a backup** (since USB `29898c6d...`;
+the first self-installing builds still took one each time), writes
+`galdrun-install.log` to the stick and reboots into the NAND. A failed write
+stays in the installer: boot the stick again. `galdrun-install --backup` and
+`--install PIN` (with rollback) remain for a manual install over SSH. No SSH command or host-recorded backup pin
+is needed any more; SSH stays up for inspection. The check image still stops
+after the preflight. Do not reintroduce the SSH-driven install step
+(`qualify-*`/`install-*` scripts in `reference/connector3-ssh-archive/` are
+history).
+
+Current USB `b1434d428ddcbbc5af12990a84fbe658deb0ada92260fcdb9ad52258e2002967`,
+frozen in `hardware/buildroot/private/connector3/installer-selfupdate-b1434d42-20261108/`
+(same file as `private/connector3/installer-write/connect3.img`); normal FIT
+`490b8e72...`, payload `96a869ce...`, client `169ace58...`; everything else as
+netswitch. The earlier `d984df73...` (same payload, SSH-driven) was booted
+once: preflight passed and a fresh backup (pin `9fb09987...`, host copy in
+`private/connector3/reinstall-backup-selfupdate-20261108/`) was taken, but it
+never wrote the NAND.
+**Installed 2026-11-08 by the self-installing USB image** (the user's USB
+boot, no SSH). Checked afterwards: root `ubi0:RootFS ... rw`, kernel `rw`,
+client `169ace58...` in `/opt/galdrun-client` with `galdrun-update.sh`,
+`getUpdate` `supported`, room `c170ac6d4af8eddd` and the headphone client
+from `/settings/headphones` running. New host key pinned on first use (no
+UART check) in `private/connector3/known_hosts_persistent_selfupdate_20261108`
+(`SHA256:whdlHIRH...`). Live self-update through ServerGui with a v0.1.1
+test package (same binary): same PID 243 across the hand-over, swap, trial
+confirmed 4 s after restart on the established session, headphone client
+(PID 327) kept running, `.update/previous` 9.5 MB on the root volume.
+The device clock still reads 1970 at boot (update.log timestamps).
+
+## Platform parity installer (2026-11-08, installed)
+
+USB `9f6061b3ed6ca6f2fbfccdaa4bfa36fff402d51d32ecbd72fa5ee07e9ecc4ba0`, frozen in
+`hardware/buildroot/private/connector3/installer-platform-9f6061b3-20261108/`,
+payload `61466613...` (still backs up first) -- **installed 2026-11-08** by
+the user's USB boot (automatic backup to the stick, write, reboot). Checked:
+NAND root `rw`, clock synced to the core (`chronyc`: `^* 10.0.0.6`, stratum 3,
+the router `10.0.0.254` unreachable), all Connector 2 tools present except the
+`timeout`/`nc` links (applets compiled in), `getPower` `restart: true`,
+`getUpdate` `supported`, both rooms connected. Restart itself not yet pressed.
+Host key pinned on first use in `known_hosts_persistent_platform_20261108`
+(`SHA256:WgRG2Ji5...`). The installed hostname was `connector3-ram` (the RAM
+image's `/etc/hostname`, seeded into `/settings/etc`); fixed on the device by
+hand, in the persistent image (`connector3`) and by `init` for settings seeded
+earlier.
+
+Next image (not installed): USB
+`971cee4ff86590c04d05c8c2c9fa637380057236e98ba51ee9e448a8a5a27178` in
+`private/connector3/installer-platform-971cee4f-20261108/`, payload
+`add89afe...`: installs without a backup, adds the `timeout`/`nc` links and
+the `connector3` hostname. Everything in the self-update image plus what Connector
+2 has: chrony with LAN-only time (`galdrun-time-sources`: router via DHCP hook
+or static gateway, else the core's SNTP on UDP 4721; `init` starts
+`chronyd -u root` -- this image has no init.d scripts and `/etc` comes from
+`/settings`), `galdrun-restart` (restart button, audio profiles; falls back to
+`reboot -f` for the shell PID 1), procps-ng, strace, tcpdump, rsync,
+alsamixer, curl with CA certificates, MTD/UBI tools, BusyBox `timeout`/`nc`.
+Host-checked: the image's ARM `chronyd` (qemu, `-Q`) got the Windows core's
+time on 10.0.0.6:4721 within 0.3 ms. The router `10.0.0.254` answers no NTP.
+After installing: `date` is current, `chronyc sources` lists the core,
+the room page offers Restart.
+
 ## Done since 2026-11-04
 
 - Headphone resume fix: `resume_headphones` also accepts an existing bluez-alsa

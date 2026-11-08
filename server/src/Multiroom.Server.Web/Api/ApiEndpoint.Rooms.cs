@@ -6,6 +6,7 @@ using Multiroom.Server.Abstractions;
 using Multiroom.Server.Library;
 using Multiroom.Server.Playback;
 using Multiroom.Server.Playback.Core;
+using Multiroom.Server.Web.Updates;
 
 namespace Multiroom.Server.Web.Api;
 
@@ -50,6 +51,16 @@ public sealed partial class ApiEndpoint
             (Delegate)((string client, HttpContext c) =>
                 WithBody<PowerActionRequest, ClientPowerSettings, CoreError>(c,
                     b => link.SendAsync(new ClientPower(client, b.Action), c.RequestAborted))));
+        // The room's client version and the newest package for it; POST
+        // uploads that package to the client, which restarts into it
+        // (ClientUpdates). 409 when there is nothing newer.
+        app.MapGet("/api/v1/rooms/{client}/update", async (string client, HttpContext c) =>
+            Answer(await clientUpdates.GetAsync(client, c.RequestAborted).ConfigureAwait(false)));
+        // Every present client's version and update, for the clients list.
+        app.MapGet("/api/v1/clients/updates", (Delegate)(async (HttpContext c) =>
+            Answer(await clientUpdates.ListAsync(c.RequestAborted).ConfigureAwait(false))));
+        app.MapPost("/api/v1/rooms/{client}/update", async (string client, HttpContext c) =>
+            Answer(await clientUpdates.UpdateAsync(client, c.RequestAborted).ConfigureAwait(false)));
         // Phase 39: a room that is not connected, gone for good -- a dead
         // device, or one that came back under another id. 409 conflict while
         // it is connected. Its image goes with it.

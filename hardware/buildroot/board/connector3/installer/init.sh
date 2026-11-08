@@ -9,7 +9,7 @@ mount -t tmpfs tmpfs /tmp
 exec 0</dev/console 1>/dev/console 2>/dev/console
 hostname connector3-installer
 ip link set lo up
-echo 'GALDRUN CONNECTOR 3 USB PREFLIGHT - writes require an explicit command'
+echo 'GALDRUN CONNECTOR 3 USB INSTALLER - a write image installs itself after the preflight'
 (
     while :; do
         ip link set eth0 up
@@ -39,5 +39,27 @@ ssh-keygen -q -t ed25519 -N '' -f /etc/ssh/ssh_host_ed25519_key
     sha256sum -c /etc/galdrun-payload.sha256 || exit 1
     tar -xf /run/payload.tar -C /payload || exit 1
     /usr/sbin/galdrun-install --check
-) >/run/preflight.log 2>&1 &
+) >/run/preflight.log 2>&1
+# A write image installs by itself, like Connector 2: no backup, the install,
+# then a reboot into the new firmware (without Reset held the bootloader
+# starts the NAND). If a write fails it stays here; boot the stick again. The
+# log ends up on the stick as galdrun-install.log. A check image stops after
+# the preflight. SSH stays up throughout for inspection; `galdrun-install
+# --backup` and `--install PIN` remain for a manual install with rollback.
+if grep -q 'PREFLIGHT PASSED' /run/preflight.log && [ -f /etc/galdrun-install-writes-enabled ]; then
+    (
+        /usr/sbin/galdrun-install --install
+    ) >/run/install.log 2>&1
+    result=$?
+    cat /run/install.log
+    mount -o remount,rw /media && cp /run/install.log /media/galdrun-install.log && sync
+    mount -o remount,ro /media
+    if [ "$result" = 0 ]; then
+        echo 'INSTALLED: rebooting into the new firmware'
+        umount /media
+        sync
+        reboot -f
+    fi
+    echo "INSTALL FAILED ($result): see /run/install.log; SSH stays available"
+fi
 while :; do /bin/sh; sleep 1; done

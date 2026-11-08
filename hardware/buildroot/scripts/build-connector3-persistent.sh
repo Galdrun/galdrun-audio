@@ -73,7 +73,7 @@ printf '%s  %s\n' b2c5e7f4f88b061b92be8113ddd5ec688da94729c3a5d07bec9e3343354995
     --set-str INITRAMFS_SOURCE '' --set-str LOCALVERSION '-galdrun-connector3' \
     --set-str EXTRA_FIRMWARE 'mrvl/pcie8897_uapsta.bin regulatory.db regulatory.db.p7s imx/sdma/sdma-imx7d.bin' \
     --set-str EXTRA_FIRMWARE_DIR "$firmware" \
-    --set-str CMDLINE 'console=ttymxc0,115200n8 earlycon=ec_imx6q,0x30860000,115200 clk_ignore_unused maxcpus=1 panic=10 mwifiex.debug_mask=0x7 ubi.mtd=5,4096 root=ubi0:RootFS rootfstype=ubifs ro init=/init'
+    --set-str CMDLINE 'console=ttymxc0,115200n8 earlycon=ec_imx6q,0x30860000,115200 clk_ignore_unused maxcpus=1 panic=10 mwifiex.debug_mask=0x7 ubi.mtd=5,4096 root=ubi0:RootFS rootfstype=ubifs rw init=/init'
 args=(-C "$linux" ARCH=arm "CROSS_COMPILE=$ram/host/bin/arm-linux-")
 make "${args[@]}" olddefconfig >"$project/logs/connector3-persistent-kernel.log" 2>&1
 make "${args[@]}" -j"$jobs" zImage nxp/imx/imx7d-galdrun-connector3.dtb \

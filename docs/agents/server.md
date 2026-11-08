@@ -141,6 +141,17 @@ Keep ownership straight when changing settings:
   existing provider; register in `ServerHost.cs`. Library schema changes add
   the next numbered `Library/Migrations/*.sql`, embedded by the library
   project and applied transactionally by `LibraryDatabase.Migrate()`.
+- Client updates: `Web/Updates/ClientUpdates.cs` behind
+  `GET/POST /api/v1/rooms/{client}/update`, and `GET /api/v1/clients/updates`
+  for the clients list (each client asked at most every 10 min, sooner when
+  its beacon version changes; 5 s per client, silent ones left out). The server lists GitHub releases
+  (cached 1 h) plus packages dropped into `<dataDirectory>/client-updates/`,
+  downloads the asset for the client's `target`, checks GitHub's published
+  SHA-256, and uploads it to the client's control port (`POST /api/update`,
+  found through the core's `discovery.clients`), never through the core.
+  Clients never reach the Internet; client side: [client.md](client.md),
+  Self update. Version comparison uses the release tag against the client's
+  CMake `project(VERSION)`, so bump that for every release.
 - Configuration is JSON -> `GALDRUN_` environment -> CLI. Unknown keys fail;
   add keys to `ServerOptions` and resolve/validate in `ConfigLoader`. Explicit
   `--config` must exist; absent it, loader looks for executable-adjacent

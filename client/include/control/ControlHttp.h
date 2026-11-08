@@ -1,7 +1,9 @@
 #pragma once
 
 // A browser on the control port: the settings page at "/" and the control
-// protocol at "POST /api", one request per connection. Every other path,
+// protocol at "POST /api", one request per connection. POST /api/update is
+// the server's upload of a client release (app/SelfUpdate.h): the body is the
+// package, X-Galdrun-Sha256 its hash, the answer that of the update command. Every other path,
 // /api/settings among them, is 404: the page tells this server from the
 // ESP32's port-80 one by that answer.
 //
@@ -37,6 +39,10 @@ bool isTrustedHost(const std::string& hostHeader);
 
 // True when the buffered bytes start an HTTP request rather than a line.
 bool looksLikeHttpRequest(const std::string& inbox);
+
+// How many bytes a request starting like `inbox` may buffer: lineLimit, or
+// more for POST /api/update, the server's upload of a client release.
+size_t httpRequestLimit(const std::string& inbox, size_t lineLimit);
 
 // Consumes one complete request from `inbox` and puts the whole response,
 // headers and body, in `response`. False while the request is incomplete;

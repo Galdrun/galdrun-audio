@@ -1,0 +1,6 @@
+#!/bin/sh
+# udhcpc hook (Buildroot default.script runs it with the action): the
+# router's time for chrony (galdrun-time-sources).
+case "$1" in
+    bound|renew) exec /usr/sbin/galdrun-time-sources router ${ntpsrv:-$router} ;;
+esac
