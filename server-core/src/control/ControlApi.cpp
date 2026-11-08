@@ -364,7 +364,7 @@ std::string errorLine(const std::string& command, const json::Value& id, const c
 } // namespace
 
 ControlApi::ControlApi(ZoneManager& zones, RoomDirectory& rooms,
-                       const DiscoveredClients& discovered, SharedPlanner& planner,
+                       DiscoveredClients& discovered, SharedPlanner& planner,
                        const ResamplerRegistry& registry, const IClock& clock, MediaOrigin media,
                        std::function<bool(const RoomCommand&)> sendToRoom,
                        std::function<void(const std::string&)> publishEvent)
@@ -1896,14 +1896,31 @@ ControlApi::Reply ControlApi::clientForget(const json::Value& params)
         return reply;
     const ClientId client(name);
     const std::optional<RoomRecord> room = rooms_.find(client);
+    // A client only remembered from its beacons (a device reinstalled under a
+    // new id, one that is gone): forgotten from that list while it is silent.
+    // A present one would only come straight back.
+    const std::optional<DiscoveredClient> heard = discovered_.find(client);
+    const bool silent = heard && !isPresent(*heard, clock_.monotonicNowNs());
     if (!room)
-        return Reply::failure(kNotFound, "no room " + name);
+    {
+        if (!heard)
+            return Reply::failure(kNotFound, "no room " + name);
+        if (!silent)
+            return Reply::failure(kUnavailable,
+                                  name + " is announcing itself: only a client that is away can be forgotten");
+        discovered_.remove(client);
+        MULTIROOM_INFO("control API: forgot discovered client {}", name);
+        reply.body["client"] = json::Value(name);
+        return reply;
+    }
     if (room->connected)
         return Reply::failure(kUnavailable,
                               name + " is connected: only a room that is away can be forgotten");
 
     releaseRoom(client, "forgotten");
     rooms_.forget(client);
+    if (silent)
+        discovered_.remove(client);
     MULTIROOM_INFO("control API: forgot room {}{}", name,
              room->zone.empty() ? std::string() : " of zone " + room->zone.str());
 

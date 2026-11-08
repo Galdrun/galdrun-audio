@@ -2539,6 +2539,23 @@ MULTIROOM_TEST(control_api_hides_disabled_discovery_and_reports_its_state_after_
     CHECK(entry(caller.request(R"({"command":"clients"})"), "clients", "clientId", "disabled") == nullptr);
 }
 
+MULTIROOM_TEST(control_api_forgets_a_silent_client_known_only_from_its_beacons)
+{
+    ApiRig rig;
+    LineClient caller(rig.listener->port());
+    matp::ClientBeacon beacon;
+    beacon.clientId = "reinstalled";
+    beacon.controlPort = 4720;
+    rig.discovered.onBeacon(beacon, "10.0.0.7", rig.clock.monotonicNowNs());
+    const char* const forget = R"({"command":"client.forget","params":{"client":"reinstalled"}})";
+    // Still announcing itself: it would only come straight back.
+    CHECK_EQ(errorOf(caller.request(forget)), std::string("unavailable"));
+    rig.clock.advanceNs(kDiscoveryPresentWithinNs + 1);
+    CHECK(isOk(caller.request(forget)));
+    CHECK(!rig.discovered.find(ClientId("reinstalled")).has_value());
+    CHECK_EQ(errorOf(caller.request(forget)), std::string("notFound"));
+}
+
 MULTIROOM_TEST(control_api_lists_the_clients_the_beacons_announced)
 {
     ApiRig rig;

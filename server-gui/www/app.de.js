@@ -304,6 +304,7 @@ i18n.add('de-AT', {
   'clients.detach': 'trennen',
   'clients.attach': 'verbinden',
   'clients.noRoomTo': 'kein Raum zum Vergessen',
+  'clients.forgetClient': 'Diesen Client vergessen: er meldet sich nicht mehr',
   'clients.connectedRoomIs': 'ein verbundener Raum wird nicht vergessen',
   'clients.forgetRoom': 'Raum vergessen',
   'clients.forgetName': '{name} vergessen',

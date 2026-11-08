@@ -123,6 +123,12 @@ internal sealed class FakeCore : IAsyncDisposable
             _refusals[command] = (code, message);
     }
 
+    public void Accept(string command)
+    {
+        lock (_lock)
+            _refusals.Remove(command);
+    }
+
     public Task EmitAsync(string eventLine) => EmitAsync([eventLine]);
 
     public async Task EmitAsync(IEnumerable<string> eventLines)

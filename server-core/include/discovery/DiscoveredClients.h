@@ -78,6 +78,9 @@ public:
     [[nodiscard]] std::vector<DiscoveredClient> clients() const;
     [[nodiscard]] std::optional<DiscoveredClient> find(const ClientId& client) const;
 
+    // Drops one entry (client.forget); false when the list does not hold it.
+    bool remove(const ClientId& client);
+
     [[nodiscard]] size_t size() const;
     [[nodiscard]] size_t maxClients() const noexcept { return maxClients_; }
     // Entries dropped at the ceiling.

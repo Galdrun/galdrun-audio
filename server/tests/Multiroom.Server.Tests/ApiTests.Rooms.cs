@@ -208,7 +208,11 @@ public sealed partial class ApiTests
         await StartAsync();
 
         await Refused(HttpMethod.Delete, "rooms/roomA", HttpStatusCode.Conflict, "conflict");
+        // No room on the server: the core decides (it also forgets a client
+        // known only from its beacons), and the real core knows no "nobody".
+        _core.Refuse("client.forget", "notFound", "no room nobody");
         await Refused(HttpMethod.Delete, "rooms/nobody", HttpStatusCode.NotFound, "notFound");
+        _core.Accept("client.forget");
 
         byte[] jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 4, 5];
         Assert.Equal(HttpStatusCode.OK, (await SendBytes(HttpMethod.Put, "rooms/ESP-AUDIO-A1S/image", jpeg)).StatusCode);

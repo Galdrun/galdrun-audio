@@ -43,6 +43,13 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
 
 ## Invariants that affect changes
 
+- `client.forget` removes a room that is away, and since 2026-11-08 also a
+  client known only from its beacons (`DiscoveredClients::remove`) while it is
+  silent (not present); a present one is refused, it would come straight
+  back. A forgotten room's beacon entry goes too when silent. The .NET
+  `ZoneKeeper.ForgetAsync` passes ids it has no room for to the core, and
+  ServerGui's clients list enables the trash for such silent entries (a
+  device reinstalled under a new id).
 - The discovery listener (`src/discovery/DiscoveryListener.cpp`, UDP 4721)
   also answers SNTP requests with the host's wall clock: the appliances' time
   fallback when the router serves none. It stays silent while that clock is

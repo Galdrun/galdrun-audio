@@ -78,6 +78,12 @@ size_t DiscoveredClients::size() const
     return clients_.size();
 }
 
+bool DiscoveredClients::remove(const ClientId& client)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return clients_.erase(client) > 0;
+}
+
 uint64_t DiscoveredClients::forgotten() const
 {
     std::lock_guard<std::mutex> lock(mutex_);

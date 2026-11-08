@@ -105,7 +105,7 @@ public:
     // `source.stage` accepts a URI from (phase 20). `publishEvent` is where
     // the room events this API notices go, one whole line at a time: the
     // control listener's `publish`, which never waits (phase 24).
-    ControlApi(ZoneManager& zones, RoomDirectory& rooms, const DiscoveredClients& discovered,
+    ControlApi(ZoneManager& zones, RoomDirectory& rooms, DiscoveredClients& discovered,
                SharedPlanner& planner,
                const ResamplerRegistry& registry, const IClock& clock, MediaOrigin media,
                std::function<bool(const RoomCommand&)> sendToRoom,
@@ -238,7 +238,7 @@ private:
 
     ZoneManager& zones_;
     RoomDirectory& rooms_;
-    const DiscoveredClients& discovered_;
+    DiscoveredClients& discovered_;
     std::atomic<uint16_t> roomPort_{0};
     SharedPlanner& planner_;
     const ResamplerRegistry& registry_;

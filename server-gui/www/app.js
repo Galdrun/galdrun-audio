@@ -2280,10 +2280,14 @@ function clientButtons({ c, r, a, id, state, attached }, iconOnly = false) {
       'aria-busy': pointing.has(id) ? 'true' : null, title: iconOnly ? word : null, 'aria-label': iconOnly ? word : null,
       onclick: () => (attached ? detachClient(id) : attachClient(id, state)),
     }, pointing.has(id) ? h('span', { class: 'spinner', 'aria-hidden': 'true' }) : iconOnly ? icon(attached ? 'unlink' : 'link') : word),
+    // A room that is away, or a client only remembered from its beacons that
+    // is silent (a device reinstalled under a new id, one that is gone).
     h('button', {
-      class: 'icon-only danger', disabled: !r || Boolean(a?.connected),
-      title: tt(!r ? 'clients.noRoomTo' : a?.connected ? 'clients.connectedRoomIs' : 'clients.forgetRoom'),
-      'aria-label': tt('clients.forgetName', { name: r?.name ?? id }), onclick: () => forgetRoom(r),
+      class: 'icon-only danger', disabled: r ? Boolean(a?.connected) : !c || c.present,
+      title: tt(r ? (a?.connected ? 'clients.connectedRoomIs' : 'clients.forgetRoom')
+        : c && !c.present ? 'clients.forgetClient' : 'clients.noRoomTo'),
+      'aria-label': tt('clients.forgetName', { name: r?.name ?? c?.name ?? id }),
+      onclick: () => forgetRoom(r ?? { client: id, name: c?.name }),
     }, icon('trash')),
     h('button', {
       class: 'icon-only', disabled: !r, title: tt(r ? 'clients.roomSettings' : 'clients.noRoomYet'),

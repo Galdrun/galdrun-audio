@@ -98,8 +98,16 @@ public sealed partial class ZoneKeeper : BackgroundService, ICoreEventSubscriber
         {
             var model = _link.Model.Current;
             var room = model.Rooms.GetValueOrDefault(client);
+            // No room here: still the core's to forget, a client it only
+            // remembers from its beacons (its NotFound answers for both).
             if (room is null && !_link.Desired.Clients.Contains(client))
-                return Result.Fail(CoreError.NotFound, $"no room {client}");
+            {
+                var heard = await _link.SendAsync(new ClientForget(client), cancellationToken).ConfigureAwait(false);
+                if (!heard.IsSuccess)
+                    return heard.Failure;
+                LogForgotten(_log, client);
+                return true;
+            }
             if (room is { Connected: true })
                 return Result.Fail(CoreError.Conflict, $"{client} is connected: only a room that is away can be forgotten");
 

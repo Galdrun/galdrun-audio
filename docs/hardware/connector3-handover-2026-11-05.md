@@ -122,8 +122,10 @@ lights (UART3 added to the installer DT, MCU tool one-shot `--indication`,
 dynamically linked: the static build pushed the installer kernel over the
 8 MiB FIT limit), console prints only the install log's tail.
 `licenses/SOURCE.txt` names `connector3-sources-030ee2fe0d30` (668 MB, in
-`hardware/buildroot/output/connector3-sources/`), **not yet published**:
-upload it as a pre-release with the firmware release. Release packaging
+`hardware/buildroot/output/connector3-sources/`), **published 2026-11-08** as
+the pre-release `connector3-sources-030ee2fe0d30` (tag on `8283b7b`, by the
+user's account). A rebuild gives a new bundle name: publish that one with the
+firmware release it belongs to. Release packaging
 (`scripts/release/package.py`, `notes.md`, git-ignored) now includes
 `galdrun-connector3-<tag>.zip`. Untested on the device: the progress lights.
 
