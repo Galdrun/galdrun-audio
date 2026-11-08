@@ -58,6 +58,7 @@ const CommandEntry kCommands[] = {
     {ControlCommand::ScanBluetooth, "scanBluetooth"},
     {ControlCommand::SetBluetoothHeadphones, "setBluetoothHeadphones"},
     {ControlCommand::PairBluetooth, "pairBluetooth"},
+    {ControlCommand::SetBluetoothQuality, "setBluetoothQuality"},
     {ControlCommand::GetLeds, "getLeds"},
     {ControlCommand::SetLeds, "setLeds"},
     {ControlCommand::GetPower, "getPower"},

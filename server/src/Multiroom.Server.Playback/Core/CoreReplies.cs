@@ -93,6 +93,10 @@ public sealed record ClientNetworkSettings(string Client, bool Supported,
     System.Text.Json.JsonElement? Network = null, int? ApplyDelaySeconds = null);
 public sealed record ClientLedSettings(string Client, bool Supported, bool? Off = null);
 
+// The SBC quality the device sends to Bluetooth headphones: high, medium or
+// low. Busy while its helper restarts Bluetooth with a new one.
+public sealed record ClientBluetoothSettings(string Client, string? Quality = null, bool Busy = false);
+
 // DeepSleep says whether the client can deep sleep at all.
 public sealed record ClientPowerSettings(string Client, bool Supported, string? State = null,
     uint? StandbyAfterSeconds = null, uint? DeepSleepAfterSeconds = null, bool? DeepSleep = null);

@@ -919,6 +919,7 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
     case ControlCommand::ScanBluetooth:
     case ControlCommand::SetBluetoothHeadphones:
     case ControlCommand::PairBluetooth:
+    case ControlCommand::SetBluetoothQuality:
     {
 #if defined(__linux__) && !defined(ESP_PLATFORM)
         if (!bluetoothSupported())
@@ -929,6 +930,16 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
             started = startBluetoothHelper(runtime_, "scan", std::string(), error);
         else if (request.command == ControlCommand::PairBluetooth)
             started = startBluetoothHelper(runtime_, "pair", std::string(), error);
+        else if (request.command == ControlCommand::SetBluetoothQuality)
+        {
+            // The helper restarts Bluetooth with it; headphones connect again.
+            std::string quality;
+            if (request.params.members().size() != 1 || !json::getString(request.params, "quality", quality) ||
+                (quality != "high" && quality != "medium" && quality != "low"))
+                return makeControlError(request, control_error::kInvalidArgument,
+                                        "params must be {\"quality\": \"high\" | \"medium\" | \"low\"}");
+            started = startBluetoothHelper(runtime_, "quality", quality, error);
+        }
         else if (request.command == ControlCommand::SetBluetoothHeadphones)
         {
             // {"address": "AA:BB:..."} plays to that device, {"address": null} stops.

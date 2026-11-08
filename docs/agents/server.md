@@ -52,6 +52,19 @@ is a room fact, not a power state (`actual.localSource`, event
 does not fail with no room ready; when it ends, the zone plays on. A caller's
 play, pause or stop in between cancels that resume. Zones with other rooms play on.
 
+A room that reports `bluetoothOutput` is the second client on a device whose
+buttons the device's own room reports too, bound on that room's page.
+`InputActions` never runs the Bluetooth room's own input reports; with its
+desired `inputsEnabled` (REST room patch, server-only, default off) it runs
+the device room's press for it as well (same `actual.address`), a zone
+action only once when both share the zone. Running both clients' reports
+made one `togglePause` cancel itself.
+
+When the source that played fails and nothing playable is left (every item
+failed, e.g. a repeated single track), `ZoneSession.FailedAsync` stops the zone
+and keeps the item current: the core would otherwise wait in `starting` for a
+source that never comes, and a play would find the zone already starting.
+
 `CoreLink` connects to the core's JSON-line API, subscribes, reads status and
 reconciles `DesiredState` against `CoreModel`. The core can restart without
 knowing any previous desired memberships/settings. Model changes happen in

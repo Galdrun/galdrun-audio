@@ -42,6 +42,17 @@ const uint32_t kConnectTimeoutMs = 5000;
 // calling thread.
 const int kPollMs = 200;
 
+// How often an open connection checks that its local address is still on an
+// interface. When a cable is pulled the address goes within seconds, but the
+// socket only notices through the session's 20 s silence timeout; on a device
+// that falls back to Wi-Fi this cuts the outage to the fallback itself.
+const auto kAddressCheckInterval = std::chrono::seconds(1);
+const char* const kAddressGone = "the local network address went away";
+// For this long after that, attempts stay at the first backoff step: the
+// network is switching over locally (cable to Wi-Fi or back), the server is
+// fine, and a backoff grown on "Network is unreachable" would add seconds.
+const auto kSwitchOverWindow = std::chrono::seconds(15);
+
 #if !defined(ESP_PLATFORM) && (defined(_WIN32) || defined(__linux__))
 bool sameAddress(const sockaddr* address, const sockaddr_storage& local)
 {
@@ -57,15 +68,22 @@ bool sameAddress(const sockaddr* address, const sockaddr_storage& local)
 }
 #endif
 
-// The kind of interface a connected socket's local address belongs to:
-// "ethernet", "wifi", or empty when that cannot be told (loopback, a VPN, a
-// platform without a lookup). Looked up once per connection.
-std::string networkLinkOf(net::Socket socket)
+struct LocalLink
+{
+    // "ethernet", "wifi", or empty when that cannot be told (loopback, a VPN,
+    // a platform without a lookup).
+    std::string kind;
+    // The lookup worked and no interface holds the local address any more.
+    bool missing = false;
+};
+
+// The interface a connected socket's local address belongs to.
+LocalLink localLinkOf(net::Socket socket)
 {
 #if defined(ESP_PLATFORM)
     // The ESP32 build brings up Wi-Fi only.
     (void)socket;
-    return "wifi";
+    return {"wifi"};
 #elif defined(_WIN32) || defined(__linux__)
     sockaddr_storage local{};
 #  if defined(_WIN32)
@@ -94,12 +112,12 @@ std::string networkLinkOf(net::Socket socket)
         for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr; unicast = unicast->Next)
         {
             if (sameAddress(unicast->Address.lpSockaddr, local))
-                return adapter->IfType == IF_TYPE_IEEE80211       ? "wifi"
-                       : adapter->IfType == IF_TYPE_ETHERNET_CSMACD ? "ethernet"
-                                                                    : "";
+                return {adapter->IfType == IF_TYPE_IEEE80211         ? "wifi"
+                        : adapter->IfType == IF_TYPE_ETHERNET_CSMACD ? "ethernet"
+                                                                     : ""};
         }
     }
-    return {};
+    return {"", true};
 #  else
     ifaddrs* interfaces = nullptr;
     if (::getifaddrs(&interfaces) != 0)
@@ -115,11 +133,11 @@ std::string networkLinkOf(net::Socket socket)
     }
     ::freeifaddrs(interfaces);
     if (name.empty())
-        return {};
+        return {"", true};
     // nl80211 drivers have phy80211, the older wireless-extensions ones wireless.
     const std::string sys = "/sys/class/net/" + name;
     if (::access((sys + "/phy80211").c_str(), F_OK) == 0 || ::access((sys + "/wireless").c_str(), F_OK) == 0)
-        return "wifi";
+        return {"wifi"};
     // Anything else of ARPHRD_ETHER (1) is a wired port; a bridge or VLAN over
     // one counts as one too.
     int type = 0;
@@ -129,7 +147,7 @@ std::string networkLinkOf(net::Socket socket)
             type = 0;
         std::fclose(file);
     }
-    return type == 1 ? "ethernet" : "";
+    return {type == 1 ? "ethernet" : ""};
 #  endif
 #else
     (void)socket;
@@ -434,6 +452,7 @@ void ServerConnection::Impl::run()
 {
     size_t backoffStep = 0;
     uint32_t lastGeneration = 0;
+    auto switchOverUntil = std::chrono::steady_clock::time_point::min();
     std::string loggedError; // so a server that is simply off does not fill the log
 
     while (!stopFlag.load())
@@ -496,13 +515,13 @@ void ServerConnection::Impl::run()
                           static_cast<unsigned>(currentPort), error.c_str());
             }
             waitFor(delayMs, currentGeneration);
-            if (backoffStep + 1 < kBackoffCount)
+            if (backoffStep + 1 < kBackoffCount && std::chrono::steady_clock::now() >= switchOverUntil)
                 ++backoffStep;
             continue;
         }
 
         // Outside the lock: the interface lookup asks the OS.
-        const std::string link = networkLinkOf(connected);
+        const std::string link = localLinkOf(connected).kind;
         {
             std::lock_guard<std::mutex> lock(mutex);
             if (generation != currentGeneration || stopFlag.load())
@@ -538,6 +557,8 @@ void ServerConnection::Impl::run()
         }
         closeConnection();
         state.store(ServerConnectionState::Disconnected);
+        if (reason == kAddressGone)
+            switchOverUntil = std::chrono::steady_clock::now() + kSwitchOverWindow;
 
         if (stopFlag.load())
             continue;
@@ -557,6 +578,7 @@ void ServerConnection::Impl::run()
 void ServerConnection::Impl::serve(uint32_t myGeneration)
 {
     std::vector<char> buffer(kReadChunkBytes);
+    auto nextAddressCheck = std::chrono::steady_clock::now() + kAddressCheckInterval;
 
     for (;;)
     {
@@ -574,6 +596,17 @@ void ServerConnection::Impl::serve(uint32_t myGeneration)
         }
         if (current == net::kInvalidSocket)
             return;
+
+        if (std::chrono::steady_clock::now() >= nextAddressCheck)
+        {
+            nextAddressCheck = std::chrono::steady_clock::now() + kAddressCheckInterval;
+            if (localLinkOf(current).missing)
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                lastError = kAddressGone;
+                return;
+            }
+        }
 
         fd_set readable;
         fd_set writable;

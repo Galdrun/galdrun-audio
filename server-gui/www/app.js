@@ -2433,9 +2433,14 @@ function roomSettings(r) {
     onerror() { noRoomImage.add(r.client); this.onerror = null; this.src = art; },
   });
 
+  // A Bluetooth headphone room is a second client on its host: its output is
+  // the Bluetooth link, its name follows the host's room, and the host's own
+  // settings and buttons belong to the host's room.
+  const bluetoothOutput = Boolean(a?.capabilities?.bluetoothOutput);
+
   // The name, renamed in place: a connected room only (server phase 39).
   const title = h('h1', { class: 'room-hero-name' }, h('span', {}, name),
-    h('button', {
+    !bluetoothOutput && h('button', {
       type: 'button', class: 'icon-only', disabled: offline, title: offline ? `${tt('common.rename')}: ${why}` : tt('common.rename'), 'aria-label': tt('room.rename', { name }),
       onclick(e) {
         const head = e.currentTarget.closest('h1');
@@ -2516,7 +2521,9 @@ function roomSettings(r) {
     }, h('option', { value: '' }, tt('room.household')), listenerNames(r.user).map((n) => h('option', { value: n }, n)))));
 
   const audio = row('volume', 'room.audioDevice', 'room.outputDeviceIts',
-    (a?.audioDevices || offline) && field('room.output', live(a?.audioDevices ? audioDevicePicker(a.audioDevices, patch, path) : unknown())),
+    bluetoothOutput ? field('room.output', h('span', { class: 'room-controls' }, tt('room.bluetoothOutput'),
+      h('span', { class: 'muted small' }, tt('room.outputFixedBluetooth'))))
+      : (a?.audioDevices || offline) && field('room.output', live(a?.audioDevices ? audioDevicePicker(a.audioDevices, patch, path) : unknown())),
     (a?.bufferMs != null || offline) && field('room.bufferSizeMs', live(a?.bufferMs != null ? bufferEditor(a.bufferMs, path) : unknown())),
     (a?.volumeControl || offline) && field('room.volumeControl', live(a?.volumeControl
       ? volumeControlEditor(a.volumeControl, d.audioControl ?? s?.audioControl, a.capabilities?.hardwareVolume, path) : unknown())),
@@ -2570,13 +2577,19 @@ function roomSettings(r) {
     h('button', { class: 'primary' }, tt('room.apply'))));
 
   // The device's own settings: its network link, LEDs and power.
-  const device = row('device', 'room.device', 'room.networkLinkLeds',
+  const device = !bluetoothOutput && row('device', 'room.device', 'room.networkLinkLeds',
     offline ? h('p', { class: 'muted small' }, `${why}: ${tt('room.itsEthernetSpeed')}`)
       : deviceSettingsEditor(r.client, path));
 
+  // A Bluetooth room only follows, or not, its device's own room, whose page
+  // sets what the buttons do (InputActions).
   const buttons = a?.inputs?.length > 0 && row('grip', 'room.buttonsEncoders', 'room.whatButtonsAnd',
-    S.lastInput[r.client] && lastInputLine(S.lastInput[r.client]),
-    inputsEditor(r.client, a.inputs, path, a.deepSleep));
+    ...(bluetoothOutput ? [h('label', { class: 'switch' },
+      h('input', { type: 'checkbox', role: 'switch', checked: Boolean(d.inputsEnabled), 'aria-label': tt('room.inputsControlRoom'), onchange: (e) => patch({ inputsEnabled: e.target.checked }) }),
+      h('span', { class: 'switch-track', 'aria-hidden': 'true' }), tt('room.inputsControlRoom')),
+    h('p', { class: 'muted small' }, tt('room.inputsSetInMainRoom'))] : [
+      S.lastInput[r.client] && lastInputLine(S.lastInput[r.client]),
+      inputsEditor(r.client, a.inputs, path, a.deepSleep)]));
 
   const caps = a?.capabilities;
   const capabilities = caps && row('chip', 'room.capabilities', 'room.formatsAndControls',
@@ -2629,8 +2642,9 @@ function deviceSettingsEditor(client, path) {
   const state = deviceSettings.get(client) ?? {};
   const reload = async () => {
     state.loading = true; deviceSettings.set(client, state); renderRooms();
-    const results = await Promise.allSettled([api('GET', `${path}/network`), api('GET', `${path}/leds`), api('GET', `${path}/power`)]);
-    for (const [i, key] of ['network', 'leds', 'power'].entries()) {
+    // A device without Bluetooth refuses its read: the field is then left out, unexplained.
+    const results = await Promise.allSettled(['network', 'leds', 'power', 'bluetooth'].map((key) => api('GET', `${path}/${key}`, undefined, { quiet: key === 'bluetooth' })));
+    for (const [i, key] of ['network', 'leds', 'power', 'bluetooth'].entries()) {
       state[key] = results[i].status === 'fulfilled' ? results[i].value : null;
       state[key + 'Error'] = results[i].status === 'rejected' ? results[i].reason.message : '';
     }
@@ -2650,6 +2664,9 @@ function deviceSettingsEditor(client, path) {
   const minutes = (seconds) => String(Math.round((seconds ?? 0) / 60));
   // Read once each time the settings page opens (showPage forgets the last read).
   if (!state.loaded && !state.loading) setTimeout(reload, 0);
+  // A quality change restarts the device's Bluetooth: read again until it is done.
+  if (state.bluetooth?.busy && !state.loading && !state.bluetoothTimer)
+    state.bluetoothTimer = setTimeout(() => { state.bluetoothTimer = 0; reload(); }, 3000);
   const field = roomField;
   return [
     !state.loaded && h('p', { class: 'muted small' }, tt('room.readingDeviceSettings')),
@@ -2665,6 +2682,11 @@ function deviceSettingsEditor(client, path) {
       onchange: e => change('leds', { off: e.target.value === 'true' }, 'room.ledModeSaved'),
     }, h('option', { value: 'false' }, tt('room.on')), h('option', { value: 'true' }, tt('room.off'))),
     h('span', { class: 'small muted' }, tt('room.bootAndFirmware'))),
+    state.bluetooth?.quality && field('room.bluetoothQuality', h('select', {
+      value: state.bluetooth.quality, disabled: state.loading || state.bluetooth.busy, 'aria-label': tt('room.bluetoothQualityOf', { name: client }),
+      onchange: e => change('bluetooth', { quality: e.target.value }, 'room.bluetoothQualitySaved'),
+    }, [['high', 'room.qualityHigh'], ['medium', 'room.qualityMedium'], ['low', 'room.qualityLow']].map(([value, label]) => h('option', { value }, tt(label)))),
+    h('span', { class: 'small muted' }, tt(state.bluetooth.busy ? 'room.bluetoothRestarting' : 'room.bluetoothQualityHint'))),
     state.power?.supported && field('room.power',
       h('span', { class: 'pill' }, powerLabel(state.power.state ?? 'unknown')),
       h('button', { type: 'button', disabled: state.loading, onclick: () => power('standbyOn', 'room.standbySent') }, tt('room.standby')),

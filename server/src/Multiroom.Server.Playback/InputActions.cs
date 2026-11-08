@@ -53,7 +53,30 @@ public sealed partial class InputActions : BackgroundService, ICoreEventSubscrib
     public async Task RunAsync(RoomInput input, CancellationToken cancellationToken)
     {
         LogInput(_log, input.Client, input.InputId, input.Gesture, input.Action, input.Count);
+        if (IsBluetoothOutput(input.Client))
+        {
+            LogFollowsHost(_log, input.Client, input.Action);
+            return;
+        }
         var zone = input.Zone ?? _link.Desired.ZoneOf(input.Client);
+        await RunInAsync(input, zone, cancellationToken).ConfigureAwait(false);
+
+        // The press, as the host's room binds it, for each Bluetooth output
+        // room on the same device that asked to follow it. A zone action is
+        // not run again on the zone they share.
+        var scope = input.Scope ?? VolumeScope.Room;
+        foreach (var follower in Followers(input.Client))
+        {
+            var followerZone = _link.Desired.ZoneOf(follower);
+            if (followerZone == zone && (IsTransport(input.Action) || scope == VolumeScope.Zone))
+                continue;
+            await RunInAsync(input with { Client = follower, Zone = null }, followerZone, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task RunInAsync(RoomInput input, string? zone, CancellationToken cancellationToken)
+    {
         var scope = input.Scope ?? VolumeScope.Room;
         if (zone is null && (IsTransport(input.Action) || scope == VolumeScope.Zone))
         {
@@ -92,6 +115,24 @@ public sealed partial class InputActions : BackgroundService, ICoreEventSubscrib
         {
             // Stopping.
         }
+    }
+
+    // A Bluetooth output room is the second client on a device whose buttons
+    // the device's own room reports too, with the bindings set there. Its own
+    // reports are never run; with InputsEnabled it follows its host's.
+    private bool IsBluetoothOutput(string client) =>
+        _link.Model.Current.Rooms.GetValueOrDefault(client)?.Capabilities?.BluetoothOutput == true;
+
+    // The connected Bluetooth output rooms at the host's address that follow it.
+    private List<string> Followers(string host)
+    {
+        var rooms = _link.Model.Current.Rooms;
+        if (rooms.GetValueOrDefault(host)?.Address is not { } address)
+            return [];
+        return [.. rooms.Values
+            .Where(r => r.Connected && r.Address == address && r.Capabilities?.BluetoothOutput == true &&
+                _link.Desired.Rooms.GetValueOrDefault(r.Client)?.InputsEnabled == true)
+            .Select(r => r.Client)];
     }
 
     private static bool IsTransport(InputAction action) =>
@@ -155,6 +196,9 @@ public sealed partial class InputActions : BackgroundService, ICoreEventSubscrib
 
     [LoggerMessage(Level = LogLevel.Information, Message = "{Client}: {Action} ignored, the room is in no zone")]
     private static partial void LogNoZone(ILogger log, string client, InputAction action);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{Client}: {Action} ignored, a Bluetooth output room follows its device's own room")]
+    private static partial void LogFollowsHost(ILogger log, string client, InputAction action);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "{Client}: {Action} from an input was refused: {Reason}")]
     private static partial void LogRefused(ILogger log, string client, InputAction action, string reason);

@@ -19,7 +19,7 @@ and commands are listed in [docs/agents/development.md](docs/agents/development.
 | The wire protocol between core and clients (`shared/matp/`, `client/src/matp/`, `server-core/src/matp/`, `server-core/src/client/`) | [docs/protocol/MATP-AudioTransferProtocol.md](docs/protocol/MATP-AudioTransferProtocol.md) |
 | Porting the client firmware to a Raumfeld device (`hardware/buildroot/`) | [docs/hardware/raumfeld/connector2.md](docs/hardware/raumfeld/connector2.md) |
 | Connector 3 / Teufel Streamer verified USB beta update, SSH and experimental kexec RAM build | [docs/hardware/connector3.md](docs/hardware/connector3.md) |
-| Connector 3 Bluetooth (phone receive, BT button/LED, headphone room) and next steps | [docs/hardware/connector3-handover-2026-11-03.md](docs/hardware/connector3-handover-2026-11-03.md) |
+| Connector 3 Bluetooth (phone receive, BT button/LED, headphone room) and next steps | [docs/hardware/connector3-handover-2026-11-05.md](docs/hardware/connector3-handover-2026-11-05.md) |
 | Connector 3 source-built USB RAM diagnostics and earlier investigation | [docs/hardware/raumfeld/connector3.md](docs/hardware/raumfeld/connector3.md) |
 
 ## Local processes and builds

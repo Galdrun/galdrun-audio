@@ -81,6 +81,11 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
   converter followed by scheduling. Keep packet sequence accounting correct
   when dropping queued packets. Losing an audio socket differs from losing
   the MATP control session.
+- `FfmpegDecoder` passes over a packet the codec rejects as invalid data
+  (up to 16 in a row, never when the source itself failed), as the ffmpeg
+  tool does. Many MP3s end in a last frame cut short by padding and an
+  ID3v1 tag; failing there marked a fully played track as failed, and a
+  queue repeating that one track then had nothing left to play.
 
 ## Thread boundaries and the .NET contract
 

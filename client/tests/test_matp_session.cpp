@@ -1698,6 +1698,37 @@ MULTIROOM_TEST(matp_session_keeps_the_connection_when_it_cannot_honour_a_start)
     CHECK(fixture.session.streamPrepared());
 }
 
+MULTIROOM_TEST(matp_session_answers_a_repeated_start_while_playing_with_a_report)
+{
+    TestListener listener;
+    CHECK(listener.ready());
+
+    Fixture fixture(testIdentity());
+    StreamStub stub;
+    stub.startAccepted = false;
+    stub.startRefusal = "playback has already started";
+    stub.playback.hasTimelineNsAudible = true;
+    stub.playback.timelineNsAudible = 106710702200ULL;
+    fixture.session.setStreamHooks(stub.hooks());
+    CHECK(fixture.start(listener));
+    CHECK(listener.acceptOne(2000));
+
+    Peer peer(fixture.session, listener);
+    establishAndPrepare(fixture, peer, "s-repeat");
+
+    // Right after a report the next one is due only 500 ms later; the repeated
+    // START_AT is the server waiting for exactly that report, so it comes now.
+    matp::Message report;
+    CHECK(nextOfType(peer, matp::MessageType::PlaybackReport, report, 3000));
+    const uint32_t before = fixture.session.playbackReports();
+    CHECK(peer.send(matp::MessageType::StartAt,
+                    startAt(nullptr, monotonicNowNs() + 500000000ULL, 108223408700ULL)));
+    CHECK(nextOfType(peer, matp::MessageType::PlaybackReport, report, 300));
+    CHECK(fixture.session.playbackReports() > before);
+    CHECK_EQ(fixture.session.scheduledStarts(), static_cast<uint32_t>(0));
+    CHECK(fixture.session.state() == matp::SessionState::Established);
+}
+
 MULTIROOM_TEST(matp_session_does_not_start_a_stream_it_never_prepared)
 {
     TestListener listener;

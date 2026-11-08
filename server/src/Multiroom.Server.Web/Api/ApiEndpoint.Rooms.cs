@@ -30,6 +30,13 @@ public sealed partial class ApiEndpoint
             (Delegate)((string client, HttpContext c) =>
                 WithBody<LedModeRequest, ClientLedSettings, CoreError>(c,
                     b => link.SendAsync(new ClientSetLeds(client, b.Off), c.RequestAborted))));
+        // The device's Bluetooth: the SBC quality its headphones get.
+        app.MapGet("/api/v1/rooms/{client}/bluetooth", async (string client, HttpContext c) =>
+            Answer(await link.SendAsync(new ClientGetBluetooth(client), c.RequestAborted).ConfigureAwait(false)));
+        app.MapMethods("/api/v1/rooms/{client}/bluetooth", [HttpMethods.Patch],
+            (Delegate)((string client, HttpContext c) =>
+                WithBody<BluetoothQualityRequest, ClientBluetoothSettings, CoreError>(c,
+                    b => link.SendAsync(new ClientSetBluetoothQuality(client, b.Quality), c.RequestAborted))));
         // The room's idle delays in seconds, and standbyOn, standbyOff,
         // toggleStandby or deepSleep sent to it. Reached through the client's
         // beacon like the LEDs, so not while it is asleep: /wake is for that.
@@ -114,7 +121,7 @@ public sealed partial class ApiEndpoint
             var ct = context.RequestAborted;
             if (patch is { AudioControl: null, OutputLatencyMs: null, Volume: null, Muted: null,
                 AudioDeviceId: null, BufferMs: null, VolumeControl: null, Name: null, Equalizer: null,
-                MaxVolumeDb: null, DriftCorrection: null, User: null })
+                MaxVolumeDb: null, DriftCorrection: null, User: null, InputsEnabled: null })
                 return Result.Fail(CoreError.InvalidArgument, "a room patch needs at least one setting");
             if (patch.Volume is < 0.0 or > 1.0)
                 return Result.Fail(CoreError.InvalidArgument,
@@ -124,6 +131,8 @@ public sealed partial class ApiEndpoint
             // without a core.
             if (patch.User is { } user && Refused(house.SetUser(client, user)) is { } f0)
                 return f0;
+            if (patch.InputsEnabled is { } inputsEnabled && Refused(house.SetInputsEnabled(client, inputsEnabled)) is { } f12)
+                return f12;
 
             if (patch.AudioControl is { } audioControl &&
                 Refused(await link.SendAsync(new ClientSetAudioControl(client, audioControl), ct).ConfigureAwait(false)) is { } f1)

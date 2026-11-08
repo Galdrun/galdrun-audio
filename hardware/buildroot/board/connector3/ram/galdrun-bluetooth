@@ -20,6 +20,18 @@ client_pid=/run/galdrun-headphones.pid
 # The headphone room's config and its headphones' address ("device"); kept on
 # the settings volume, so headphone mode resumes after a reboot.
 if [ -d /settings ]; then hp=/settings/headphones; else hp=/run/headphones; fi
+# The SBC quality sent to headphones (bluealsa --sbc-quality): high (bitpool
+# 53, about 41 kB/s on air), medium or low. With a phone connected as well
+# the radio carries only about 35 kB/s, and high stutters.
+if [ -d /settings ]; then quality=/settings/bluetooth-quality; else quality=/run/bluetooth-quality; fi
+
+sbc_quality() {
+    case "$(cat "$quality" 2>/dev/null)" in
+    medium) echo medium ;;
+    low) echo low ;;
+    *) echo high ;;
+    esac
+}
 
 # Bluetooth ACL links show up as hci0:<handle>.
 links() {
@@ -140,29 +152,47 @@ scan_list() {
     rm -f "$search"
 }
 
+# The headphone room's name is the main room's with this suffix; the main
+# client passes renames on through "alias" below.
+hp_suffix=" (BT-Client)"
+hp_api=http://127.0.0.1:4730/api
+
 # The headphone room: a second client whose "default" sound card is the
 # headphones through bluez-alsa, with its own board file: none of the board's
-# features, only "bluetoothOutput" (reported to the server for its icon).
+# features, only "bluetoothOutput" (reported to the server for its icon). Its
+# settings page is local only: the server shows the room, and the main room's
+# page has the device's settings.
 start_client() {
     main=/settings/client.json
     [ -f "$main" ] || main=/run/client.json
+    # As the config has it: already JSON-escaped.
+    name=$(sed -n 's/^ *"name": *"\(.*\)",*$/\1/p' "$main" | head -n 1)
     if [ ! -s "$hp/client.json" ]; then
-        name=$(sed -n 's/^ *"name": *"\(.*\)",*$/\1/p' "$main" | head -n 1)
         server=$(sed -n 's/^ *"server": *"\(.*\)",*$/\1/p' "$main" | head -n 1)
         cat >"$hp/client.json" <<EOF
 {
   "active": true,
   "server": "$server",
   "clientId": "",
-  "name": "$name Headphones",
+  "name": "",
   "audioDeviceId": "default",
   "audioAccessMode": "shared",
   "controlPort": 4730,
-  "controlBindAddress": "0.0.0.0",
+  "controlBindAddress": "127.0.0.1",
   "inputs": []
 }
 EOF
     fi
+    # Also for a config written before: the name follows the main room and
+    # the page is local only. index/substr, not sub(): a name may hold "&".
+    NAME="$name$hp_suffix" awk '
+        function set(key, value,  i) {
+            i = index($0, "\"" key "\"")
+            $0 = substr($0, 1, i - 1) "\"" key "\": \"" value "\","
+        }
+        /^ *"name": / { set("name", ENVIRON["NAME"]) }
+        /^ *"controlBindAddress": / { set("controlBindAddress", "127.0.0.1") }
+        { print }' "$hp/client.json" >"$hp/client.json.new" && mv "$hp/client.json.new" "$hp/client.json"
     echo '{"bluetoothOutput": true}' >"$hp/board.json"
     # The plugin itself, not the "bluealsa" plug wrapper: that accepts any
     # format, and the server would pick one the link cannot carry (8 channels).
@@ -191,10 +221,13 @@ stop_client() {
 
 # Connects the headphones, then starts their room. Waits for them as long as
 # headphone mode is on: they may be switched off at boot or out of range.
+# Headphones often reconnect by themselves at power-on; BlueZ then answers
+# Connect with "br-connection-busy" although their A2DP PCM already exists.
 resume_headphones() {
     while [ -s "$hp/device" ]; do
         address=$(cat "$hp/device")
-        if timeout=20000 call "$(device_path "$address")" org.bluez.Device1.Connect; then
+        if bluealsa-aplay -L 2>/dev/null | grep -q "DEV=$address,PROFILE=a2dp" ||
+            timeout=20000 call "$(device_path "$address")" org.bluez.Device1.Connect; then
             start_client "$address"
             return 0
         fi
@@ -320,7 +353,7 @@ start() {
     # Accepts pairing (just works, no PIN) and the A2DP connection of paired devices.
     bt-agent -c NoInputNoOutput >>"$log" 2>&1 &
     daemon=$(command -v bluealsad || command -v bluealsa)
-    "$daemon" -S -p a2dp-sink -p a2dp-source >>"$log" 2>&1 &
+    "$daemon" -S --sbc-quality="$(sbc_quality)" -p a2dp-sink -p a2dp-source >>"$log" 2>&1 &
     led_loop >/dev/null 2>&1 &
     echo $! >"$led_pid"
     if [ -s "$hp/device" ]; then
@@ -348,8 +381,23 @@ headphones-on)
     [ ! -s "$hp/device" ] || [ "$(cat "$hp/device")" = "$2" ] || headphones_off
     [ -s "$hp/device" ] || headphones_on "$2" ;;
 headphones-off) headphones_off ;;
+# The settings page: the headphones' SBC quality. bluealsa takes it only when
+# it starts, so Bluetooth restarts; headphones in use connect again.
+quality)
+    case "$2" in
+    high|medium|low) [ "$2" = "$(sbc_quality)" ] || { echo "$2" >"$quality" && stop && start; } ;;
+    *) echo "Usage: $0 quality high|medium|low" >&2; exit 2 ;;
+    esac ;;
 # The name phones see: the client passes its room name.
-alias) adapter Alias "string:$2" ;;
-*) echo "Usage: $0 {start|stop|restart|pair|headphones|scan|headphones-on ADDRESS|headphones-off|alias NAME}" >&2
+alias) adapter Alias "string:$2"
+    # A running headphone room follows the rename; one started later reads the
+    # name from the main config.
+    if [ -f "$headphones" ]; then
+        # JSON: each \ doubled, " escaped (BusyBox sed takes \\ only in [ ]).
+        escaped=$(printf '%s' "$2$hp_suffix" | sed 's/[\]/&&/g; s/"/\\"/g')
+        wget -q -T 3 -O /dev/null --header 'Content-Type: application/json' \
+            --post-data "{\"command\":\"setName\",\"params\":{\"name\":\"$escaped\"}}" "$hp_api" || :
+    fi ;;
+*) echo "Usage: $0 {start|stop|restart|pair|headphones|scan|headphones-on ADDRESS|headphones-off|quality high|medium|low|alias NAME}" >&2
    exit 2 ;;
 esac

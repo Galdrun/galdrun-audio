@@ -81,7 +81,8 @@ enum class ControlCommand
     GetBluetooth,
     ScanBluetooth,
     SetBluetoothHeadphones,
-    PairBluetooth
+    PairBluetooth,
+    SetBluetoothQuality
 };
 
 const char* controlCommandName(ControlCommand command);

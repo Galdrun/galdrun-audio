@@ -400,7 +400,8 @@ function renderBluetooth(b) {
     : b.scanning ? tt(b.scanSeconds ? 'bluetooth.searchingFor' : 'bluetooth.searching', {seconds: b.scanSeconds})
     : tt('bluetooth.none');
   show('btDisconnect', !!h);
-  for (const id of ['btPair', 'btScan', 'btDisconnect']) $(id).disabled = b.busy;
+  $('btQuality').value = b.quality ?? 'high';
+  for (const id of ['btPair', 'btScan', 'btDisconnect', 'btQuality']) $(id).disabled = b.busy;
   $('btDevices').replaceChildren(...b.devices.map(d => {
     const choice = document.createElement('button');
     choice.type = 'button';
@@ -440,6 +441,7 @@ async function bluetoothCommand(command, params) {
 $('btPair').onclick = () => bluetoothCommand('pairBluetooth');
 $('btScan').onclick = () => { $('btDevices').replaceChildren(); bluetoothCommand('scanBluetooth'); };
 $('btDisconnect').onclick = () => bluetoothCommand('setBluetoothHeadphones', {address: null});
+$('btQuality').onchange = (e) => bluetoothCommand('setBluetoothQuality', {quality: e.target.value});
 
 async function loadLeds() {
   const r = await api('getLeds');

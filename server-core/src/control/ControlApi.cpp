@@ -515,6 +515,12 @@ std::string ControlApi::handleLine(const std::string& line, bool& subscribed)
     else if (command == "client.setLeds")
         reply = onlyKeys(params, {"client", "off"}, command, reply)
                     ? clientFirmwareSettings(params, "setLeds") : reply;
+    else if (command == "client.getBluetooth")
+        reply = onlyKeys(params, {"client"}, command, reply)
+                    ? clientFirmwareSettings(params, "getBluetooth") : reply;
+    else if (command == "client.setBluetoothQuality")
+        reply = onlyKeys(params, {"client", "quality"}, command, reply)
+                    ? clientFirmwareSettings(params, "setBluetoothQuality") : reply;
     else if (command == "client.getPower")
         reply = onlyKeys(params, {"client"}, command, reply)
                     ? clientFirmwareSettings(params, "getPower") : reply;
@@ -771,6 +777,13 @@ ControlApi::Reply ControlApi::clientFirmwareSettings(const json::Value& params, 
             return Reply::failure(kInvalidArgument, "off must be a boolean");
         changes["off"] = json::Value(off);
     }
+    else if (command == "setBluetoothQuality")
+    {
+        // The client checks the value: high, medium or low.
+        std::string quality;
+        if (!requireString(params, "quality", quality, reply)) return reply;
+        changes["quality"] = json::Value(quality);
+    }
     else if (command == "setPower")
     {
         // Either delay or both, in seconds; the client checks the ranges.
@@ -806,6 +819,10 @@ ControlApi::Reply ControlApi::clientFirmwareSettings(const json::Value& params, 
     for (const char* key : {"supported", "network", "applyDelaySeconds", "off", "state",
                             "standbyAfterSeconds", "deepSleepAfterSeconds", "deepSleep"})
         if (const auto* value = answer.find(key)) reply.body[key] = *value;
+    // Bluetooth: only what the server shows, not the scan or the headphones.
+    if (const auto* bluetooth = answer.find("bluetooth"))
+        for (const char* key : {"quality", "busy"})
+            if (const auto* value = bluetooth->find(key)) reply.body[key] = *value;
     return reply;
 }
 

@@ -10,11 +10,11 @@
 #include "app/Version.h"
 #include "audio/AudioDeviceCache.h"
 #include "config/ClientConfig.h"
-#if defined(__linux__) && !defined(ESP_PLATFORM)
-#include "config/CpuSettings.h"
 #if !defined(ESP_PLATFORM)
 #include "config/BoardConfig.h"
 #endif
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+#include "config/CpuSettings.h"
 #include "config/DacSettings.h"
 #endif
 #include "control/CommandQueue.h"

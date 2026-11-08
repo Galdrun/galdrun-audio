@@ -352,6 +352,7 @@ void FfmpegDecoder::close() noexcept
     streamIndex_ = -1;
     frameOffset_ = 0;
     frameFrames_ = 0;
+    invalidPackets_ = 0;
 }
 
 Status<DecodeError> FfmpegDecoder::fillFrame()
@@ -396,6 +397,7 @@ Status<DecodeError> FfmpegDecoder::fillFrame()
             }
             frameOffset_ = 0;
             frameFrames_ = static_cast<uint32_t>(frame_->nb_samples);
+            invalidPackets_ = 0;
             return {};
         }
         if (received == AVERROR_EOF)
@@ -405,6 +407,8 @@ Status<DecodeError> FfmpegDecoder::fillFrame()
                 return failing(DecodeError::DecodeFailed, avErrorText(received));
             return fail(DecodeError::EndOfStream, source_->describe());
         }
+        if (received == AVERROR_INVALIDDATA && passOverInvalid())
+            continue;
         if (received != AVERROR(EAGAIN))
             return failing(DecodeError::DecodeFailed, avErrorText(received));
 
@@ -430,9 +434,18 @@ Status<DecodeError> FfmpegDecoder::fillFrame()
 
         const int sent = avcodec_send_packet(codec_, packet_);
         av_packet_unref(packet_);
+        if (sent == AVERROR_INVALIDDATA && passOverInvalid())
+            continue;
         if (sent < 0 && sent != AVERROR(EAGAIN))
             return failing(DecodeError::DecodeFailed, avErrorText(sent));
     }
+}
+
+bool FfmpegDecoder::passOverInvalid()
+{
+    // A source failure surfaces as invalid data too; that is not the file's.
+    constexpr int kMaxInvalidPackets = 16;
+    return !sourceFailure_ && ++invalidPackets_ <= kMaxInvalidPackets;
 }
 
 void FfmpegDecoder::emit(std::span<std::byte> output, uint32_t frames) const
@@ -513,6 +526,7 @@ Status<DecodeError> FfmpegDecoder::seekTo(uint64_t frame)
     draining_ = false;
     frameOffset_ = 0;
     frameFrames_ = 0;
+    invalidPackets_ = 0;
 
     // Forward to the frame asked for. Whole decoded frames before it are
     // dropped, and the one it falls in is entered part-way, which is what

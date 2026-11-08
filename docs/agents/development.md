@@ -239,7 +239,7 @@ the all-NAND-read-only USB check/backup image; `--write` is gated on hardware
   clock. See the hardware guide's current checkpoint for Wi-Fi-only qualification.
 `test-connector3-persistent-init.py`, `test-connector3-installer.py` and
 `test-connector3-monitor-only.py` check persistence seeding, installer protections
-and limited-monitor service/configuration refusals without hardware.
+(including Bluetooth settings kept across the MTD5 reformat) and limited-monitor service/configuration refusals without hardware.
 The earlier `test-connector3-monitor.py <patched-OP-TEE-source>` checks the
 abandoned CAAM candidate's RNG self-test; it does not qualify the limited monitor.
 `source-bundle-connector3.py <build-cache> <destination>` collects corresponding

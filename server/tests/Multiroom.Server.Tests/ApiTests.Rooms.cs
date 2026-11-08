@@ -125,6 +125,11 @@ public sealed partial class ApiTests
         Assert.Equal(("client.power", """{"client":"roomA","action":"standbyOn"}"""), (_core.All[^1].Command, _core.All[^1].Params));
         await Refused(HttpMethod.Patch, "rooms/roomA/power", """{"deepSleepAfterSeconds":-1}""", HttpStatusCode.BadRequest, "invalidRequest");
         await Refused(HttpMethod.Patch, "rooms/roomA/network", """{"speedMbps":"10","unknown":1}""", HttpStatusCode.BadRequest, "invalidRequest");
+        _core.Answer("client.getBluetooth", p => new JsonObject { ["client"] = "roomA", ["quality"] = "high" });
+        _core.Answer("client.setBluetoothQuality", p => new JsonObject { ["client"] = "roomA", ["quality"] = "high", ["busy"] = true });
+        Assert.Equal("high", (await Ok(HttpMethod.Get, "rooms/roomA/bluetooth"))["quality"]!.GetValue<string>());
+        Assert.True((await Ok(HttpMethod.Patch, "rooms/roomA/bluetooth", """{"quality":"medium"}"""))["busy"]!.GetValue<bool>());
+        Assert.Equal(("client.setBluetoothQuality", """{"client":"roomA","quality":"medium"}"""), (_core.All[^1].Command, _core.All[^1].Params));
         _core.Refuse("client.setEthernetSpeed", "unavailable", "unsupported firmware");
         await Refused(HttpMethod.Patch, "rooms/roomA/network", """{"speedMbps":"100"}""", HttpStatusCode.ServiceUnavailable, "unavailable");
     }

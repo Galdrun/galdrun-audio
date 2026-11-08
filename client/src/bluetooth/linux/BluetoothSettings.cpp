@@ -36,6 +36,10 @@ json::Value status()
     const long until = std::atol(firstLine(search).c_str());
     const long now = static_cast<long>(std::time(nullptr));
     out["scanSeconds"] = json::Value(static_cast<int64_t>(until > now ? until - now : 0));
+    // The headphones' SBC quality; the helper starts bluealsa with it.
+    const std::string quality = firstLine(exists("/settings") ? "/settings/bluetooth-quality"
+                                                             : "/run/bluetooth-quality");
+    out["quality"] = json::Value(quality == "medium" || quality == "low" ? quality : "high");
 
     // The helper keeps the headphone room on the settings volume when there
     // is one (persistent image), else in /run.

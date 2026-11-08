@@ -539,6 +539,35 @@ public sealed partial class QueueEngineTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_queue_with_nothing_playable_left_is_stopped_rather_than_left_starting()
+    {
+        var tracks = await StartAsync("A");
+        Ok(await _engine.AddAsync(Zone, tracks, null, Ct));
+        Ok(await _engine.SetRepeatAsync(Zone, RepeatMode.All, Ct));
+        Ok(await _engine.PlayAsync(Zone, null, Ct));
+        var first = Staged()[0].SourceId;
+        await EmitAsync(
+            $$"""{"event":"zone.sourceNeeded","zone":"living","afterSourceId":"{{first}}"}""",
+            $$"""{"event":"zone.sourceStarted","zone":"living","sourceId":"{{first}}","timelineNs":0,"serverTimeNs":1,"startOffsetNs":0}""");
+        await Until(() => Staged().Count == 2);
+        var second = Staged()[1].SourceId;
+
+        // The repeat is staged already: the zone plays on with it.
+        await EmitAsync($$"""{"event":"zone.sourceFailed","zone":"living","sourceId":"{{first}}","reason":"DecodeFailed"}""");
+        await EmitAsync(
+            $$"""{"event":"zone.sourceStarted","zone":"living","sourceId":"{{second}}","timelineNs":5,"serverTimeNs":6,"startOffsetNs":0}""",
+            $$"""{"event":"zone.sourceNeeded","zone":"living","afterSourceId":"{{second}}"}""");
+        await Until(() => Queue().NowPlaying?.SourceId == second);
+        Assert.DoesNotContain(_core.All, r => r.Command == "zone.stop");
+
+        // The only item is marked failed, so nothing follows it: stopped.
+        await EmitAsync($$"""{"event":"zone.sourceFailed","zone":"living","sourceId":"{{second}}","reason":"DecodeFailed"}""");
+        await Until(() => Queue().Transport == QueueTransport.Stopped);
+        Assert.Contains(_core.All, r => r.Command == "zone.stop");
+        Assert.Equal(2, Staged().Count);
+    }
+
+    [Fact]
     public async Task A_track_that_does_not_resolve_is_marked_and_passed()
     {
         var tracks = await StartAsync("A");
@@ -764,6 +793,42 @@ public sealed partial class QueueEngineTests : IAsyncDisposable
         var count = Sent().Count;
         await inputs.RunAsync(new RoomInput("roomB", "play", "click", InputAction.Next, 1), Ct);
         Assert.Equal(count, Sent().Count);
+    }
+
+    [Fact]
+    public async Task A_bluetooth_output_room_follows_its_device_s_own_room_s_buttons_when_enabled()
+    {
+        await PlayingAsync("A", "B");
+        var inputs = new InputActions(_link, _engine, NullLogger<InputActions>.Instance);
+        await EmitAsync(
+            """{"event":"room.connected","client":"roomA","deviceName":"RCA","reconnect":false,"address":"10.0.0.74"}""",
+            """{"event":"room.connected","client":"roomB","deviceName":"default","reconnect":false,"address":"10.0.0.74"}""",
+            """{"event":"room.capabilities","client":"roomB","device":"default","capabilities":{"formats":[{"sampleRate":48000,"channels":2,"sampleType":"int16"}],"bluetoothOutput":true}}""");
+        await Until(() => _link.Model.Current.Rooms.GetValueOrDefault("roomB")?.Capabilities?.BluetoothOutput == true &&
+            _link.Model.Current.Rooms["roomA"].Address == "10.0.0.74");
+        Ok(await _engine.SetClientsAsync(Zone, ["roomA", "roomB"], Ct));
+        Ok(await _engine.SetVolumeAsync("roomA", 0.5, null, Ct));
+        Ok(await _engine.SetVolumeAsync("roomB", 0.5, null, Ct));
+
+        // The Bluetooth room's own reports never run: its bindings are not the ones set.
+        var count = Sent().Count;
+        await inputs.RunAsync(new RoomInput("roomB", "play", "click", InputAction.TogglePause, 1), Ct);
+        Assert.Equal(count, Sent().Count);
+
+        // Not following: the host's knob turns the host alone.
+        await inputs.RunAsync(new RoomInput("roomA", "knob", "clockwise", InputAction.VolumeUp, 1, Step: 0.1), Ct);
+        Assert.Equal([("client.setVolume", """{"client":"roomA","value":0.6}""")], Sent()[count..]);
+
+        // Following: the host's press runs for it too, a zone action only once
+        // on the zone they share.
+        _link.Desired.SetInputsEnabled("roomB", true);
+        count = Sent().Count;
+        await inputs.RunAsync(new RoomInput("roomA", "knob", "clockwise", InputAction.VolumeUp, 1, Step: 0.1), Ct);
+        Assert.Equal([("client.setVolume", """{"client":"roomA","value":0.7}"""),
+            ("client.setVolume", """{"client":"roomB","value":0.6}""")], Sent()[count..]);
+        count = Sent().Count;
+        await inputs.RunAsync(new RoomInput("roomA", "play", "click", InputAction.TogglePause, 1), Ct);
+        Assert.Equal([("zone.pause", """{"zone":"living"}""")], Sent()[count..]);
     }
 
     [Fact]

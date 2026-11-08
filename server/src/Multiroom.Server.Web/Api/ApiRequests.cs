@@ -7,6 +7,8 @@ namespace Multiroom.Server.Web.Api;
 
 public sealed record EthernetSpeedRequest(string SpeedMbps);
 public sealed record LedModeRequest(bool Off);
+
+public sealed record BluetoothQualityRequest(string Quality);
 public sealed record PowerSettingsRequest(uint? StandbyAfterSeconds = null, uint? DeepSleepAfterSeconds = null);
 public sealed record PowerActionRequest(string Action);
 
@@ -57,6 +59,7 @@ public sealed record ClientsRequest(IReadOnlyList<string> Clients);
 // room's (phase 39), which its client keeps. Equalizer is the whole of it
 // (phase 41). MaxVolumeDb is the level at full volume, 0 for no limit.
 // User (phase 36): who listens in the room, "" for the household.
+// InputsEnabled: whether a Bluetooth output room follows its device's own room's buttons.
 public sealed record RoomPatch(
     AudioControl? AudioControl = null,
     ulong? OutputLatencyMs = null,
@@ -69,7 +72,8 @@ public sealed record RoomPatch(
     CoreEqualizer? Equalizer = null,
     double? MaxVolumeDb = null,
     DriftCorrection? DriftCorrection = null,
-    string? User = null);
+    string? User = null,
+    bool? InputsEnabled = null);
 
 // POST rooms/{client}/equalizer/profile: the profile copied into the room.
 public sealed record EqualizerProfileApply(string Profile);

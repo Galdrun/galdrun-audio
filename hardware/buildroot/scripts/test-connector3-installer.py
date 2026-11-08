@@ -143,9 +143,26 @@ else cat "$last"; fi
     (root / 'etc/galdrun-install-writes-enabled').touch()
     for number in (4, 5):
         (root / f'sys/class/mtd/mtd{number}/flags').write_text('0x400')
+    # The old settings volume is attached and its Bluetooth state kept first.
+    old = root/'old-settings'
+    (old/'bluetooth/AA:BB').mkdir(parents=True)
+    (old/'bluetooth/AA:BB/info').write_text('paired')
+    (old/'bluetooth-quality').write_text('medium')
+    (old/'etc').mkdir()
+    for name, body in (('ubiattach', f'echo "ubiattach $*" >>"{calls}"'),
+                       ('ubidetach', f'echo "ubidetach $*" >>"{calls}"'),
+                       ('mount', f'case "$*" in *ubi0:GaldrunSettings*) for t do :; done; cp -a "{old}/." "$t";; esac'),
+                       ('umount', 'exit 0')):
+        (root/'bin'/name).write_text('#!/bin/sh\n'+body+'\n')
+        (root/'bin'/name).chmod(0o755)
     result = run('--install', pin)
     assert result.returncode != 0
     log = calls.read_text()
+    assert log.index("ubiattach") < log.index("ubiformat"), (log, result.stderr)
+    keep = root/'run/settings-keep'
+    assert (keep/'bluetooth/AA:BB/info').read_text() == 'paired'
+    assert (keep/'bluetooth-quality').read_text() == 'medium'
+    assert not (keep/'etc').exists(), 'Kept settings beyond Bluetooth state'
     assert 'ubiformat' in log and 'flash_erase' in log, (result.stdout, result.stderr, log)
     assert 'nandwrite' not in log and f'{root}/dev/mtd4' not in log, log
     assert all(f'{root}/dev/mtd{number}' not in log for number in range(4)), log

@@ -74,6 +74,16 @@ come from root `shared/matp/include/`, not a second client definition.
 - Shut down `CommandQueue` before joining the control listener, releasing any
   request waiting for the owner loop. Preserve recovery/stop ordering in
   `StreamPlayback` and `PlaybackSupervisor` when changing device ownership.
+- `ServerConnection` checks once a second that the socket's local address is
+  still on an interface and drops the connection when it is gone. A pulled
+  cable otherwise shows only through the session's 20 s silence timeout; with
+  the check, a device falling back to Wi-Fi reconnects as soon as that is up.
+  For 15 s after such a drop, failed attempts keep the 1 s backoff step: the
+  switch-over is local, and a backoff grown on "Network is unreachable" only
+  adds seconds.
+- The core repeats a `START_AT` when no audible `PLAYBACK_REPORT` reached it in
+  time. A room that is already playing answers it with an immediate report
+  (`Session::handleStartAt`), not an error; it does not resynchronize.
 - ARMv6 is supported: keep shared/client code C++17 and preserve the 32-bit
   atomic/wrap handling used by ring indices and render counters.
 
@@ -88,7 +98,10 @@ board flag `bluetooth` the client runs the image helper
 
 Bluetooth headphones/speakers (A2DP source) are a **second client process**
 started by the image helper (`galdrun-bluetooth headphones|headphones-on
-ADDRESS|headphones-off`): its own `client.json`, control port 4730 and
+ADDRESS|headphones-off`): its own `client.json`, control port 4730 on
+`127.0.0.1` only (the main room's page has the device's settings), the main
+room's name plus ` (BT-Client)` (rewritten at start; the helper's `alias`,
+which the main client runs on a rename, passes it on through `setName`), and
 `--board-file` containing only `{"bluetoothOutput": true}` (so it claims no
 board feature and reports `bluetoothOutput` in AUDIO_CAPABILITIES), and a
 `$HOME/.asoundrc` whose `default` is the raw `type bluealsa` PCM -- the `bluealsa`
@@ -96,7 +109,7 @@ alias is plug-wrapped and lets the server pick formats the link cannot carry.
 The receiver (`BluealsaReceiver`) backs off opening the phone PCM on links
 without one (headphones), and sets BlueZ's alias to the room name via
 `IBluetoothReceiver::setName`. The settings page's Bluetooth card uses
-`getBluetooth`/`scanBluetooth`/`setBluetoothHeadphones`/`pairBluetooth`
+`getBluetooth`/`scanBluetooth`/`setBluetoothHeadphones`/`pairBluetooth`/`setBluetoothQuality`
 (`src/bluetooth/linux/BluetoothSettings.cpp` reads the helper's files); all
 helper runs share `bluetoothProcess`, one at a time.
 

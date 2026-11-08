@@ -189,6 +189,9 @@ public sealed record ClientSetLeds(string Client, bool Off) : CoreCommand<Client
 
 // The client's idle delays (0 is off; deep sleep 60 s at least) and its own
 // power commands: standbyOn, standbyOff, toggleStandby or deepSleep.
+public sealed record ClientGetBluetooth(string Client) : CoreCommand<ClientBluetoothSettings>("client.getBluetooth");
+public sealed record ClientSetBluetoothQuality(string Client, string Quality)
+    : CoreCommand<ClientBluetoothSettings>("client.setBluetoothQuality");
 public sealed record ClientGetPower(string Client) : CoreCommand<ClientPowerSettings>("client.getPower");
 public sealed record ClientSetPower(string Client, uint? StandbyAfterSeconds = null, uint? DeepSleepAfterSeconds = null)
     : CoreCommand<ClientPowerSettings>("client.setPower");

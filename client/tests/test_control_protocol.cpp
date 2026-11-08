@@ -85,7 +85,8 @@ MULTIROOM_TEST(control_recognizes_every_documented_command)
                                        ControlCommand::RescanAudio, ControlCommand::GetServer,
                                        ControlCommand::SetServer,   ControlCommand::GetClientId,
                                        ControlCommand::SetClientId, ControlCommand::GetDac,
-                                       ControlCommand::SetDac};
+                                       ControlCommand::SetDac,      ControlCommand::GetBluetooth,
+                                       ControlCommand::SetBluetoothQuality};
     for (const ControlCommand command : expected)
     {
         ControlCommand parsed = ControlCommand::Status;

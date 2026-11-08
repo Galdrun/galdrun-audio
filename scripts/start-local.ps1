@@ -43,4 +43,8 @@ Start-Part 'core' 'server-core\windows-x64\galdrun-core.exe' @('--config', "`"$c
 Start-Sleep -Milliseconds 500
 Start-Part 'server' 'server\windows-x64\galdrun-server.exe' @('--config', "`"$config\server.json`"")
 Start-Part 'client' 'client\windows-x64\galdrun-client.exe' @('--config', "`"$config\client.json`"", '--audio-cache', "`"$run\client\audio_devices.json`"")
-Write-Host 'Web interface: http://127.0.0.1:4723/ (client settings: http://127.0.0.1:4720/)'
+$guiPort = (Get-Content (Join-Path $config 'server.json') -Raw | ConvertFrom-Json).gui.port
+if (-not $guiPort) { $guiPort = 4723 }
+$clientPort = (Get-Content (Join-Path $config 'client.json') -Raw | ConvertFrom-Json).controlPort
+if (-not $clientPort) { $clientPort = 4720 }
+Write-Host "Web interface: http://127.0.0.1:$guiPort/ (client settings: http://127.0.0.1:$clientPort/)"

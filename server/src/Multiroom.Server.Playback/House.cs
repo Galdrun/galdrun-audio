@@ -45,7 +45,8 @@ public sealed record RoomDesired(
     bool? EffectiveMuted,
     CoreEqualizer? Equalizer = null,
     bool Grouped = false,
-    double? MaxVolumeDb = null);
+    double? MaxVolumeDb = null,
+    bool? InputsEnabled = null);
 
 // A room, both halves. Actual is the core's own account, unchanged: the
 // connection, the device and what it can play, the settings as the core
@@ -124,7 +125,7 @@ public sealed class House(CoreLink link, QueueEngine queues, ProviderRegistry pr
         return new RoomView(client, NameOf(client),
             new RoomDesired(zone, settings.AudioControl, volume,
                 settings.Muted, settings.OutputLatencyMs, effective.Volume, effective.Muted,
-                settings.Equalizer, effective.Grouped, settings.MaxVolumeDb),
+                settings.Equalizer, effective.Grouped, settings.MaxVolumeDb, settings.InputsEnabled),
             link.Model.Current.Rooms.GetValueOrDefault(client), users.OfRoom(client));
     }
 
@@ -185,6 +186,16 @@ public sealed class House(CoreLink link, QueueEngine queues, ProviderRegistry pr
                 string.Create(CultureInfo.InvariantCulture, $"volume {volume} is outside 0.0..1.0"));
         var set = await link.SendAsync(new ClientSetVolume(client, volume, muted), cancellationToken).ConfigureAwait(false);
         return set.IsSuccess ? Room(client) : set.Failure;
+    }
+
+    // Whether a Bluetooth output room follows its device's own room's
+    // buttons; this server's alone, so recorded without a core.
+    public Result<RoomView, CoreError> SetInputsEnabled(string client, bool enabled)
+    {
+        if (!RoomNames().Contains(client))
+            return Result.Fail(CoreError.NotFound, $"no room {client}");
+        link.Desired.SetInputsEnabled(client, enabled);
+        return Room(client);
     }
 
     // The room's level at full volume: -60..0 dB, 0 for no limit.

@@ -62,6 +62,8 @@ internal sealed class FakeCore : IAsyncDisposable
         ["client.setEthernetSpeed"] = ["client", "speedMbps"],
         ["client.getLeds"] = ["client"],
         ["client.setLeds"] = ["client", "off"],
+        ["client.getBluetooth"] = ["client"],
+        ["client.setBluetoothQuality"] = ["client", "quality"],
         ["client.getPower"] = ["client"],
         ["client.setPower"] = ["client", "standbyAfterSeconds?", "deepSleepAfterSeconds?"],
         ["client.power"] = ["client", "action"],

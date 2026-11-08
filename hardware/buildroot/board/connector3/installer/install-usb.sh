@@ -133,7 +133,7 @@ cleanup() {
     result=$?
     trap - EXIT INT TERM
     if [ "$result" -ne 0 ] && [ "$changed" = 1 ]; then
-        for path in /run/settings-seed /run/new-root; do
+        for path in /run/old-settings /run/settings-seed /run/new-root; do
             if grep -q " $path " /proc/mounts; then
                 umount "$path" || { echo 'Cannot unmount new filesystems; raw rollback stopped.' >&2; exit "$result"; }
             fi
@@ -155,6 +155,21 @@ for number in 4 5; do
     [ "$(cut -d ' ' -f 1 /run/current.sha256)" = "$expected" ] || fail 'Original NAND changed after backup'
 done
 changed=1
+# Keep Bluetooth pairings, the headphone room and the SBC quality across the
+# reformat. Best effort: stock firmware has no GaldrunSettings volume. The
+# adapter address derives from the Wi-Fi MAC, so the pairings stay valid.
+keep=/run/settings-keep
+rm -rf "$keep"
+mkdir -p "$keep" /run/old-settings
+if ubiattach /dev/ubi_ctrl -d 0 -m 5 -O 4096; then
+    if mount -t ubifs -o ro ubi0:GaldrunSettings /run/old-settings; then
+        for name in bluetooth headphones bluetooth-quality; do
+            [ ! -e "/run/old-settings/$name" ] || cp -a "/run/old-settings/$name" "$keep/"
+        done
+        umount /run/old-settings
+    fi
+    ubidetach /dev/ubi_ctrl -m 5
+fi
 ubiformat /dev/mtd5 -y -s 4096 -O 4096 -f /payload/rootfs.ubi
 ubiattach /dev/ubi_ctrl -d 0 -m 5 -O 4096
 while read -r volume bytes digest; do
@@ -182,6 +197,14 @@ if [ -d /media/galdrun-private ]; then
     sync
     umount /run/settings-seed
     umount /run/new-root
+fi
+if [ -n "$(ls -A "$keep")" ]; then
+    mkdir -p /run/settings-seed
+    mount -t ubifs ubi0:GaldrunSettings /run/settings-seed
+    cp -a "$keep"/. /run/settings-seed/
+    sync
+    umount /run/settings-seed
+    echo "Kept settings: $(ls "$keep" | tr '\n' ' ')"
 fi
 ubidetach /dev/ubi_ctrl -m 5
 write_raw 4 /payload/galdrun.itb

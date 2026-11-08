@@ -2829,6 +2829,19 @@ MULTIROOM_TEST(control_api_proxies_power_settings_and_commands_to_the_client)
         CHECK(isOk(caller.request(R"({"command":"client.getPower","params":{"client":"kitchen"}})")));
         CHECK_EQ(client.request(), std::string(R"({"command":"getPower","params":{}})"));
     }
+    {
+        // Only the quality and whether the helper is busy, not the scan.
+        FakeClientControl client(R"({"ok":true,"bluetooth":{"quality":"medium","busy":true,"devices":[]}})");
+        announce(rig, "kitchen", client.port(), "");
+        const auto result = caller.request(R"({"command":"client.setBluetoothQuality","params":{"client":"kitchen","quality":"medium"}})");
+        CHECK(isOk(result));
+        CHECK_EQ(text(result, "quality"), std::string("medium"));
+        CHECK(flag(result, "busy"));
+        CHECK(result.find("devices") == nullptr);
+        CHECK_EQ(client.request(), std::string(R"({"command":"setBluetoothQuality","params":{"quality":"medium"}})"));
+    }
+    CHECK_EQ(errorOf(caller.request(R"({"command":"client.setBluetoothQuality","params":{"client":"kitchen"}})")),
+             std::string("invalidArgument"));
 }
 
 MULTIROOM_TEST(control_api_answers_the_core_s_and_each_room_s_system_figures)

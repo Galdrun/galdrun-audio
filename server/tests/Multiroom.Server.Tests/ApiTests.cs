@@ -750,6 +750,20 @@ public sealed partial class ApiTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_room_s_inputs_are_switched_without_a_core_command()
+    {
+        await StartAsync();
+        Assert.Null((await Ok(HttpMethod.Get, "rooms/roomA"))["desired"]!["inputsEnabled"]);
+        var count = _core.All.Count;
+
+        var desired = (await Ok(HttpMethod.Patch, "rooms/roomA", """{"inputsEnabled":true}"""))["desired"]!;
+        Assert.True(desired["inputsEnabled"]!.GetValue<bool>());
+        desired = (await Ok(HttpMethod.Patch, "rooms/roomA", """{"inputsEnabled":false}"""))["desired"]!;
+        Assert.False(desired["inputsEnabled"]!.GetValue<bool>());
+        Assert.Equal(count, _core.All.Count);
+    }
+
+    [Fact]
     public async Task Cores_lists_what_announced_itself_and_a_selection_names_only_one_of_them()
     {
         await StartAsync();

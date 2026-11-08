@@ -1166,6 +1166,17 @@ void Session::handleStartAt(const Message& message)
     }
     if (!stream_.start(request, localStartNs, error))
     {
+        // The server repeats a START_AT when no report with an audible
+        // position reached it in time (section 20). A room that is already
+        // playing answers that with the report it was waiting for.
+        PlaybackReport playing;
+        if (stream_.playbackReport && stream_.playbackReport(playing) && playing.hasTimelineNsAudible)
+        {
+            MULTIROOM_INFO("startAt for timeline %llu ns repeated while playing; reporting the position",
+                           static_cast<unsigned long long>(request.timelineNs));
+            playbackReportNextNs_ = 0;
+            return;
+        }
         MULTIROOM_ERROR("cannot start timeline %llu ns: %s",
                   static_cast<unsigned long long>(request.timelineNs), error.c_str());
         return;

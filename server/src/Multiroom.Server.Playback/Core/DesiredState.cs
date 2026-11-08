@@ -10,6 +10,8 @@ namespace Multiroom.Server.Playback.Core;
 // volume Effective() sends. WakeOnLan is the MAC the room said before it went
 // into a deep sleep the network can end, kept until it connects again: the
 // core forgets it when it restarts, and Diff() wakes the room with it.
+// InputsEnabled: a Bluetooth output room follows the buttons of its device's
+// own room (InputActions); null is no. Not a core setting.
 public sealed record DesiredRoom(
     AudioControl? AudioControl = null,
     double? Volume = null,
@@ -18,7 +20,8 @@ public sealed record DesiredRoom(
     string? Name = null,
     CoreEqualizer? Equalizer = null,
     double? MaxVolumeDb = null,
-    string? WakeOnLan = null);
+    string? WakeOnLan = null,
+    bool? InputsEnabled = null);
 
 // A zone's own volume and mute (phase 15): a level over each member's volume
 // and a mute over each member's mute. Neither is a core setting.
@@ -224,6 +227,14 @@ public sealed class DesiredState
     {
         lock (_lock)
             SetRoom(client, r => r with { MaxVolumeDb = maxVolumeDb < 0.0 ? maxVolumeDb : null });
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    // Whether the room's buttons and encoders run their actions.
+    public void SetInputsEnabled(string client, bool enabled)
+    {
+        lock (_lock)
+            SetRoom(client, r => r with { InputsEnabled = enabled });
         Changed?.Invoke(this, EventArgs.Empty);
     }
 

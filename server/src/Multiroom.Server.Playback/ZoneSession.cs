@@ -912,8 +912,26 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
         }
 
         MarkFailed(failed.Spot, reason);
-        if (last)
-            await StageNextAsync().ConfigureAwait(false);
+        if (!last)
+            return;
+        await StageNextAsync().ConfigureAwait(false);
+
+        // The source that played failed and nothing playable is left (every
+        // item failed, as a repeated single track can): the core would wait
+        // in starting for a source that never comes, and a play would find
+        // the zone already starting. Stopped, the item stays current, so a
+        // play tries it again.
+        if (staged is null && _opened.Count == 1 && _staged is null)
+        {
+            LogNothingLeft(engine.Log, zone);
+            if (await StopCoreAsync().ConfigureAwait(false) is { } unstopped)
+            {
+                LogRestageFailed(engine.Log, zone, unstopped.ToString());
+                return;
+            }
+            _transport = QueueTransport.Stopped;
+            _playhead = null;
+        }
     }
 
     // The core ran out of staged sources after this queue's last one. Unless
@@ -1324,6 +1342,9 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
 
     [LoggerMessage(Level = LogLevel.Information, Message = "zone {Zone}: the queue has played out")]
     private static partial void LogEnded(ILogger log, string zone);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "zone {Zone}: every item failed; stopped")]
+    private static partial void LogNothingLeft(ILogger log, string zone);
 
     [LoggerMessage(Level = LogLevel.Warning,
         Message = "zone {Zone}: the core holds none of its queue any more ({State}); stopped where it was")]

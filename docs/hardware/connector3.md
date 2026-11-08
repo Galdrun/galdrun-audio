@@ -556,6 +556,8 @@ Preserve the existing client identity/settings from private backups when
 restoring the normal RAM client. Current active p154 RAM boot has not received
 an audible playback confirmation.
 
+Status as of 2026-10-30; the installer has since been qualified, see
+[Remaining work](#remaining-work-and-retest-updated-2026-11-08).
 Still required before a permanent installer: clean Wi-Fi qualification;
 standalone persistent rootfs/settings; source/license bundle; signed FIT and
 USB payload assembly; cold boot with storage; preflight/check mode;
@@ -1873,9 +1875,19 @@ open input (`sleep | bluetoothctl`): BlueZ ends a discovery when its D-Bus
 client leaves, and bluetoothctl quits at end of input. `TemporaryTimeout = 300`
 keeps unpaired search results pairable from the page. The BT button picks the
 strongest headphones/headset/A2DP-sink first (a TV is only "audio"). Tested
-with a LEXON MINO L: plays, about 20 ms late against RCA, which the room's
-output latency setting covers (the speaker's buffering is not in bluez-alsa's
-delay).
+with a LEXON MINO L: plays; it needed 175 ms output latency on its room to
+match the RCA room (the speaker's buffering is not in bluez-alsa's delay).
+
+**Headphone SBC quality** (2026-11-05): bluez-alsa encodes at
+`--sbc-quality=high` by default (bitpool 53, about 41 kB/s on air). Measured
+with `hcidump`: alone the LEXON link carries 42.6 kB/s, but with a phone
+merely connected (idle, already in sniff, both links central) only about
+35 kB/s, and the headphones stutter. `/settings/bluetooth-quality`
+(`high`|`medium`|`low`, default high) is read when bluealsa starts;
+`galdrun-bluetooth quality MODE` saves it and restarts Bluetooth. The client's
+`getBluetooth` reports `quality`, `setBluetoothQuality` sets it (client page
+Bluetooth card); core `client.getBluetooth`/`client.setBluetoothQuality` and
+REST `rooms/{client}/bluetooth` relay it to the ServerGui Device section.
 
 The client (board flag `"bluetooth": true`) plays a streaming phone on the
 selected output through its own engine and reports MATP `localSource:
@@ -2006,22 +2018,22 @@ The earlier bring-up kernel disabled suspend and consequently lacked ARM SMP
 RAM-to-RAM kexec. Its base DT still lacks platform deep suspend; only s2idle
 is available. Save live RAM settings privately before any reload or reboot.
 
-## Remaining work and retest (updated 2026-11-02)
+## Remaining work and retest (updated 2026-11-08)
 
 This checklist distinguishes implemented source from qualified hardware behavior
 for the installed persistent NAND image, compared with the stock firmware.
 
 | Area | State / remaining work |
 | --- | --- |
-| Installation | **Done.** USB installer, backups, install/readback, rollback and NAND cold boot qualified. Updates still need the USB installer: there is no network update path (stock has one). |
+| Installation | **Done.** USB installer, backups, install/readback, rollback and NAND cold boot qualified. Updates still need the USB installer: there is no network update path (stock has one). A full install reformats MTD5; since 2026-11-08 (qualified on the device) the installer keeps `/settings/bluetooth`, `/settings/headphones` and `/settings/bluetooth-quality`, all other settings are reseeded. |
 | Power | **Done:** 792–996 MHz CPU speed control, manual/automatic standby, deep sleep with Ethernet magic-packet and touch wake on NAND. WLAN cannot wake deep sleep (radio unbound; stock never deep-sleeps either), so the idle timer needs a wired wake path. Deep-sleep power draw is unmeasured. |
 | Audio (RCA) | **Done:** automatic MCU rate setup, MCU volume/mute, audible 44.1 kHz music on NAND. 88.2–192 kHz, long-running and grouped playback remain unqualified. |
 | Audio (TOSLINK) | **Implemented, untested:** SAI2 (vendor `spdif out` I2S link) is ALSA PCM 1 (`hw:CARD=Connector3,DEV=1`, "Digital"). It shares the audio PLL with RCA: both can run together only in the same 44.1k/48k family. It uses software volume; whether the MCU must enable the transmitter is unknown. Stock feeds both outputs at once; Galdrun plays to the selected PCM only. |
 | Touch controls | **Done:** nine native bindings and touch wake. Hold/long-press behavior unqualified. |
-| Indicators | **Done:** MCU status patterns (boot/connecting/setup/ready/error/off) and saved LED-off. Missing: global LED brightness (`0x22`) and the rear Bluetooth indicator (`0x21`). |
-| Wi-Fi | Association, DHCP, WLAN-only SSH/traffic and resume from deep sleep verified. Reconnect, setup-AP fallback and sustained traffic remain unqualified. |
+| Indicators | **Done:** MCU status patterns (boot/connecting/setup/ready/error/off) and saved LED-off. Rear Bluetooth indicator (`0x21`) done 2026-11-02. Missing: global LED brightness (`0x22`). |
+| Wi-Fi | Association, DHCP, WLAN-only SSH/traffic and resume from deep sleep verified. 2026-11-08 on NAND: Ethernet-to-Wi-Fi fallback and back at runtime (Wi-Fi up 8 s after the cable is pulled; music again after about 12 s with the 2026-11-08 client, 23 s before), 10 min sustained playback over WLAN (610/610 pings, max 139 ms, no client warnings, −47 dBm at 5.5 GHz). Reconnect after an access-point loss and the setup-AP fallback remain unqualified (`iw dev mlan0 disconnect` is refused by mwifiex; needs the AP switched off). |
 | Ethernet | 100 Mbit/s full duplex and wake verified. Repeated boot/link acquisition unqualified. |
-| Bluetooth | **Phone receive implemented** (see [Bluetooth](#bluetooth-a2dp-receive)); heard on RCA in RAM. Persistent image built, not yet installed. Missing: BT button/LED pairing mode, factory `bt_addr`, headphone room (A2DP source). |
+| Bluetooth | **Installed on NAND** (btkeep image, 2026-11-08; Bluetooth as in btquality): phone receive, BT button/LED pairing, headphone room (A2DP source) with resume after boot, SBC quality setting. See [Bluetooth](#bluetooth-a2dp-receive). Phone and headphones together stutter (radio throughput); the lower SBC qualities are untested. Missing: factory `bt_addr`, AVRCP volume. |
 | USB | Host mode is enabled only for the installer stick; stock media-from-USB use is not established. |
 | Streaming services | Stock Google Cast, Spotify Connect and the Raumfeld UPnP renderer are proprietary and not carried over; Galdrun's server provides sources instead. |
 | Recovery | Qualify failed-start recovery, including failures before `/init` or SSH. The software guard cannot recover a hung kernel. |

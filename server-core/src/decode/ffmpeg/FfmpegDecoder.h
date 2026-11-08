@@ -84,6 +84,7 @@ private:
     // Reads packets and feeds the codec until a frame is available. Returns
     // EndOfStream once the source and the codec's own buffers are both empty.
     Status<DecodeError> fillFrame();
+    bool passOverInvalid();
 
     // Copies `frames` frames of the held AVFrame, starting at frameOffset_,
     // into `output` as interleaved native PCM.
@@ -121,6 +122,13 @@ private:
     // every error into one integer on the way back out, so the real reason is
     // kept here and reported instead of "DecodeFailed: -5".
     std::optional<Failure<MediaSourceError>> sourceFailure_;
+
+    // Packets the codec refused as invalid since the last decoded frame. A
+    // damaged packet is passed over, as the ffmpeg tool does: an MP3's last
+    // frame cut short by its padding and ID3v1 tag ends many files that way,
+    // and failing there marked a track that had played to its end as broken.
+    // Only a run of them is a broken stream.
+    int invalidPackets_ = 0;
 
     // Shift applied to every sample of an S32 stream whose source was narrower
     // than 32 bits; see the note at the top. Zero for everything else.
