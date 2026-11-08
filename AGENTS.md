@@ -12,14 +12,14 @@ and commands are listed in [docs/agents/development.md](docs/agents/development.
 | Working on | Read first |
 | --- | --- |
 | New session, component ownership, ports, or a change crossing components | [docs/agents/overview.md](docs/agents/overview.md) |
-| Client playback, device backends, settings, buttons, or ESP32 | [docs/agents/client.md](docs/agents/client.md) |
+| Client playback, device backends, settings, buttons, ESP32, or the client self update | [docs/agents/client.md](docs/agents/client.md) |
 | Core decoding, zones, scheduling, streaming, resampling, or synchronization | [docs/agents/server-core.md](docs/agents/server-core.md) |
 | .NET server, queues, library, providers, REST, MCP, AI, or server GUI integration | [docs/agents/server.md](docs/agents/server.md) |
 | Building, testing, running locally, or a locked executable/DLL | [docs/agents/development.md](docs/agents/development.md) |
 | The wire protocol between core and clients (`shared/matp/`, `client/src/matp/`, `server-core/src/matp/`, `server-core/src/client/`) | [docs/protocol/MATP-AudioTransferProtocol.md](docs/protocol/MATP-AudioTransferProtocol.md) |
 | Porting the client firmware to a Raumfeld device (`hardware/buildroot/`) | [docs/hardware/raumfeld/connector2.md](docs/hardware/raumfeld/connector2.md) |
-| Connector 3 / Teufel Streamer verified USB beta update, SSH and experimental kexec RAM build | [docs/hardware/connector3.md](docs/hardware/connector3.md) |
-| Connector 3 Bluetooth (phone receive, BT button/LED, headphone room) and next steps | [docs/hardware/connector3-handover-2026-11-05.md](docs/hardware/connector3-handover-2026-11-05.md) |
+| Connector 3 / Teufel Streamer firmware: NAND layout, build chain, self-installing USB installer (read its top notice first) | [docs/hardware/connector3.md](docs/hardware/connector3.md) |
+| Connector 3 current device state, installed images, Bluetooth and next steps | [docs/hardware/connector3-handover-2026-11-05.md](docs/hardware/connector3-handover-2026-11-05.md) |
 | Connector 3 source-built USB RAM diagnostics and earlier investigation | [docs/hardware/raumfeld/connector3.md](docs/hardware/raumfeld/connector3.md) |
 
 ## Local processes and builds
@@ -38,6 +38,16 @@ instances, identify the Galdrun executable/service or `dotnet` command line
 before stopping it. See the development guide for scope and restart commands.
 
 ## Change rules
+
+- All Raumfeld/Buildroot devices (Connector 2, Connector 3, Pi images) behave
+  the same: writable root, client in `/opt/galdrun-client` updated from the
+  server, a USB image that installs itself, LAN-only time, the same platform
+  tools. Do not add per-device "safety" variants (read-only root, SSH-driven
+  install steps, host-recorded backup pins); USB recovery is the factory
+  bootloader, which nothing writes. Details: [client guide](docs/agents/client.md#self-update).
+- Client devices never contact the Internet. The server fetches client
+  updates and uploads them; device time comes from the router, else from the
+  core (SNTP on UDP 4721).
 
 The protocol's message numbers, field names and packet layout exist in one copy,
 `shared/matp/`, used by both the client and the core. Change them there, and

@@ -55,8 +55,9 @@
         #sound-dai-cells = <0>;
     };
 
-    /* PCM 0 is the RCA path on SAI1; PCM 1 is the vendor's "spdif out" link
-     * on SAI2, an I2S feed for the TOSLINK transmitter. */
+    /* One PCM, "Analog + Digital" (like Connector 2): SAI1 feeds the RCA DAC,
+     * SAI2 (the vendor's "spdif out" link) the TOSLINK transmitter, both from
+     * the same buffer (galdrun-connector3-audio.c). */
     sound {
         compatible = "galdrun,connector3-audio";
         audio-cpu = <&sai1>, <&sai2>;

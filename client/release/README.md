@@ -6,6 +6,14 @@ license notices, a launcher, an example config, and `build-info.txt` recording
 the version and Debug/Release configuration. It contains no bench settings
 or device cache. Later builds update these files; your `client.json` is kept.
 
+Once installed, the client can be updated from the server: the room's page in
+the server's web interface shows its version and an **Update** button when a
+newer release exists (the clients list marks those rooms). The server
+downloads the release and sends it to the client, which never goes on the
+Internet itself; `galdrun-update.sh` swaps the files, keeps the previous
+version in `.update/previous` and returns to it if the new one does not reach
+the server within 3 minutes. The folder must be writable by the client.
+
 Install the system audio library on Debian, DietPi or Ubuntu:
 
 ```bash

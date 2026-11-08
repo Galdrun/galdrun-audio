@@ -126,7 +126,12 @@ SSH starts **off**, with a locked root account and no developer keys. As on
 Connector 2, set a root password and enable SSH in the web GUI. Each device
 generates its own host keys. No test-device password belongs in an image.
 
-For a client-only update on an installed Galdrun Buildroot Pi, build the matching
+Client updates normally come from the server: the room's page in its web
+interface offers **Update** when a newer release exists, and the server sends
+the package to the device (it needs no Internet access itself). The device's
+clock is set from the router, else from the Galdrun core.
+
+For a manual client-only update on an installed Galdrun Buildroot Pi, build the matching
 `linux-armv6` / `linux-armv7` / `linux-armv8` release, enable SSH, then use
 `scripts/upload/linux.sh --ip <address> --user root` or
 `scripts/upload/linux.ps1 -IP <address> -User root`. The uploader detects BusyBox

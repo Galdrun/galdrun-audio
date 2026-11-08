@@ -6,6 +6,7 @@
   "dacControls": true,
   "selectedCardDacControls": true,
   "mcuAudioControls": true,
+  "resetHardwareVolume": true,
   "statusLeds": true,
   "bluetooth": true,
   "inputs": [

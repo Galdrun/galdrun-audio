@@ -1,39 +1,38 @@
-# Connector 3 handover (2026-11-05, updated 2026-11-08): btkeep installed
+# Connector 3 handover (2026-11-05, updated 2026-11-08): platform image installed
 
 Start here for the next session. Bluetooth bring-up, button/LED behaviour and
 earlier pitfalls stay in [the 2026-11-03 handover](connector3-handover-2026-11-03.md);
 older install detail in [the 2026-10-31 handover](connector3-handover-2026-10-31.md)
 and [the Connector 3 guide](connector3.md#bluetooth-a2dp-receive). Nothing
-since 2026-11-02 is committed; `git status` shows all of it.
+since 2026-11-02 is committed; `git status` shows all of it. Since 2026-11-08
+all Raumfeld devices behave the same (read-write root, self-installing USB
+image, client updates from the server, LAN-only time): do not reintroduce the
+read-only root, SSH-driven installs or host-pinned backups described in older
+sections.
 
-## Where the device is (checked 2026-11-08)
+## Where the device is (checked 2026-11-08 evening)
 
-- **NAND:** btkeep USB installer
-  `ab5533c862271711751e3dabcd89f4e32e9667d891e8b3a2d041ab862bcae954`
-  (frozen in `hardware/buildroot/private/connector3/installer-btkeep-ab5533c8-20261108/`),
-  installed 2026-11-08 11:12 UTC by `install-btkeep-20261108.py` (readback
-  passed, MTD0 protected, MTD1-MTD3 unchanged, log `Kept settings: bluetooth
-  headphones`). Same rootfs/FIT as btquality (FIT `94971c07...`):
-  `galdrun-bluetooth` `ee5e88d8...`, client `b32e68c5...`, no bind mounts,
-  bluealsa `--sbc-quality=high`. Wired Ethernet `10.0.0.74`, Wi-Fi down.
-- **Cold boot after install:** pairings (LEXON `63:21:FB:EF:91:7E`, phone
-  `motorola edge 60 neo`) survived; the LEXON reconnected and the headphone
-  client started as the same client id `2c097945359c8912`, so its server room
-  and 175 ms latency were kept too.
-- **Live only (lost on reboot):** client `4a994673...` (2026-11-08 source,
-  both fixes below) runs from `/run/galdrun-client.new` through a bind mount
-  over `/opt/galdrun-client/galdrun-client`; only the main client was
-  restarted, the headphone client still runs the image's `b32e68c5...`.
+- **NAND:** platform image (USB `9f6061b3...`, payload `61466613...`, see
+  [below](#platform-parity-installer-2026-11-08-installed)), installed by the
+  self-installing USB image: read-write root, client `169ace58...` in
+  `/opt/galdrun-client` with `galdrun-update.sh` (updates from ServerGui),
+  chrony with LAN-only time (synced to the core on `10.0.0.6:4721`), the
+  Connector 2 tools, `galdrun-restart`, the 2026-11-08 network fixes
+  (netswitch) and everything from btkeep. Hostname set to `connector3` by
+  hand (the next image does it itself). Wired Ethernet `10.0.0.74`.
+- **Rooms:** main room `74bfd6573359566f` (fresh since the 2026-11-08 evening
+  install; the stick no longer has `galdrun-private/`) and the headphone client
+  `2c097945359c8912`. The next install is clean: both rooms and the pairings
+  start over.
 - **SSH:** `root@10.0.0.74`, key `hardware/buildroot/private/connector3/id_ed25519`,
-  pin `hardware/buildroot/private/connector3/known_hosts_persistent_btkeep_20261108`
-  (`DMOJIwoR...`, confirmed over UART). A reinstall still creates a new host
-  key; older pins no longer match.
-- **Rollback:** NAND backup taken before this install, manifest pin
-  `ef5f568ba0e7d7ad9e618dcaba1c741594ac7dc078007045b8005fa6d9cd2ddb`, on USB
-  `galdrun-backup/` and in
-  `hardware/buildroot/private/connector3/reinstall-backup-btkeep-20261108/`.
-  Earlier backups: `d1b856ef...` (btquality, on USB as
-  `galdrun-backup-before-btkeep-20261108/`), `7d369fd7...`, `6732a1c2...`.
+  pin `hardware/buildroot/private/connector3/known_hosts_persistent_platform_20261108`
+  (`SHA256:WgRG2Ji5...`, pinned on first use, not over UART). Every reinstall
+  creates a new host key; older pins no longer match.
+- **Backups on the stick:** the self-installing images up to `9f6061b3...`
+  still took one each (`galdrun-backup/`, `galdrun-backup-1/`, `-2/`); host
+  copy of the one before the first of them in
+  `hardware/buildroot/private/connector3/reinstall-backup-selfupdate-20261108/`
+  (pin `9fb09987...`). Newer images take none.
 - **UART:** capture with `capture-fit-update-20261031.ps1` (archive folder; pass
   its absolute path to `powershell -File`), queue
   `private/connector3/fit-update-uart-tx-20261031.json` (`{"text": ...}`,
@@ -113,6 +112,21 @@ time on 10.0.0.6:4721 within 0.3 ms. The router `10.0.0.254` answers no NTP.
 After installing: `date` is current, `chronyc sources` lists the core,
 the room page offers Restart.
 
+## Connector 2 parity, last round (2026-11-08 night, not installed)
+
+Release image `releases/client/raumfeld/connector3/connect3.img` <!-- path-check: ignore -->
+`0139105e19be3462a6f22978bafaf1ecf84b582ccf1c2a2aeee455390a919ce7`: clean
+reinstall (`KEEP_SETTINGS` empty), `resetHardwareVolume` in the board file,
+client runs `galdrun-time-sources` after `setServer`, installer progress
+lights (UART3 added to the installer DT, MCU tool one-shot `--indication`,
+dynamically linked: the static build pushed the installer kernel over the
+8 MiB FIT limit), console prints only the install log's tail.
+`licenses/SOURCE.txt` names `connector3-sources-030ee2fe0d30` (668 MB, in
+`hardware/buildroot/output/connector3-sources/`), **not yet published**:
+upload it as a pre-release with the firmware release. Release packaging
+(`scripts/release/package.py`, `notes.md`, git-ignored) now includes
+`galdrun-connector3-<tag>.zip`. Untested on the device: the progress lights.
+
 ## Done since 2026-11-04
 
 - Headphone resume fix: `resume_headphones` also accepts an existing bluez-alsa
@@ -159,24 +173,45 @@ the room page offers Restart.
    `galdrun-bluetooth quality medium`, then `low`, with both connected. If it
    still stutters: link roles (`hcitool con`, both are central), Wi-Fi
    coexistence, bluez-alsa/client buffer sizes.
-2. **netswitch installer built 2026-11-08, not installed:** USB
-   `93d70f8d151b463d6e3da675e22282e7f1404a0772479e39710690a00cbc19fd`, frozen in
-   `hardware/buildroot/private/connector3/installer-netswitch-93d70f8d-20261108/`
-   (same file as `private/connector3/installer-write/connect3.img`). Full chain
-   (RAM with `pcie8897-working-reference.bin`, persistent, installer
-   `--write`): normal FIT `6ffa76b2...`, payload `e1468e00...`, client
-   `ca746824...` (both 2026-11-08 network fixes plus the 1 s switch-over
-   backoff); everything else as btkeep. Procedure as for btkeep: marker
-   `printf '%s_%s
-' GALDRUN_USB_IDENTITY NETSWITCH_20261108; ...`, then
-   `qualify-netswitch-installer-20261108.py --backup` (previous USB backup pin
-   `ef5f568b...`), **ask before** `install-netswitch-20261108.py`, UART-pin the
-   new host key as `known_hosts_persistent_netswitch_20261108`. Pairings are
-   kept. Afterwards: pull and replug the cable once with music playing.
+2. **"Analog + Digital" image `f0773e73...` installed 2026-11-08** (user's USB
+   boot). After the install the device did not come back by itself; a power
+   cycle (no stick, no Reset) booted it cleanly in ~20 s (UART capture). Cause
+   unknown: the first UART read got nothing, RAM console lost by the power
+   cycle, `galdrun-install.log` on the stick not yet read. Checked after the
+   power cycle: one PCM `00-00 Analog + Digital`, client opens it at 96 kHz
+   int32 with hardware volume, DMA position advances at the sample rate, no
+   underruns, time synced, hostname `connector3`. Listening test on RCA and
+   TOSLINK still open (the zone was paused). Boot shows two harmless sysfs
+   warnings (`.../308a0000.sai/dma:tx` duplicate) from `dma_request_chan()`.
+   **Next image** (not installed): USB
+   `f8c90cdc3a0864f97d7bb45a086b90d7f257a02d60e2235a85f4dcbb72c952a2` in
+   `releases/client/raumfeld/connector3/`: DMA via `of_dma_request_slave_channel()`
+   (no warnings) and an installer fallback that forces the reset through
+   `/proc/sysrq-trigger` if `reboot -f` returns. On its install, capture COM5
+   (CP210x, 115200) from the USB boot on and read `galdrun-install.log`.
+   **Installed 2026-11-08** with a COM5 capture: preflight, install,
+   `INSTALL COMPLETE`, automatic reset at 97 s (`reboot: Restarting system`;
+   the console cut the log's last lines because the reset came while the UART
+   was still draining), NAND boot in ~20 s, no `dma:tx` warnings. The stick no
+   longer had `galdrun-private/`, so the main room started fresh (new id
+   `74bfd6573359566f`, attached again, SSH off); the headphone room came back
+   by itself from `/settings/headphones`. Since then (user decision): a reinstall
+   is **clean**, nothing is kept, switchable through `KEEP_SETTINGS` at the
+   top of `board/connector3/installer/install-usb.sh`; and the client runs `galdrun-time-sources` after `setServer` (this router's DHCP
+   lease never renews, so a later attach waited for a reboot before the core
+   became a time source). The earlier "did not come back" stays unexplained;
+   the reset path (watchdog, `reboot -f`, now with a SysRq fallback) worked here. One PCM drives RCA and TOSLINK together (see the
+   guide's TOSLINK row); also no backup, `timeout`/`nc`, hostname. After it:
+   `cat /proc/asound/pcm` shows only `00-00 ... Analog + Digital`; press
+   **Rescan** on the room page so the client's device cache drops the old
+   names; play and listen on RCA **and** TOSLINK, at 44.1 and 48 kHz; check
+   `dmesg` for SAI/SDMA errors. If TOSLINK stays dark while RCA plays, the MCU
+   likely has to enable the transmitter. Then press Restart once and
+   pull/replug the cable with music.
 3. Open, not explained: when the cable returns, the first reconnect attempt
    (about 1 s after the Wi-Fi address goes) can hang for the full 5 s
    connect timeout; the next one connects at once. Addresses, routes and the
-   neighbour entry looked normal; `nc` is not in the image.
+   neighbour entry looked normal; `nc` comes with the next image.
 4. Commit when the user asks.
 
 Later / open: factory `bt_addr` from the const partition, TOSLINK listening

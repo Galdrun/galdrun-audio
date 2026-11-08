@@ -13,6 +13,8 @@
 #   linux          linux-x86, linux-x64, linux-armv6, linux-armv7, linux-armv8, linux-armv9
 #   esp32          esp32-a1s, esp32-s3-devkitc
 #   connector2     Raumfeld Connector 2 firmware with the linux-armv6 client
+#   connector3     Raumfeld Connector 3 / Teufel Streamer firmware (not in "all": needs the
+#                  private inputs under hardware\buildroot\private\connector3)
 #   rpi1 rpi3 rpi4 rpi5  Raspberry Pi SD images (ARMv6 / ARMv7 / ARM64)
 #
 # Installs when missing:
@@ -20,10 +22,10 @@
 #   CMake                                 C:\Program Files\CMake, via winget
 #   WSL Ubuntu                            then asks you to create your Ubuntu user and run this again
 #   everything else                       inside Ubuntu, as listed in scripts/build-client.sh
-# Results go to releases\client\<target>, the Connector 2 USB image to
-# releases\client\raumfeld\connector2. Stops at the first failure.
+# Results go to releases\client\<target>, the Connector USB images to
+# releases\client\raumfeld\connector2 and ...\connector3. Stops at the first failure.
 param(
-    [ValidateSet('all', 'windows', 'linux', 'esp32', 'connector2', 'rpi1', 'rpi3', 'rpi4', 'rpi5', 'windows-x64',
+    [ValidateSet('all', 'windows', 'linux', 'esp32', 'connector2', 'connector3', 'rpi1', 'rpi3', 'rpi4', 'rpi5', 'windows-x64',
         'linux-x86', 'linux-x64', 'linux-armv6', 'linux-armv7', 'linux-armv8', 'linux-armv9',
         'esp32-a1s', 'esp32-s3-devkitc')]
     [string[]] $Target = 'all'

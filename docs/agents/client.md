@@ -209,12 +209,8 @@ network-manager qualification limits are in
 Connector 3's clean installer must exclude OEM runtime files. The user's final
 2026-10-30 decision explicitly approves the working Marvell `15.87.19.p14`
 hardware blob and accepts the available licence's version mismatch; do not
-continue replacement-firmware research as a prerequisite. Read
-[the next-day handover](../hardware/connector3-handover-2026-10-31.md) first:
-  Galdrun is installed in NAND and its physical cold boot passed. The approved
-  radio exception is implemented while OEM-runtime rejection remains active.
-  The Wi-Fi clock/early-firmware fix passes a RAM boot but still needs installation
-  and cold-boot/Wi-Fi-only qualification; use the handover's latest checkpoint.
+continue replacement-firmware research as a prerequisite. The device state and
+installed images are in [the current handover](../hardware/connector3-handover-2026-11-05.md).
   `hardware/buildroot/scripts/connector3_content.py` checks unpacked content
 against source/license metadata; `test-connector3-content.py` runs its guards.
 The standalone RAM image omits the old vendor D-Bus bridge. The explicit

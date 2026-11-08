@@ -78,6 +78,32 @@ bool requestRestart(ClientRuntime& runtime, std::string& error)
 }
 
 #if defined(__linux__) && !defined(ESP_PLATFORM)
+// The appliances take their time from the router, else from the core named in
+// client.json (hardware/buildroot .../galdrun-time-sources). The images run it
+// at boot and on DHCP renewals; after a server change the client runs it, or
+// a room attached later would wait for the next reboot.
+const char* const kTimeSourcesHelper = "/usr/sbin/galdrun-time-sources";
+
+void refreshTimeSources(ClientRuntime& runtime)
+{
+    if (::geteuid() != 0 || ::access(kTimeSourcesHelper, X_OK) != 0)
+        return;
+    if (runtime.timeSourcesProcess != 0)
+    {
+        runtime.timeSourcesAgain = true;
+        return;
+    }
+    char* args[] = {const_cast<char*>(kTimeSourcesHelper), nullptr};
+    pid_t pid = 0;
+    const int result = ::posix_spawn(&pid, args[0], nullptr, nullptr, args, environ);
+    if (result != 0)
+    {
+        MULTIROOM_WARN("cannot start %s: %s", kTimeSourcesHelper, std::strerror(result));
+        return;
+    }
+    runtime.timeSourcesProcess = static_cast<int>(pid);
+}
+
 const char* const kDeepSleepHelper = "/usr/sbin/raumfeld-suspend";
 const char* const kBluetoothHelper = bluetooth_settings::kHelper;
 
@@ -482,6 +508,19 @@ bool ClientCommandHandler::dispatchInputAction(const matp::InputActionEvent& eve
 void ClientCommandHandler::pollPower(uint64_t nowNs)
 {
 #if defined(__linux__) && !defined(ESP_PLATFORM)
+    if (runtime_.timeSourcesProcess != 0)
+    {
+        int status = 0;
+        if (::waitpid(runtime_.timeSourcesProcess, &status, WNOHANG) > 0)
+        {
+            runtime_.timeSourcesProcess = 0;
+            if (runtime_.timeSourcesAgain)
+            {
+                runtime_.timeSourcesAgain = false;
+                refreshTimeSources(runtime_);
+            }
+        }
+    }
     if (runtime_.restartProcess != 0)
     {
         int status = 0;
@@ -1242,6 +1281,9 @@ json::Value ClientCommandHandler::handleSetServer(const ControlRequest& request)
     }
 
     MULTIROOM_INFO("server changed to %s", address.empty() ? "<not configured>" : address.c_str());
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+    refreshTimeSources(runtime_);
+#endif
 
     json::Value response = makeControlSuccess(request);
     response["server"] = json::Value(address);

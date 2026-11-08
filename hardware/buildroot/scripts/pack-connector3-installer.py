@@ -42,6 +42,13 @@ def pack(output, storage, diagnostic, signing, destination, mode):
     shutil.copyfile(board / 'storage-check/imx7d-galdrun-connector3-storage-check.dts', dts / 'imx7d-galdrun-connector3-storage-check.dts')
     tree = '#include "imx7d-galdrun-connector3-storage-check.dts"\n'
     tree += f'/ {{ model = "Galdrun Connector 3 installer {mode}"; }};\n'
+    # The front-panel MCU's UART (as in the NAND image), for the progress lights.
+    tree += ('&uart3 { pinctrl-names = "default"; pinctrl-0 = <&pinctrl_uart3>; '
+             'assigned-clocks = <&clks IMX7D_UART3_ROOT_SRC>; '
+             'assigned-clock-parents = <&clks IMX7D_OSC_24M_CLK>; status = "okay"; };\n'
+             '&iomuxc { pinctrl_uart3: uart3grp { fsl,pins = < '
+             'MX7D_PAD_UART3_RX_DATA__UART3_DCE_RX 0x60 '
+             'MX7D_PAD_UART3_TX_DATA__UART3_DCE_TX 0x60 >; }; };\n')
     if mode == 'write':
         tree += '&gpmi { /delete-property/ galdrun,read-only; partitions { partition@8900000 { /delete-property/ read-only; }; partition@9500000 { /delete-property/ read-only; }; }; };\n'
     (dts / 'imx7d-galdrun-connector3-installer.dts').write_text(tree)

@@ -6,6 +6,12 @@ bash "$board/../diagnostic/post-build.sh" "$target"
 install -m 0755 "$board/init.sh" "$target/init"
 install -m 0755 "$board/install-usb.sh" "$target/usr/sbin/galdrun-install"
 install -m 0755 "$board/update-fit.sh" "$target/usr/sbin/galdrun-update-fit"
+# The front lights show the install's progress (init.sh), like Connector 2's
+# installer: the MCU tool's one-shot --indication mode, no daemon or uinput.
+# Stripped and linked against the image's libstdc++: the kernel with this
+# initramfs must stay under the 8 MiB FIT loader limit.
+"$HOST_DIR/bin/arm-linux-g++" -std=c++17 -Os -s -Wall -Wextra -Werror -pthread \
+    "$board/../ram/mcu-buttons.cpp" -o "$target/usr/sbin/galdrun-connector3-mcu"
 mkdir -p "$target/media" "$target/payload"
 install -m 0644 "${GALDRUN_CONNECTOR3_INSTALL_INPUTS:?}/payload.tar.sha256" "$target/etc/galdrun-payload.sha256"
 install -m 0644 "$GALDRUN_CONNECTOR3_INSTALL_INPUTS/payload.sha256" "$target/etc/galdrun-install.sha256"

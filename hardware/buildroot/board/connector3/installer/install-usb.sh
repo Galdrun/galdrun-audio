@@ -1,6 +1,16 @@
 #!/bin/sh
 # Explicit check/backup/install/rollback commands. Never updates MTD0-MTD3.
 set -eu
+
+# What a reinstall carries over from the installed system's settings volume:
+# names under /settings. Empty is a clean install, the default: the device
+# comes up as new (galdrun-private/ on the stick still applies). For images
+# that keep the device's state, list what to keep, e.g.
+#   KEEP_SETTINGS='client.json bluetooth headphones bluetooth-quality'
+# (the room, Bluetooth pairings, the headphone room and its SBC quality).
+# GALDRUN_KEEP_SETTINGS overrides it for the host tests.
+KEEP_SETTINGS=${GALDRUN_KEEP_SETTINGS-}
+
 action=${1:---check}
 case "$action" in --check|--backup|--install|--rollback) ;; *) echo 'Usage: galdrun-install --check|--backup|--install [BACKUP_SHA256]|--rollback BACKUP_SHA256' >&2; exit 2;; esac
 fail() { echo "INSTALL REFUSED: $*" >&2; exit 1; }
@@ -170,15 +180,15 @@ if [ -n "$pin" ]; then
     done
 fi
 changed=1
-# Keep Bluetooth pairings, the headphone room and the SBC quality across the
-# reformat. Best effort: stock firmware has no GaldrunSettings volume. The
-# adapter address derives from the Wi-Fi MAC, so the pairings stay valid.
+# Carry KEEP_SETTINGS (top of this file) across the reformat. Best effort:
+# stock firmware has no GaldrunSettings volume. The Bluetooth adapter address
+# derives from the Wi-Fi MAC, so kept pairings stay valid.
 keep=/run/settings-keep
 rm -rf "$keep"
 mkdir -p "$keep" /run/old-settings
-if ubiattach /dev/ubi_ctrl -d 0 -m 5 -O 4096; then
+if [ -n "$KEEP_SETTINGS" ] && ubiattach /dev/ubi_ctrl -d 0 -m 5 -O 4096; then
     if mount -t ubifs -o ro ubi0:GaldrunSettings /run/old-settings; then
-        for name in bluetooth headphones bluetooth-quality; do
+        for name in $KEEP_SETTINGS; do
             [ ! -e "/run/old-settings/$name" ] || cp -a "/run/old-settings/$name" "$keep/"
         done
         umount /run/old-settings
@@ -213,6 +223,8 @@ if [ -d /media/galdrun-private ]; then
     umount /run/settings-seed
     umount /run/new-root
 fi
+# A client.json the stick brings (galdrun-private) is this install's choice.
+[ ! -f /media/galdrun-private/client.json ] || rm -f "$keep/client.json"
 if [ -n "$(ls -A "$keep")" ]; then
     mkdir -p /run/settings-seed
     mount -t ubifs ubi0:GaldrunSettings /run/settings-seed

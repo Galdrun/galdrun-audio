@@ -148,6 +148,7 @@ else cat "$last"; fi
     (old/'bluetooth/AA:BB').mkdir(parents=True)
     (old/'bluetooth/AA:BB/info').write_text('paired')
     (old/'bluetooth-quality').write_text('medium')
+    (old/'client.json').write_text('{"clientId":"kept-room"}')
     (old/'etc').mkdir()
     for name, body in (('ubiattach', f'echo "ubiattach $*" >>"{calls}"'),
                        ('ubidetach', f'echo "ubidetach $*" >>"{calls}"'),
@@ -155,13 +156,24 @@ else cat "$last"; fi
                        ('umount', 'exit 0')):
         (root/'bin'/name).write_text('#!/bin/sh\n'+body+'\n')
         (root/'bin'/name).chmod(0o755)
+    # Default: a clean install keeps nothing and never attaches the old volume.
     result = run('--install', pin)
+    assert result.returncode != 0
+    keep = root/'run/settings-keep'
+    assert not any(keep.iterdir()), 'A clean install kept settings'
+    log = calls.read_text()
+    assert 'ubiformat' in log and 'ubiattach' not in log.split('ubiformat')[0], (log, result.stderr)
+    calls.unlink()
+    # The persistent variant (KEEP_SETTINGS) carries the listed names over.
+    env['GALDRUN_KEEP_SETTINGS'] = 'client.json bluetooth headphones bluetooth-quality'
+    result = run('--install', pin)
+    env.pop('GALDRUN_KEEP_SETTINGS')
     assert result.returncode != 0
     log = calls.read_text()
     assert log.index("ubiattach") < log.index("ubiformat"), (log, result.stderr)
-    keep = root/'run/settings-keep'
     assert (keep/'bluetooth/AA:BB/info').read_text() == 'paired'
     assert (keep/'bluetooth-quality').read_text() == 'medium'
+    assert (keep/'client.json').read_text() == '{"clientId":"kept-room"}', 'The room must survive a reinstall'
     assert not (keep/'etc').exists(), 'Kept settings beyond Bluetooth state'
     assert 'ubiformat' in log and 'flash_erase' in log, (result.stdout, result.stderr, log)
     assert 'nandwrite' not in log and f'{root}/dev/mtd4' not in log, log
@@ -175,4 +187,4 @@ else cat "$last"; fi
     assert 'ubiformat' in log and 'no backup' in result.stderr, (result.stdout, result.stderr, log)
     assert 'ROLLBACK' not in result.stdout, result.stdout
     assert all(f'{root}/dev/mtd{number}' not in log for number in range(4)), log
-print('Connector 3 installer: protection/pin gates, inconsistent-backup refusal, failed-root rollback boundary and backup-free install passed')
+print('Connector 3 installer: protection/pin gates, inconsistent-backup refusal, failed-root rollback boundary, backup-free install and clean/keep settings switch passed')

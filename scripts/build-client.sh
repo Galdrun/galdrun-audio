@@ -14,6 +14,9 @@
 #   linux          linux-x86 linux-x64 linux-armv6 linux-armv7 linux-armv8 linux-armv9
 #   esp32          esp32-a1s esp32-s3-devkitc
 #   connector2     Raumfeld Connector 2 firmware with the linux-armv6 client
+#   connector3     Raumfeld Connector 3 / Teufel Streamer firmware with the linux-armv7
+#                  client; not in "all": needs the private inputs under
+#                  hardware/buildroot/private/connector3 (SSH key, radio firmware, FIT key)
 #   rpi1 rpi3 rpi4 rpi5  Raspberry Pi SD images (ARMv6 / ARMv7 / ARM64)
 # windows-x64 needs Windows: use scripts\build-client.ps1 there.
 #
@@ -22,8 +25,8 @@
 #   cross toolchains and target ALSA   ~/.local/share/multiroom-linux
 #   ESP-IDF v5.5.1                     ~/esp/esp-idf-v5.5.1, its tools in ~/.espressif
 #   Buildroot and package sources      hardware/buildroot/downloads, build tree in ~/.cache/raumfeld-buildroot
-# Results go to releases/client/<target>, the Connector 2 USB image to
-# releases/client/raumfeld/connector2. Stops at the first failure.
+# Results go to releases/client/<target>, the Connector USB images to
+# releases/client/raumfeld/connector2 and .../connector3. Stops at the first failure.
 set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 . "$root/scripts/setup/linux.sh"
@@ -41,7 +44,7 @@ for name in "$@"; do
         all) targets+=("${linux_targets[@]}" "${esp32_targets[@]}" connector2 rpi1 rpi3 rpi4 rpi5) ;;
         linux) targets+=("${linux_targets[@]}") ;;
         esp32) targets+=("${esp32_targets[@]}") ;;
-        linux-x86|linux-x64|linux-armv[6-9]|esp32-a1s|esp32-s3-devkitc|connector2|rpi1|rpi3|rpi4|rpi5) targets+=("$name") ;;
+        linux-x86|linux-x64|linux-armv[6-9]|esp32-a1s|esp32-s3-devkitc|connector2|connector3|rpi1|rpi3|rpi4|rpi5) targets+=("$name") ;;
         windows|windows-x64) die "$name needs Windows: run scripts\build-client.ps1 there." ;;
         *) die "Unknown target: $name (see the top of $0)" ;;
     esac
@@ -53,14 +56,14 @@ has() { local target; for target in "${targets[@]}"; do [[ $target == $1 ]] && r
 
 # --- apt packages
 packages=()
-if has 'linux-*' || has connector2 || has 'rpi*'; then
+if has 'linux-*' || has 'connector*' || has 'rpi*'; then
     packages+=(build-essential cmake ninja-build curl xz-utils bzip2 libasound2-dev gcc-i686-linux-gnu g++-i686-linux-gnu)
 fi
 if has 'esp32-*'; then
     packages+=(git wget flex bison gperf python3 python3-pip python3-venv cmake ninja-build ccache libffi-dev
         libssl-dev dfu-util libusb-1.0-0)
 fi
-if has connector2 || has 'rpi*'; then
+if has 'connector*' || has 'rpi*'; then
     packages+=(bison flex cpio libssl-dev libncurses-dev patch unzip file wget git rsync python3 bc e2fsprogs qemu-user)
 fi
 install_packages "${packages[@]}"
@@ -68,7 +71,7 @@ $packages_only && exit 0
 require_build_user
 
 # --- tools
-if has 'linux-*' || has connector2 || has 'rpi*'; then
+if has 'linux-*' || has 'connector*' || has 'rpi*'; then
     bash "$root/client/scripts/install-linux-tools.sh"
 fi
 if has 'esp32-*' && [[ ! -f $idf/.installed ]]; then
@@ -114,6 +117,43 @@ build_connector2() {
     cp -r "$root/hardware/buildroot/output/connector2/usb-install/licenses" "$release/"
 }
 
+build_connector3() {
+    # RAM image (with the linux-armv7 client), persistent NAND image, then the
+    # self-installing USB installer; see docs/agents/development.md.
+    local buildroot="$root/hardware/buildroot"
+    local private="$buildroot/private/connector3"
+    bash "$buildroot/scripts/build-connector3-ram.sh" "$private/id_ed25519.pub" \
+        "$private/pcie8897-working-reference.bin"
+    bash "$buildroot/scripts/build-connector3-persistent.sh" "$private/fit-signing"
+    bash "$buildroot/scripts/build-connector3-installer.sh" "$private/id_ed25519.pub" \
+        "$private/fit-signing" --write
+    local release="$root/releases/client/raumfeld/connector3"
+    mkdir -p "$release"
+    # README.md in the release folder is maintained by hand and left alone.
+    cp "$private/installer-write/connect3.img" "$release/"
+    cp "$private/installer-write/installer-verification.json" "$release/installer-manifest.json"
+    # The image's license texts travel with it, and SOURCE.txt names the bundle
+    # with the source of its GPL/LGPL parts (published as its own GitHub
+    # release, connector3-sources-<hash>, together with the firmware release).
+    rm -rf "$release/licenses"
+    cp -r "$private/ram-local/licenses" "$release/"
+    local sources="$buildroot/output/connector3-sources"
+    rm -f "$sources"/connector3-sources-*.tar "$sources"/connector3-sources-*.tar.sha256
+    python3 "$buildroot/scripts/source-bundle-connector3.py" \
+        "${RAUMFELD_BUILD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/raumfeld-buildroot}" "$sources" >/dev/null
+    local bundle
+    bundle=$(basename "$(ls "$sources"/connector3-sources-*.tar)" .tar)
+    cat >"$release/licenses/SOURCE.txt" <<SOURCE
+connect3.img contains GPL and other open-source software. The source of its GPL and
+LGPL packages, in exactly the versions and with the patches built into it, is
+  https://github.com/Galdrun/galdrun-audio/releases/download/$bundle/$bundle.tar
+Galdrun's own parts (board files, device tree, kernel drivers) are in that bundle's
+project-source/ and in the Galdrun repository at the tag of this release;
+docs/agents/development.md builds the image. manifest.csv in each folder lists
+every package with its version, license and source archive.
+SOURCE
+}
+
 build_rpi() {
     local board=$1 arch=linux-armv7
     case $board in rpi1) arch=linux-armv6 ;; rpi4|rpi5) arch=linux-armv8 ;; esac
@@ -134,6 +174,7 @@ for target in "${targets[@]}"; do
         linux-*) build_linux "$target" ;;
         esp32-*) build_esp32 "$target" ;;
         connector2) build_connector2 ;;
+        connector3) build_connector3 ;;
         rpi1|rpi3|rpi4|rpi5) build_rpi "$target" ;;
     esac
 done

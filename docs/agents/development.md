@@ -178,15 +178,36 @@ component logs. The server GUI defaults to `4723`, every client's settings page 
 
 ## Pick verification by changed surface
 
-Connector 3 has an experimental SSH/kexec RAM build containing the ARMv7 client;
-see [the Connector 3 guide](../hardware/connector3.md#custom-ram-build).
-The separate USB-profile MTD4-only updater is checked without hardware by
-`python3 hardware/buildroot/scripts/test-connector3-fit-update.py`; deployment
-requires the pinned backups and physical boot steps in the current hardware handover.
-The earlier USB diagnostic's FIT signing inputs and host checks remain in
-[the investigation guide](../hardware/raumfeld/connector3.md). Neither is a
-supported persistent client firmware target. Host verification does not establish
-physical boot, SSH reachability or playback. Separately, the 6.12.112 RAM kernel
+Connector 3 firmware (persistent NAND, read-write root, self-installing USB
+image): `scripts/build-client.ps1 -Target connector3` (or `build-client.sh
+connector3`) runs the chain below and exports `connect3.img`,
+`installer-manifest.json` and `licenses/` to `releases/client/raumfeld/connector3/` <!-- path-check: ignore -->
+(its `README.md` there is maintained by hand), builds the GPL source bundle
+`hardware/buildroot/output/connector3-sources/connector3-sources-<hash>.tar` <!-- path-check: ignore -->
+(`scripts/source-bundle-connector3.py`; the hash follows its content, including
+a working-tree snapshot) and writes `licenses/SOURCE.txt` naming it. Publish <!-- path-check: ignore -->
+that tar as its own GitHub pre-release `connector3-sources-<hash>` together
+with the firmware release (as `connector2-sources-*`), and fill
+`{{C3_SOURCES_TAG}}` in `scripts/release/notes.md`. Not part of `all`: it needs
+the private inputs under `hardware/buildroot/private/connector3/`. The steps, in WSL
+from the repository root:
+
+```bash
+p=hardware/buildroot
+bash $p/scripts/build-connector3-ram.sh $p/private/connector3/id_ed25519.pub $p/private/connector3/pcie8897-working-reference.bin
+bash $p/scripts/build-connector3-persistent.sh $p/private/connector3/fit-signing
+bash $p/scripts/build-connector3-installer.sh $p/private/connector3/id_ed25519.pub $p/private/connector3/fit-signing --write
+```
+
+The USB image is `private/connector3/installer-write/connect3.img` <!-- path-check: ignore -->
+(copy it to a FAT32 stick, hold Reset while powering on; it installs and
+reboots by itself). Host checks: `test-connector3-persistent-init.py`,
+`test-connector3-installer.py`, `test-connector3-suspend-helper.py`,
+`test-connector3-fit-update.py` under `hardware/buildroot/scripts/`. Record
+each built/installed image in the current handover. The older RAM/kexec and
+diagnostic profiles are in [the Connector 3 guide](../hardware/connector3.md#custom-ram-build)
+and [the investigation guide](../hardware/raumfeld/connector3.md). Host
+verification does not establish physical boot, SSH reachability or playback. Separately, the 6.12.112 RAM kernel
 has passed a live kexec boot, Ethernet/SSH/client-API checks and audio format
 negotiation. Its hash-bound `hardware-verification.json` records those checks;
 The native MCU UART/uinput driver has packet-parser self-checks and a physical

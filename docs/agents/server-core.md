@@ -43,6 +43,11 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
 
 ## Invariants that affect changes
 
+- The discovery listener (`src/discovery/DiscoveryListener.cpp`, UDP 4721)
+  also answers SNTP requests with the host's wall clock: the appliances' time
+  fallback when the router serves none. It stays silent while that clock is
+  before 2026 (not set), so a device keeps its time instead of going to 1970.
+
 - Decode once per zone; rooms share immutable source-native PCM, with their
   own cursors, formats, processors and sockets. Slow readers are evicted and
   rejoined, never allowed to stall another room or grow buffers without bound.

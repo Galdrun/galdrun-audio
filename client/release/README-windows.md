@@ -22,6 +22,11 @@ the browser at `http://localhost:4720/` (from other devices:
   `--audio-mode exclusive | exclusive-only | shared`.
 - **Firewall**: the settings page listens on TCP 4720 and the client sends its
   announcement to UDP 4721. Allow the client when Windows asks.
+- **Updates**: the room's page in the server's web interface offers **Update**
+  when a newer release exists. The server sends the package; the client
+  restarts into it through `galdrun-update.ps1` (in a new window) and returns
+  to the previous version if the new one does not reach the server within
+  3 minutes. Keep this folder writable for that (not under `Program Files`).
 - **Test**: `.\galdrun-client.exe --test-tone 10` plays a 440 Hz tone at -12 dBFS
   for 10 seconds and reports the sound card's clock drift. Turn the amplifier
   down first: in exclusive mode the Windows volume does not apply.

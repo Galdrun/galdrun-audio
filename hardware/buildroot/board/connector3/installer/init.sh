@@ -10,6 +10,10 @@ exec 0</dev/console 1>/dev/console 2>/dev/console
 hostname connector3-installer
 ip link set lo up
 echo 'GALDRUN CONNECTOR 3 USB INSTALLER - a write image installs itself after the preflight'
+# Front lights through the MCU (best effort, like Connector 2's installer
+# LEDs): 4 starting/working, 10 done (just before the reboot), 22 failed.
+lights() { /usr/sbin/galdrun-connector3-mcu --indication /dev/ttymxc2 "$1" >/dev/null 2>&1 || :; }
+lights 4 &
 (
     while :; do
         ip link set eth0 up
@@ -51,15 +55,25 @@ if grep -q 'PREFLIGHT PASSED' /run/preflight.log && [ -f /etc/galdrun-install-wr
         /usr/sbin/galdrun-install --install
     ) >/run/install.log 2>&1
     result=$?
-    cat /run/install.log
+    # The full log (progress lines, ~160 KB) goes to the stick; the 115200 baud
+    # console gets the end, which a reset would otherwise cut off.
+    tail -n 15 /run/install.log
     mount -o remount,rw /media && cp /run/install.log /media/galdrun-install.log && sync
     mount -o remount,ro /media
     if [ "$result" = 0 ]; then
+        lights 10
         echo 'INSTALLED: rebooting into the new firmware'
-        umount /media
+        umount /media || :
         sync
         reboot -f
+        # Only reached when that reset did not happen: force it.
+        sleep 5
+        echo 'INSTALLED: reboot did not happen; forcing it'
+        echo b >/proc/sysrq-trigger
     fi
+    lights 22
     echo "INSTALL FAILED ($result): see /run/install.log; SSH stays available"
+elif [ -f /etc/galdrun-install-writes-enabled ]; then
+    lights 22
 fi
 while :; do /bin/sh; sleep 1; done

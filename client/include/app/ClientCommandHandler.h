@@ -67,6 +67,10 @@ struct ClientRuntime
     int deepSleepProcess = 0; // Linux helper; reaped if it fails before stopping us
     int restartProcess = 0; // appliance restart helper; waits for the API reply
     int bluetoothProcess = 0; // Bluetooth mode helper (btModeRec/btModePlay)
+    // Appliance time-source refresh after a server change (galdrun-time-sources);
+    // timeSourcesAgain: the server changed again while it ran.
+    int timeSourcesProcess = 0;
+    bool timeSourcesAgain = false;
 
     // Self update (app/SelfUpdate.h): "install" or "rollback" once the main
     // loop is to end at updateAtNs and hand over to the updater; empty while

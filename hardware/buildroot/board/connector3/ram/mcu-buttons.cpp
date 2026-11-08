@@ -18,6 +18,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <chrono>
 #include <sstream>
@@ -83,6 +84,7 @@ bool acknowledge(int fd, uint8_t transaction)
 }
 bool emit(int fd, unsigned short code, int value)
 {
+    if (fd < 0) return true; // one-shot mode (--indication): buttons are not served
     input_event events[2]{};
     events[0].type = EV_KEY; events[0].code = code; events[0].value = value;
     events[1].type = EV_SYN; events[1].code = SYN_REPORT;
@@ -439,20 +441,52 @@ int request(const char* line)
     return reply.compare(0, 3, "ok ") == 0 ? 0 : 1;
 }
 
+int openUart(const char* path)
+{
+    const int uart = open(path, O_RDWR | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
+    if (uart < 0) { std::perror("MCU UART"); return -1; }
+    termios tty{};
+    if (ioctl(uart, TIOCEXCL) < 0 || tcgetattr(uart, &tty) != 0) {
+        std::perror("Claim MCU UART"); close(uart); return -1;
+    }
+    cfmakeraw(&tty); cfsetispeed(&tty, B115200); cfsetospeed(&tty, B115200);
+    tty.c_cflag |= CLOCAL | CREAD; tty.c_cflag &= ~CRTSCTS;
+    if (tcsetattr(uart, TCSANOW, &tty) != 0) { std::perror("Configure MCU UART"); close(uart); return -1; }
+    return uart;
+}
+
+// The USB installer's progress lights: sync with the MCU, set its status
+// indication, exit. No daemon, no touch input device (the installer kernel
+// has no uinput).
+int setIndication(const char* path, const char* text)
+{
+    char* end = nullptr;
+    const unsigned long requested = std::strtoul(text, &end, 10);
+    if (*text == '\0' || *end != '\0' ||
+        !(requested == 0 || requested == 4 || requested == 5 || requested == 6 ||
+          requested == 10 || requested == 22)) {
+        std::fprintf(stderr, "indication must be 0, 4, 5, 6, 10 or 22\n");
+        return 2;
+    }
+    const int uart = openUart(path);
+    if (uart < 0) return 1;
+    std::array<bool, buttons.size()> pressed{};
+    std::vector<uint8_t> bytes;
+    uint32_t value = requested;
+    const bool ok = synchronize(uart, -1, pressed, bytes) &&
+                    exchange(uart, -1, pressed, bytes, 0, 0x20, value);
+    close(uart);
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::strcmp(argv[1], "--self-test") == 0) { selfTest(); return 0; }
     if (argc == 3 && std::strcmp(argv[1], "--request") == 0) return request(argv[2]);
-    if (argc != 2) { std::fprintf(stderr, "Usage: %s UART\n", argv[0]); return 2; }
-    const int uart = open(argv[1], O_RDWR | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
-    if (uart < 0) { std::perror("MCU UART"); return 1; }
-    termios tty{};
-    if (ioctl(uart, TIOCEXCL) < 0 || tcgetattr(uart, &tty) != 0) {
-        std::perror("Claim MCU UART"); close(uart); return 1;
-    }
-    cfmakeraw(&tty); cfsetispeed(&tty, B115200); cfsetospeed(&tty, B115200);
-    tty.c_cflag |= CLOCAL | CREAD; tty.c_cflag &= ~CRTSCTS;
-    if (tcsetattr(uart, TCSANOW, &tty) != 0) { std::perror("Configure MCU UART"); close(uart); return 1; }
+    if (argc == 4 && std::strcmp(argv[1], "--indication") == 0) return setIndication(argv[2], argv[3]);
+    if (argc != 2) { std::fprintf(stderr, "Usage: %s UART | --indication UART N\n", argv[0]); return 2; }
+    const int uart = openUart(argv[1]);
+    if (uart < 0) return 1;
     const int input = createInput();
     if (input < 0) { std::perror("Create touch input"); close(uart); return 1; }
     std::signal(SIGTERM, stop); std::signal(SIGINT, stop);
