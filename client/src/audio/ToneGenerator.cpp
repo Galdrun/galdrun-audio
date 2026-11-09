@@ -91,6 +91,55 @@ void writeSample(void* buffer, size_t sampleIndex, float value, AudioFormat::Sam
     }
 }
 
+// writeSample's inverse, with the same container layouts.
+float readSample(const void* buffer, size_t sampleIndex, AudioFormat::SampleType type)
+{
+    const unsigned char* bytes = static_cast<const unsigned char*>(buffer);
+    switch (type)
+    {
+    case AudioFormat::SampleType::Int16:
+    {
+        int16_t sample = 0;
+        std::memcpy(&sample, bytes + sampleIndex * 2, 2);
+        return static_cast<float>(sample / 32768.0);
+    }
+    case AudioFormat::SampleType::Int24:
+    {
+        const unsigned char* source = bytes + sampleIndex * 3;
+        int32_t sample = source[0] | (source[1] << 8) | (source[2] << 16);
+        if ((sample & 0x800000) != 0)
+            sample |= static_cast<int32_t>(0xFF000000u);
+        return static_cast<float>(sample / 8388608.0);
+    }
+    case AudioFormat::SampleType::Int24In32:
+    {
+        int32_t raw = 0;
+        std::memcpy(&raw, bytes + sampleIndex * 4, 4);
+#if defined(_WIN32) || defined(ESP_PLATFORM)
+        return static_cast<float>(raw / 2147483648.0);
+#else
+        int32_t sample = raw & 0x00FFFFFF;
+        if ((sample & 0x800000) != 0)
+            sample |= static_cast<int32_t>(0xFF000000u);
+        return static_cast<float>(sample / 8388608.0);
+#endif
+    }
+    case AudioFormat::SampleType::Int32:
+    {
+        int32_t sample = 0;
+        std::memcpy(&sample, bytes + sampleIndex * 4, 4);
+        return static_cast<float>(sample / 2147483648.0);
+    }
+    case AudioFormat::SampleType::Float32:
+    {
+        float sample = 0.0f;
+        std::memcpy(&sample, bytes + sampleIndex * 4, 4);
+        return sample;
+    }
+    }
+    return 0.0f;
+}
+
 ToneGenerator::ToneGenerator(double frequencyHz, double amplitude)
     : frequency_(frequencyHz), amplitude_(amplitude), frames_(0)
 {

@@ -1,8 +1,17 @@
 #include "app/InputPump.h"
 
+#include "audio/FeedbackSound.h"
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+#include "config/BoardConfig.h"
+#endif
 #include "util/Logger.h"
 
 namespace multiroom {
+namespace {
+
+const uint16_t kKeyPlayPause = 164; // Linux KEY_PLAYPAUSE, as the stock firmware's own sound
+
+} // namespace
 
 InputPump::InputPump(const std::vector<InputDefinition>& inputs)
     : inputs_(inputs), controller_(inputs)
@@ -17,8 +26,16 @@ void InputPump::start(ClientRuntime& runtime, ControlServer& control, CommandQue
         if (input.control.kind == matp::InputKind::Button)
             buttonIds.push_back(input.control.id);
     control.setInputButtons(buttonIds);
-    controller_.setButtonStateCallback([this, &control](size_t index, bool pressed) {
+    // Touch fields give no feel of their own; the board asks for a click.
+    bool sounds = false;
+#if defined(__linux__) && !defined(ESP_PLATFORM)
+    sounds = board_config::enabled(board_config::current(), "inputSounds");
+#endif
+    controller_.setButtonStateCallback([this, &control, sounds](size_t index, bool pressed) {
         control.publishInputState(inputs_[index].control.id, pressed);
+        if (sounds && pressed)
+            FeedbackSound::play(inputs_[index].code == kKeyPlayPause ? FeedbackSound::Sound::PlayPause
+                                                                     : FeedbackSound::Sound::Touch);
     });
 
     if (inputs_.empty())

@@ -18,8 +18,12 @@ def verify(stage, manifest):
     if not audit['approved_hardware_radio_present']:
         raise ValueError('Persistent candidate must use the approved hardware radio')
     defaults=json.loads(files['opt/galdrun-client/client-default.json'][1])
-    if defaults.get('clientId') or defaults.get('server') or defaults.get('deepSleepAfterSeconds'):
-        raise ValueError('Board identity, server binding or deep sleep in generic defaults')
+    if defaults.get('clientId') or defaults.get('server'):
+        raise ValueError('Board identity or server binding in generic defaults')
+    # Same automatic standby/deep sleep as Connector 2, the Raumfeld baseline.
+    baseline=json.loads((Path(__file__).resolve().parents[1]/'board/connector2/client-default.json').read_text())
+    if any(defaults.get(key)!=baseline[key] for key in ('standbyAfterSeconds','deepSleepAfterSeconds')):
+        raise ValueError('Automatic standby defaults differ from Connector 2')
     if 'etc/wpa_supplicant.conf' in files or any(
             name.startswith('etc/ssh/ssh_host_') and name.endswith('_key') for name in files):
         raise ValueError('Saved network or SSH host credentials in rootfs')

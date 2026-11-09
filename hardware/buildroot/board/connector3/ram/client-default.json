@@ -7,8 +7,8 @@
   "audioAccessMode": "exclusive-only",
   "preferredSampleRate": 48000,
   "bufferMs": 2500,
-  "standbyAfterSeconds": 0,
-  "deepSleepAfterSeconds": 0,
+  "standbyAfterSeconds": 600,
+  "deepSleepAfterSeconds": 1800,
   "controlPort": 4720,
   "controlBindAddress": "0.0.0.0",
   "inputs": [

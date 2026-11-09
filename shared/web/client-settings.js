@@ -21,6 +21,7 @@ let saved = {}; // what settings() returned when last loaded or saved
 let savedClientId = '';
 let ready = false, saving = false, scanning = false, restarting = false;
 let lastUptime = 0;
+let lastStatus = null, currentIps = []; // currentIps: from the network settings
 let scanned = [], storedSsid = '', savedBssid = '', connectedBssid = '';
 
 // ---------------------------------------------------------------------------
@@ -68,6 +69,7 @@ $('hardwareInputs').addEventListener('bindingschange', updateSave);
 
 // The running client's status, which both backends pass through unchanged.
 function showStatus(s) {
+  lastStatus = s;
   lastUptime = s.uptimeSeconds;
   const a = s.audio;
   $('headerDevice').textContent = s.name || s.clientId;
@@ -75,6 +77,7 @@ function showStatus(s) {
   $('connection').classList.toggle('online', s.server.state === 'connected');
   const rows = [
     [tt('status.version'), s.version + ' \u00b7 ' + tt('status.up', {time: up(s.uptimeSeconds)})], [tt('status.room'), s.name || '\u2013'], [tt('status.clientId'), s.clientId],
+    ...(currentIps.length ? [[tt('status.ipAddress'), currentIps.join(', ')]] : []),
     [tt('status.server'), (s.server.address || tt('status.notConfigured')) + ' \u00b7 ' + tv('state', s.server.state)], [tt('status.session'), tv('state', s.session.state)],
     [tt('status.output'), a.deviceSelected ? a.deviceName : tt('status.none')], [tt('status.format'), a.format ? fmt(a.format) : tt('status.deviceClosed')]];
   if (s.power) rows.push([tt('common.power'), tv('state', s.power.state)]);
@@ -685,8 +688,9 @@ async function loadNetwork() {
     for (const [p, g] of [['eth', n.network.ethernet], ['wifi', n.network.wifi]]) {
       for (const [suffix, key] of [['Mode', 'ipMode'], ['Ip', 'ip'], ['Mask', 'netmask'], ['Gateway', 'gateway'], ['Dns', 'dns']])
         $(p + suffix).value = g[key] || '';
-      $(p + 'Now').textContent = (g.currentIp ? tt('network.nowOn', {ip: g.currentIp}) + ' ' : '') + tt('network.wrongStaticAddress');
     }
+    currentIps = [...new Set([n.network.ethernet.currentIp, n.network.wifi.currentIp].filter(Boolean))];
+    if (lastStatus) showStatus(lastStatus);
     const w = n.network.wifi;
     $('wifiRadio').replaceChildren(new Option(tt('common.automatic'), ''));
     for (const radio of w.radios || [])
@@ -954,7 +958,7 @@ async function boardLoad(response) {
   for (const [suffix, key] of [['Ip', 'ip'], ['Mask', 'netmask'], ['Gateway', 'gateway'], ['Dns', 'dns']])
     $('wifi' + suffix).value = s[key];
   addressRows();
-  $('wifiNow').textContent = s.currentIp ? tt('board.nowOn', {ip: s.currentIp}) + ' ' + tt('board.wrongStaticAddress') : '';
+  currentIps = s.currentIp ? [s.currentIp] : [];
   $('server').value = s.server;
   $('active').value = String(s.active !== false);
   $('device').value = s.audioDeviceId;

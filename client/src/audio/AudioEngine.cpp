@@ -24,7 +24,9 @@ uint32_t AudioEngine::renderCallback(void* userData, void* buffer, uint32_t fram
     AudioEngine* engine = static_cast<AudioEngine*>(userData);
     if (engine == nullptr || engine->source_ == nullptr)
         return 0;
-    return engine->source_->render(buffer, frameCount);
+    const uint32_t filled = engine->source_->render(buffer, frameCount);
+    engine->feedback_.mix(buffer, filled);
+    return filled;
 }
 
 bool AudioEngine::open(const Settings& settings, std::string& error)
@@ -66,6 +68,7 @@ bool AudioEngine::open(const Settings& settings, std::string& error)
     // The driver may have granted something other than what was asked for, so
     // the source is prepared against what we actually got.
     source_->prepare(backend_->currentFormat());
+    feedback_.prepare(backend_->currentFormat());
 
     MULTIROOM_INFO("audio engine open: %s, %u frames per period, %s mode",
              describeFormat(backend_->currentFormat()).c_str(),

@@ -39,4 +39,7 @@ private:
 void writeSample(void* buffer, size_t sampleIndex, float value,
                  AudioFormat::SampleType type);
 
+// The inverse: one sample of an interleaved buffer as -1..1.
+float readSample(const void* buffer, size_t sampleIndex, AudioFormat::SampleType type);
+
 } // namespace multiroom

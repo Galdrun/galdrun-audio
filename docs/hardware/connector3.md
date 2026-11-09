@@ -1230,7 +1230,7 @@ output and Galdrun playback are not established by the SSH result.
 
 The user supplied the public [SSH Streamer archive](https://drive.google.com/drive/folders/1-htQzqporcluONsyXVopgBq1JnFk1148).
 Downloads and prepared marker are in ignored
-[`hardware/buildroot/downloads/connector3-ssh-archive/`](../../hardware/buildroot/downloads/connector3-ssh-archive/). <!-- path-check: ignore -->
+`hardware/buildroot/downloads/connector3-ssh-archive/`. <!-- path-check: ignore -->
 Do not commit or bundle the vendor images with a Galdrun release.
 
 | File | Bytes | SHA256 |
@@ -1484,7 +1484,7 @@ wsl -d Ubuntu -- bash /mnt/c/Projects/Codeing/GaldrunAudio/galdrun-audio/hardwar
 ```
 
 The build passed on **2026-10-28**. Outputs are in ignored
-[`hardware/buildroot/output/connector3-ram/`](../../hardware/buildroot/output/connector3-ram/): <!-- path-check: ignore -->
+`hardware/buildroot/output/connector3-ram/`: <!-- path-check: ignore -->
 `zImage`, `connector3.dtb`, `rootfs.cpio.gz`, `rootfs.tar.gz`, static ARM `kexec`, `SHA256SUMS`, and
 `ram-verification.json`. These are RAM boot components, **not** a USB
 `connect3.img` installer. The build script first rebuilds the ARMv7 client and

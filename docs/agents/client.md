@@ -91,6 +91,18 @@ A board file may list `inputs` (client.json's format):
 `client_config::appendBoardInputs` adds those whose id `client.json` lacks at
 startup, before device discovery, so fixed buttons added to an image reach an
 older settings volume. Connector 3 lists its rear BT/Setup buttons there.
+Board flag `inputSounds` (Connector 3): each button press calls
+`FeedbackSound::play` (`src/audio/FeedbackSound.cpp`), and every open
+`AudioEngine` mixes the click over its source in the render callback, at the
+device rate; `KEY_PLAYPAUSE` gets the play/pause click. The clicks are
+synthesized from levels/pitch measured on the stock `touch.flac` and
+`touch-play-pause.flac`, because Teufel's files are not redistributed. Level
+matches stock (`libraumfelddsp.so`, `hardwared` chain `input -> system-sounds
+-> user-eq -> output`): `Rompler::process` adds the file samples at unity gain;
+`Sounds` only fades the music linearly toward 0.25 at 3.0 per second while a
+sound plays (about -1 dB by the end of one 40 ms click), which is not copied. A
+device that is not running (standby, no server) does not click: opening the
+exclusive card for 40 ms would race `PREPARE_STREAM` and the MCU rate setup.
 `btModeRec`/`btModePlay` are local input actions (like `deepSleep`): with the
 board flag `bluetooth` the client runs the image helper
 `/usr/sbin/galdrun-bluetooth pair|headphones`; the inputs response's

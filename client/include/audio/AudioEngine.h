@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/AudioSource.h"
+#include "audio/FeedbackSound.h"
 #include "audio/IAudioBackend.h"
 
 #include <memory>
@@ -60,6 +61,9 @@ private:
     // Written only from the control thread while the audio thread is stopped,
     // so the audio thread sees a stable value; start() is the barrier.
     IAudioSource* source_ = nullptr;
+
+    // Button clicks over the source; prepared in open() like the source.
+    FeedbackSound feedback_;
 };
 
 } // namespace multiroom

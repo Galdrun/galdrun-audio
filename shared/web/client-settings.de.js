@@ -14,6 +14,7 @@ i18n.add('de-AT', {
   'status.up': 'l\u00e4uft seit {time}',
   'status.room': 'Raum',
   'status.clientId': 'Client-ID',
+  'status.ipAddress': 'IP-Adresse',
   'status.server': 'Server',
   'status.notConfigured': 'nicht konfiguriert',
   'status.session': 'Sitzung',
@@ -213,7 +214,6 @@ i18n.add('de-AT', {
   'audio.format.float32': '32 Bit Gleitkomma',
   'audio.bitDepth': '{n} Bit',
   // network
-  'network.nowOn': 'Derzeit unter {ip}.',
   'network.wrongStaticAddress': 'Eine falsche statische Adresse macht das Board unerreichbar.',
   'network.unpluggedUsingFallback': '(nicht angesteckt; Ersatz wird verwendet)',
   'network.active': 'Aktiv: {name}.',
@@ -248,8 +248,6 @@ i18n.add('de-AT', {
   'board.connecting': 'Verbindet',
   'board.setupModeThis': 'Einrichtungsmodus: Dieses Board ist noch in keinem Netzwerk. W\u00e4hlen Sie eines und speichern Sie.',
   'board.savingDeviceSettings': 'Das Speichern der Ger\u00e4teeinstellungen startet das Board neu. Tastenaktionen gelten sofort.',
-  'board.nowOn': 'Derzeit unter {ip}.',
-  'board.wrongStaticAddress': 'Eine falsche statische Adresse macht das Board unerreichbar.',
   // loading
   'loading.loadingDeviceSettings': 'Ger\u00e4teeinstellungen werden geladen\u2026',
   'loading.retry': 'Erneut versuchen',

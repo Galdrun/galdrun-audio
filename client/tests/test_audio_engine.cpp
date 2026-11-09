@@ -3,11 +3,14 @@
 
 #include "audio/AudioEngine.h"
 #include "audio/AudioShutdown.h"
+#include "audio/FeedbackSound.h"
 #include "audio/AudioRingBuffer.h"
 #include "audio/RingBufferSource.h"
 #include "audio/ToneGenerator.h"
 #include "util/Wrap32.h"
 
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <thread>
@@ -586,4 +589,38 @@ MULTIROOM_TEST(clock_snapshot_validity_rules)
              std::string("driver"));
     CHECK_EQ(std::string(audioClockQualityName(AudioClockQuality::Estimated)),
              std::string("estimated"));
+}
+
+MULTIROOM_TEST(engine_mixes_a_button_click_over_the_source)
+{
+    std::unique_ptr<StubBackend> owned(new StubBackend());
+    StubBackend* stub = owned.get();
+    AudioEngine engine(std::move(owned));
+    ToneGenerator silence(440.0, 0.0);
+    engine.setSource(&silence);
+
+    // A press before the device opened is not replayed by it.
+    FeedbackSound::play(FeedbackSound::Sound::Touch);
+    std::string error;
+    CHECK(engine.open(defaultSettings(), error));
+    const auto peak = [stub](uint32_t frames) {
+        std::vector<int16_t> buffer(static_cast<size_t>(frames) * 2);
+        CHECK_EQ(stub->render(buffer.data(), frames), frames);
+        int peakValue = 0;
+        for (int16_t sample : buffer)
+            peakValue = std::max(peakValue, std::abs(static_cast<int>(sample)));
+        return peakValue / 32768.0;
+    };
+    CHECK(peak(480) == 0.0);
+
+    // The stock firmware's levels: touch about 0.72, play/pause about 0.97.
+    FeedbackSound::play(FeedbackSound::Sound::Touch);
+    const double touch = peak(480);
+    CHECK(touch > 0.6 && touch < 0.75);
+    CHECK(peak(960) < touch);
+    CHECK(peak(480) == 0.0); // over after the click's 30 ms
+
+    FeedbackSound::play(FeedbackSound::Sound::PlayPause);
+    const double playPause = peak(480);
+    CHECK(playPause > 0.9 && playPause <= 1.0);
 }

@@ -14,6 +14,7 @@ i18n.add('en-US', {
   'status.up': 'up {time}',
   'status.room': 'Room',
   'status.clientId': 'Client id',
+  'status.ipAddress': 'IP address',
   'status.server': 'Server',
   'status.notConfigured': 'not configured',
   'status.session': 'Session',
@@ -213,7 +214,6 @@ i18n.add('en-US', {
   'audio.format.float32': '32-bit float',
   'audio.bitDepth': '{n}-bit',
   // network
-  'network.nowOn': 'Now on {ip}.',
   'network.wrongStaticAddress': 'A wrong static address leaves the board unreachable.',
   'network.unpluggedUsingFallback': '(unplugged; using fallback)',
   'network.active': 'Active: {name}.',
@@ -248,8 +248,6 @@ i18n.add('en-US', {
   'board.connecting': 'Connecting',
   'board.setupModeThis': 'Setup mode: this board is not on a network yet. Pick one and save.',
   'board.savingDeviceSettings': 'Saving device settings restarts the board. Button actions apply immediately.',
-  'board.nowOn': 'Now on {ip}.',
-  'board.wrongStaticAddress': 'A wrong static address leaves the board unreachable.',
   // loading
   'loading.loadingDeviceSettings': 'Loading device settings\u2026',
   'loading.retry': 'Retry',

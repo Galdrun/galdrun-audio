@@ -20,6 +20,7 @@ set(MULTIROOM_CLIENT_COMMON_SOURCES
     src/audio/AudioEngine.cpp
     src/audio/AudioRingBuffer.cpp
     src/audio/DriftEstimator.cpp
+    src/audio/FeedbackSound.cpp
     src/audio/FormatProbe.cpp
     src/audio/HardwareClock.cpp
     src/audio/HardwareVolume.cpp

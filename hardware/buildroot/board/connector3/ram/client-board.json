@@ -9,6 +9,7 @@
   "resetHardwareVolume": true,
   "statusLeds": true,
   "bluetooth": true,
+  "inputSounds": true,
   "inputs": [
     {"id":"Bluetooth","kind":"button","device":"Connector 3 touch buttons","key":"237","bindings":{"click":{"action":"btModeRec"},"longPress":{"action":"btModePlay"}}},
     {"id":"Setup","kind":"button","device":"Connector 3 touch buttons","key":"141","bindings":{"click":{"action":"none"},"doubleClick":{"action":"none"},"longPress":{"action":"none"}}}
