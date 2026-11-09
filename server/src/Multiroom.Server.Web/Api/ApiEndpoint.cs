@@ -65,6 +65,8 @@ public sealed partial class ApiEndpoint(
     PlayHistoryStore history,
     AiUsageStore aiUsage,
     BookPositionStore bookPositions,
+    TimedPlayStore timedPlayStore,
+    TimedPlays timedPlays,
     ProviderRegistry providers,
     UnifiedSearch search,
     House house,
@@ -168,6 +170,7 @@ public sealed partial class ApiEndpoint(
         MapSuggestions(app);
         MapProposals(app);
         MapMcp(app);
+        MapTimedPlays(app);
     }
 
     // The token before anything else; afterwards, any error answer the

@@ -42,7 +42,7 @@ public sealed partial class ApiEndpoint
         // the SDK builds the tools' schemas from it.
         var json = new JsonSerializerOptions(ApiJson.Options) { TypeInfoResolver = ApiJson.Resolver() };
         _tools = new MultiroomTools(search, providers, house, queues, player, playlists, likes, addIns, resolver, history, bookPositions, zones, users, audiobookLikes, proposals,
-            equalizerProfiles, stations, json);
+            equalizerProfiles, stations, timedPlayStore, timedPlays, json);
         services.AddMcpServer(o => o.ServerInfo = McpInfo)
             .WithHttpTransport(o => o.Stateless = true)
             .WithMultiroomTools(_tools, c => events.Publish("ai.toolCalled", c));

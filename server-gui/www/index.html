@@ -34,6 +34,7 @@
     <a href="#/zones"><i data-icon="zones"></i><span data-i18n="common.zones"></span></a>
     <a href="#/playlists"><i data-icon="playlists"></i><span data-i18n="common.playlists"></span></a>
     <a href="#/stations"><i data-icon="radio"></i><span data-i18n="nav.radioStations"></span></a>
+    <a href="#/timed"><i data-icon="clock"></i><span data-i18n="nav.timedPlays"></span></a>
     <a href="#/rooms"><i data-icon="device"></i><span data-i18n="common.clients"></span></a>
     <a href="#/assistant"><i data-icon="chat"></i><span data-i18n="nav.assistant"></span></a>
 
@@ -168,6 +169,22 @@
         <div id="plHead" class="queue-head"></div>
         <input type="search" id="plSearch" class="pane-search" data-i18n-placeholder="playlists.searchPlaylist" data-i18n-aria-label="playlists.searchPlaylist" autocomplete="off">
         <div id="entries" class="pl-entries"></div>
+      </section>
+    </section>
+
+    <!-- Timed plays: the list on the left, the picked one on the right --
+         its rooms, playlist, volume and modes, and its week of blocks
+         (renderTimedPlays). -->
+    <section class="page page-app" data-page="timed" data-title="nav.timedPlays" hidden>
+      <section class="pane tp-list-pane" data-i18n-aria-label="nav.timedPlays">
+        <div class="pane-bar">
+          <span class="pane-title" data-i18n="nav.timedPlays"></span>
+          <button type="button" id="tpNew" class="icon-only" data-i18n-title="timed.newTimedPlay" data-i18n-aria-label="timed.newTimedPlay"><i data-icon="plus"></i></button>
+        </div>
+        <div id="tpList" class="pl-tree"></div>
+      </section>
+      <section class="pane tp-detail-pane" data-i18n-aria-label="timed.details">
+        <div id="tpDetail" class="tp-detail"></div>
       </section>
     </section>
 
@@ -409,6 +426,8 @@
             <p class="help" data-i18n="settings.onBookTwo"></p>
             <label class="toggle" title="PATCH settings/playback {findRadioLikes}"><input type="checkbox" id="findRadioLikes" checked disabled> <span data-i18n="settings.findLikedRadio"></span></label>
             <p class="help" data-i18n="settings.onSongLiked"></p>
+            <label class="sleep-fade" title="PATCH settings/playback {sleepFadeSeconds}"><span data-i18n="settings.sleepFade"></span> <input type="number" id="sleepFadeSeconds" min="0" max="600" step="1" value="30" disabled> <span data-i18n="timed.seconds"></span></label>
+            <p class="help" data-i18n="settings.sleepFadeHelp"></p>
           </div>
         </section>
 

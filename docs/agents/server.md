@@ -37,6 +37,30 @@ external endpoints start after their dependencies. Preserve these dependencies.
 | Selected core and beacon discovery | `Core/CoreDiscovery.cs` |
 | Save/restore queues and desired state | `PlaybackStore.cs`, `PlaybackSettings.cs` |
 | Playlist playback, AutoFill, history, book progress, room buttons | `PlaylistPlayer.cs`, `AutoFill.cs`, `PlayHistoryRecorder.cs`, `BookPositions.cs`, `InputActions.cs` |
+| Timed plays (weekly playlist start/stop) | `TimedPlays.cs`; store `Library/TimedPlayStore.cs`; REST `Web/Api/ApiEndpoint.TimedPlays.cs`; MCP `*_timed_play(s)` tools |
+| Sleep timer (per zone) | `SleepTimers.cs` (state, in memory), fired by `TimedPlays.cs`; REST `zones/{zone}/sleep-timer` in `Web/Api/ApiEndpoint.Zones.cs`; MCP `set_sleep_timer`; fade length is the playback setting `sleepFadeSeconds` |
+
+`TimedPlays` ticks every 5 s on server local time. It starts a stretch of
+blocks once, only in the timed play's rooms that play nothing (no
+playing/starting zone with a current item (a queue played to its end is
+idle), no Bluetooth local source), grouped into one zone, and
+stops only a zone it started whose queue still holds an item it queued.
+Touching blocks (24:00 / 00:00) are one stretch. Only the zone level is set
+(fades ramp it; a level set by someone else ends the ramp), never a room's.
+A fade in waits for the queue's `NowPlaying` (the rooms really started: the
+transport reads stopped/playing before that); after a fade out the level comes
+back 2 s after the stop, since the rooms play out what they hold first.
+A zone's sleep timer overrides timed plays: while it runs the zone's rooms
+count as busy and a block's end leaves the zone playing; when it is due,
+`TimedPlays` fades the zone out over `sleepFadeSeconds` (default 30) and stops
+it, ending a run there (its resume place kept). Timers live in memory only (a
+restart ends them) and fire on the 5 s tick; `zone.sleepTimerChanged` reports
+every change.
+Its run and resume place are kept in `timed_play`, so a restart neither starts
+the stretch again nor misses its stop; a missed start is made late within the
+block. Nothing is decided while no core is connected. Every store write
+(edits, run, resume) raises `TimedPlayStore.Changed`, published as the SSE
+event `timedPlay.changed`, which the GUI page applies instead of polling.
 
 `ZoneSession` serializes operations and core events with its own gate. It
 resolves/publishes/stages one source ahead; `zone.sourceNeeded` continues that

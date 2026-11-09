@@ -22,7 +22,9 @@ public sealed record ApiEventsStatus(int Subscribers, int Held, long Dropped);
 // and `core.eventsLost` (the model is fresh, or was behind: read again),
 // `queue.changed`, `queue.deleted`, `zone.volumeChanged`, `indexer.progress`,
 // `library.folderChanged`, `zone.autoFillChanged` and `queue.autoFilled`
-// (phase 26), `favorite.changed` and `zone.userChanged` (phase 36), `ai.request`
+// (phase 26), `favorite.changed` and `zone.userChanged` (phase 36),
+// `timedPlay.changed` (the timed play, or its id once deleted),
+// `zone.sleepTimerChanged` (the zone and its sleep timer), `ai.request`
 // (every call sent to an AI vendor, its prompt included) and, every
 // second, `system.metrics` and `rooms.sync` (SystemMonitor).
 //
@@ -68,7 +70,7 @@ public sealed class ApiEvents : ICoreEventSubscriber, IDisposable
 
     public ApiEvents(CoreLink link, QueueEngine queues, LibraryIndexer indexer, InputActions inputs, ProviderRegistry providers,
         House house, LikeStore likes, AutoFill autoFill, PlaylistStore playlists, ZoneUsers users, AiProviderRegistry ai,
-        ArtworkService pictures)
+        ArtworkService pictures, TimedPlayStore timedPlays, SleepTimers sleepTimers)
     {
         _ai = ai;
         _house = house;
@@ -97,9 +99,17 @@ public sealed class ApiEvents : ICoreEventSubscriber, IDisposable
         // And as a fill starts and ends, so a page can show it working.
         autoFill.FillingChanged += (_, zone) => Publish("zone.autoFillChanged", new { zone, autoFill = autoFill.View(zone) });
         autoFill.Filled += (_, result) => Publish("queue.autoFilled", result);
+        // Set, cleared or run out, whoever did it.
+        sleepTimers.Changed += (_, zone) => Publish("zone.sleepTimerChanged", new { zone, sleepTimer = sleepTimers.View(zone) });
         ai.Called += OnAiCalled;
         // Phase 40: a picture found for an item a list answered.
         pictures.Changed += (_, id) => Publish("artwork.changed", new { id });
+        // Edited, deleted, or started and stopped by the scheduler.
+        timedPlays.Changed += (_, id) =>
+        {
+            var play = timedPlays.Get(id);
+            Publish("timedPlay.changed", play.IsSuccess ? play.Value : new { id, removed = true });
+        };
         // The indexer counts per file; its progress is sampled, not forwarded.
         _indexerWatch = new Timer(_ => WatchIndexer(), null, TimeSpan.Zero, IndexerInterval);
     }

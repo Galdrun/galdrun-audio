@@ -14,7 +14,8 @@ public sealed record ZoneDesired(IReadOnlyList<string>? Clients, double Volume, 
 // model, and Queue the queue engine's. Any may be absent. Zone is the id and
 // never changes; Name is its rooms' client ids (the room's name), in
 // membership order, joined with " + " (the id while it has none). StreamTitle is what a playing station
-// last announced, for the UI only: the rooms keep the name.
+// last announced, for the UI only: the rooms keep the name. SleepTimer is its
+// sleep timer (SleepTimers).
 public sealed record ZoneView(
     string Zone,
     string Name,
@@ -24,7 +25,8 @@ public sealed record ZoneView(
     string? StreamTitle,
     Track? RadioTrack = null,
     AutoFillView? AutoFill = null,
-    string User = "");
+    string User = "",
+    SleepTimerView? SleepTimer = null);
 
 // What this server asked for a room: the zone whose membership names it, and
 // its own settings and volume. Null is never asked, except Volume: in a zone
@@ -62,7 +64,7 @@ public sealed record RoomView(string Client, string Name, RoomDesired Desired, C
 // with both halves, and a zone's own level. The REST API and the MCP tools
 // both read and set them here, so they answer alike.
 public sealed class House(CoreLink link, QueueEngine queues, ProviderRegistry providers, AutoFill autoFill,
-    ZoneUsers users, UserStore userStore, EqualizerProfiles equalizerProfiles)
+    ZoneUsers users, UserStore userStore, EqualizerProfiles equalizerProfiles, SleepTimers sleepTimers)
 {
     // A zone's volume or mute was set here; recorded whether the core took it.
     public event EventHandler<string>? ZoneLevelChanged;
@@ -151,6 +153,21 @@ public sealed class House(CoreLink link, QueueEngine queues, ProviderRegistry pr
     // Phase 26: a zone's AutoFill, for a zone any half knows of.
     public Result<AutoFillView, QueueError> AutoFill(string zone) =>
         ZoneNames().Contains(zone) ? autoFill.View(zone) : Result.Fail(QueueError.NotFound, $"no zone {zone}");
+
+    // A zone's sleep timer: `minutes` from now (1 to SleepTimers.MaxMinutes),
+    // 0 off.
+    public Result<SleepTimerView, QueueError> SetSleepTimer(string zone, int minutes)
+    {
+        if (!ZoneNames().Contains(zone))
+            return Result.Fail(QueueError.NotFound, $"no zone {zone}");
+        if (minutes is < 0 or > SleepTimers.MaxMinutes)
+            return Result.Fail(QueueError.InvalidArgument, $"minutes: 0 (off) to {SleepTimers.MaxMinutes}");
+        sleepTimers.Set(zone, minutes);
+        return sleepTimers.View(zone);
+    }
+
+    public Result<SleepTimerView, QueueError> SleepTimer(string zone) =>
+        ZoneNames().Contains(zone) ? sleepTimers.View(zone) : Result.Fail(QueueError.NotFound, $"no zone {zone}");
 
     public Result<AutoFillView, QueueError> SetAutoFill(string zone, AutoFillPatch patch)
     {
@@ -286,7 +303,7 @@ public sealed class House(CoreLink link, QueueEngine queues, ProviderRegistry pr
         return new ZoneView(zone, name, desired.Zone is null ? null : new ZoneDesired(
             desired.Clients is null ? null : members, level.Volume, level.Muted),
             actual, state, title, RadioTrackMetadata.FromTitle(title),
-            autoFill.View(zone), users.Of(zone));
+            autoFill.View(zone), users.Of(zone), sleepTimers.View(zone));
     }
 
     private string? StreamTitleOf(QueueState? queue)

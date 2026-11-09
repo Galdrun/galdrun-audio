@@ -107,7 +107,7 @@ public sealed partial class ApiTests
             $$$"""{"node":{"provider":"local","id":"{{{album}}}"},"group":true,"replace":true}""");
         Assert.Equal(["The Book"], Titles(asked["queue"]!));
         await Refused(HttpMethod.Patch, "settings/playback", "{}", HttpStatusCode.BadRequest, "invalidRequest",
-            "a playback settings patch needs groupBooks, resumeBooks, findRadioLikes, or several");
+            "a playback settings patch needs groupBooks, resumeBooks, findRadioLikes, sleepFadeSeconds, or several");
         await Refused(HttpMethod.Patch, "settings/playback", """{"groupbooks":true}""", HttpStatusCode.BadRequest,
             "invalidRequest");
 

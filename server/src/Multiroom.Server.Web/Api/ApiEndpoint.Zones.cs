@@ -57,6 +57,11 @@ public sealed partial class ApiEndpoint
         app.MapGet("/api/v1/zones/{zone}/queue", (string zone) => Answer(queues.GetQueue(zone)));
         app.MapMethods("/api/v1/zones/{zone}/queue", [HttpMethods.Patch], PatchQueueAsync);
         app.MapPost("/api/v1/zones/{zone}/queue/items", AddItemsAsync);
+        // Its sleep timer: minutes from now (1 to 720), 0 or DELETE off.
+        app.MapGet("/api/v1/zones/{zone}/sleep-timer", (string zone) => Answer(house.SleepTimer(zone)));
+        app.MapPut("/api/v1/zones/{zone}/sleep-timer", (string zone, HttpContext c) =>
+            WithBody<SleepTimerRequest, SleepTimerView, QueueError>(c, r => Task.FromResult(house.SetSleepTimer(zone, r.Minutes))));
+        app.MapDelete("/api/v1/zones/{zone}/sleep-timer", (string zone) => Answer(house.SetSleepTimer(zone, 0)));
         // The queue as a stored playlist, in a folder or at the top: 409
         // alreadyExists for a name in use there, unless overwrite.
         app.MapPost("/api/v1/zones/{zone}/queue/save", (string zone, HttpContext c) =>

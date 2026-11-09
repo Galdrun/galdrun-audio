@@ -209,7 +209,12 @@ public static partial class ServerHost
         // The MCP server's external callers: their tiers and named clients (phase 23).
         builder.Services.AddSingleton(new McpClientStore(Path.Combine(settings.DataDirectory, "ai", "mcp.json")));
         // What the REST API and the MCP tools both read and set (phase 23).
+        builder.Services.AddSingleton<SleepTimers>();
         builder.Services.AddSingleton<House>();
+        // Playlists started and stopped by a weekly schedule; after CoreLink,
+        // so it is stopped (its fades ended) before the core link is.
+        builder.Services.AddSingleton<TimedPlays>();
+        builder.Services.AddHostedService(services => services.GetRequiredService<TimedPlays>());
         // Search answers the tracks the house keeps first: playlists, queues,
         // favourites and likes.
         builder.Services.AddSingleton<KeptTracks>();

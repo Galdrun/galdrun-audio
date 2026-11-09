@@ -8,12 +8,17 @@ namespace Multiroom.Server.Playback;
 // beginning. Its place is saved either way. FindRadioLikes: a song liked as
 // a radio played it is looked for among the providers that stream tracks
 // (RadioLikeFinder); off, it is not, and what was found stays.
-public sealed record PlaybackSettingsView(bool GroupBooks = true, bool ResumeBooks = false, bool FindRadioLikes = true);
+// SleepFadeSeconds: how long a zone fades out when its sleep timer runs out
+// (TimedPlays), 0 to MaxSleepFadeSeconds.
+public sealed record PlaybackSettingsView(bool GroupBooks = true, bool ResumeBooks = false, bool FindRadioLikes = true,
+    int SleepFadeSeconds = 30);
 
 // Changed at runtime through the API, kept by PlaybackStore, read by
 // PlaylistPlayer. A request's own `group` and `fromStart` win over it.
 public sealed class PlaybackSettings
 {
+    public const int MaxSleepFadeSeconds = 600;
+
     private volatile PlaybackSettingsView _current = new();
 
     // Raised after a change, never while restoring.
@@ -27,14 +32,19 @@ public sealed class PlaybackSettings
 
     public bool FindRadioLikes => _current.FindRadioLikes;
 
-    // Null keeps. Answers the settings after the change.
-    public PlaybackSettingsView Set(bool? groupBooks, bool? resumeBooks = null, bool? findRadioLikes = null)
+    public int SleepFadeSeconds => _current.SleepFadeSeconds;
+
+    // Null keeps. Answers the settings after the change; the caller checks
+    // sleepFadeSeconds' range.
+    public PlaybackSettingsView Set(bool? groupBooks, bool? resumeBooks = null, bool? findRadioLikes = null,
+        int? sleepFadeSeconds = null)
     {
         var next = _current with
         {
             GroupBooks = groupBooks ?? _current.GroupBooks,
             ResumeBooks = resumeBooks ?? _current.ResumeBooks,
             FindRadioLikes = findRadioLikes ?? _current.FindRadioLikes,
+            SleepFadeSeconds = sleepFadeSeconds ?? _current.SleepFadeSeconds,
         };
         if (next == _current)
             return next;

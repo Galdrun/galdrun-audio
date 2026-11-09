@@ -454,7 +454,7 @@ public sealed class LibraryTests : IAsyncDisposable
             command.ExecuteNonQuery();
         }
 
-        Assert.Equal(31, _database.Migrate().Value);
+        Assert.Equal(32, _database.Migrate().Value);
 
         Assert.Equal(7, Count("SELECT track_id FROM library_file WHERE path = 'C:\\m\\one.wav'"));
         Assert.Equal(3, Count("SELECT artist_id FROM track WHERE id = 7"));
@@ -489,7 +489,7 @@ public sealed class LibraryTests : IAsyncDisposable
             command.ExecuteNonQuery();
         }
 
-        Assert.Equal(31, _database.Migrate().Value);
+        Assert.Equal(32, _database.Migrate().Value);
 
         var store = new PlaylistStore(_database);
         var entries = store.Entries(1).Value;
@@ -527,7 +527,7 @@ public sealed class LibraryTests : IAsyncDisposable
             command.ExecuteNonQuery();
         }
 
-        Assert.Equal(31, _database.Migrate().Value);
+        Assert.Equal(32, _database.Migrate().Value);
 
         var store = new PlaylistStore(_database);
         var kept = store.Favorites(UserStore.Everyone).Value;
@@ -541,8 +541,8 @@ public sealed class LibraryTests : IAsyncDisposable
     [Fact]
     public async Task Migrating_twice_changes_nothing_and_a_newer_schema_is_refused()
     {
-        Assert.Equal(31, _database.Migrate().Value);
-        Assert.Equal(31, _database.Migrate().Value);
+        Assert.Equal(32, _database.Migrate().Value);
+        Assert.Equal(32, _database.Migrate().Value);
 
         await using (var connection = _database.Open())
         {

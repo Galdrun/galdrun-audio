@@ -90,7 +90,7 @@ public sealed partial class ApiTests : IAsyncDisposable
         // The self-check: the media endpoint answered its probe, and the
         // database is at the latest schema.
         Assert.Equal($"reachable at {baseUri}", status["media"]!["reachability"]!.GetValue<string>());
-        Assert.Equal(31, status["library"]!["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(32, status["library"]!["schemaVersion"]!.GetValue<int>());
         Assert.NotNull(status["library"]!["indexer"]!["queueDepth"]);
         Assert.Equal(["local", "webradio", "tidal", "fake", "slow"],
             status["providers"]!.AsArray().Select(p => p!["id"]!.GetValue<string>()));

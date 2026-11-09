@@ -161,6 +161,8 @@ const ICONS = {
   device: '<rect x="6" y="3" width="12" height="18" rx="2"/><circle cx="12" cy="14.5" r="2.5"/><circle cx="12" cy="7.5" r="1"/>',
   chip: '<rect x="7" y="7" width="10" height="10" rx="1"/><path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"/>',
   cloud: '<path d="M7 18a4 4 0 0 1-.6-8A6 6 0 0 1 18 9.5a4.3 4.3 0 0 1-.5 8.5z"/>',
+  // A crescent moon with a large and a small Z: the sleep timer.
+  sleep: '<path d="M17.5 15.2A7 7 0 1 1 8.8 6.5a5.6 5.6 0 0 0 8.7 8.7z"/><path d="M13.5 3h4l-4 4.4h4M19 10h2.6L19 12.8h2.6"/>',
   sparkle: '<path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z"/>',
   pulse: '<path d="M2 13h5l3-9 4 17 3-10 2 2h3"/>',
   gauge: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
@@ -524,7 +526,21 @@ function renderPlayback() {
     box.checked = S.playback?.[key] ?? true;
     box.parentElement.classList.toggle('muted', box.disabled);
   }
+  const fade = $('#sleepFadeSeconds');
+  fade.disabled = typeof S.playback?.sleepFadeSeconds !== 'number';
+  if (document.activeElement !== fade) fade.value = String(S.playback?.sleepFadeSeconds ?? 30);
 }
+
+// The sleep timer's fade out, 0 to 600 s, saved once the field is left.
+$('#sleepFadeSeconds').addEventListener('change', (e) => {
+  const v = Math.round(Number(e.target.value));
+  if (e.target.value === '' || !(v >= 0 && v <= 600)) { renderPlayback(); return; }
+  act(async () => {
+    S.playback = await api('PATCH', 'settings/playback', { sleepFadeSeconds: v });
+    renderPlayback();
+    return S.playback;
+  }, 'settings.sleepFadeSaved');
+});
 
 for (const [key, done] of Object.entries(PLAYBACK_TOGGLES)) {
   $(`#${key}`).addEventListener('change', (e) => act(async () => {
@@ -782,8 +798,8 @@ function roomTile(client, extra) {
 }
 
 // The tile with a +, first in the strip: it lists the rooms in other zones in a popover, and the
-// one picked moves into this zone.
-function roomAddTile(zone, others) {
+// one picked moves into this zone (or goes to pick; empty: the text when none is left).
+function roomAddTile(zone, others, pick = (c) => moveRoom(c, zone), empty = 'zones.everyRoomIs') {
   return h('span', { class: 'room-add-pop' },
     h('button', {
       type: 'button', class: 'room-tile room-add', title: tt('zones.addRoom'), 'aria-label': tt('zones.addRoom'), 'aria-haspopup': 'dialog',
@@ -797,12 +813,12 @@ function roomAddTile(zone, others) {
         const room = S.rooms.find((r) => r.client === c);
         const from = room?.desired?.zone && zoneName(room.desired.zone);
         return h('button', {
-          type: 'button', title: c, onclick: (e) => { e.currentTarget.closest('[popover]').hidePopover(); moveRoom(c, zone); },
+          type: 'button', title: c, onclick: (e) => { e.currentTarget.closest('[popover]').hidePopover(); pick(c); },
         }, h('span', { class: 'dot' + (room?.actual?.connected ? ' on' : '') }), h('span', { class: 'room-name' }, roomName(c)),
         // The zone it leaves, where that is more than the room on its own.
         from && from !== roomName(c) && h('span', { class: 'muted small' }, from));
       })
-      : h('p', { class: 'muted small' }, tt('zones.everyRoomIs'))));
+      : h('p', { class: 'muted small' }, tt(empty))));
 }
 
 // --- multi-select ----------------------------------------------------------------
@@ -1760,7 +1776,7 @@ function zoneCard(z) {
         h('span', { class: 'tools' },
         z.autoFill && autoFillButton(z),
         h('button', { class: 'icon-only', disabled: !shownCount, title: tt('zones.saveAsPlaylistTitle'), 'aria-label': tt('zones.saveAsPlaylist'), onclick: () => saveQueue(z.zone) }, icon('playlists')),
-        transportButton('setup', tt('zones.zoneSetup'), () => openZoneSetup(z.zone)))),
+        sleepButton(z))),
       h('div', { class: 'table-wrap plain queue-list', ...queueDrop(z.zone) },
         q ? queueTable(z.zone, q) : h('p', { class: 'muted small' }, tt('zones.noQueue')),
         h('p', { class: 'muted small drop-hint' }, tt('zones.dragTracksAlbums'))),
@@ -1796,6 +1812,63 @@ function listenerButton(z) {
       },
     }, h('span', { class: 'room-name' }, n || tt('common.household'))))));
 }
+
+// The sleep timer (server: zones/{zone}/sleep-timer): a click starts it at 60
+// minutes, each further click takes 10 off what is left (57 -> 50), down to
+// off; a long press switches it off. Its minutes left are on the button,
+// counted down here from the seconds the server last answered.
+const SLEEP_START = 60, SLEEP_STEP = 10, SLEEP_HOLD_MS = 600;
+const sleepDeadlines = new Map(); // endsAt -> this page's deadline (ms), so the clocks need not agree
+function sleepMinutesLeft(z) {
+  const t = z.sleepTimer;
+  if (!t?.active) return 0;
+  if (!sleepDeadlines.has(t.endsAt)) sleepDeadlines.set(t.endsAt, Date.now() + t.remainingSeconds * 1000);
+  return Math.max(0, Math.ceil((sleepDeadlines.get(t.endsAt) - Date.now()) / 60000));
+}
+function sleepTitle(left) {
+  return left ? tt('zones.sleepOn', { n: left }) : tt('zones.sleepOff');
+}
+function setSleep(zone, minutes) {
+  return act(() => (minutes > 0
+    ? api('PUT', `zones/${enc(zone)}/sleep-timer`, { minutes })
+    : api('DELETE', `zones/${enc(zone)}/sleep-timer`)).then((t) => {
+    const z = S.zones.find((x) => x.zone === zone);
+    if (z) { z.sleepTimer = t; renderZones(); }
+    return t;
+  }));
+}
+function sleepButton(z) {
+  const left = sleepMinutesLeft(z);
+  let hold = null, held = false;
+  const release = () => clearTimeout(hold);
+  return h('button', {
+    type: 'button', class: 'icon-only mode sleep-button' + (left ? ' on' : ''), 'data-sleep-zone': z.zone,
+    title: sleepTitle(left), 'aria-label': sleepTitle(left), 'aria-pressed': String(left > 0),
+    onpointerdown: (e) => {
+      if (e.button !== 0) return;
+      held = false;
+      hold = setTimeout(() => { held = true; if (sleepMinutesLeft(z)) setSleep(z.zone, 0); }, SLEEP_HOLD_MS);
+    },
+    onpointerup: release, onpointerleave: release, onpointercancel: release,
+    oncontextmenu: (e) => e.preventDefault(), // a long touch is the long press, not a menu
+    onclick: () => {
+      if (held) { held = false; return; }
+      const now = sleepMinutesLeft(z);
+      setSleep(z.zone, now ? Math.ceil(now / SLEEP_STEP) * SLEEP_STEP - SLEEP_STEP : SLEEP_START);
+    },
+  }, icon('sleep'), left > 0 && h('span', { class: 'sleep-left', 'aria-hidden': 'true' }, String(left)));
+}
+// The minutes on the buttons follow the clock; the server says when it ran out.
+setInterval(() => {
+  for (const b of document.querySelectorAll('.sleep-button.on')) {
+    const z = S.zones.find((x) => x.zone === b.dataset.sleepZone);
+    const left = z ? sleepMinutesLeft(z) : 0;
+    const badge = b.querySelector('.sleep-left');
+    if (badge && left > 0) badge.textContent = String(left);
+    b.title = sleepTitle(left);
+    b.setAttribute('aria-label', b.title);
+  }
+}, 10000);
 
 // AutoFill on or off, beside shuffle; its settings are in the zone's setup.
 function autoFillButton(z) {
@@ -4384,6 +4457,320 @@ $('#importForm').addEventListener('submit', (e) => {
     (r) => tt('stations.stationSImported', { n: r.length }));
 });
 
+// --- timed plays ------------------------------------------------------------------
+// A playlist started and stopped in rooms by a weekly schedule (server
+// Playback/TimedPlays.cs): the timed plays on the left, the picked one's
+// rooms, playlist, volume and modes and its week of blocks on the right, the
+// picked block's settings under the week. Every change is saved at once, as
+// the whole definition (PUT); typing and sliding wait for a pause first.
+
+const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const SLOT = 15;     // the minutes a block snaps to
+const HOUR_PX = 24;  // the week's height per hour
+// block: the picked block object; saving and dragging: the page's own edit
+// is under way, so an event does not put the server's definition over it.
+const TP = { plays: [], open: null, block: null, scrolled: null, saving: false, dragging: false };
+
+async function loadTimedPlays() {
+  const [plays, playlists] = await Promise.all([api('GET', 'timed-plays'), api('GET', 'playlists')]);
+  TP.plays = plays;
+  S.playlists = playlists;
+  if (!plays.some((p) => p.id === TP.open)) TP.open = plays[0]?.id ?? null;
+  TP.block = null;
+  renderTimedPlays();
+}
+
+const fmtMinute = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+const blockOrder = (a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || a.start - b.start;
+
+// One save at a time; a refusal reads the timed plays again.
+let tpSaveTimer;
+function saveTimedPlay(p, delay = 0) {
+  clearTimeout(tpSaveTimer);
+  TP.saving = true;
+  tpSaveTimer = setTimeout(async () => {
+    p.definition.blocks.sort(blockOrder);
+    const saved = await act(() => api('PUT', `timed-plays/${p.id}`, p.definition));
+    TP.saving = false;
+    if (saved) { p.run = saved.run; p.resume = saved.resume; renderTimedPlays(); } else act(loadTimedPlays);
+  }, delay);
+}
+
+// timedPlay.changed: a timed play as it is now (edited here or elsewhere, by
+// a tool, or started and stopped by the server), or its id once deleted. The
+// picked block stays picked when it is still there.
+function onTimedPlayChanged(data) {
+  const at = TP.plays.findIndex((p) => p.id === data.id);
+  if (data.removed) {
+    if (at >= 0) TP.plays.splice(at, 1);
+    if (TP.open === data.id) { TP.open = TP.plays[0]?.id ?? null; TP.block = null; }
+  } else if (at < 0) {
+    TP.plays.push(data);
+  } else {
+    const p = TP.plays[at];
+    p.run = data.run;
+    p.resume = data.resume;
+    if (!(p.id === TP.open && (TP.saving || TP.dragging))) {
+      const picked = p.id === TP.open && TP.block;
+      p.definition = data.definition;
+      if (picked) TP.block = p.definition.blocks.find((b) => b.day === picked.day && b.start === picked.start) ?? null;
+    }
+  }
+  if (page === 'timed') renderTimedPlays();
+}
+
+async function newTimedPlay() {
+  const created = await act(() => api('POST', 'timed-plays', { name: tt('timed.newName'), volume: 0.3 }));
+  if (!created) return;
+  // Its event may have listed it already.
+  if (!TP.plays.some((p) => p.id === created.id)) TP.plays.push(created);
+  TP.open = created.id;
+  TP.block = null;
+  renderTimedPlays();
+}
+
+async function deleteTimedPlay(p) {
+  if (!await confirmBox({ icon: 'trash', title: tt('timed.delete'), text: tt('timed.deleteConfirm', { name: p.definition.name }), ok: tt('timed.delete') })) return;
+  if (await act(() => api('DELETE', `timed-plays/${p.id}`).then(() => true), 'timed.deleted') !== true) return;
+  TP.plays = TP.plays.filter((x) => x !== p);
+  TP.open = TP.plays[0]?.id ?? null;
+  TP.block = null;
+  renderTimedPlays();
+}
+
+function renderTimedPlays() {
+  patch($('#tpList'), TP.plays.length
+    ? h('ul', { class: 'tree', role: 'listbox', 'aria-label': tt('nav.timedPlays') }, TP.plays.map((p) => h('li', { role: 'option', 'aria-selected': String(p.id === TP.open) },
+      h('div', { class: 'tree-row' + (p.id === TP.open ? ' current' : '') },
+        h('button', { type: 'button', class: 'tree-open', title: p.definition.name, onclick: () => { TP.open = p.id; TP.block = null; renderTimedPlays(); } },
+          icon('clock'), h('span', { class: 'tree-name' }, p.definition.name),
+          p.run ? h('span', { class: 'pill good' }, tt('timed.running'))
+            : !p.definition.enabled && h('span', { class: 'tree-count' }, tt('timed.inactive'))),
+        treeMenu(tt('timed.itemMenu', { name: p.definition.name }), [
+          h('button', { type: 'button', role: 'menuitem', onclick: () => { p.definition.enabled = !p.definition.enabled; renderTimedPlays(); saveTimedPlay(p); } },
+            icon('power'), tt(p.definition.enabled ? 'timed.deactivate' : 'timed.activate')),
+          h('button', { type: 'button', role: 'menuitem', class: 'danger', onclick: () => deleteTimedPlay(p) }, icon('trash'), tt('timed.delete'))])))))
+    : h('p', { class: 'muted small tree-empty' }, tt('timed.none')));
+  const p = TP.plays.find((x) => x.id === TP.open);
+  patch($('#tpDetail'), p ? timedPlayDetail(p) : h('p', { class: 'muted pl-pick' }, tt('timed.pickOrAdd')));
+  // The week opens at its first block (else at 6:00), once per timed play.
+  const week = $('#tpDetail .tp-week-body');
+  if (p && week && TP.scrolled !== p.id) {
+    TP.scrolled = p.id;
+    week.scrollTop = (Math.min(6 * 60, ...p.definition.blocks.map((b) => b.start)) / 60) * HOUR_PX;
+  }
+}
+
+function timedPlayDetail(p) {
+  const d = p.definition;
+  const set = (change, delay) => { Object.assign(d, change); renderTimedPlays(); saveTimedPlay(p, delay); };
+  const others = S.rooms.map((r) => r.client).filter((c) => !d.rooms.includes(c));
+  return [
+    h('div', { class: 'tp-head' },
+      h('input', { class: 'tp-name', value: d.name, maxlength: '64', 'aria-label': tt('timed.name'), oninput: (e) => set({ name: e.target.value }, 600) }),
+      p.run && h('span', { class: 'pill good', title: tt('timed.runningIn', { zone: zoneName(p.run.zone) }) }, tt('timed.running')),
+      h('label', { class: 'tp-check' }, h('input', { type: 'checkbox', checked: d.enabled, onchange: (e) => set({ enabled: e.target.checked }) }), tt('timed.active')),
+      h('button', { type: 'button', class: 'icon-only', title: tt('timed.delete'), 'aria-label': tt('timed.delete'), onclick: () => deleteTimedPlay(p) }, icon('trash'))),
+    h('p', { class: 'help' }, tt('timed.howItRuns')),
+    h('div', { class: 'room-strip tp-rooms', role: 'group', 'aria-label': tt('zones.rooms') },
+      roomAddTile(null, others, (c) => set({ rooms: [...d.rooms, c] }), 'timed.everyRoomIs'),
+      d.rooms.map((c) => roomTile(c, h('button', { class: 'room-out', title: tt('timed.removeRoom', { name: roomName(c) }), 'aria-label': tt('timed.removeRoom', { name: roomName(c) }),
+        onclick: () => set({ rooms: d.rooms.filter((x) => x !== c) }) }, icon('close'))))),
+    h('div', { class: 'tp-row tp-modes' },
+      h('select', { class: 'tp-playlist', 'aria-label': tt('playlists.playlist'), value: d.playlist == null ? '' : String(d.playlist),
+        onchange: (e) => set({ playlist: e.target.value ? Number(e.target.value) : null }) },
+      h('option', { value: '' }, tt('timed.pickPlaylist')),
+      S.playlists.map((pl) => h('option', { value: String(pl.id) }, pl.name))),
+      timedVolume(d.volume, (v) => set({ volume: v }, 400), tt('timed.volume')),
+      h('span', { class: 'tools tp-tools' },
+        h('button', { type: 'button', class: 'icon-only mode' + (d.autoFill ? ' on' : ''), title: tt(d.autoFill ? 'zones.autofillOn' : 'zones.autofillOff'), 'aria-label': 'AutoFill',
+          'aria-pressed': String(d.autoFill), onclick: () => set({ autoFill: !d.autoFill }) }, icon('sparkle')),
+        shuffleButton(d.shuffle, false, (v) => set({ shuffle: v })),
+        repeatButton(d.repeat, false, (v) => set({ repeat: v }))),
+      timedSeconds('timed.fadeIn', d.fadeInSeconds, (v) => set({ fadeInSeconds: v }, 600)),
+      timedSeconds('timed.fadeOut', d.fadeOutSeconds, (v) => set({ fadeOutSeconds: v }, 600))),
+    timedWeek(p),
+    TP.block && d.blocks.includes(TP.block) && timedBlockDetail(p, TP.block),
+  ];
+}
+
+function timedVolume(value, onset, label, disabled = false) {
+  return h('label', { class: 'tp-volume', title: label },
+    icon('volume'),
+    h('input', { type: 'range', min: 0, max: 1, step: 0.01, value: String(value), disabled, 'aria-label': label, oninput: (e) => onset(Number(e.target.value)) }),
+    h('span', { class: 'tp-pct' }, `${Math.round(value * 100)}%`));
+}
+
+function timedSeconds(label, value, onset) {
+  return h('label', { class: 'tp-fade' }, tt(label),
+    h('input', { type: 'number', min: 0, max: 600, step: 1, value: String(value), oninput: (e) => {
+      const v = Math.round(Number(e.target.value));
+      if (e.target.value !== '' && v >= 0 && v <= 600) onset(v);
+    } }), tt('timed.seconds'));
+}
+
+// The week: a column per day, 24 hours tall, its blocks laid in it. A drag
+// in a day adds a block; a block is dragged to move, by its edges to resize.
+function timedWeek(p) {
+  const blocks = p.definition.blocks;
+  return h('div', { class: 'tp-week', style: `--hour: ${HOUR_PX}px` },
+    h('div', { class: 'tp-week-head' }, h('span'), DAYS.map((day) => h('span', { class: 'tp-day-name' }, tt(`timed.day.${day}`)))),
+    h('div', { class: 'tp-week-body' },
+      h('div', { class: 'tp-hours', 'aria-hidden': 'true' }, Array.from({ length: 24 }, (_, hr) => h('span', {}, fmtMinute(hr * 60)))),
+      DAYS.map((day) => h('div', { class: 'tp-day', role: 'group', 'aria-label': tt(`timed.day.${day}`), onpointerdown: (e) => timedPointer(e, p, day) },
+        blocks.filter((b) => b.day === day).map((b) => h('div', {
+          class: 'tp-block' + (b === TP.block ? ' selected' : '') + (b.enabled ? '' : ' off'),
+          style: `top: ${(b.start / 60) * HOUR_PX}px; height: ${((b.end - b.start) / 60) * HOUR_PX}px`,
+          'data-index': String(blocks.indexOf(b)), tabindex: '0', role: 'button',
+          'aria-label': `${tt(`timed.day.${day}`)} ${fmtMinute(b.start)}–${fmtMinute(b.end)}`,
+          onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); TP.block = b; renderTimedPlays(); } },
+        }, h('span', { class: 'tp-grip top' }),
+        h('span', { class: 'tp-block-time' }, `${fmtMinute(b.start)}–${fmtMinute(b.end)}`),
+        b.resume && icon('bookmark'),
+        h('span', { class: 'tp-grip bottom' })))))),
+    h('p', { class: 'help' }, tt('timed.weekHelp')));
+}
+
+function timedPointer(e, p, day) {
+  if (e.button !== 0) return;
+  const col = e.currentTarget;
+  const blocks = p.definition.blocks;
+  const minute = (y, round = Math.round) => Math.max(0, Math.min(24 * 60, round(((y - col.getBoundingClientRect().top) / HOUR_PX) * 60 / SLOT) * SLOT));
+  const el = e.target.closest('.tp-block');
+  let block, mode;
+  if (el) {
+    block = blocks[Number(el.dataset.index)];
+    mode = e.target.classList.contains('top') ? 'top' : e.target.classList.contains('bottom') ? 'bottom' : 'move';
+  } else {
+    // A new block is an hour long, or up to the next block; dragged it grows,
+    // resized afterwards it may be shorter.
+    const at = Math.min(24 * 60 - SLOT, minute(e.clientY, Math.floor));
+    const end = Math.min(at + 60, 24 * 60, ...blocks.filter((b) => b.day === day && b.start > at).map((b) => b.start));
+    block = { day, start: at, end, enabled: true, resume: true, overrideVolume: false, volume: p.definition.volume };
+    // On a touch screen a tap adds it at once: a drag there scrolls.
+    if (e.pointerType === 'touch') {
+      blocks.push(block);
+      TP.block = block;
+      renderTimedPlays();
+      saveTimedPlay(p);
+      return;
+    }
+    blocks.push(block);
+    mode = 'create';
+  }
+  // Its neighbours on the day bound it: blocks never overlap.
+  const others = blocks.filter((b) => b !== block && b.day === day);
+  const lo = Math.max(0, ...others.filter((b) => b.end <= block.start).map((b) => b.end));
+  const hi = Math.min(24 * 60, ...others.filter((b) => b.start >= block.end).map((b) => b.start));
+  const before = { day: block.day, start: block.start, end: block.end };
+  // A moved block goes to the day under the pointer, into the free time
+  // there that holds the pointer; where none fits, it stays.
+  const cols = [...col.parentElement.querySelectorAll('.tp-day')];
+  const dayAt = (x) => DAYS[cols.findIndex((c) => { const r = c.getBoundingClientRect(); return x >= r.left && x < r.right; })] ?? block.day;
+  const grab = minute(e.clientY) - block.start;
+  // No text selection while dragging; a field typed in before loses focus, so Del then removes the block.
+  e.preventDefault();
+  document.activeElement?.blur();
+  col.setPointerCapture(e.pointerId);
+  const move = (ev) => {
+    const m = minute(ev.clientY);
+    if (mode === 'create') {
+      block.start = Math.max(lo, Math.min(before.start, m));
+      block.end = Math.min(hi, Math.max(before.end, m));
+    } else if (mode === 'top') block.start = Math.max(lo, Math.min(block.end - SLOT, m));
+    else if (mode === 'bottom') block.end = Math.min(hi, Math.max(block.start + SLOT, m));
+    else {
+      const length = before.end - before.start, target = dayAt(ev.clientX);
+      const rest = blocks.filter((b) => b !== block && b.day === target);
+      if (rest.some((b) => b.start <= m && m < b.end)) return;
+      const gapLo = Math.max(0, ...rest.filter((b) => b.end <= m).map((b) => b.end));
+      const gapHi = Math.min(24 * 60, ...rest.filter((b) => b.start > m).map((b) => b.start));
+      if (gapHi - gapLo < length) return;
+      block.day = target;
+      block.start = Math.max(gapLo, Math.min(gapHi - length, m - grab));
+      block.end = block.start + length;
+    }
+    renderTimedPlays();
+  };
+  const up = () => {
+    col.removeEventListener('pointermove', move);
+    col.removeEventListener('pointerup', up);
+    col.removeEventListener('pointercancel', up);
+    TP.dragging = false;
+    renderTimedPlays();
+    if (mode === 'create' || block.day !== before.day || block.start !== before.start || block.end !== before.end) saveTimedPlay(p);
+  };
+  col.addEventListener('pointermove', move);
+  col.addEventListener('pointerup', up);
+  col.addEventListener('pointercancel', up);
+  TP.dragging = true;
+  TP.block = block;
+  renderTimedPlays();
+}
+
+// The picked block: its times, on or off, resume or start over, its own volume.
+function timedBlockDetail(p, b) {
+  const set = (change, delay) => { Object.assign(b, change); renderTimedPlays(); saveTimedPlay(p, delay); };
+  const others = p.definition.blocks.filter((x) => x !== b && x.day === b.day);
+  // A time typed in counts once its field is left (while typing, 20:17 passes
+  // 20:01). One that ends before it starts or runs into a neighbour is put
+  // right: the other end moves along, both stay between the neighbours, and
+  // a note says so. An end of 00:00 is midnight.
+  const setTime = (key, text) => {
+    const [hh, mm] = text.split(':').map(Number);
+    let m = hh * 60 + mm;
+    if (key === 'end' && m === 0) m = 24 * 60;
+    if (!Number.isFinite(m)) { renderTimedPlays(); return; }
+    if (m === b[key]) return;
+    const lo = Math.max(0, ...others.filter((x) => x.end <= b.start).map((x) => x.end));
+    const hi = Math.min(24 * 60, ...others.filter((x) => x.start >= b.end).map((x) => x.start));
+    const length = b.end - b.start;
+    const typed = { start: b.start, end: b.end, [key]: m };
+    let { start, end } = typed;
+    if (key === 'start') {
+      start = Math.max(lo, Math.min(hi - SLOT, start));
+      if (end <= start) end = Math.min(hi, start + length);
+    } else {
+      end = Math.max(lo + SLOT, Math.min(hi, end));
+      if (start >= end) start = Math.max(lo, end - length);
+    }
+    if (start !== typed.start || end !== typed.end) flash('timed.timeCorrected', true);
+    set({ start, end });
+  };
+  const timeField = (key, value) => h('input', { type: 'time', step: SLOT * 60, value: fmtMinute(value),
+    onblur: (e) => setTime(key, e.target.value), onkeydown: (e) => { if (e.key === 'Enter') e.target.blur(); } });
+  return h('div', { class: 'tp-block-detail' },
+    h('h3', {}, `${tt(`timed.day.${b.day}`)} ${fmtMinute(b.start)}–${fmtMinute(b.end)}`),
+    h('div', { class: 'tp-row' },
+      h('label', { class: 'tp-fade' }, tt('timed.from'), timeField('start', b.start)),
+      h('label', { class: 'tp-fade' }, tt('timed.to'), timeField('end', b.end % (24 * 60))),
+      h('label', { class: 'tp-check' }, h('input', { type: 'checkbox', checked: b.enabled, onchange: (e) => set({ enabled: e.target.checked }) }), tt('timed.blockActive')),
+      h('span', { class: 'tp-seg', role: 'group', 'aria-label': tt('timed.whereToStart') },
+        h('button', { type: 'button', class: b.resume ? 'on' : '', 'aria-pressed': String(b.resume), onclick: () => set({ resume: true }) }, tt('timed.resume')),
+        h('button', { type: 'button', class: b.resume ? '' : 'on', 'aria-pressed': String(!b.resume), onclick: () => set({ resume: false }) }, tt('timed.startOver')))),
+    h('div', { class: 'tp-row' },
+      h('label', { class: 'tp-check' }, h('input', { type: 'checkbox', checked: b.overrideVolume, onchange: (e) => set({ overrideVolume: e.target.checked }) }), tt('timed.overrideVolume')),
+      timedVolume(b.volume, (v) => set({ volume: v }, 400), tt('timed.blockVolume'), !b.overrideVolume),
+      h('button', { type: 'button', class: 'danger tp-remove', onclick: () => removeTimedBlock(p, b) }, icon('trash'), tt('timed.removeBlock'))));
+}
+
+function removeTimedBlock(p, b) {
+  p.definition.blocks = p.definition.blocks.filter((x) => x !== b);
+  TP.block = null;
+  renderTimedPlays();
+  saveTimedPlay(p);
+}
+
+$('#tpNew').addEventListener('click', newTimedPlay);
+// Del removes the picked block, unless a field is being typed in.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Delete' || page !== 'timed' || !TP.block || TP.dragging || e.target.closest('input, select, textarea, [contenteditable]')) return;
+  const p = TP.plays.find((x) => x.id === TP.open);
+  if (!p?.definition.blocks.includes(TP.block)) return;
+  e.preventDefault();
+  removeTimedBlock(p, TP.block);
+});
+
 // --- index ----------------------------------------------------------------------
 // What the indexer did: its counters (from status and `indexer.progress`), what
 // the local provider browses now, and the indexer's lines in the tailed server log
@@ -6680,6 +7067,8 @@ const EVENT_TYPES = [
   'favorite.changed', 'zone.userChanged', 'room.userChanged', 'proposals.running', 'proposals.changed', // server phases 36 and 38
   'room.imageChanged', 'room.name', 'room.forgotten', // server phase 39
   'artwork.changed', // server phase 40
+  'timedPlay.changed',
+  'zone.sleepTimerChanged',
 ];
 const evCounts = new Map();
 
@@ -6693,7 +7082,7 @@ function connectEvents() {
   es.onopen = () => {
     clearTimeout(evRetry);
     setConn({ events: tt('events.eventsLive'), eventsOk: true });
-    if (eventsOpened) refreshSoon();
+    if (eventsOpened) { refreshSoon(); if (page === 'timed') act(loadTimedPlays); }
     eventsOpened = true;
   };
   // The browser's own retry can sit on a dead socket for a long time, so the
@@ -6739,6 +7128,11 @@ function onEvent(type, e) {
   } else if (type === 'queue.autoFilled') {
     onAutoFilled(data);
     refreshSoon();
+  } else if (type === 'zone.sleepTimerChanged') {
+    const zone = S.zones.find((z) => z.zone === data.zone);
+    if (zone) { zone.sleepTimer = data.sleepTimer; renderZones(); }
+  } else if (type === 'timedPlay.changed') {
+    onTimedPlayChanged(data);
   } else if (type === 'favorite.changed') {
     act(loadFavorites);
   } else if (type === 'proposals.running' || type === 'proposals.changed') {
@@ -6873,6 +7267,7 @@ const onShow = {
   settings: () => { loadGuiSettings(); act(loadCores); act(loadCoreAudio); loadPlayback(); loadLogging(); },
   playlists: () => act(loadPlaylists),
   stations: () => act(loadStations),
+  timed: () => act(loadTimedPlays),
 };
 
 function showPage() {

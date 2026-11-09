@@ -87,6 +87,7 @@ public static class LibraryServiceCollectionExtensions
         services.AddSingleton<AiUsageStore>();
         services.AddSingleton<BookPositionStore>();
         services.AddSingleton<ProposalStore>();
+        services.AddSingleton<TimedPlayStore>();
         services.AddSingleton<LibraryIndexer>();
         return services.AddHostedService(s => s.GetRequiredService<LibraryIndexer>());
     }

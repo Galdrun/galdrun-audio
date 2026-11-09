@@ -52,6 +52,8 @@ public sealed record PlayRequest(long? Item = null, bool FromStart = false);
 
 public sealed record SeekRequest(long Item, long PositionMs);
 
+public sealed record SleepTimerRequest(int Minutes);
+
 // The zone's full membership, never a delta.
 public sealed record ClientsRequest(IReadOnlyList<string> Clients);
 
@@ -127,7 +129,8 @@ public sealed record EntriesRequest(IReadOnlyList<Track>? Tracks = null, int? In
     bool? Group = null, RadioStation? Station = null);
 
 // The house's playback settings: null keeps.
-public sealed record PlaybackSettingsPatch(bool? GroupBooks = null, bool? ResumeBooks = null, bool? FindRadioLikes = null);
+public sealed record PlaybackSettingsPatch(bool? GroupBooks = null, bool? ResumeBooks = null, bool? FindRadioLikes = null,
+    int? SleepFadeSeconds = null);
 
 // Exactly one of a track, a station, an album or a node; a node must be a
 // book (phase 31: audiobook tracks), kept as one favourite with its parts.

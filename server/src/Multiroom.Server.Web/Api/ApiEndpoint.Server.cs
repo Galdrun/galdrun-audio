@@ -34,7 +34,7 @@ public sealed partial class ApiEndpoint
             Json(await serverUpdates.GetAsync(c.RequestAborted).ConfigureAwait(false))));
         app.MapPost("/api/v1/server/update", (Delegate)(async (HttpContext c) =>
             Answer(await serverUpdates.UpdateAsync(c.RequestAborted).ConfigureAwait(false))));
-        // The house's playback settings (groupBooks, resumeBooks, findRadioLikes), kept in playback.json;
+        // The house's playback settings (groupBooks, resumeBooks, findRadioLikes, sleepFadeSeconds), kept in playback.json;
         // a change publishes settings.playbackChanged.
         app.MapGet("/api/v1/settings/playback", () => Json(player.Settings.Current));
         app.MapMethods("/api/v1/settings/playback", [HttpMethods.Patch], (Delegate)(async (HttpContext c) =>
@@ -43,13 +43,19 @@ public sealed partial class ApiEndpoint
                 .ConfigureAwait(false);
             if (!body.IsSuccess)
                 return Error(body.Failure);
-            if (body.Value! is { GroupBooks: null, ResumeBooks: null, FindRadioLikes: null })
+            if (body.Value! is { GroupBooks: null, ResumeBooks: null, FindRadioLikes: null, SleepFadeSeconds: null })
             {
                 return Error(Result.Fail(ApiRequestError.InvalidRequest,
-                    "a playback settings patch needs groupBooks, resumeBooks, findRadioLikes, or several"));
+                    "a playback settings patch needs groupBooks, resumeBooks, findRadioLikes, sleepFadeSeconds, or several"));
+            }
+            if (body.Value.SleepFadeSeconds is < 0 or > PlaybackSettings.MaxSleepFadeSeconds)
+            {
+                return Error(Result.Fail(ApiRequestError.InvalidRequest,
+                    $"sleepFadeSeconds: 0 to {PlaybackSettings.MaxSleepFadeSeconds}"));
             }
             var before = player.Settings.Current;
-            var after = player.Settings.Set(body.Value.GroupBooks, body.Value.ResumeBooks, body.Value.FindRadioLikes);
+            var after = player.Settings.Set(body.Value.GroupBooks, body.Value.ResumeBooks, body.Value.FindRadioLikes,
+                body.Value.SleepFadeSeconds);
             if (after != before)
                 events.Publish("settings.playbackChanged", after);
             return Json(after);

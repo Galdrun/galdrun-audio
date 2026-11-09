@@ -68,6 +68,17 @@ public sealed class MultiroomTools
     // Phase 36: the household unless a user is named (list_users).
     private const string UserParameter = "Whose it is, a name from list_users; the household's when empty.";
 
+    private const string TimedPlayDefinitionParameter = "name; enabled; rooms (client ids from list_rooms); " +
+        "playlist (an id from list_playlists); volume (the zone's, 0.0 to 1.0); autoFill, shuffle, repeat (off, one, all); " +
+        "fadeInSeconds and fadeOutSeconds (0 to 600, default 3); blocks: each day (monday to sunday), start and end in minutes " +
+        "of the server's local day (0 to 1440, end after start), enabled, resume (true: continue where the last run " +
+        "stopped; false: start over), and a volume used when overrideVolume.";
+
+    private const string TimedPlayRules = "In each block the playlist starts in those of its rooms that play nothing, " +
+        "as one zone (not at all when every room plays); at the block's end that zone stops, only if the timed play " +
+        "started it and the zone still plays its playlist. Blocks that touch (a day's 1440 and the next day's 0) " +
+        "play on. Blocks of one day never overlap.";
+
     private const string UserScopeParameter = "Empty: the household's own. A name from list_users: theirs with the " +
         "household's. *: everyone's, each with its user.";
 
@@ -78,7 +89,8 @@ public sealed class MultiroomTools
     public MultiroomTools(UnifiedSearch search, ProviderRegistry providers, House house, IQueueEngine queues,
         PlaylistPlayer player, PlaylistStore playlists, LikeStore likes, AddInRegistry addIns, SongResolver resolver,
         PlayHistoryStore history, BookPositionStore bookPositions, ZoneKeeper zones, UserStore users, AudiobookLikes books, IProposals proposals,
-        EqualizerProfiles equalizerProfiles, StationStore stations, JsonSerializerOptions json)
+        EqualizerProfiles equalizerProfiles, StationStore stations, TimedPlayStore timedPlayStore, TimedPlays timedPlays,
+        JsonSerializerOptions json)
     {
         _json = json;
         _house = house;
@@ -180,6 +192,11 @@ public sealed class MultiroomTools
                     Preferred = [.. page.Items.Where(e => e.Track is { } t && preferred.Has(t)).Select(e => e.Id)],
                 };
             });
+
+        Add(McpTier.Read, "list_timed_plays", "Lists the timed plays: playlists started and stopped in rooms by a weekly " +
+            "schedule. Each answers its definition, run (the zone it started and plays now, else absent) and resume " +
+            "(where its last run stopped).",
+            () => Ok(timedPlayStore.All()));
 
         Add(McpTier.Read, "list_users", "The household's users: names a like, a favourite or a play may carry. " +
             "Without a user, the household's own marks are meant.",
@@ -342,6 +359,14 @@ public sealed class MultiroomTools
                 Ok(house.SetAutoFill(zone, new AutoFillPatch(enabled, threshold, count, source, request, fallback, avoidRecent))));
 
 
+        Add(McpTier.Control, "set_sleep_timer", "Sets a zone's sleep timer: after minutes (1 to 720) the zone fades out " +
+            "(over the house's sleepFadeSeconds) " +
+            "and stops, whatever plays; 0 switches it off. It overrides timed plays: while it runs, no timed play starts in " +
+            "the zone's rooms or stops the zone. A restart of the server ends it. The zone's sleepTimer in list_zones says " +
+            "whether one runs and the seconds left.",
+            ([Description(ZoneParameter)] string zone, [Description("Minutes from now, 1 to 720; 0 switches it off.")] int minutes) =>
+                Ok(house.SetSleepTimer(zone, minutes)));
+
         Add(McpTier.Control, "set_zone_volume", "Sets a zone's own volume (0.0 to 1.0) over its rooms', its mute, or both.",
             async ([Description(ZoneParameter)] string zone, double? volume = null, bool? muted = null, CancellationToken cancellationToken = default) =>
                 Ok(await house.SetZoneLevelAsync(zone, volume, muted, cancellationToken).ConfigureAwait(false)));
@@ -470,6 +495,16 @@ public sealed class MultiroomTools
                 return WebRadioProvider.ToStation(added);
             });
 
+        Add(McpTier.Modify, "create_timed_play", "Creates a timed play: a playlist started in rooms by a weekly schedule. " +
+            TimedPlayRules, ([Description(TimedPlayDefinitionParameter)] TimedPlayDefinition definition) =>
+                Ok(timedPlayStore.Create(definition)));
+
+        Add(McpTier.Modify, "update_timed_play", "Replaces a timed play's whole definition: read it with list_timed_plays, " +
+            "change what is asked, and send all of it back. " + TimedPlayRules,
+            ([Description("The timed play id, from list_timed_plays.")] long id,
+                [Description(TimedPlayDefinitionParameter)] TimedPlayDefinition definition) =>
+                Ok(timedPlayStore.Update(id, definition)));
+
         // Undoing a like or a favourite is the same tier as making one: the
         // agent may do both (the owner's decision, 2026-10-01).
         Add(McpTier.Modify, "unlike", "Removes a like.",
@@ -483,6 +518,10 @@ public sealed class MultiroomTools
 
         Add(McpTier.Destructive, "delete_playlist", "Deletes a stored playlist.",
             (long playlist) => new { playlist, deleted = Ok(playlists.DeletePlaylist(playlist)) });
+
+        Add(McpTier.Destructive, "delete_timed_play", "Deletes a timed play; what it started and still plays is stopped.",
+            async ([Description("The timed play id, from list_timed_plays.")] long id, CancellationToken cancellationToken = default) =>
+                new { id, deleted = Ok(await timedPlays.DeleteAsync(id, cancellationToken).ConfigureAwait(false)) });
 
         Add(McpTier.Destructive, "remove_playlist_entry", "Removes one entry from a stored playlist.",
             (long playlist, [Description("The entry id, from get_playlist_entries.")] long entry) =>
