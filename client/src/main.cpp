@@ -180,24 +180,24 @@ int main(int argc, char** argv)
     MULTIROOM_INFO(MULTIROOM_BRAND_SLUG "-client %s starting", versionString());
     const uint64_t startedAtNs = monotonicNowNs();
 
+    const std::string configPath =
+        options.configPath.empty() ? client_config::defaultPath() : options.configPath;
+
     // An updated client that ended before confirming its trial (a crash, or
     // no session in time) is replaced by the one before it.
-    const self_update::Trial trial = self_update::beginTrial(options.configPath);
+    const self_update::Trial trial = self_update::beginTrial(configPath);
     if (trial == self_update::Trial::Failed)
     {
         MULTIROOM_WARN("the updated client ended before it was confirmed; rolling back");
         log::closeLogFile();
         std::string error;
-        if (self_update::handOver("rollback", std::string(), argc, argv, error))
+        if (self_update::handOver("rollback", std::string(), configPath, argc, argv, error))
             return 0;
         std::fprintf(stderr, "%s\n", error.c_str());
         return 1;
     }
     if (trial == self_update::Trial::Running)
         MULTIROOM_INFO("running an update on trial until the server session is established");
-
-    const std::string configPath =
-        options.configPath.empty() ? client_config::defaultPath() : options.configPath;
 
     ClientConfig config;
     if (!loadOrCreateConfig(configPath, config))
@@ -518,7 +518,8 @@ int main(int argc, char** argv)
     if (!runtime.updateAction.empty())
     {
         std::string error;
-        if (self_update::handOver(runtime.updateAction, runtime.updateSha256, argc, argv, error))
+        if (self_update::handOver(runtime.updateAction, runtime.updateSha256, configPath, argc,
+                                  argv, error))
             return 0;
         std::fprintf(stderr, "%s\n", error.c_str());
         return 1;

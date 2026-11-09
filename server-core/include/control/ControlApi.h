@@ -123,6 +123,12 @@ public:
     // such an attach answers `unavailable`.
     void setRoomPort(uint16_t port) noexcept { roomPort_.store(port); }
 
+    // Where this core's executable is, reported by `status` for the .NET
+    // server's update, and how `core.restart` asks for the restart: the normal
+    // shutdown, then the executable started again in place (main.cpp). Without
+    // a `restart` (a Windows service) `core.restart` answers `unavailable`.
+    void setRestart(std::string executable, std::function<void()> restart);
+
     ControlApi(const ControlApi&) = delete;
     ControlApi& operator=(const ControlApi&) = delete;
 
@@ -251,6 +257,8 @@ private:
     bool hasAudio_ = false;
     AudioConfig audio_;
     AudioPersist persistAudio_;
+    std::string executable_;
+    std::function<void()> restart_;
     const uint64_t startedAtNs_;
 
     // The sampler belongs to whoever calls sampleSystem(); only the latest

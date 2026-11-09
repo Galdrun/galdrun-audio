@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.WindowsServices;
@@ -241,9 +242,14 @@ public static partial class ServerHost
         builder.Services.AddSingleton<SystemMonitor>();
         builder.Services.AddHostedService(services => services.GetRequiredService<SystemMonitor>());
         // Client packages kept here; the releases are read from GitHub.
+        var releases = new Uri("https://api.github.com/repos/Galdrun/galdrun-audio/releases?per_page=20");
         builder.Services.AddSingleton(new ClientUpdatesOptions(Path.Combine(settings.DataDirectory, "client-updates"),
-            new Uri("https://api.github.com/repos/Galdrun/galdrun-audio/releases?per_page=20")));
+            releases));
         builder.Services.AddSingleton<ClientUpdates>();
+        builder.Services.AddSingleton(new ServerUpdatesOptions(Path.Combine(settings.DataDirectory, "server-updates"),
+            releases, AppContext.BaseDirectory, ServerUpdates.TargetOf(RuntimeInformation.RuntimeIdentifier), Version,
+            WindowsServiceHelpers.IsWindowsService()));
+        builder.Services.AddSingleton<ServerUpdates>();
         builder.Services.AddSingleton<ApiEndpoint>();
         builder.Services.AddHostedService(services => services.GetRequiredService<ApiEndpoint>());
         // After the API, which it forwards /api to; stopped before it.
@@ -258,9 +264,13 @@ public static partial class ServerHost
         return builder;
     }
 
+    // RunAsync's answer when a server update wants the server started again
+    // (ServerUpdates; Program.cs does it).
+    public const int RestartExitCode = 75;
+
     // Runs until the stop signal (Ctrl+C, SIGTERM) or `stop`, then stops the
     // hosted services in reverse order. 0 on a clean stop, 1 when the host
-    // itself failed.
+    // itself failed, RestartExitCode after a server update.
     public static async Task<int> RunAsync(HostApplicationBuilder builder, CancellationToken stop)
     {
         using var host = builder.Build();
@@ -286,7 +296,7 @@ public static partial class ServerHost
             return 1;
         }
         LogStopped(log, clock.Elapsed.TotalSeconds);
-        return 0;
+        return host.Services.GetRequiredService<ServerUpdates>().RestartRequested ? RestartExitCode : 0;
     }
 
     [LoggerMessage(Level = LogLevel.Information,

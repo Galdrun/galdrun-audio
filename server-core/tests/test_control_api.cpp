@@ -1063,6 +1063,31 @@ MULTIROOM_TEST(control_api_changes_the_log_level_for_this_run)
     log::setLevel(before);
 }
 
+MULTIROOM_TEST(control_api_restarts_the_core_only_when_it_can)
+{
+    ApiRig rig;
+    LineClient caller(rig.listener->port());
+
+    // No restart given (a Windows service): refused, and status says so.
+    CHECK_EQ(errorOf(caller.request(R"({"command":"core.restart"})")), std::string("unavailable"));
+    json::Value status = caller.request(R"({"command":"status"})");
+    CHECK(!flag(*status.find("server"), "restartable"));
+
+    int restarts = 0;
+    rig.api->setRestart("/opt/galdrun/core/galdrun-core", [&restarts] { ++restarts; });
+    status = caller.request(R"({"command":"status"})");
+    CHECK(flag(*status.find("server"), "restartable"));
+    CHECK_EQ(text(*status.find("server"), "executable"), std::string("/opt/galdrun/core/galdrun-core"));
+
+    CHECK_EQ(errorOf(caller.request(R"({"command":"core.restart","params":{"now":true}})")),
+             std::string("invalidArgument"));
+    CHECK_EQ(restarts, 0);
+    json::Value restarting = caller.request(R"({"command":"core.restart"})");
+    CHECK(isOk(restarting));
+    CHECK(flag(restarting, "restarting"));
+    CHECK_EQ(restarts, 1);
+}
+
 MULTIROOM_TEST(control_api_changes_the_resampler_and_keeps_it)
 {
     ApiRig rig;

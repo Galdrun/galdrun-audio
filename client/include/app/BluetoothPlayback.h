@@ -5,15 +5,20 @@
 // server's stream and the sound card first and tells the server; when the
 // phone stops, the previous power state comes back. Audio goes through the same
 // engine, device selection and hardware volume as the server's stream, at the
-// phone's rate.
+// phone's rate. The room's volume and mute (runtime, published by
+// StreamPlayback) play on the room's volume path here too, at once: the phone's
+// stream has no timeline to schedule them on. A change of the selected device
+// or access mode reopens the output on the new one.
 //
 // Enabled by the board file's "bluetooth": true. Owner thread only.
 
 #include "app/ClientCommandHandler.h"
 #include "audio/AudioEngine.h"
 #include "audio/AudioRingBuffer.h"
+#include "audio/HardwareVolume.h"
 #include "audio/PlaybackSupervisor.h"
 #include "audio/RingBufferSource.h"
+#include "audio/VolumeControl.h"
 #include "bluetooth/BluetoothReceiver.h"
 
 #include <cstdint>
@@ -25,6 +30,9 @@ class BluetoothPlayback
 {
 public:
     explicit BluetoothPlayback(ClientRuntime& runtime);
+    // Tests: plays through `backend` and takes audio from `receiver`.
+    BluetoothPlayback(ClientRuntime& runtime, std::unique_ptr<IAudioBackend> backend,
+                      std::unique_ptr<IBluetoothReceiver> receiver);
     ~BluetoothPlayback();
     BluetoothPlayback(const BluetoothPlayback&) = delete;
     BluetoothPlayback& operator=(const BluetoothPlayback&) = delete;
@@ -36,17 +44,49 @@ public:
     bool active() const { return playing_; }
 
 private:
+    // The ring, scaled by the room's volume on its way to the device.
+    class VolumeSource final : public IAudioSource
+    {
+    public:
+        VolumeSource(RingBufferSource& ring, VolumeControl& volume) : ring_(ring), volume_(volume) {}
+        void prepare(const AudioFormat& format) override;
+        uint32_t render(void* buffer, uint32_t frameCount) override;
+
+    private:
+        RingBufferSource& ring_;
+        VolumeControl& volume_;
+        uint64_t cursor_ = 0; // audio thread
+    };
+
     void takeOver(uint64_t nowNs);
     void release(bool restorePower);
+    // The room's volume onto its path: the device's control, else the samples.
+    void applyVolume();
 
     ClientRuntime& runtime_;
     std::unique_ptr<IBluetoothReceiver> receiver_;
     AudioRingBuffer ring_;
-    RingBufferSource source_;
+    RingBufferSource ringSource_;
+    VolumeControl volume_;
+    VolumeSource source_;
     AudioEngine engine_;
     PlaybackSupervisor supervisor_;
     AudioFormat format_;
+    // The output takeOver() chose the format for.
+    std::string deviceId_;
+    AudioAccessMode accessMode_ = AudioAccessMode::Shared;
     std::string name_; // the room name last given to the receiver
+
+    // Between the supervisor's opened and closed hooks.
+    bool deviceOpen_ = false;
+    // The open device's own volume control, null without one.
+    std::unique_ptr<IHardwareVolume> hardwareVolume_;
+    bool hardwareMute_ = false; // it has a mute switch
+    // The room volume last applied, to apply only changes.
+    bool volumeApplied_ = false;
+    double appliedGain_ = 1.0;
+    bool appliedMuted_ = false;
+    matp::VolumeControlMode appliedPath_ = matp::VolumeControlMode::Disabled;
 
     uint32_t lastFrames_ = 0;
     uint64_t lastAudioNs_ = 0;

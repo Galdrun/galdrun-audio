@@ -182,7 +182,7 @@ private:
     // audio thread: adopt(), then the frames of this period before the pending change
     uint32_t pendingSplit(uint32_t frameCount, uint64_t cursor);
     void beginRamp(double target);                 // audio thread
-    void advance(uint32_t frames);                 // audio thread: scale() with no samples
+    void advance(uint32_t frames);                 // audio thread: the ramp and applied_, no samples
     void scale(unsigned char* data, uint32_t frames); // audio thread
 
     // Control thread only.

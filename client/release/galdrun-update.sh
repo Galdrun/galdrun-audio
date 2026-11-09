@@ -18,13 +18,10 @@ binary=$dir/galdrun-client
 action=${1:-}
 [ $# -gt 0 ] && shift
 mkdir -p "$work"
-# The client's --config: the trial belongs to that client.
-config=
-previous_arg=
-for arg in "$@"; do
-    [ "$previous_arg" = --config ] && config=$arg
-    previous_arg=$arg
-done
+# The client's config path (SelfUpdate.cpp handOver): the trial belongs to that
+# client. Not passed on to the client started below.
+config=${GALDRUN_TRIAL_OWNER-}
+unset GALDRUN_TRIAL_OWNER
 
 say() {
     printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$work/update.log"

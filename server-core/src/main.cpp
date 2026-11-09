@@ -53,17 +53,32 @@
 #include "zone/ZoneManager.h"
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#else
+#  include <unistd.h>
+#endif
 
 namespace {
 
@@ -75,6 +90,55 @@ volatile std::sig_atomic_t g_stopRequested = 0;
 extern "C" void onStopSignal(int)
 {
     g_stopRequested = 1;
+}
+
+// Set by `core.restart` (the .NET server's update, which has replaced the
+// files): once the shutdown order has run, main() starts the executable again.
+std::atomic<bool> g_restartRequested{false};
+
+// The executable as it was started, resolved before an update moves it aside:
+// afterwards /proc/self/exe follows the old file to its new place.
+std::filesystem::path ownExecutable(const char* argv0)
+{
+    std::error_code error;
+#if defined(_WIN32)
+    std::wstring module(32768, L'\0');
+    const DWORD length = GetModuleFileNameW(nullptr, module.data(), static_cast<DWORD>(module.size()));
+    if (length > 0 && length < module.size())
+        return std::filesystem::path(module.substr(0, length));
+#else
+    if (auto link = std::filesystem::read_symlink("/proc/self/exe", error); !error)
+        return link;
+#endif
+    auto path = std::filesystem::absolute(argv0, error);
+    return error ? std::filesystem::path(argv0) : path;
+}
+
+// The restart: Linux keeps the PID (systemd, a PID file and start.sh still
+// hold the core), Windows starts a new process with the same command line.
+int restartAs(const std::filesystem::path& executable, char** argv)
+{
+#if defined(_WIN32)
+    (void)argv;
+    std::wstring commandLine = GetCommandLineW();
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(executable.c_str(), commandLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr,
+                        &startup, &process))
+    {
+        std::fprintf(stderr, "restart: cannot start %s (error %lu)\n", executable.string().c_str(),
+                     GetLastError());
+        return 1;
+    }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return 0;
+#else
+    execv(executable.c_str(), argv);
+    std::fprintf(stderr, "restart: cannot run %s: %s\n", executable.c_str(), std::strerror(errno));
+    return 1;
+#endif
 }
 
 // Which resampler every resampled room in this server is converted by.
@@ -110,6 +174,8 @@ std::string resolveResamplerId(const ResamplerRegistry& registry, const std::str
 // startup and the shutdown are the same, and so is the flag that ends it.
 int runServer(const CommandLineOptions& options, bool asService);
 
+std::filesystem::path g_executable;
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -135,12 +201,16 @@ int main(int argc, char** argv)
         return 0;
     }
 
+    g_executable = ownExecutable(argv[0]);
 #if defined(_WIN32)
     if (options->service)
         return service::runAsWindowsService([&options] { return runServer(*options, true); },
                                             [] { g_stopRequested = 1; });
 #endif
-    return runServer(*options, false);
+    const int exitCode = runServer(*options, false);
+    if (exitCode == 0 && g_restartRequested.load())
+        return restartAs(g_executable, argv);
+    return exitCode;
 }
 
 namespace {
@@ -403,6 +473,11 @@ int runServer(const CommandLineOptions& options, bool asService)
             return false;
         }
         return true;
+    });
+    // A service is the service manager's to restart.
+    api.setRestart(g_executable.string(), asService ? std::function<void()>() : [] {
+        g_restartRequested.store(true);
+        g_stopRequested = 1;
     });
 
     // Section 20's barrier, in the log once, because "nothing is audible yet"

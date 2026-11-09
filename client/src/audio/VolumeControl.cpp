@@ -466,7 +466,8 @@ void VolumeControl::advance(uint32_t frames)
     if (frames == 0)
         return;
 
-    // scale() without the sample loops. A ramp is a number of frames on the
+    // The gain's progress over `frames`: scale() calls it after scaling the
+    // ramp's samples, silence() instead of scaling. A ramp is a number of frames on the
     // device's own axis, not a number of frames that happened to carry audio,
     // so silence consumes it at exactly the rate music would: a room paused
     // 5 ms into a 15 ms ramp comes back 5 ms into it, and one silent longer
@@ -532,25 +533,18 @@ void VolumeControl::scale(unsigned char* data, uint32_t frames)
         return;
 
     // The ramp and the steady part are two loops rather than one with a test
-    // in it: the sample loops carry the gain multiply and nothing else.
+    // in it: the sample loops carry the gain multiply and nothing else. The
+    // ramp's samples are scaled from the gain before advance() moves it on;
+    // advance() then leaves current_ at the gain the steady part plays.
     const uint32_t ramp = rampRemaining_ < frames ? rampRemaining_ : frames;
     if (ramp != 0)
-    {
         fade(data, ramp, current_, step_);
+    advance(frames);
 
-        current_ += step_ * static_cast<double>(ramp);
-        rampRemaining_ -= ramp;
-        if (rampRemaining_ == 0)
-            current_ = target_; // the accumulated step is not the target
-        data += static_cast<size_t>(ramp) * bytesPerFrame_;
-        frames -= ramp;
-    }
-
+    data += static_cast<size_t>(ramp) * bytesPerFrame_;
+    frames -= ramp;
     if (frames != 0 && current_ != 1.0)
         fade(data, frames, current_, 0.0);
-
-    applied_.store(static_cast<uint32_t>(std::lrint(current_ * 1000.0)),
-                   std::memory_order_relaxed);
 }
 
 } // namespace multiroom

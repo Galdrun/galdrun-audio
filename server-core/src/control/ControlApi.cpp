@@ -547,6 +547,19 @@ std::string ControlApi::handleLine(const std::string& line, bool& subscribed)
                                                                  : reply;
     else if (command == "log.configure")
         reply = onlyKeys(params, {"level"}, command, reply) ? logConfigure(params) : reply;
+    else if (command == "core.restart")
+    {
+        if (onlyKeys(params, {}, command, reply))
+        {
+            if (!restart_)
+                reply = Reply::failure(kUnavailable, "this core cannot restart itself (a Windows service)");
+            else
+            {
+                restart_();
+                reply.body["restarting"] = json::Value(true);
+            }
+        }
+    }
     else if (command == "events.subscribe" || command == "events.unsubscribe")
     {
         // The connection's own business, so it is answered here rather than
@@ -1636,6 +1649,12 @@ ControlApi::Reply ControlApi::clientRescanAudio(const json::Value& params)
     return reply;
 }
 
+void ControlApi::setRestart(std::string executable, std::function<void()> restart)
+{
+    executable_ = std::move(executable);
+    restart_ = std::move(restart);
+}
+
 void ControlApi::setAudioConfig(AudioConfig audio, AudioPersist persist)
 {
     audio_ = std::move(audio);
@@ -2649,6 +2668,9 @@ json::Value ControlApi::serverJson() const
 
     json::Value server = json::Value::makeObject();
     server["version"] = json::Value(MULTIROOM_SERVER_VERSION);
+    if (!executable_.empty())
+        server["executable"] = json::Value(executable_);
+    server["restartable"] = json::Value(static_cast<bool>(restart_));
     server["uptimeMs"] = json::Value(millisecondsOf(clock_.monotonicNowNs() - startedAtNs_));
     if (const std::shared_ptr<const OutputPlanner> planner = planner_.get(); planner->hasResampler())
         server["resampler"] = json::Value(planner->resamplerId());

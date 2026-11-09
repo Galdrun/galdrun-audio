@@ -90,14 +90,14 @@ public sealed class ClientUpdatesTests : IAsyncDisposable
     {
         await StartWithPackageAsync("galdrun-client-v0.1.0-linux-armv7.tar.gz");
         var same = await _updates.UpdateAsync("kitchen", Ct);
-        Assert.Equal(ClientUpdateError.Conflict, same.Failure.Code);
+        Assert.Equal(UpdateError.Conflict, same.Failure.Code);
 
         _client.Supported = false;
         var unsupported = await _updates.UpdateAsync("kitchen", Ct);
-        Assert.Equal(ClientUpdateError.Unavailable, unsupported.Failure.Code);
+        Assert.Equal(UpdateError.Unavailable, unsupported.Failure.Code);
         Assert.Contains("RAM", unsupported.Failure.Detail, StringComparison.Ordinal);
 
-        Assert.Equal(ClientUpdateError.NotFound, (await _updates.GetAsync("attic", Ct)).Failure.Code);
+        Assert.Equal(UpdateError.NotFound, (await _updates.GetAsync("attic", Ct)).Failure.Code);
         Assert.Empty(_client.Uploads);
     }
 

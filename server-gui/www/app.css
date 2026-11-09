@@ -28,6 +28,13 @@
 #listener:hover { background: var(--soft); color: var(--accent); }
 #listener svg { width: 22px; height: 22px; }
 #listener small { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 500; color: var(--muted); }
+.header-updates { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.header-updates:empty { display: none; }
+.update-mark { display: inline-flex; align-items: center; gap: 6px; min-height: 0; padding: 4px 10px; border: 1px solid var(--good); border-radius: 999px;
+  background: transparent; color: var(--good); font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; cursor: pointer; }
+.update-mark:hover { background: var(--soft); }
+.update-mark.muted { border-color: var(--muted); color: var(--muted); cursor: default; }
+.update-mark svg { flex: none; width: 18px; height: 18px; }
 .conn-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
 .conn-dot.good { background: var(--good); }
 .conn-dot.bad { background: var(--bad); }
@@ -1004,6 +1011,8 @@ main:has(> .page-log:not([hidden])) { padding: 0; }
   .brand svg { width: 30px; height: 30px; }
   .brand svg.wordmark { width: auto; height: 30px; }
   .header-tools { gap: 8px; }
+  .update-mark { padding: 4px; }
+  .update-mark span { display: none; }
   main { padding: 16px 12px 32px; }
   .panel { padding: 14px; }
   .card { padding: 14px; }

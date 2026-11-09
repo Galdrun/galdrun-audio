@@ -151,7 +151,27 @@ Keep ownership straight when changing settings:
   found through the core's `discovery.clients`), never through the core.
   Clients never reach the Internet; client side: [client.md](client.md),
   Self update. Version comparison uses the release tag against the client's
-  CMake `project(VERSION)`, so bump that for every release.
+  CMake `project(VERSION)`, so bump that for every release. The release list,
+  local packages and checked downloads are `Web/Updates/ReleasePackages.cs`,
+  shared with the server update.
+- Server updates: `Web/Updates/ServerUpdates.cs` behind
+  `GET/POST /api/v1/server/update`. Server and core always update together
+  from the release's `galdrun-server-bundle-<tag>-<target>` archive (local
+  packages in `<dataDirectory>/server-updates/`). The core must be on this
+  machine and report `executable`/`restartable` in `status`. The server
+  unpacks the bundle into each folder's `.update/staged`, runs both new
+  binaries with `--version`, then renames each package entry over the
+  installed one (old entries go to `.update/previous`; a bundle folder with
+  `start.*` gets its root files too). Next it sends `core.restart` and stops
+  normally; `Program.cs`/`SelfRestart.cs` starts the server again.
+  Invariant: the restart keeps the process where its supervisor can find it.
+  Linux `execv()`s in place, so systemd, the Pi image's PID files and
+  `start.sh` keep the same PID. Windows starts a new process on the same
+  console; the bundle's `start.ps1` follows the programs by path. A Windows
+  service, a core elsewhere or an unwritable folder reports `supported: false`
+  with a reason, while `available` still says that a newer bundle exists.
+  Renaming running executables and DLLs is allowed on Windows (verified),
+  so no external updater script is needed.
 - Configuration is JSON -> `GALDRUN_` environment -> CLI. Unknown keys fail;
   add keys to `ServerOptions` and resolve/validate in `ConfigLoader`. Explicit
   `--config` must exist; absent it, loader looks for executable-adjacent

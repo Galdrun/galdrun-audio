@@ -1,5 +1,6 @@
 #include "app/BluetoothPlayback.h"
 
+#include "app/StreamPlayback.h"
 #include "audio/AudioBackend.h"
 #include "audio/AudioDeviceCache.h"
 #if defined(__linux__) && !defined(ESP_PLATFORM)
@@ -10,6 +11,7 @@
 
 #include <cstring>
 #include <string>
+#include <utility>
 
 namespace multiroom {
 namespace {
@@ -85,10 +87,35 @@ bool deviceFormat(const ClientRuntime& runtime, uint32_t sampleRate, AudioFormat
 
 } // namespace
 
+void BluetoothPlayback::VolumeSource::prepare(const AudioFormat& format)
+{
+    ring_.prepare(format);
+    volume_.prepare(format);
+    cursor_ = 0;
+}
+
+uint32_t BluetoothPlayback::VolumeSource::render(void* buffer, uint32_t frameCount)
+{
+    const uint32_t filled = ring_.render(buffer, frameCount);
+    volume_.process(buffer, filled, cursor_);
+    if (filled < frameCount) // the backend silences the rest
+        volume_.silence(frameCount - filled, cursor_ + filled);
+    cursor_ += frameCount;
+    return filled;
+}
+
 BluetoothPlayback::BluetoothPlayback(ClientRuntime& runtime)
+    : BluetoothPlayback(runtime, createPlatformAudioBackend(runtime.config->i2s), nullptr)
+{
+}
+
+BluetoothPlayback::BluetoothPlayback(ClientRuntime& runtime, std::unique_ptr<IAudioBackend> backend,
+                                     std::unique_ptr<IBluetoothReceiver> receiver)
     : runtime_(runtime),
-      source_(ring_, kRingMs),
-      engine_(createPlatformAudioBackend(runtime.config->i2s)),
+      receiver_(std::move(receiver)),
+      ringSource_(ring_, kRingMs),
+      source_(ringSource_, volume_),
+      engine_(std::move(backend)),
       supervisor_(engine_, [this](AudioEngine::Settings& settings, std::string& error) {
           if (!runtime_.deviceSelected)
           {
@@ -120,8 +147,27 @@ BluetoothPlayback::BluetoothPlayback(ClientRuntime& runtime)
                 count -= chunk;
             }
         });
+
+        // The device's own volume control, as StreamPlayback opens it.
+        hardwareVolume_.reset();
+        hardwareMute_ = false;
+        const AudioDeviceInfo* device = runtime_.deviceCache != nullptr
+                                            ? runtime_.deviceCache->findById(runtime_.deviceId)
+                                            : nullptr;
+        if (device != nullptr && device->hardwareVolume.available && engine_.backend() != nullptr)
+        {
+            hardwareVolume_ = engine_.backend()->openHardwareVolume(*device);
+            hardwareMute_ = hardwareVolume_ && device->hardwareVolume.hasMute;
+        }
+        deviceOpen_ = true;
+        applyVolume();
     };
-    hooks.onClosed = [this]() { receiver_->setSink(IBluetoothReceiver::Sink()); };
+    hooks.onClosed = [this]() {
+        receiver_->setSink(IBluetoothReceiver::Sink());
+        deviceOpen_ = false;
+        hardwareVolume_.reset();
+        hardwareMute_ = false;
+    };
     supervisor_.setHooks(hooks);
 }
 
@@ -189,10 +235,13 @@ void BluetoothPlayback::poll(uint64_t nowNs)
             release(false);
             session->resumeStream();
         }
-        else if (receiver_->format().isValid() &&
-                 receiver_->format().sampleRate != format_.sampleRate)
+        else if ((receiver_->format().isValid() &&
+                  receiver_->format().sampleRate != format_.sampleRate) ||
+                 !runtime_.deviceSelected || runtime_.deviceId != deviceId_ ||
+                 runtime_.accessMode != accessMode_)
         {
-            // The phone renegotiated (another codec or rate): reopen at it.
+            // The phone renegotiated (another codec or rate), or another output
+            // was selected: reopen at the format the two have now.
             supervisor_.stop();
             playing_ = false;
             takeOver(nowNs);
@@ -202,6 +251,10 @@ void BluetoothPlayback::poll(uint64_t nowNs)
         else
         {
             supervisor_.poll(nowNs);
+            if (!volumeApplied_ || runtime_.volumeGain != appliedGain_ ||
+                runtime_.volumeMuted != appliedMuted_ ||
+                runtime_.volumePath.effective != appliedPath_)
+                applyVolume();
         }
         return;
     }
@@ -220,6 +273,8 @@ void BluetoothPlayback::takeOver(uint64_t nowNs)
         suppressed_ = true;
         return;
     }
+    deviceId_ = runtime_.deviceId;
+    accessMode_ = runtime_.accessMode;
     matp::Session* session = runtime_.session;
     std::string error;
     // Releases the server's stream and the sound card synchronously, and
@@ -241,6 +296,52 @@ void BluetoothPlayback::release(bool restorePower)
     if (restorePower && runtime_.session != nullptr &&
         !runtime_.session->setBluetooth(false, error))
         MULTIROOM_WARN("bluetooth: %s", error.c_str());
+}
+
+void BluetoothPlayback::applyVolume()
+{
+    // Without an open device: the next one applies it when it opens.
+    volumeApplied_ = deviceOpen_;
+    if (!volumeApplied_)
+        return;
+    const double gain = hardware_volume::clampGain(runtime_.volumeGain);
+    const bool muted = runtime_.volumeMuted;
+    const matp::VolumeControlMode path = runtime_.volumePath.effective;
+    appliedGain_ = runtime_.volumeGain;
+    appliedMuted_ = muted;
+    appliedPath_ = path;
+
+    // The paths StreamPlayback::applyVolume() plays it on: Hardware sets the
+    // device's control, Disabled only its mute switch. A control the server
+    // never set is left where it was.
+    const bool onControl =
+        hardwareVolume_ && (path == matp::VolumeControlMode::Hardware ||
+                            (path == matp::VolumeControlMode::Disabled && hardwareMute_));
+    if (onControl)
+    {
+        if (!runtime_.volumeSet)
+        {
+            volume_.set(1.0, false);
+            return;
+        }
+        std::string error;
+        const bool set = path == matp::VolumeControlMode::Hardware
+                             ? hardwareVolume_->set(gain * boardGainLimit(), muted, error)
+                             : hardwareVolume_->setMute(muted, error);
+        if (set)
+        {
+            // A control's lowest step need not be silence: the samples make
+            // a mute or a gain of 0 silent.
+            volume_.set(1.0, path == matp::VolumeControlMode::Hardware && (muted || gain <= 0.0));
+            return;
+        }
+        MULTIROOM_WARN("bluetooth volume: %s; played on the samples", error.c_str());
+    }
+    // Software, or no control to play it on. Disabled keeps only the mute.
+    const double samples = path == matp::VolumeControlMode::Disabled ? 1.0
+                           : hardwareVolume_                         ? gain
+                                                                     : gain * boardGainLimit();
+    volume_.set(samples, muted);
 }
 
 } // namespace multiroom

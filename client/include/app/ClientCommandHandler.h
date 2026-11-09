@@ -104,6 +104,7 @@ struct ClientRuntime
     uint64_t endTimelineNs = 0;
     double volumeGain = 1.0;
     bool volumeMuted = false;
+    bool volumeSet = false; // a SET_VOLUME has come; until then a control is left alone
     bool volumeScheduled = false;
     double appliedGain = 1.0;
 

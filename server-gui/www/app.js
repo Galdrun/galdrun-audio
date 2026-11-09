@@ -405,7 +405,7 @@ function render(key, container, build) {
   for (const d of container.querySelectorAll('details[data-key]')) if (open.has(d.dataset.key)) d.open = true;
 }
 
-const renderers = { home: () => renderHome(), zones: () => renderZones(), playlistTree: () => renderPlaylistTree(), stationTree: () => stationTree.render(), player: () => renderPlayer(), rooms: () => renderRooms(), clients: () => renderClients(), folders: () => renderFolders(), ai: () => renderAi() };
+const renderers = { home: () => renderHome(), zones: () => renderZones(), playlistTree: () => renderPlaylistTree(), stationTree: () => stationTree.render(), player: () => renderPlayer(), rooms: () => renderRooms(), clients: () => renderClients(), updates: () => renderUpdates(), folders: () => renderFolders(), ai: () => renderAi() };
 function flushDirty() {
   setTimeout(() => { for (const key of [...S.dirty]) renderers[key]?.(); }, 0);
 }
@@ -1493,6 +1493,23 @@ function removeListener(name) {
       h('button', { type: 'button', class: 'danger', onclick: () => remove('delete') }, tt('listeners.deleteTheirs'))));
   document.body.append(dialog);
   dialog.showModal();
+}
+
+// The page's own question box (a confirm-dialog like the ones above) instead
+// of the browser's confirm(): true when the person chose `ok`.
+function confirmBox({ icon: name, title, text, ok }) {
+  return new Promise((resolve) => {
+    let answer = false;
+    const choose = (yes) => { answer = yes; dialog.close(); };
+    const dialog = h('dialog', { class: 'confirm-dialog', 'aria-label': title, onclose: () => { dialog.remove(); resolve(answer); } },
+      h('div', { class: 'confirm-head' }, h('span', { class: 'confirm-icon' }, icon(name)), h('h2', {}, title)),
+      h('p', {}, text),
+      h('div', { class: 'confirm-buttons' },
+        h('button', { type: 'button', onclick: () => choose(false) }, tt('common.cancel')),
+        h('button', { type: 'button', class: 'primary', onclick: () => choose(true) }, ok)));
+    document.body.append(dialog);
+    dialog.showModal();
+  });
 }
 
 // A room's listener (PATCH rooms/{client} {user}): '' the household.
@@ -2678,7 +2695,8 @@ function deviceSettingsEditor(client, path) {
   }, message);
   // The server uploads the package; the client restarts into it and comes
   // back on its own, so its row is read again after a while.
-  const update = () => confirm(tt('room.updateConfirm', { name: client, version: state.update.latest })) && act(async () => {
+  const update = async () => await confirmBox({ icon: 'update', title: tt('room.updateTo', { version: state.update.latest }),
+    text: tt('room.updateConfirm', { name: client, version: state.update.latest }), ok: tt('room.updateTo', { version: state.update.latest }) }) && act(async () => {
     state.loading = true; renderRooms();
     try {
       state.update = await api('POST', `${path}/update`);
@@ -5536,7 +5554,54 @@ async function loadClientUpdates() {
     clientUpdates = new Map(list.map((u) => [u.client, u]));
     renderClients();
   } catch { /* no icons: the room's own page says why */ }
+  renderUpdates();
 }
+
+// --- updates in the header -------------------------------------------------------
+// The server bundle (server and core together, POST server/update) and the
+// clients with a newer package (their own pages update them). Read at start and
+// every 10 minutes: the server keeps the release list for an hour and each
+// client's answer for 10 minutes.
+let serverUpdate = null; // GET server/update
+async function loadServerUpdate() {
+  try { serverUpdate = await api('GET', 'server/update', undefined, { quiet: true }); } catch { serverUpdate = null; }
+  renderUpdates();
+}
+function renderUpdates() {
+  const s = serverUpdate, clients = [...clientUpdates.values()].filter((u) => u.available).length;
+  render('updates', $('#updates'), () => [
+    s?.updating ? h('span', { class: 'update-mark muted' }, icon('update'), h('span', null, tt('header.serverUpdating')))
+      : s?.available && h('button', { type: 'button', class: s.supported ? 'update-mark' : 'update-mark muted',
+        title: s.supported ? tt('header.serverUpdateTo', { version: s.latest }) : tt('header.serverUpdateManual', { version: s.latest, reason: s.reason }),
+        onclick: updateServer }, icon('update'), h('span', null, tt('header.serverUpdate', { version: s.latest }))),
+    clients > 0 && h('a', { class: 'update-mark', href: '#/rooms', title: tt('header.clientUpdates', { count: clients }) },
+      icon('update'), h('span', null, tt('header.clientUpdatesShort', { count: clients }))),
+  ]);
+}
+async function updateServer() {
+  const s = serverUpdate;
+  if (!s.supported) { flash(tt('header.serverUpdateManual', { version: s.latest, reason: s.reason }), true); return; }
+  if (!await confirmBox({ icon: 'update', title: tt('header.serverUpdateTo', { version: s.latest }),
+    text: tt('header.serverUpdateConfirm'), ok: tt('header.updateNow') })) return;
+  act(async () => {
+    serverUpdate = await api('POST', 'server/update');
+    renderUpdates();
+    waitForRestart();
+  }, 'header.serverUpdateStarted');
+}
+// The old server answers updating until it stops; the first answer without it
+// is the new one, and the page reloads into its GUI.
+async function waitForRestart() {
+  const until = Date.now() + 5 * 60000;
+  while (Date.now() < until) {
+    await new Promise((resolve) => { setTimeout(resolve, 2000); });
+    try {
+      if (!(await api('GET', 'server/update', undefined, { quiet: true, timeoutMs: 3000 })).updating) { location.reload(); return; }
+    } catch { /* stopped or not yet started */ }
+  }
+  loadServerUpdate();
+}
+setInterval(() => { loadServerUpdate(); loadClientUpdates(); }, 10 * 60000);
 // "seen" stays current while the page is open.
 setInterval(() => { if (page === 'rooms' && !document.hidden) loadDiscovered(); }, 5000);
 // The clients an attach or detach is under way for: their button spins until
@@ -6929,6 +6994,8 @@ api('GET', 'system', undefined, { quiet: true }).then(onSystem, () => {}); // a 
 renderIndexLog();
 connectEvents();
 connectLogs();
+loadServerUpdate();
+loadClientUpdates();
 
 // A control that has done its job gives focus back, so the panel re-renders.
 document.addEventListener('change', (e) => {

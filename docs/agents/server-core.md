@@ -77,6 +77,12 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
   no drift except through a client's own clock trim.
 - `log.configure` sets the log level for this run only; the configured
   `logLevel` applies until the .NET server sends its saved level on connect.
+- `core.restart` (the .NET server update, after it has replaced the files)
+  runs the normal shutdown, then `main()` starts the executable resolved at
+  startup again: `execv` on Linux (same PID, same arguments, environment
+  kept), a new process with the same command line on Windows. Under
+  `--service` it answers `unavailable`; `status.server` reports `executable`
+  and `restartable` for that decision.
 - BitPerfect forbids sample-changing conversion. Verified client clock trim
   can preserve samples while correcting a grouped room; otherwise correction
   uses a resampled path where permitted. EQ runs on the resampled path.

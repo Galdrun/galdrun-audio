@@ -203,6 +203,10 @@ public sealed record ResamplerConfigure(string Resampler)
 // error, warn, info, debug or trace (LogSettings.Levels); not kept by the core.
 public sealed record LogConfigure(string Level) : CoreCommand<LogConfigured>("log.configure");
 
+// The core runs its shutdown and starts its executable again in place (the
+// server update has replaced the files); `unavailable` for a Windows service.
+public sealed record CoreRestart() : CoreCommand<CoreRestarting>("core.restart");
+
 public sealed record EventsSubscribe() : CoreCommand<Subscription>("events.subscribe");
 
 public sealed record EventsUnsubscribe() : CoreCommand<Subscription>("events.unsubscribe");

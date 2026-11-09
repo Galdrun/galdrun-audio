@@ -131,7 +131,12 @@ room after 0.3 s of audio: `Session::setBluetooth(true)` releases the server's
 stream and card synchronously and reports `localSource: "bluetooth"` (power
 stays `on`; it is not a power state); its own engine then plays
 at the phone's rate in the selected device's format, so MCU rate and hardware
-volume follow. 3 s without audio restores the earlier power state. Switching the
+volume follow. Invariant: room volume/mute (`runtime.volumeGain`/`volumeMuted`/
+`volumePath`, which `StreamPlayback` keeps publishing while closed) apply to
+that engine at once, on the device's control or its own `VolumeControl`, and a
+changed device/access mode reopens it (or returns the room when the phone's
+rate does not fit); otherwise a muted room plays the phone and the reported
+output is not the one playing. 3 s without audio restores the earlier power state. Switching the
 room on during it only clears the state; `BluetoothPlayback` closes its card
 first and then calls `Session::resumeStream()`, because both cannot hold the
 exclusive device. Phone and card clocks are not locked: the 500 ms ring drops or
@@ -159,8 +164,10 @@ Invariant: the new version runs on trial (`.update/trial`: `pending` ->
 no server/inactive); 180 s without one, or a start that finds `running`
 (the trial run crashed), rolls back through the same script. A normal stop
 during the trial resets it to `pending`. The trial file names the client's
-`--config`; another client in the same folder (Connector 3 headphone client)
-ignores it. A new update is refused while one is on trial. The script frees
+config path (`--config`, else the default), which `handOver()` passes to the
+updater explicitly (`GALDRUN_TRIAL_OWNER` / `-Owner`) so the scripts never
+parse client arguments; another client in the same folder (Connector 3
+headphone client) ignores it. A new update is refused while one is on trial. The script frees
 the last rollback copy (`.update/previous`) only after the checksum passed,
 before unpacking, so small volumes need room for only one extra copy.
 

@@ -47,11 +47,12 @@ enum class Trial
     Failed   // the previous trial run ended without confirming: roll back
 };
 
-// Called once at start-up with this run's --config argument (empty without
-// one). Marks a pending trial as running. A trial the updater recorded for
-// another --config is None here: a second client in the same folder (the
-// Connector 3 Bluetooth headphone client) leaves it alone.
-Trial beginTrial(const std::string& configArgument);
+// Called once at start-up with this run's config path (--config, else the
+// default location). Marks a pending trial as running. A trial the updater
+// recorded for another config is None here: a second client in the same folder
+// (the Connector 3 Bluetooth headphone client) leaves it alone. A trial file
+// that names no config (an older updater wrote it) belongs to any client.
+Trial beginTrial(const std::string& configPath);
 
 // The trial run is healthy; the update stays.
 void confirmTrial();
@@ -62,10 +63,12 @@ void deferTrial();
 
 // Replaces this process with the updater (Linux; returns only on failure) or
 // starts it to run after this process exits (Windows; returns true). action is
-// "install" (with the package's sha256) or "rollback". argv is this process's
-// own command line, which the updater starts the client with again.
-bool handOver(const std::string& action, const std::string& sha256, int argc, char** argv,
-              std::string& error);
+// "install" (with the package's sha256) or "rollback". configPath is the
+// config beginTrial is given; the updater records it as the trial's owner.
+// argv is this process's own command line, which the updater starts the client
+// with again.
+bool handOver(const std::string& action, const std::string& sha256,
+              const std::string& configPath, int argc, char** argv, std::string& error);
 
 } // namespace self_update
 } // namespace multiroom

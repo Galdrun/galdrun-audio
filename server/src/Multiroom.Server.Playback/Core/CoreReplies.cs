@@ -160,6 +160,8 @@ public sealed record LogConfigured(string Level, bool Changed);
 
 public sealed record Subscription(bool Subscribed, bool Changed);
 
+public sealed record CoreRestarting(bool Restarting);
+
 // --- the parts of status, clients and zones --------------------------------
 
 public enum ZoneState
@@ -191,7 +193,11 @@ public sealed record CoreServerInfo(
     CoreSystemMetrics? System = null,
     // The core's phase 42: every zone's audio memory together, and its ceiling.
     ulong? MemoryUsedBytes = null,
-    ulong? MemoryLimitBytes = null);
+    ulong? MemoryLimitBytes = null,
+    // Where the core's executable is and whether core.restart can restart it;
+    // a core from before the server update reports neither.
+    string? Executable = null,
+    bool Restartable = false);
 
 // A process's own figures as the core and the client sample them (the core's
 // phase 34, MATP section 55). Each is absent when that process cannot say; a

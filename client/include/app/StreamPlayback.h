@@ -48,6 +48,11 @@ namespace multiroom {
 // Says why not in `error`.
 bool streamBufferFits(const AudioFormat& format, uint32_t bufferMs, std::string& error);
 
+// The board's ceiling as a linear gain (board file maxVolumeDb), 1.0 without
+// one. Caps a hardware volume control on every path; the samples carry it only
+// where there is no control to hold it.
+double boardGainLimit();
+
 class StreamPlayback
 {
 public:

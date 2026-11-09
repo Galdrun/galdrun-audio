@@ -5,6 +5,7 @@ using Multiroom.Server.Abstractions;
 using Multiroom.Server.Library;
 using Multiroom.Server.Playback;
 using Multiroom.Server.Playback.Core;
+using Multiroom.Server.Web.Updates;
 
 namespace Multiroom.Server.Web.Api;
 
@@ -26,6 +27,13 @@ public sealed partial class ApiEndpoint
     private void MapServer(WebApplication app)
     {
         app.MapGet("/api/v1/server", () => Answer(ServerViewOf()));
+        // This server's and its core's versions and the newest server bundle;
+        // POST installs it into both and restarts both (ServerUpdates). 409 when
+        // there is nothing newer, 503 when this installation cannot update itself.
+        app.MapGet("/api/v1/server/update", (Delegate)(async (HttpContext c) =>
+            Json(await serverUpdates.GetAsync(c.RequestAborted).ConfigureAwait(false))));
+        app.MapPost("/api/v1/server/update", (Delegate)(async (HttpContext c) =>
+            Answer(await serverUpdates.UpdateAsync(c.RequestAborted).ConfigureAwait(false))));
         // The house's playback settings (groupBooks, resumeBooks, findRadioLikes), kept in playback.json;
         // a change publishes settings.playbackChanged.
         app.MapGet("/api/v1/settings/playback", () => Json(player.Settings.Current));

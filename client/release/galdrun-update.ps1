@@ -10,7 +10,9 @@ param(
     [Parameter(Mandatory = $true)][ValidateSet('install', 'rollback')][string] $Action,
     [int] $ClientPid = 0,
     [string] $Sha256 = '',
-    [string] $Arguments = ''
+    [string] $Arguments = '',
+    # Base64 of the client's config path, the trial's owner (SelfUpdate.cpp handOver).
+    [string] $Owner = ''
 )
 $ErrorActionPreference = 'Stop'
 $dir = $PSScriptRoot
@@ -73,7 +75,9 @@ function Install-Package {
         Restore | Out-Null
         throw
     }
-    Set-Content -LiteralPath (Join-Path $work 'trial') -Value 'pending' -Encoding ascii
+    # "pending <owner>", the owner's bytes as the client passed them (no BOM).
+    $trial = [Text.Encoding]::ASCII.GetBytes('pending ') + [Convert]::FromBase64String($Owner) + [byte[]](10)
+    [IO.File]::WriteAllBytes((Join-Path $work 'trial'), [byte[]]$trial)
     Say "installed $($version.Trim()); on trial"
 }
 

@@ -55,6 +55,8 @@ bool resetsHardwareVolumeOnOpen()
 #endif
 }
 
+} // namespace
+
 // The board's ceiling as a linear gain, from its board file's maxVolumeDb: for
 // an analog stage that clips before the DAC's full scale (Connector 2's clips
 // about 9 dB under it). It caps the hardware control on every path, Disabled
@@ -74,8 +76,6 @@ double boardGainLimit()
     return 1.0;
 #endif
 }
-
-} // namespace
 
 bool streamBufferFits(const AudioFormat& format, uint32_t bufferMs, std::string& error)
 {
@@ -919,6 +919,7 @@ void StreamPlayback::publishVolume()
 {
     runtime_.volumeGain = volumeGain_;
     runtime_.volumeMuted = volumeMuted_;
+    runtime_.volumeSet = volumeSet_;
     runtime_.hardwareVolumeActive =
         hardwareVolume_ && volumePath_.effective == matp::VolumeControlMode::Hardware;
     runtime_.volumeScheduled = usesHardware() ? hardwarePending_ : source_.volumeScheduled();

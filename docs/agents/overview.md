@@ -79,3 +79,9 @@ or `rg --files client/src client/include client/tests`. Exclude build outputs,
 `third_party`, `bin`, `obj`, and `releases` when searching implementation.
 Root `BugFindings*.md`, `TODOS.md`, and `client/docs/Info.md` are background;
 check the current implementation/tests before treating a finding as open.
+
+For analysis-only reviews, use the project agent
+[`bug_analyst`](../../.codex/agents/bug-analyst.toml) and specify `client`,
+`server-core`, or `server`. It updates the matching root findings report with
+verified bugs, consolidation proposals, and a scoped code rating; it does not
+change implementation or tests.

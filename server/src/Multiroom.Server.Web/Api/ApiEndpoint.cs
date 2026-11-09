@@ -85,6 +85,7 @@ public sealed partial class ApiEndpoint(
     MultiroomAgent agent,
     AgentChatStore chats,
     ClientUpdates clientUpdates,
+    ServerUpdates serverUpdates,
     ILoggerFactory loggerFactory) : IHostedService, IAsyncDisposable
 {
     public const int DefaultLimit = 20;

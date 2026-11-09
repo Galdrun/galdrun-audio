@@ -357,6 +357,17 @@ public sealed partial class ApiTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_server_that_is_not_a_published_release_refuses_to_update_itself()
+    {
+        await StartAsync();
+
+        // Refused before the releases are read: no network in the test.
+        await Refused(HttpMethod.Post, "server/update", HttpStatusCode.ServiceUnavailable, "unavailable",
+            "this server is not a published release");
+        Assert.DoesNotContain(_core.All, r => r.Command == "core.restart");
+    }
+
+    [Fact]
     public async Task A_queue_is_filled_played_edited_and_its_zone_answers_both_halves()
     {
         await StartAsync();

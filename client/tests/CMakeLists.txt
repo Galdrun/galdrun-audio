@@ -2,6 +2,7 @@ add_executable(multiroom_tests
     TestMain.cpp
     TestSupport.cpp
     test_audio_engine.cpp
+    test_bluetooth_playback.cpp
     test_client_command_handler.cpp
     test_command_queue.cpp
     test_commandline.cpp

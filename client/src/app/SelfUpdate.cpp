@@ -8,6 +8,7 @@
 #include <windows.h>
 #elif defined(__linux__) && !defined(ESP_PLATFORM)
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <limits.h>
 #include <sys/vfs.h>
@@ -217,13 +218,13 @@ bool writePackage(const char* data, size_t size, std::string& error)
 #endif
 }
 
-Trial beginTrial(const std::string& configArgument)
+Trial beginTrial(const std::string& configPath)
 {
 #if defined(ESP_PLATFORM)
-    (void)configArgument;
+    (void)configPath;
     return Trial::None;
 #else
-    // "pending <--config>" or "running <--config>"; no config names any client.
+    // "pending <config>" or "running <config>"; no config names any client.
     std::string text;
     std::string error;
     if (!fileutil::readTextFile(trialPath(), text, error))
@@ -233,7 +234,7 @@ Trial beginTrial(const std::string& configArgument)
     const size_t space = line.find(' ');
     const std::string state = line.substr(0, space);
     const std::string owner = space == std::string::npos ? std::string() : line.substr(space + 1);
-    if (!owner.empty() && owner != configArgument)
+    if (!owner.empty() && owner != configPath)
         return Trial::None; // another client in this folder is on trial
     trialOwner() = owner;
     if (state == "pending" &&
@@ -258,12 +259,13 @@ void deferTrial()
 #endif
 }
 
-bool handOver(const std::string& action, const std::string& sha256, int argc, char** argv,
-              std::string& error)
+bool handOver(const std::string& action, const std::string& sha256,
+              const std::string& configPath, int argc, char** argv, std::string& error)
 {
 #if defined(ESP_PLATFORM)
     (void)action;
     (void)sha256;
+    (void)configPath;
     (void)argc;
     (void)argv;
     error = "unsupported";
@@ -285,6 +287,9 @@ bool handOver(const std::string& action, const std::string& sha256, int argc, ch
                           " -ClientPid " + std::to_string(::GetCurrentProcessId());
     if (!sha256.empty())
         command += " -Sha256 " + sha256;
+    // Base64: the updater writes these bytes back unchanged as the owner.
+    if (!configPath.empty())
+        command += " -Owner " + base64(configPath);
     const std::string tail = argumentTail();
     if (!tail.empty())
         command += " -Arguments " + base64(tail);
@@ -314,7 +319,11 @@ bool handOver(const std::string& action, const std::string& sha256, int argc, ch
     for (int i = 1; i < argc; ++i)
         args.push_back(argv[i]);
     args.push_back(nullptr);
+    // The trial's owner, apart from the client arguments: the script does not
+    // have to parse those (--config <path> and --config=<path>).
+    ::setenv("GALDRUN_TRIAL_OWNER", configPath.c_str(), 1);
     ::execv("/bin/sh", args.data());
+    ::unsetenv("GALDRUN_TRIAL_OWNER");
     error = std::string("cannot run the updater: ") + std::strerror(errno);
     return false;
 #endif
