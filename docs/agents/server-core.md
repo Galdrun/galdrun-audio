@@ -68,6 +68,12 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
   against the format the client actually opened. Room incompatibility fails
   that room, not the whole zone. Inspect the implementation when changing the
   policy: older header/design tables omit later EQ/hardware-clock cases.
+  A reopened device whose granted format cannot be served is parked and left
+  unscheduled (`Zone::onStreamReady`), so the old format is never sent to it.
+- Admission (`ControlApi` `onStreamReady` hook) re-reads the room's desired
+  zone after `ZoneManager::assign` records it and releases a room that
+  `zone.setClients` removed or moved meanwhile: that command only releases
+  members already recorded, so one of the two always sees the other.
 - One planner (one resampler) serves the whole server, held in a
   `SharedPlanner` (`include/client/OutputPlanner.h`). Zones take one
   snapshot per planning decision. `resampler.configure` persists

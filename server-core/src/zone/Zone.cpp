@@ -3295,12 +3295,18 @@ void Zone::onStreamReady(const ClientId& client, bool ready, const AudioFormat& 
         return;
     }
 
-    // That room's failure and not the zone's, as at a format boundary.
+    // That room's failure and not the zone's, as at a format boundary. The
+    // planning failed before the move parked the old output, which would
+    // otherwise keep sending the old format to a device opened in another
+    // (MATP section 12): it is stopped here and the room left unscheduled
+    // until a STREAM_READY that can be served moves it again.
+    output->park(true);
     const std::string detail = "cannot be served in the reopened device's " +
                                describeFormat(opened) + ": " + moved.error().detail;
     MULTIROOM_WARN("zone {}: {} {}", id_.str(), client.str(), detail);
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        scheduler_.onStreamReady(client, false);
         scheduler_.explain(client, detail);
     }
     ZoneEvent event = eventOf(ZoneEventKind::RoomNotReady);

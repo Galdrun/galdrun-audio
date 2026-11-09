@@ -32,6 +32,8 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <functional>
+#include <future>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -368,6 +370,8 @@ struct ApiRig
         settings.start.minimumStartBufferNs = 100ULL * 1000000ULL;
         settings.start.minClockExchanges = 0; // no clock exchange is walked here
         settings.roomPreference = [this](const ClientId& client) {
+            if (duringPreference)
+                duringPreference();
             return rooms.preference(client);
         };
         settings.roomEqualizer = [this](const ClientId& client) {
@@ -425,6 +429,10 @@ struct ApiRig
         log.sent.push_back(command);
         return true;
     }
+
+    // Called while a room is being planned; set only while no zone runs, so a
+    // test can hold an admission at that point.
+    std::function<void()> duringPreference;
 
     SilentDecoderFactory decoders;
     multiroomtest::ManualClock clock{1000000000ULL};
@@ -2055,6 +2063,56 @@ MULTIROOM_TEST(control_api_sends_events_only_to_a_connection_that_asked_for_them
     answer = feed.request(R"({"command":"zones"})");
     CHECK(isOk(answer));
     CHECK_EQ(text(answer, "command"), std::string("zones"));
+}
+
+MULTIROOM_TEST(control_api_removal_during_an_admission_is_not_undone_by_it)
+{
+    // zone.setClients removes a room while its STREAM_READY is being admitted
+    // on another thread: the admission must not leave it a member afterwards.
+    struct Gate
+    {
+        std::atomic<bool> armed{false};
+        std::atomic<int> calls{0};
+        std::promise<void> reached;
+        std::promise<void> resume;
+    };
+    const auto gate = std::make_shared<Gate>();
+    std::shared_future<void> resumed = gate->resume.get_future().share();
+
+    ApiRig rig;
+    // Set before any zone exists and never changed, so no zone thread reads
+    // it while it is written; the admission after arming waits here.
+    rig.duringPreference = [gate, resumed] {
+        // The first call plans the format SESSION_CONFIG announces; the
+        // second is the admission of the STREAM_READY that answers it.
+        if (!gate->armed || ++gate->calls != 2)
+            return;
+        gate->reached.set_value();
+        resumed.wait();
+    };
+    LineClient caller(rig.listener->port());
+    size_t handled = 0;
+    Room room(rig, "roomA", {formatOf(kRate)}, 1);
+    room.connect();
+    CHECK(isOk(caller.request(R"({"command":"zone.create","params":{"zone":"living"}})")));
+    CHECK(isOk(caller.request(
+        R"({"command":"source.stage","params":{"zone":"living","sourceId":"s1","mediaUri":"http://127.0.0.1:4714/one.flac"}})")));
+    CHECK(isOk(caller.request(R"({"command":"zone.play","params":{"zone":"living"}})")));
+    CHECK(isOk(caller.request(
+        R"({"command":"zone.setClients","params":{"zone":"living","clients":["roomA"]}})")));
+
+    std::future<void> reached = gate->reached.get_future();
+    gate->armed = true;
+    std::thread admitting([&] { answerRenegotiations(rig, handled, {{"roomA", &room}}); });
+    const bool paused = reached.wait_for(kDeadline) == std::future_status::ready;
+    CHECK(paused);
+
+    CHECK(isOk(caller.request(
+        R"({"command":"zone.setClients","params":{"zone":"living","clients":[]}})")));
+    gate->resume.set_value();
+    admitting.join();
+
+    CHECK(rig.zones->zoneOf(ClientId("roomA")) == nullptr);
 }
 
 MULTIROOM_TEST(control_api_announces_rooms_as_they_come_join_move_fall_silent_and_go)

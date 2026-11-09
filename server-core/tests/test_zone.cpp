@@ -1568,6 +1568,41 @@ MULTIROOM_TEST(a_zone_corrects_the_room_it_planned_a_correction_for_and_leaves_t
     CHECK_EQ(bitperfect->driftTrim(), 1.0);
 }
 
+MULTIROOM_TEST(a_reopened_device_format_that_cannot_be_served_stops_the_old_stream)
+{
+    // A forced-bitperfect room whose device reopens in another rate cannot be
+    // served: it is refused, and its output must stop rather than keep sending
+    // the old format to a device that confirmed a new one (MATP section 12).
+    ZoneRig rig;
+    ZoneSettings settings = rig.settings();
+    settings.roomPreference = [](const ClientId&) {
+        return RoomAudioSettings{AudioControl::BitPerfect, true};
+    };
+    auto zone = rig.zone(settings);
+    CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+    CHECK_OK(zone->play());
+
+    const ClientId room("kitchen");
+    const SessionId session = sessionOf(1);
+    CHECK_OK(zone->admit(session, room, offering({formatOf(), formatOf(48000)}), formatOf()));
+    const std::shared_ptr<ClientOutput> output = zone->member(room);
+    CHECK(output != nullptr);
+    auto first = connect(*zone, session, room);
+    decodeEverything(*zone);
+    CHECK(waitFor([&] { return output->packets() > 0; }));
+
+    zone->onStreamReady(room, true, formatOf(48000));
+    CHECK(output->state() == OutputState::Parked);
+    CHECK(zone->roomStart(room) != RoomStartState::Playing);
+
+    // A new audio connection on the same session is sent nothing obsolete.
+    auto second = connect(*zone, session, room);
+    zone->pump();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::lock_guard<std::mutex> lock(second->mutex);
+    CHECK(second->received.empty());
+}
+
 MULTIROOM_TEST(a_bitperfect_room_in_a_shared_zone_sets_no_ratio_at_all)
 {
     // Bit-Perfect is the one way out of correction, even in a zone shared with

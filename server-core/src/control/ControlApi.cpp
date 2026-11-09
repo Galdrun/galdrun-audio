@@ -2463,6 +2463,16 @@ ClientSessionHooks ControlApi::sessionHooks()
             return;
         }
 
+        // zone.setClients may have removed or moved this room while it was
+        // being admitted, and found no member to release then. Checked after
+        // the membership is recorded, so either this check sees that change
+        // or that command sees this member: one of them releases it.
+        if (const ZoneId now = rooms_.zoneFor(client); now != wanted)
+        {
+            releaseRoom(client, now.empty() ? "removed" : "moved");
+            return;
+        }
+
         const std::shared_ptr<Zone> zone = zones_.zoneOf(client);
         const std::shared_ptr<ClientOutput> output =
             zone != nullptr ? zone->member(client) : nullptr;
