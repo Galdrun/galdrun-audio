@@ -96,7 +96,7 @@ for label, key, action in definitions:
         continue
     binding = {"action": action}
     if action.startswith("volume"):
-        binding.update(scope="room", step=0.05)
+        binding.update(scope="room", step=0.03)
     inputs.append({"id": label, "kind": "button", "device": touch, "key": key,
                    "bindings": {"click": binding}})
 upload(f"{root}/run/client.json", json.dumps(config).encode())

@@ -125,6 +125,11 @@ public:
         buttonStateCallback_ = callback;
     }
 
+    // Asked at a press that would start a gesture: true consumes that press
+    // until its release, so it makes no gesture (a press that wakes the
+    // device from standby does only that).
+    void setPressGate(std::function<bool(size_t)> gate) { pressGate_ = gate; }
+
 private:
     enum class Phase
     {
@@ -133,7 +138,7 @@ private:
         WaitSecond, // released, a double click still possible
         SecondDown, // pressed the second time
         LongFired,   // the long press has been sent; the release ends it
-        IgnoreUntilRelease // consume a deep-sleep button held during restart/wake
+        IgnoreUntilRelease // consume a deep-sleep button held during restart/wake, or a waking press
     };
 
     struct State
@@ -167,6 +172,7 @@ private:
     Timing timing_;
     std::vector<State> states_;
     std::function<void(size_t, bool)> buttonStateCallback_;
+    std::function<bool(size_t)> pressGate_;
 };
 
 // What `gesture` on the input named `id` is bound to, as the action a real

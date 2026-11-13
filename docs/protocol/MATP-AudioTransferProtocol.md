@@ -708,7 +708,10 @@ a malformed format.
 
 It is informational. `SET_VOLUME` is the same message on either path and its
 gain means the same level: 1.0 is 0 dB on the device's control (or its top,
-where that is lower), never above. A scheduled change on a hardware control
+where that is lower), never above. A control without decibels is set at the
+room's slider position across its steps, the position the core sent the gain
+for (1 + 20·log10(gain)/60, 0 below -60 dB): such controls, Raumfeld's 0..100
+among them, are linear in decibels. A scheduled change on a hardware control
 lands within the client's polling interval of its frame rather than on it.
 
 ## sampleFormat names
@@ -3172,7 +3175,7 @@ bound to one action:
 | --- | --- |
 | `none` | -- (the gesture does nothing and is never sent) |
 | `play`, `pause`, `togglePause`, `stop`, `next`, `previous` | -- (the room's zone) |
-| `volumeUp`, `volumeDown` | `step` in (0, 1], default 0.05; `scope` |
+| `volumeUp`, `volumeDown` | `step` in (0, 1], default 0.02; `scope` |
 | `setVolume` | `value` in [0, 1], required; `scope` |
 | `toggleMute` | `scope` |
 | `standbyOn`, `standbyOff`, `toggleStandby` | -- (local standby; networking remains available) |

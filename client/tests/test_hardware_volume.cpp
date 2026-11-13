@@ -56,16 +56,31 @@ MULTIROOM_TEST(hardware_volume_silence_is_the_bottom_of_the_range)
     CHECK(near(hardware_volume::gainForDecibels(info, -99999.99), 0.0));
 }
 
-MULTIROOM_TEST(hardware_volume_without_decibels_is_linear_in_steps)
+MULTIROOM_TEST(hardware_volume_position_is_linear_in_decibels_over_60_db)
+{
+    CHECK(near(hardware_volume::positionForGain(1.0), 1.0));
+    CHECK(near(hardware_volume::positionForGain(0.001), 0.0));
+    CHECK(near(hardware_volume::positionForGain(std::pow(10.0, -30.0 / 20.0)), 0.5));
+    CHECK(near(hardware_volume::positionForGain(0.0), 0.0));
+    CHECK(near(hardware_volume::positionForGain(0.0001), 0.0));
+    CHECK(near(hardware_volume::positionForGain(4.0), 1.0));
+    CHECK(near(hardware_volume::gainForPosition(0.5), std::pow(10.0, -30.0 / 20.0)));
+    CHECK(near(hardware_volume::gainForPosition(0.0), 0.0));
+}
+
+MULTIROOM_TEST(hardware_volume_without_decibels_follows_the_slider_across_the_steps)
 {
     HardwareVolumeInfo info;
     info.available = true;
     info.minStep = 10;
     info.maxStep = 110;
     CHECK_EQ(hardware_volume::stepForGain(info, 0.0), static_cast<int64_t>(10));
-    CHECK_EQ(hardware_volume::stepForGain(info, 0.5), static_cast<int64_t>(60));
+    CHECK_EQ(hardware_volume::stepForGain(info, hardware_volume::gainForPosition(0.5)),
+             static_cast<int64_t>(60));
+    CHECK_EQ(hardware_volume::stepForGain(info, hardware_volume::gainForPosition(0.37)),
+             static_cast<int64_t>(47));
     CHECK_EQ(hardware_volume::stepForGain(info, 2.0), static_cast<int64_t>(110));
-    CHECK(near(hardware_volume::gainForStep(info, 35), 0.25));
+    CHECK(near(hardware_volume::gainForStep(info, 35), hardware_volume::gainForPosition(0.25)));
     CHECK(near(hardware_volume::gainForStep(info, 0), 0.0));
 }
 

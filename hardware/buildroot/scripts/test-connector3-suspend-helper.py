@@ -6,7 +6,7 @@ import tempfile
 
 source = (Path(__file__).resolve().parents[1] / 'board/connector3/raumfeld-suspend').read_text()
 subprocess.run(['sh', '-n'], input=source, text=True, check=True)
-for scenario in ('ethernet', 'wifi', 'manual', 'kernel-error', 'stop-error', 'locked',
+for scenario in ('ethernet', 'wifi', 'manual', 'touch', 'kernel-error', 'stop-error', 'locked',
                  'radio', 'radio-kernel-error', 'radio-unbind-error', 'radio-bind-error'):
     with tempfile.TemporaryDirectory(prefix='connector3-suspend-') as directory:
         root = Path(directory)
@@ -39,10 +39,17 @@ for scenario in ('ethernet', 'wifi', 'manual', 'kernel-error', 'stop-error', 'lo
             driver.mkdir(parents=True)
             (driver / '0000:01:00.0').symlink_to('device')
             (root / 'sys/class/net/mlan0/phy80211').mkdir(parents=True)
+        if scenario == 'touch':
+            # The MCU's UART woke the device: manual standby is not restored.
+            (root / 'sys/devices/30880000.serial').mkdir(parents=True)
+            (root / 'sys/class/tty/ttymxc2/device').symlink_to(root / 'sys/devices/30880000.serial')
+            (root / 'sys/power/pm_wakeup_irq').write_text('28\n')
+            (root / 'sys/kernel/irq/28').mkdir(parents=True)
+            (root / 'sys/kernel/irq/28/actions').write_text('30880000.serial\n')
         network = root / 'network-service'
         network.write_text(f'#!/bin/sh\nprintf "network %s\\n" "$1" >>"{trace}"\n')
         network.chmod(0o700)
-        power = 'standbyManual' if scenario == 'manual' else 'on'
+        power = 'standbyManual' if scenario in ('manual', 'touch') else 'on'
         harness = f'''
 taskroot='{root}'
 scenario='{scenario}'
@@ -97,7 +104,7 @@ logger() {{ trace "error $*"; }}
             command = command.replace(prefix, str(root) + prefix)
         command = command.replace('/etc/init.d/S45raumfeld-network', str(network))
         result = subprocess.run(['sh', '-c', harness + command], capture_output=True, text=True)
-        expected_success = scenario in ('ethernet', 'wifi', 'manual', 'radio')
+        expected_success = scenario in ('ethernet', 'wifi', 'manual', 'touch', 'radio')
         assert (result.returncode == 0) == expected_success, (scenario, result.stderr)
         assert config.read_bytes() == before, scenario
         assert wake.read_text() == 'disabled\n', scenario
@@ -115,9 +122,11 @@ logger() {{ trace "error $*"; }}
             assert events.count('wol eth0 d') == 2 and events.count('wol eth0 g') == 1, events
         if scenario == 'manual':
             assert 'standbyOn' in events, events
+        if scenario == 'touch':
+            assert 'standbyOn' not in events, events
         if scenario.startswith('radio'):
             for event in ('network stop', 'radio detach', 'radio bind', 'network start'):
                 assert event in events, (scenario, events)
         if expected_success:
             assert state.read_text() == 'mem\n', scenario
-print('Connector 3 suspend helper: Ethernet/WLAN policy, manual standby, settings preservation and failure cleanup passed')
+print('Connector 3 suspend helper: Ethernet/WLAN policy, manual standby, touch wake, settings preservation and failure cleanup passed')

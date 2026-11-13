@@ -83,14 +83,21 @@ bool BluealsaReceiver::start(std::string& error)
         return true;
     stop_.store(false);
     thread_ = std::thread([this] { run(); });
+    nameThread_ = std::thread([this] { runNames(); });
     return true;
 }
 
 void BluealsaReceiver::stop()
 {
-    stop_.store(true);
+    {
+        std::lock_guard<std::mutex> lock(nameMutex_);
+        stop_.store(true);
+    }
+    nameChanged_.notify_all();
     if (thread_.joinable())
         thread_.join();
+    if (nameThread_.joinable())
+        nameThread_.join();
 }
 
 uint32_t BluealsaReceiver::receivedFrames() const
@@ -115,12 +122,30 @@ void BluealsaReceiver::setSink(Sink sink)
 
 void BluealsaReceiver::setName(const std::string& name)
 {
-    std::lock_guard<std::mutex> lock(nameMutex_);
-    name_ = name;
+    {
+        std::lock_guard<std::mutex> lock(nameMutex_);
+        name_ = name;
+    }
+    nameChanged_.notify_all();
+}
+
+void BluealsaReceiver::runNames()
+{
+    std::unique_lock<std::mutex> lock(nameMutex_);
+    while (!stop_.load())
+    {
+        lock.unlock();
+        applyName();
+        lock.lock();
+        // A new name wakes it; a failed one is retried (applyName's interval).
+        nameChanged_.wait_for(lock, std::chrono::seconds(1), [this] {
+            return stop_.load() || (name_ != appliedName_ && std::chrono::steady_clock::now() >= nextNameAttempt_);
+        });
+    }
 }
 
 // The image's helper sets BlueZ's adapter alias. Retried every few seconds,
-// because bluetoothd comes up after the client.
+// because bluetoothd comes up after the client. Name thread only.
 void BluealsaReceiver::applyName()
 {
     std::string wanted;
@@ -158,7 +183,6 @@ void BluealsaReceiver::run()
     auto retryAt = std::chrono::steady_clock::now();
     while (!stop_.load())
     {
-        applyName();
         const std::string present = links();
         if (present.empty() ||
             (present == failedLinks && std::chrono::steady_clock::now() < retryAt))
@@ -200,7 +224,6 @@ void BluealsaReceiver::run()
             result = snd_pcm_wait(pcm, 200);
             if (result == 0)
             {
-                applyName();
                 if (links().empty())
                     break;
                 continue;

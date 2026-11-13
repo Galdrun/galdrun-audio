@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <thread>
 
@@ -28,17 +29,22 @@ public:
 
 private:
     void run();
+    // Its own thread: the helper may take a while, and the capture loop has
+    // no idle moments while a phone streams.
+    void runNames();
     void applyName();
 
     std::thread thread_;
+    std::thread nameThread_;
     std::atomic<bool> stop_{false};
     std::atomic<uint32_t> received_{0};
     std::atomic<uint32_t> sampleRate_{0};
     std::mutex sinkMutex_;
     Sink sink_;
     std::mutex nameMutex_;
+    std::condition_variable nameChanged_;
     std::string name_;        // wanted, under nameMutex_
-    std::string appliedName_; // receiver thread only
+    std::string appliedName_; // name thread only
     std::chrono::steady_clock::time_point nextNameAttempt_;
 };
 

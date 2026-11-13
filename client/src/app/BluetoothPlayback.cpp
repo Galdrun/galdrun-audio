@@ -24,6 +24,8 @@ const uint32_t kRingMs = 500;
 const uint64_t kTakeOverNs = 300000000ULL;
 // ...and is let go after this long without audio (a pause, or a disconnect).
 const uint64_t kReleaseNs = 3000000000ULL;
+// A device control that refused the room's volume is tried again this often.
+const uint64_t kVolumeRetryNs = 1000000000ULL;
 
 // The phone sends 16-bit; widen into the device's layout. A sample type with
 // no 16-bit form on the card is chosen from the device's list below.
@@ -251,10 +253,16 @@ void BluetoothPlayback::poll(uint64_t nowNs)
         else
         {
             supervisor_.poll(nowNs);
-            if (!volumeApplied_ || runtime_.volumeGain != appliedGain_ ||
-                runtime_.volumeMuted != appliedMuted_ ||
-                runtime_.volumePath.effective != appliedPath_)
+            if ((!volumeApplied_ && nowNs >= volumeRetryNs_) ||
+                runtime_.volumeGain != appliedGain_ || runtime_.volumeMuted != appliedMuted_ ||
+                runtime_.volumeSet != appliedSet_ ||
+                runtime_.volumePath.effective != appliedPath_ ||
+                runtime_.audioControl != appliedAudioControl_)
+            {
                 applyVolume();
+                if (!volumeApplied_)
+                    volumeRetryNs_ = nowNs + kVolumeRetryNs;
+            }
         }
         return;
     }
@@ -301,46 +309,95 @@ void BluetoothPlayback::release(bool restorePower)
 void BluetoothPlayback::applyVolume()
 {
     // Without an open device: the next one applies it when it opens.
-    volumeApplied_ = deviceOpen_;
-    if (!volumeApplied_)
+    volumeApplied_ = false;
+    if (!deviceOpen_)
         return;
     const double gain = hardware_volume::clampGain(runtime_.volumeGain);
     const bool muted = runtime_.volumeMuted;
     const matp::VolumeControlMode path = runtime_.volumePath.effective;
     appliedGain_ = runtime_.volumeGain;
     appliedMuted_ = muted;
+    appliedSet_ = runtime_.volumeSet;
     appliedPath_ = path;
+    appliedAudioControl_ = runtime_.audioControl;
 
     // The paths StreamPlayback::applyVolume() plays it on: Hardware sets the
     // device's control, Disabled only its mute switch. A control the server
     // never set is left where it was.
-    const bool onControl =
-        hardwareVolume_ && (path == matp::VolumeControlMode::Hardware ||
-                            (path == matp::VolumeControlMode::Disabled && hardwareMute_));
-    if (onControl)
+    const bool level = hardwareVolume_ && path == matp::VolumeControlMode::Hardware;
+    const bool muteSwitch =
+        hardwareVolume_ && hardwareMute_ && path == matp::VolumeControlMode::Disabled;
+    if ((level || muteSwitch) && !runtime_.volumeSet)
     {
-        if (!runtime_.volumeSet)
+        volume_.set(1.0, false);
+        volumeApplied_ = true;
+        return;
+    }
+
+    // As StreamPlayback::updateVolumePath(): a path that stops playing the
+    // room's level on the control puts it back to the board's ceiling, and one
+    // that stops using its switch takes the mute off (Disabled keeps the
+    // room's mute there), so the path that follows does not attenuate twice.
+    // A write that fails may still have changed part of the control (Connector
+    // 3 mutes before it sets the level), so it is owed a reset as well.
+    std::string error;
+    bool controlSet = true;
+    if (level)
+    {
+        controlSet = hardwareVolume_->set(gain * boardGainLimit(), muted, error);
+        control_ = Control::Level;
+    }
+    else if (muteSwitch)
+    {
+        controlSet = control_ == Control::Level
+                         ? hardwareVolume_->set(boardGainLimit(), muted, error)
+                         : hardwareVolume_->setMute(muted, error);
+        if (controlSet || control_ == Control::Untouched)
+            control_ = Control::Mute;
+    }
+    else if (hardwareVolume_ && control_ != Control::Untouched)
+    {
+        controlSet = control_ == Control::Level
+                         ? hardwareVolume_->set(boardGainLimit(), false, error)
+                         : hardwareVolume_->setMute(false, error);
+        if (controlSet)
+            control_ = Control::Untouched;
+    }
+
+    if (controlSet)
+    {
+        volumeApplied_ = true;
+        volumeRetryNs_ = 0;
+        // A control's lowest step need not be silence: the samples make a mute
+        // or a gain of 0 silent.
+        if (level)
+        {
+            volume_.set(1.0, muted || gain <= 0.0);
+            return;
+        }
+        if (muteSwitch)
         {
             volume_.set(1.0, false);
             return;
         }
-        std::string error;
-        const bool set = path == matp::VolumeControlMode::Hardware
-                             ? hardwareVolume_->set(gain * boardGainLimit(), muted, error)
-                             : hardwareVolume_->setMute(muted, error);
-        if (set)
-        {
-            // A control's lowest step need not be silence: the samples make
-            // a mute or a gain of 0 silent.
-            volume_.set(1.0, path == matp::VolumeControlMode::Hardware && (muted || gain <= 0.0));
-            return;
-        }
-        MULTIROOM_WARN("bluetooth volume: %s; played on the samples", error.c_str());
     }
-    // Software, or no control to play it on. Disabled keeps only the mute.
-    const double samples = path == matp::VolumeControlMode::Disabled ? 1.0
-                           : hardwareVolume_                         ? gain
-                                                                     : gain * boardGainLimit();
+    else if (volumeRetryNs_ == 0) // the first refusal; retries log quietly
+    {
+        MULTIROOM_WARN("bluetooth volume: %s; played on the samples until the control takes it",
+                       error.c_str());
+    }
+    else
+    {
+        MULTIROOM_DEBUG("bluetooth volume: %s; tried again", error.c_str());
+    }
+
+    // Software, no control, or one that refused and is tried again from the
+    // poll. The mute always plays on the samples; the gain only on Software,
+    // or in place of Hardware -- never under bitPerfect (section 59).
+    const bool scale = path == matp::VolumeControlMode::Software ||
+                       (path == matp::VolumeControlMode::Hardware &&
+                        runtime_.audioControl != matp::AudioControl::BitPerfect);
+    const double samples = !scale ? 1.0 : hardwareVolume_ ? gain : gain * boardGainLimit();
     volume_.set(samples, muted);
 }
 

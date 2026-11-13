@@ -315,7 +315,7 @@ public sealed partial class TimedPlays(
     private async Task FadeOutAsync(string zone, int seconds, double fallback, (TimedPlay Play, TimedPlayRun Run)? ended,
         CancellationToken cancellationToken)
     {
-        var level = link.Desired.ZoneLevels.GetValueOrDefault(zone)?.Volume ?? fallback;
+        var level = link.Desired.MembersOf(zone).Count > 0 ? link.Desired.ZoneLevel(zone).Volume : fallback;
         var faded = false;
         try
         {
@@ -357,8 +357,8 @@ public sealed partial class TimedPlays(
         for (var i = 1; i <= steps; i++)
         {
             await Task.Delay(FadeStep, _time, cancellationToken).ConfigureAwait(false);
-            var now = link.Desired.ZoneLevels.GetValueOrDefault(zone)?.Volume;
-            if (now is null || Math.Abs(now.Value - last) > 0.001)
+            if (link.Desired.MembersOf(zone).Count == 0 ||
+                Math.Abs(link.Desired.ZoneLevel(zone).Volume - last) > 0.001)
                 return;
             last = from + ((to - from) * i / steps);
             await house.SetZoneLevelAsync(zone, last, null, cancellationToken).ConfigureAwait(false);

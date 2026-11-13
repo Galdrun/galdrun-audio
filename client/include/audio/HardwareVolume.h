@@ -91,7 +91,15 @@ double clampGain(double gain);
 double decibelsForGain(const HardwareVolumeInfo& info, double gain);
 double gainForDecibels(const HardwareVolumeInfo& info, double db);
 
-// For a control that reports no decibels: linear across the raw steps.
+// The room's slider position (0..1) for `gain` and back: the core sends
+// 10^(60 * (position - 1) / 20), linear in decibels (its gainForPosition),
+// and 0 for silence. A position below the 60 dB is 0.
+double positionForGain(double gain);
+double gainForPosition(double position);
+
+// For a control that reports no decibels: the slider position across the raw
+// steps, as Raumfeld sets its 0..100 controls (Connector 3's MCU among them),
+// whose steps are linear in decibels.
 int64_t stepForGain(const HardwareVolumeInfo& info, double gain);
 double gainForStep(const HardwareVolumeInfo& info, int64_t step);
 

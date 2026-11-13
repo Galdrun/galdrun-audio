@@ -326,6 +326,15 @@ matp::SetVolume volumeRequest(double value)
     return request;
 }
 
+// A SET_VOLUME as the client's loop takes it: the session hands it over, and
+// the playback poll that follows in the same pass sets the device's control.
+bool setVolume(Room& room, const matp::SetVolume& request, std::string& error)
+{
+    const bool taken = room.playback->volume(request, error);
+    room.playback->poll();
+    return taken;
+}
+
 // Plays and polls until the parked jump is resolved; how long that took.
 uint64_t resolve(Room& room)
 {
@@ -669,7 +678,7 @@ MULTIROOM_TEST(stream_playback_hardware_volume_leaves_the_samples_unscaled)
     CHECK_EQ(room.runtime.hardwareVolumeState.gain, 0.5);
 
     std::string error;
-    CHECK(room.playback->volume(volumeRequest(0.25), error));
+    CHECK(setVolume(room, volumeRequest(0.25), error));
     CHECK_EQ(room.stub->hardwareVolume.sets, 1);
     CHECK_EQ(room.stub->hardwareVolume.gain, 0.25);
 
@@ -681,6 +690,28 @@ MULTIROOM_TEST(stream_playback_hardware_volume_leaves_the_samples_unscaled)
     CHECK_EQ(room.runtime.volumeGain, 0.25);
     CHECK_EQ(room.runtime.appliedGain, 1.0);
     CHECK_EQ(room.runtime.hardwareVolumeState.gain, 0.25);
+}
+
+MULTIROOM_TEST(stream_playback_hardware_volume_burst_sets_the_control_once_to_the_newest)
+{
+    TestListener listener;
+    CHECK(listener.ready());
+    Room room;
+    room.offerHardwareVolume();
+    uint64_t sequence = 0;
+    CHECK(playing(room, listener, sequence));
+
+    // A dragged slider: many changes drained by one session poll. A slow
+    // control (Connector 3's MCU) would otherwise work through every one.
+    std::string error;
+    for (const double value : {0.9, 0.7, 0.5, 0.3})
+        CHECK(room.playback->volume(volumeRequest(value), error));
+    CHECK_EQ(room.stub->hardwareVolume.sets, 0);
+    room.playback->poll();
+    CHECK_EQ(room.stub->hardwareVolume.sets, 1);
+    CHECK_EQ(room.stub->hardwareVolume.gain, 0.3);
+    room.playback->poll();
+    CHECK_EQ(room.stub->hardwareVolume.sets, 1);
 }
 
 MULTIROOM_TEST(stream_playback_hardware_volume_waits_for_its_frame)
@@ -697,7 +728,7 @@ MULTIROOM_TEST(stream_playback_hardware_volume_waits_for_its_frame)
     request.hasApplyAtTimelineNs = true;
     request.applyAtTimelineNs = kBaseNs + 30 * kMsNs;
     std::string error;
-    CHECK(room.playback->volume(request, error));
+    CHECK(setVolume(room, request, error));
 
     room.play(1872);
     room.playback->poll();
@@ -727,7 +758,7 @@ MULTIROOM_TEST(stream_playback_hardware_volume_waits_through_a_pause_for_its_pos
     request.hasApplyAtTimelineNs = true;
     request.applyAtTimelineNs = kBaseNs + 30 * kMsNs;
     std::string error;
-    CHECK(room.playback->volume(request, error));
+    CHECK(setVolume(room, request, error));
     matp::TransportAt pause;
     pause.timelineNs = kBaseNs + 20 * kMsNs;
     CHECK(room.playback->pause(pause, error));
@@ -765,7 +796,7 @@ MULTIROOM_TEST(stream_playback_refused_hardware_volume_falls_back_to_software)
     CHECK(playing(room, listener, sequence));
 
     std::string error;
-    CHECK(room.playback->volume(volumeRequest(0.5), error));
+    CHECK(setVolume(room, volumeRequest(0.5), error));
     room.playback->poll();
     CHECK(!room.runtime.hardwareVolumeActive);
     CHECK(room.runtime.volumePath.effective == matp::VolumeControlMode::Software);
@@ -792,17 +823,17 @@ MULTIROOM_TEST(stream_playback_hardware_mute_and_zero_gain_are_silent)
     mute.hasMuted = true;
     mute.muted = true;
     std::string error;
-    CHECK(room.playback->volume(mute, error));
+    CHECK(setVolume(room, mute, error));
     room.play(2400);
     CHECK_EQ(room.output[2399], 0u);
 
     // Unmuted, the device plays at its level again, the samples untouched.
     mute.muted = false;
-    CHECK(room.playback->volume(mute, error));
+    CHECK(setVolume(room, mute, error));
     room.play(3408);
     CHECK_EQ(room.output[3407], 2928u);
 
-    CHECK(room.playback->volume(volumeRequest(0.0), error));
+    CHECK(setVolume(room, volumeRequest(0.0), error));
     room.play(4416);
     CHECK_EQ(room.output[4415], 0u);
 }
@@ -818,13 +849,13 @@ MULTIROOM_TEST(stream_playback_giving_up_hardware_volume_resets_its_level)
     CHECK(playing(room, listener, sequence));
 
     std::string error;
-    CHECK(room.playback->volume(volumeRequest(0.25), error));
+    CHECK(setVolume(room, volumeRequest(0.25), error));
     CHECK_EQ(room.stub->hardwareVolume.gain, 0.25);
 
     // One write refused: the control is given up, but put back to 0 dB first,
     // so the software path does not play under its attenuation.
     room.stub->hardwareVolume.failNext = 1;
-    CHECK(room.playback->volume(volumeRequest(0.5), error));
+    CHECK(setVolume(room, volumeRequest(0.5), error));
     CHECK(room.runtime.volumePath.effective == matp::VolumeControlMode::Software);
     CHECK_EQ(room.stub->hardwareVolume.gain, 1.0);
     CHECK(!room.stub->hardwareVolume.muted);
@@ -846,7 +877,7 @@ MULTIROOM_TEST(stream_playback_refused_unmute_keeps_the_hardware_control)
     mute.hasMuted = true;
     mute.muted = true;
     std::string error;
-    CHECK(room.playback->volume(mute, error));
+    CHECK(setVolume(room, mute, error));
     CHECK(room.stub->hardwareVolume.muted);
 
     // The device stays muted, and no other path can make the room heard:
@@ -855,7 +886,7 @@ MULTIROOM_TEST(stream_playback_refused_unmute_keeps_the_hardware_control)
     matp::SetVolume unmute;
     unmute.hasMuted = true;
     unmute.muted = false;
-    CHECK(room.playback->volume(unmute, error));
+    CHECK(setVolume(room, unmute, error));
     room.playback->poll();
     CHECK(room.runtime.volumePath.effective == matp::VolumeControlMode::Hardware);
     CHECK(room.runtime.hardwareVolumeActive);
@@ -864,7 +895,7 @@ MULTIROOM_TEST(stream_playback_refused_unmute_keeps_the_hardware_control)
 
     // The next change tries it again.
     room.stub->hardwareVolume.failSet = false;
-    CHECK(room.playback->volume(unmute, error));
+    CHECK(setVolume(room, unmute, error));
     CHECK(!room.stub->hardwareVolume.muted);
 }
 
@@ -887,7 +918,7 @@ MULTIROOM_TEST(stream_playback_refused_mute_under_disabled_silences_the_samples)
     mute.hasMuted = true;
     mute.muted = true;
     std::string error;
-    CHECK(room.playback->volume(mute, error));
+    CHECK(setVolume(room, mute, error));
     room.playback->poll();
     CHECK(room.runtime.volumePath.effective == matp::VolumeControlMode::Disabled);
     CHECK(!room.runtime.hasHardwareVolumeState);
@@ -898,7 +929,7 @@ MULTIROOM_TEST(stream_playback_refused_mute_under_disabled_silences_the_samples)
 
     // Unmuted, the samples play untouched: Disabled plays no gain.
     mute.muted = false;
-    CHECK(room.playback->volume(mute, error));
+    CHECK(setVolume(room, mute, error));
     room.play(3408);
     CHECK_EQ(room.output[3407], 2928u);
 }
@@ -914,11 +945,11 @@ MULTIROOM_TEST(stream_playback_volume_during_device_recovery_is_kept)
     CHECK(playing(room, listener, sequence));
 
     std::string error;
-    CHECK(room.playback->volume(volumeRequest(0.25), error));
+    CHECK(setVolume(room, volumeRequest(0.25), error));
     room.stub->simulateDeviceLoss("device lost");
     room.playback->poll(); // closed, reopened on the supervisor's backoff
 
-    CHECK(room.playback->volume(volumeRequest(0.1), error));
+    CHECK(setVolume(room, volumeRequest(0.1), error));
     CHECK_EQ(room.runtime.volumeGain, 0.1);
     CHECK(waitUntil(
         [&] {
@@ -939,7 +970,7 @@ MULTIROOM_TEST(stream_playback_leaving_hardware_volume_resets_its_level)
     CHECK(playing(room, listener, sequence));
 
     std::string error;
-    CHECK(room.playback->volume(volumeRequest(0.25), error));
+    CHECK(setVolume(room, volumeRequest(0.25), error));
     CHECK_EQ(room.stub->hardwareVolume.gain, 0.25);
 
     // The software path plays the gain, so the device's control goes back to
@@ -969,7 +1000,7 @@ MULTIROOM_TEST(stream_playback_failed_reset_leaving_hardware_volume_is_retried)
     matp::SetVolume request = volumeRequest(0.25);
     request.hasMuted = true;
     request.muted = true;
-    CHECK(room.playback->volume(request, error));
+    CHECK(setVolume(room, request, error));
     CHECK(room.stub->hardwareVolume.muted);
 
     // The reset and the path's own applyVolume() retry both refused.
@@ -982,7 +1013,7 @@ MULTIROOM_TEST(stream_playback_failed_reset_leaving_hardware_volume_is_retried)
     matp::SetVolume unmute;
     unmute.hasMuted = true;
     unmute.muted = false;
-    CHECK(room.playback->volume(unmute, error));
+    CHECK(setVolume(room, unmute, error));
     CHECK(!room.stub->hardwareVolume.muted);
     CHECK_EQ(room.stub->hardwareVolume.gain, 1.0);
     room.play(3008);
@@ -1005,7 +1036,7 @@ MULTIROOM_TEST(stream_playback_owed_reset_into_disabled_keeps_the_mute)
     matp::SetVolume request = volumeRequest(0.25);
     request.hasMuted = true;
     request.muted = true;
-    CHECK(room.playback->volume(request, error));
+    CHECK(setVolume(room, request, error));
 
     // The reset and its retry refuse; Disabled's own mute goes through.
     room.stub->hardwareVolume.failNext = 2;
@@ -1040,7 +1071,7 @@ MULTIROOM_TEST(stream_playback_owed_reset_into_disabled_keeps_a_scheduled_mute_w
         matp::SetVolume request = volumeRequest(0.25);
         request.hasMuted = true;
         request.muted = initiallyMuted;
-        CHECK(room.playback->volume(request, error));
+        CHECK(setVolume(room, request, error));
 
         room.stub->hardwareVolume.failNext = 2;
         room.config.volumeControl = matp::VolumeControlMode::Disabled;
@@ -1053,7 +1084,7 @@ MULTIROOM_TEST(stream_playback_owed_reset_into_disabled_keeps_a_scheduled_mute_w
         later.muted = !initiallyMuted;
         later.hasApplyAtTimelineNs = true;
         later.applyAtTimelineNs = kBaseNs + 80 * kMsNs;
-        CHECK(room.playback->volume(later, error));
+        CHECK(room.playback->volume(later, error)); // scheduled: the poll below is its first
 
         // Also recover at the scheduled frame when the earlier poll's reset
         // fails. The mute already in force must survive either recovery time.
@@ -1100,7 +1131,7 @@ MULTIROOM_TEST(stream_playback_owed_level_reset_survives_a_further_path_change)
     matp::SetVolume request = volumeRequest(0.25);
     request.hasMuted = true;
     request.muted = true;
-    CHECK(room.playback->volume(request, error));
+    CHECK(setVolume(room, request, error));
 
     room.stub->hardwareVolume.failNext = 2;
     room.config.volumeControl = matp::VolumeControlMode::Disabled;
@@ -1126,7 +1157,7 @@ MULTIROOM_TEST(stream_playback_bitperfect_never_scales_even_when_the_hardware_re
     CHECK(playing(room, listener, sequence));
 
     std::string error;
-    CHECK(room.playback->volume(volumeRequest(0.5), error));
+    CHECK(setVolume(room, volumeRequest(0.5), error));
     room.playback->poll();
 
     // The control gone, bitPerfect leaves nothing but Disabled -- and says so.
@@ -1151,7 +1182,7 @@ MULTIROOM_TEST(stream_playback_disabled_plays_the_mute_and_not_the_gain)
 
     // The gain is not played anywhere.
     std::string error;
-    CHECK(room.playback->volume(volumeRequest(0.25), error));
+    CHECK(setVolume(room, volumeRequest(0.25), error));
     CHECK_EQ(room.stub->hardwareVolume.sets, 0);
     CHECK_EQ(room.stub->hardwareVolume.gain, 0.5);
 
@@ -1159,7 +1190,7 @@ MULTIROOM_TEST(stream_playback_disabled_plays_the_mute_and_not_the_gain)
     matp::SetVolume mute;
     mute.hasMuted = true;
     mute.muted = true;
-    CHECK(room.playback->volume(mute, error));
+    CHECK(setVolume(room, mute, error));
     CHECK(room.stub->hardwareVolume.mutes > 0);
     CHECK(room.stub->hardwareVolume.muted);
     CHECK_EQ(room.stub->hardwareVolume.sets, 0);
@@ -1178,14 +1209,14 @@ MULTIROOM_TEST(stream_playback_disabled_without_a_switch_mutes_by_silence)
     CHECK(playing(room, listener, sequence));
 
     std::string error;
-    CHECK(room.playback->volume(volumeRequest(0.25), error));
+    CHECK(setVolume(room, volumeRequest(0.25), error));
     room.play(2016);
     CHECK_EQ(room.output[2015], 1536u); // the gain is not played
 
     matp::SetVolume mute;
     mute.hasMuted = true;
     mute.muted = true;
-    CHECK(room.playback->volume(mute, error));
+    CHECK(setVolume(room, mute, error));
     room.play(3008);
     CHECK_EQ(room.output[3007], 0u);
 }

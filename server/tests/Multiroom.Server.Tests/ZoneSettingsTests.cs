@@ -68,47 +68,63 @@ public sealed class ZoneSettingsTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_zone_volume_lowers_its_rooms_volumes_on_the_line_and_keeps_what_they_asked()
+    public async Task A_zone_volume_is_its_loudest_room_s_and_setting_it_moves_every_room_alike()
     {
         _core.StatusBody = PlayingStatus;
         var (link, _) = await StartAsync();
         await Send(link, new ZoneSetClients("living", ["roomA", "roomB"]));
         await Send(link, new ClientSetVolume("roomA", 0.8));
         await Send(link, new ClientSetVolume("roomB", 0.7));
+        Assert.Equal(0.8, link.Desired.ZoneLevel("living").Volume);
 
         var mark = _core.All.Count;
         Assert.True((await link.SetZoneLevelAsync("living", 0.5, null, Ct)).IsSuccess);
         Assert.Equal(
             [
                 ("zones", "{}"),
-                ("client.setVolume", """{"client":"roomA","value":0.3,"applyAtTimelineNs":5250000000}"""),
-                ("client.setVolume", """{"client":"roomB","value":0.2,"applyAtTimelineNs":5250000000}"""),
+                ("client.setVolume", """{"client":"roomA","value":0.5,"applyAtTimelineNs":5250000000}"""),
+                ("client.setVolume", """{"client":"roomB","value":0.4,"applyAtTimelineNs":5250000000}"""),
             ],
             SentSince(mark));
-        Assert.Equal((0.8, 0.7), (link.Desired.Rooms["roomA"].Volume, link.Desired.Rooms["roomB"].Volume));
-        Assert.Equal(0.3, link.Desired.Effective("roomA").Volume);
-
-        mark = _core.All.Count;
-        Assert.True((await link.SetZoneLevelAsync("living", 1.0, null, Ct)).IsSuccess);
-        Assert.Equal(
-            [
-                ("zones", "{}"),
-                ("client.setVolume", """{"client":"roomA","value":0.8,"applyAtTimelineNs":5250000000}"""),
-                ("client.setVolume", """{"client":"roomB","value":0.7,"applyAtTimelineNs":5250000000}"""),
-            ],
-            SentSince(mark));
+        Assert.Equal((0.5, 0.4), (link.Desired.Rooms["roomA"].Volume, link.Desired.Rooms["roomB"].Volume));
+        Assert.Equal(0.5, link.Desired.ZoneLevel("living").Volume);
 
         // A replay changes nothing and sends nothing.
         mark = _core.All.Count;
-        Assert.True((await link.SetZoneLevelAsync("living", 1.0, null, Ct)).IsSuccess);
+        Assert.True((await link.SetZoneLevelAsync("living", 0.5, null, Ct)).IsSuccess);
         Assert.Empty(SentSince(mark));
 
-        // A room's own change inside the zone is sent lowered by the zone's level.
-        await link.SetZoneLevelAsync("living", 0.5, null, Ct);
+        // Down to silence and back: the quieter room kept its distance below 0.
+        await link.SetZoneLevelAsync("living", 0.0, null, Ct);
+        Assert.Equal((0.0, 0.0), (link.Desired.Effective("roomA").Volume, link.Desired.Effective("roomB").Volume));
+        Assert.Equal(0.0, link.Desired.ZoneLevel("living").Volume);
+        await link.SetZoneLevelAsync("living", 0.8, null, Ct);
+        Assert.Equal((0.8, 0.7), (link.Desired.Effective("roomA").Volume, link.Desired.Effective("roomB").Volume));
+
+        // A room's own change is sent as it is, and the zone follows its loudest.
         mark = _core.All.Count;
         await Send(link, new ClientSetVolume("roomA", 0.6));
-        Assert.Equal([("client.setVolume", """{"client":"roomA","value":0.1}""")], SentSince(mark));
-        Assert.Equal(0.6, link.Desired.Rooms["roomA"].Volume);
+        Assert.Equal([("client.setVolume", """{"client":"roomA","value":0.6}""")], SentSince(mark));
+        Assert.Equal(0.7, link.Desired.ZoneLevel("living").Volume);
+    }
+
+    [Fact]
+    public async Task A_room_never_given_a_volume_counts_as_full_and_a_room_leaving_its_zone_is_taken_back_within_range()
+    {
+        var (link, _) = await StartAsync();
+        await Send(link, new ZoneSetClients("living", ["roomA", "roomB"]));
+        await Send(link, new ClientSetVolume("roomB", 0.4));
+        Assert.Equal(1.0, link.Desired.ZoneLevel("living").Volume);
+        Assert.Null(link.Desired.Effective("roomA").Volume);
+
+        await link.SetZoneLevelAsync("living", 0.3, null, Ct);
+        Assert.Equal((0.3, -0.3), (link.Desired.Rooms["roomA"].Volume, link.Desired.Rooms["roomB"].Volume));
+        Assert.Equal(0.0, link.Desired.Effective("roomB").Volume);
+
+        var mark = _core.All.Count;
+        await Send(link, new ZoneSetClients("kitchen", ["roomB"]));
+        Assert.Equal(0.0, link.Desired.Rooms["roomB"].Volume);
+        Assert.DoesNotContain(SentSince(mark), r => r.Command == "client.setVolume");
     }
 
     [Fact]
@@ -134,30 +150,24 @@ public sealed class ZoneSettingsTests : IAsyncDisposable
         mark = _core.All.Count;
         Assert.True((await link.SetZoneLevelAsync("living", null, false, Ct)).IsSuccess);
         Assert.Equal([("client.setVolume", """{"client":"roomA","muted":false}""")], SentSince(mark));
-        Assert.Equal((0.3, false), (link.Desired.Effective("roomA").Volume, link.Desired.Effective("roomA").Muted));
-        Assert.Equal((0.2, true), (link.Desired.Effective("roomB").Volume, link.Desired.Effective("roomB").Muted));
+        Assert.Equal((0.5, false), (link.Desired.Effective("roomA").Volume, link.Desired.Effective("roomA").Muted));
+        Assert.Equal((0.4, true), (link.Desired.Effective("roomB").Volume, link.Desired.Effective("roomB").Muted));
 
-        // Into a zone with no level of its own: the room's own pair.
+        // Into a zone with no mute of its own: its volume is its own already.
         mark = _core.All.Count;
         await Send(link, new ZoneSetClients("kitchen", ["roomA"]));
         Assert.Equal(
             [
                 ("zone.setClients", """{"zone":"kitchen","clients":["roomA"]}"""),
                 ("client.setGrouped", """{"client":"roomA","grouped":false}"""),
-                ("client.setVolume", """{"client":"roomA","value":0.8}"""),
                 ("client.setGrouped", """{"client":"roomB","grouped":false}"""),
             ],
             SentSince(mark));
 
-        // Out of every zone: its own.
+        // Out of every zone, muted on its own: nothing changes.
         mark = _core.All.Count;
         await Send(link, new ZoneSetClients("living", []));
-        Assert.Equal(
-            [
-                ("zone.setClients", """{"zone":"living","clients":[]}"""),
-                ("client.setVolume", """{"client":"roomB","value":0.7}"""),
-            ],
-            SentSince(mark));
+        Assert.Equal([("zone.setClients", """{"zone":"living","clients":[]}""")], SentSince(mark));
     }
 
     [Fact]
@@ -181,9 +191,9 @@ public sealed class ZoneSettingsTests : IAsyncDisposable
                 ("zone.create", """{"zone":"living"}"""),
                 ("zone.setClients", """{"zone":"living","clients":["roomA","roomB"]}"""),
                 ("client.setGrouped", """{"client":"roomA","grouped":true}"""),
-                ("client.setVolume", """{"client":"roomA","value":0.3,"muted":false}"""),
+                ("client.setVolume", """{"client":"roomA","value":0.5}"""),
                 ("client.setGrouped", """{"client":"roomB","grouped":true}"""),
-                ("client.setVolume", """{"client":"roomB","value":0.2,"muted":true}"""),
+                ("client.setVolume", """{"client":"roomB","value":0.4,"muted":true}"""),
             ],
             _core.On(2).Select(r => (r.Command, r.Params)));
     }
@@ -207,7 +217,7 @@ public sealed class ZoneSettingsTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_zone_s_volume_and_mute_outlive_a_restart_and_a_format_1_file_restores_at_full_volume()
+    public async Task A_zone_s_volume_and_mute_outlive_a_restart_and_an_old_file_s_zone_volume_moves_into_its_rooms()
     {
         var path = Path.Combine(_dir.Path, "playback.json");
         var link = Link();
@@ -225,8 +235,21 @@ public sealed class ZoneSettingsTests : IAsyncDisposable
         {
             var store = Store(restored, path, services);
             await store.StartAsync(Ct);
-            Assert.Equal(new DesiredZoneLevel(0.5, true), restored.Desired.ZoneLevels["living"]);
+            Assert.Equal(new DesiredZoneLevel(0.5, true), restored.Desired.ZoneLevel("living"));
             Assert.Equal((0.5, true), (restored.Desired.Effective("roomA").Volume, restored.Desired.Effective("roomA").Muted));
+            await store.StopAsync(Ct);
+        }
+
+        // A file that kept a zone volume over its rooms: each room as loud as it was.
+        await File.WriteAllTextAsync(path,
+            """{"version":12,"zones":[{"zone":"living","clients":["roomA","roomB"],"volume":0.5}],"rooms":{"roomA":{"volume":0.8},"roomB":{"volume":0.2}},"queues":[]}""", Ct);
+        var kept = Link();
+        await using (var services = new ServiceCollection().BuildServiceProvider())
+        {
+            var store = Store(kept, path, services);
+            await store.StartAsync(Ct);
+            Assert.Equal((0.3, -0.3), (kept.Desired.Rooms["roomA"].Volume, kept.Desired.Rooms["roomB"].Volume));
+            Assert.Equal(new DesiredZoneLevel(0.3, false), kept.Desired.ZoneLevel("living"));
             await store.StopAsync(Ct);
         }
 
@@ -238,7 +261,7 @@ public sealed class ZoneSettingsTests : IAsyncDisposable
             var store = Store(old, path, services);
             await store.StartAsync(Ct);
             Assert.Equal(["roomA"], old.Desired.MembersOf("living"));
-            Assert.Empty(old.Desired.ZoneLevels);
+            Assert.Equal(new DesiredZoneLevel(1.0, false), old.Desired.ZoneLevel("living"));
             await store.StopAsync(Ct);
         }
     }

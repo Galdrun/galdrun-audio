@@ -6,6 +6,7 @@
 #include "TestSupport.h"
 
 #include "app/BluetoothPlayback.h"
+#include "app/StreamPlayback.h"
 #include "config/ClientConfig.h"
 
 #include <cstring>
@@ -176,6 +177,133 @@ MULTIROOM_TEST(bluetooth_playback_leaves_an_unset_hardware_control_alone)
     phone.runtime.volumePath.effective = matp::VolumeControlMode::Hardware;
     CHECK(phone.takeOver());
     CHECK_EQ(phone.stub->hardwareVolume.sets, 0);
+    CHECK_EQ(phone.play(1000), 1000);
+}
+
+MULTIROOM_TEST(bluetooth_playback_resets_the_control_when_the_path_leaves_it)
+{
+    Phone phone;
+    phone.cache.devices[0].hardwareVolume.available = true;
+    phone.cache.devices[0].hardwareVolume.hasMute = true;
+    phone.stub->hardwareVolume.offered = true;
+    phone.runtime.audioControl = matp::AudioControl::Auto;
+    phone.runtime.volumePath.effective = matp::VolumeControlMode::Hardware;
+    phone.runtime.volumeSet = true;
+    phone.runtime.volumeGain = 0.25;
+    phone.runtime.volumeMuted = true;
+    CHECK(phone.takeOver());
+    CHECK_EQ(phone.play(1000), 0);
+
+    // Hardware -> Software: the control back to its ceiling, unmuted.
+    phone.runtime.volumePath.effective = matp::VolumeControlMode::Software;
+    phone.runtime.volumeMuted = false;
+    CHECK_EQ(phone.play(1000), 250);
+    CHECK_EQ(phone.stub->hardwareVolume.gain, boardGainLimit());
+    CHECK(!phone.stub->hardwareVolume.muted);
+
+    // Software -> Hardware -> Disabled: the ceiling, with the room's mute.
+    phone.runtime.volumePath.effective = matp::VolumeControlMode::Hardware;
+    CHECK_EQ(phone.play(1000), 1000);
+    CHECK_EQ(phone.stub->hardwareVolume.gain, 0.25);
+    phone.runtime.volumePath.effective = matp::VolumeControlMode::Disabled;
+    phone.runtime.volumeMuted = true;
+    phone.poll();
+    CHECK_EQ(phone.stub->hardwareVolume.gain, boardGainLimit());
+    CHECK(phone.stub->hardwareVolume.muted);
+}
+
+MULTIROOM_TEST(bluetooth_playback_puts_a_first_default_room_volume_on_the_control)
+{
+    Phone phone;
+    phone.cache.devices[0].hardwareVolume.available = true;
+    phone.stub->hardwareVolume.offered = true;
+    phone.stub->hardwareVolume.gain = 0.2;
+    phone.runtime.volumePath.effective = matp::VolumeControlMode::Hardware;
+    CHECK(phone.takeOver());
+    CHECK_EQ(phone.stub->hardwareVolume.sets, 0);
+
+    phone.runtime.volumeSet = true; // SET_VOLUME 1.0, unmuted: the defaults
+    phone.poll();
+    CHECK_EQ(phone.stub->hardwareVolume.sets, 1);
+    CHECK_EQ(phone.stub->hardwareVolume.gain, 1.0);
+}
+
+MULTIROOM_TEST(bluetooth_playback_tries_a_refused_control_again)
+{
+    Phone phone;
+    phone.cache.devices[0].hardwareVolume.available = true;
+    phone.cache.devices[0].hardwareVolume.hasMute = true;
+    phone.stub->hardwareVolume.offered = true;
+    phone.runtime.volumePath.effective = matp::VolumeControlMode::Hardware;
+    phone.runtime.volumeSet = true;
+    phone.runtime.volumeGain = 0.25;
+    phone.runtime.volumeMuted = true;
+    CHECK(phone.takeOver());
+    CHECK(phone.stub->hardwareVolume.muted);
+
+    phone.stub->hardwareVolume.failNext = 1;
+    phone.runtime.volumeMuted = false;
+    phone.poll();
+    CHECK(phone.stub->hardwareVolume.muted); // refused
+    for (int i = 0; i < 110; ++i)            // past the retry interval
+        phone.play(0);
+    CHECK(!phone.stub->hardwareVolume.muted);
+    CHECK_EQ(phone.play(1000), 1000); // the control attenuates, not the samples
+}
+
+MULTIROOM_TEST(bluetooth_playback_never_scales_the_samples_under_bit_perfect)
+{
+    Phone phone;
+    phone.cache.devices[0].hardwareVolume.available = true;
+    phone.stub->hardwareVolume.offered = true;
+    phone.runtime.audioControl = matp::AudioControl::BitPerfect;
+    phone.runtime.volumePath.effective = matp::VolumeControlMode::Hardware;
+    phone.runtime.volumeSet = true;
+    phone.runtime.volumeGain = 0.5;
+    CHECK(phone.takeOver());
+    CHECK_EQ(phone.play(1000), 1000);
+
+    phone.stub->hardwareVolume.failNext = 1;
+    phone.runtime.volumeGain = 0.25;
+    CHECK_EQ(phone.play(1000), 1000);
+}
+
+MULTIROOM_TEST(bluetooth_playback_resets_a_control_whose_first_write_failed)
+{
+    Phone phone;
+    phone.cache.devices[0].hardwareVolume.available = true;
+    phone.cache.devices[0].hardwareVolume.hasMute = true;
+    phone.stub->hardwareVolume.offered = true;
+    phone.stub->hardwareVolume.muted = true; // what a write that failed halfway left
+    phone.stub->hardwareVolume.failNext = 1;
+    phone.runtime.audioControl = matp::AudioControl::Auto;
+    phone.runtime.volumePath.effective = matp::VolumeControlMode::Hardware;
+    phone.runtime.volumeSet = true;
+    phone.runtime.volumeGain = 0.25;
+    phone.runtime.volumeMuted = true;
+    CHECK(phone.takeOver());
+
+    phone.runtime.volumePath.effective = matp::VolumeControlMode::Software;
+    phone.runtime.volumeMuted = false;
+    CHECK_EQ(phone.play(1000), 250);
+    CHECK(!phone.stub->hardwareVolume.muted);
+    CHECK_EQ(phone.stub->hardwareVolume.gain, boardGainLimit());
+}
+
+MULTIROOM_TEST(bluetooth_playback_stops_scaling_at_once_when_the_room_turns_bit_perfect)
+{
+    Phone phone;
+    phone.cache.devices[0].hardwareVolume.available = true;
+    phone.stub->hardwareVolume.offered = true;
+    phone.stub->hardwareVolume.failSet = true;
+    phone.runtime.audioControl = matp::AudioControl::Auto;
+    phone.runtime.volumePath.effective = matp::VolumeControlMode::Hardware;
+    phone.runtime.volumeSet = true;
+    phone.runtime.volumeGain = 0.25;
+    CHECK(phone.takeOver());
+    CHECK_EQ(phone.play(1000), 250); // the refused control's stand-in
+
+    phone.runtime.audioControl = matp::AudioControl::BitPerfect;
     CHECK_EQ(phone.play(1000), 1000);
 }
 

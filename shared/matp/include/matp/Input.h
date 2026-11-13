@@ -104,7 +104,8 @@ bool actionTakesStep(InputAction action);
 bool actionTakesValue(InputAction action);
 bool actionTakesScope(InputAction action);
 
-const double kDefaultVolumeStep = 0.05;
+// Raumfeld's default button step: 2 % of the slider, 1.2 dB.
+const double kDefaultVolumeStep = 0.02;
 
 struct InputBinding
 {

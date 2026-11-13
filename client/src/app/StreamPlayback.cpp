@@ -613,6 +613,7 @@ bool StreamPlayback::volume(const matp::SetVolume& request, std::string&)
         // (updateVolumePath); the position it was meant for is gone with the
         // device's frame axis.
         hardwarePending_ = false;
+        hardwareDue_ = false;
         MULTIROOM_INFO("volume %.3f%s kept for when the audio device opens", gain,
                  muted ? " (muted)" : "");
         publishVolume();
@@ -630,6 +631,7 @@ bool StreamPlayback::volume(const matp::SetVolume& request, std::string&)
         uint64_t deviceFrame = 0;
         if (source_.deviceFrameForStream(streamFrame, deviceFrame))
         {
+            hardwareDue_ = false; // this one replaces it, at its frame
             hardwarePending_ = true;
             hardwarePendingStreamFrame_ = streamFrame;
             hardwarePendingGain_ = gain;
@@ -661,7 +663,10 @@ bool StreamPlayback::volume(const matp::SetVolume& request, std::string&)
     }
 
     hardwarePending_ = false;
-    applyVolume(gain, muted);
+    if (usesHardware())
+        hardwareDue_ = true; // poll() sets the control, to the newest
+    else
+        applyVolume(gain, muted);
     MULTIROOM_INFO("volume %.3f%s (%s)", gain, muted ? " (muted)" : "",
              matp::volumeControlModeName(volumePath_.effective));
     publishTimeline(false);
@@ -713,6 +718,7 @@ void StreamPlayback::updateVolumePath(bool deviceOpened)
             MULTIROOM_WARN("volume: %s; the reset is tried again", error.c_str());
 
         hardwarePending_ = false;
+        hardwareDue_ = false; // applied below
         // Nothing but the path now in force scales the samples.
         source_.setVolume(1.0, false);
         if (volumeSet_)
@@ -874,6 +880,12 @@ uint32_t StreamPlayback::waitMs(uint32_t maxMs) const
 
 void StreamPlayback::pollHardwareVolume(uint64_t nowNs)
 {
+    if (hardwareDue_)
+    {
+        hardwareDue_ = false;
+        applyVolume(volumeGain_, volumeMuted_);
+    }
+
     // Not while a pause or a stop holds the timeline short of it: the device
     // runs on, its timeline does not, and the resume's start places it again.
     if (usesHardware() && hardwarePending_ &&

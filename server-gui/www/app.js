@@ -1389,7 +1389,7 @@ function renderPlayer() {
       z.autoFill && autoFillButton(z),
       // The Zones page opens on the picked zone (onShow).
       transportButton('queue', tt('player.showQueue'), () => { location.hash = '#/zones'; }),
-      // The zone's own volume and mute, over its rooms' own (server phase 15).
+      // The zone's volume (its loudest room's; moving it moves every room alike) and mute.
       z.desired && volumeRow(z.desired.volume, z.desired.muted,
         (volume) => act(() => api('PATCH', path, { volume })),
         (muted) => act(() => api('PATCH', path, { muted })))),
@@ -1684,6 +1684,36 @@ function likedRow(l) {
       h('span', { class: 'row-tools' }, ref && refButtons(ref, 'row-play'), likeButton(book ? 'audiobook' : 'track', node ?? x)))));
 }
 
+// A range input that applies its value while it moves, not only when let go:
+// `apply` (returning a promise) runs for one value at a time and at most every
+// LIVE_RANGE_GAP_MS, and the newest value waiting goes next, so a drag neither
+// floods the server nor lands out of order, and where it is let go is always
+// the last value sent. `shown`, if given, runs at once on every move (a label).
+const LIVE_RANGE_GAP_MS = 100;
+function liveRange(attrs, apply, shown) {
+  let busy = false, waiting = null, sent = null;
+  const send = async (value) => {
+    if (busy) { waiting = value; return; }
+    busy = true;
+    try {
+      if (value !== sent) {
+        const started = performance.now();
+        sent = value;
+        await apply(value);
+        const rest = LIVE_RANGE_GAP_MS - (performance.now() - started);
+        if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest));
+      }
+    } finally {
+      busy = false;
+    }
+    if (waiting != null) { const next = waiting; waiting = null; send(next); }
+  };
+  return h('input', {
+    ...attrs, type: 'range',
+    oninput: (e) => { const value = Number(e.target.value); shown?.(e.target, value); send(value); },
+  });
+}
+
 function volumeRow(volume, muted, setVolume, setMuted, { disabled = false, title = '' } = {}) {
   const pct = (v) => `${Math.round(Number(v) * 100)} %`;
   return h('div', { class: 'volume-row' },
@@ -1691,11 +1721,8 @@ function volumeRow(volume, muted, setVolume, setMuted, { disabled = false, title
       class: 'icon-only' + (muted ? ' danger' : ''), title: tt(muted ? 'zones.unmuteTitle' : 'zones.muteTitle'), 'aria-label': tt(muted ? 'zones.unmute' : 'zones.mute'),
       'aria-pressed': muted ? 'true' : 'false', onclick: () => setMuted(!muted),
     }, icon(muted ? 'mute' : 'volume')),
-    h('input', {
-      type: 'range', min: 0, max: 1, step: 0.01, value: String(volume ?? 1), disabled, title, 'aria-label': tt('zones.volume'),
-      oninput: (e) => { e.target.nextElementSibling.textContent = pct(e.target.value); },
-      onchange: (e) => setVolume(Number(e.target.value)),
-    }),
+    liveRange({ min: 0, max: 1, step: 0.01, value: String(volume ?? 1), disabled, title, 'aria-label': tt('zones.volume') },
+      setVolume, (input, value) => { input.nextElementSibling.textContent = pct(value); }),
     h('span', { class: 'vol' }, volume == null ? '—' : pct(volume)));
 }
 
@@ -3517,7 +3544,7 @@ function inputsEditor(client, inputs, path, deepSleep) {
   const rows = [];
   for (const input of inputs) {
     for (const [gesture, b] of Object.entries(input.bindings)) {
-      const step = h('input', { name: 'step', type: 'number', min: 0.001, max: 1, step: 0.001, style: 'width:5em', value: String(b.step ?? 0.05) });
+      const step = h('input', { name: 'step', type: 'number', min: 0.001, max: 1, step: 0.001, style: 'width:5em', value: String(b.step ?? 0.02) });
       const value = h('input', { name: 'value', type: 'number', min: 0, max: 1, step: 0.01, style: 'width:5em', value: String(b.value ?? 0.5) });
       const scope = h('select', { name: 'scope', value: b.scope ?? 'room' }, h('option', { value: 'room' }, tt('room.room')), h('option', { value: 'zone' }, tt('room.scopeZone')));
       // Through the form's elements: a re-render keeps the nodes on the page.
@@ -3789,7 +3816,7 @@ function homeZones() {
         z.queue?.items.length ? h('span', { class: 'home-zone-play', onclick: (e) => e.stopPropagation() },
           on ? transportButton('pause', tt('common.pause'), () => transport(z.zone, 'play', 'pause'), 'primary play', z.zone, 'play')
             : transportButton('play', tt('home.play'), () => transport(z.zone, 'play', 'play'), 'primary play', z.zone)) : null,
-        // The zone's own volume and mute, as in the player bar.
+        // The zone's volume and mute, as in the player bar.
         z.desired && h('div', { class: 'home-zone-volume', onclick: (e) => e.stopPropagation() },
           volumeRow(z.desired.volume, z.desired.muted,
             (volume) => act(() => api('PATCH', `zones/${enc(z.zone)}`, { volume })),

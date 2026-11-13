@@ -2,7 +2,9 @@
 #undef NDEBUG
 #include "audio/linux/AlsaMixer.h"
 #include "config/BoardConfig.h"
+#include "audio/HardwareVolume.h"
 #include <cassert>
+#include <cmath>
 #include <limits>
 #include <vector>
 
@@ -58,12 +60,13 @@ int main()
     assert(volume);
     std::string error;
     commands.clear();
-    assert(volume->set(0.427, true, error));
+    // The MCU takes the slider position, as Raumfeld's percent.
+    assert(volume->set(hardware_volume::gainForPosition(0.42), true, error));
     assert((commands == std::vector<std::string>{"mute 1", "volume 42"}));
     HardwareVolumeState state;
-    assert(volume->read(state, error) && state.gain == 0.42 && state.muted);
+    assert(volume->read(state, error) && std::fabs(state.gain - hardware_volume::gainForPosition(0.42)) < 1e-9 && state.muted);
     commands.clear();
-    assert(volume->set(0.3, false, error));
+    assert(volume->set(hardware_volume::gainForPosition(0.3), false, error));
     assert((commands == std::vector<std::string>{"volume 30", "mute 0"}));
     assert(volume->setMute(true, error) && level == 30 && mute == 1);
     assert(volume->set(std::numeric_limits<double>::quiet_NaN(), true, error) && level == 0);

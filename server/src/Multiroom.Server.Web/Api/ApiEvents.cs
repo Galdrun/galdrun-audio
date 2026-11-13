@@ -87,6 +87,8 @@ public sealed class ApiEvents : ICoreEventSubscriber, IDisposable
         queues.QueueDeleted += OnQueueDeleted;
         inputs.ZoneLevelChanged += OnZoneLevelChanged;
         house.ZoneLevelChanged += OnZoneLevelChanged;
+        // A zone's volume is its loudest room's: a room's own change can move it.
+        link.Desired.RoomVolumeChanged += OnRoomVolumeChanged;
         likes.Added += OnLikeAdded;
         likes.Removed += OnLikeRemoved;
         likes.Changed += OnLikeAdded;
@@ -260,6 +262,7 @@ public sealed class ApiEvents : ICoreEventSubscriber, IDisposable
         _queues.QueueDeleted -= OnQueueDeleted;
         _inputs.ZoneLevelChanged -= OnZoneLevelChanged;
         _house.ZoneLevelChanged -= OnZoneLevelChanged;
+        _link.Desired.RoomVolumeChanged -= OnRoomVolumeChanged;
         _likes.Added -= OnLikeAdded;
         _likes.Removed -= OnLikeRemoved;
         _likes.Changed -= OnLikeAdded;
@@ -312,8 +315,14 @@ public sealed class ApiEvents : ICoreEventSubscriber, IDisposable
     // The shape the zone PATCH publishes, for a knob that turned a zone.
     private void OnZoneLevelChanged(object? sender, string zone)
     {
-        var level = _link.Desired.ZoneLevels.GetValueOrDefault(zone) ?? new DesiredZoneLevel();
+        var level = _link.Desired.ZoneLevel(zone);
         Publish("zone.volumeChanged", new { zone, volume = level.Volume, muted = level.Muted });
+    }
+
+    private void OnRoomVolumeChanged(object? sender, string client)
+    {
+        if (_link.Desired.ZoneOf(client) is { } zone)
+            OnZoneLevelChanged(sender, zone);
     }
 
     // like.changed: the new like, or its id once removed; either with its

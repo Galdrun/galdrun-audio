@@ -457,6 +457,25 @@ MULTIROOM_TEST(input_a_hold_is_a_click_until_long_press_is_bound)
     CHECK(out[0].gesture == matp::InputGesture::LongPress);
 }
 
+MULTIROOM_TEST(input_a_press_the_gate_takes_makes_no_gesture_until_released)
+{
+    std::vector<InputDefinition> inputs = {button("play", 17)};
+    bind(inputs[0], matp::InputGesture::LongPress, matp::InputAction::Next);
+    InputController controller(inputs);
+    int asked = 0;
+    // The first press wakes the device and is taken; the next is a click.
+    controller.setPressGate([&asked](size_t index) {
+        CHECK_EQ(index, static_cast<size_t>(0));
+        return ++asked == 1;
+    });
+    const std::vector<matp::InputActionEvent> out = run(
+        controller, {level(0, true, 0), level(0, false, 2500), level(0, true, 3000), level(0, false, 3100)},
+        3200);
+    CHECK_EQ(asked, 2);
+    CHECK_EQ(out.size(), static_cast<size_t>(1));
+    CHECK(out[0].gesture == matp::InputGesture::Click);
+}
+
 MULTIROOM_TEST(input_a_release_just_before_the_long_press_deadline_is_a_click)
 {
     std::vector<InputDefinition> inputs = {button("play", 17)};

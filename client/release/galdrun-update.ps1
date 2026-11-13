@@ -44,6 +44,8 @@ function Install-Package {
     $package = Join-Path $work 'package.zip'
     $staged = Join-Path $work 'staged'
     if (-not (Test-Path -LiteralPath $package)) { throw 'no package' }
+    # Any client's trial in this folder: its rollback copy is the only one.
+    if (Test-Path -LiteralPath (Join-Path $work 'trial')) { throw 'the last update is still on trial' }
     $actual = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $Sha256.ToLowerInvariant()) { throw "checksum mismatch: $actual, expected $Sha256" }
     Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue

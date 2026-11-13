@@ -293,7 +293,7 @@ void InputController::edge(size_t index, bool pressed, uint64_t atNs,
     case Phase::Idle:
         if (pressed)
         {
-            s.phase = Phase::Down;
+            s.phase = pressGate_ && pressGate_(index) ? Phase::IgnoreUntilRelease : Phase::Down;
             s.phaseSinceNs = atNs;
         }
         break;

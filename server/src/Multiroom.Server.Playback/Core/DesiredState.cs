@@ -23,12 +23,14 @@ public sealed record DesiredRoom(
     string? WakeOnLan = null,
     bool? InputsEnabled = null);
 
-// A zone's own volume and mute (phase 15): a level over each member's volume
-// and a mute over each member's mute. Neither is a core setting.
+// A zone's volume and mute (phase 15), as Raumfeld has them. Volume is not
+// kept: it is the loudest member's, and setting it moves every member by the
+// same amount, so the rooms keep their balance. Muted is the zone's own, a
+// mute over each member's. Neither is a core setting.
 public sealed record DesiredZoneLevel(double Volume = 1.0, bool Muted = false);
 
 // What is sent for a room: its own settings with its zone's applied. Volume
-// is the room's lowered by the zone's and its maximum (in decibels), Muted the room's or the zone's. Grouped is
+// is the room's within 0..1, lowered by its maximum (in decibels), Muted the room's or the zone's. Grouped is
 // whether it shares its zone, which has the core correct it unless it is
 // BitPerfect: while its zone's wanted list names another room. A room left
 // alone in a zone that plays is told so at once; the core keeps its plan to
@@ -62,7 +64,8 @@ public sealed class DesiredState
     private readonly List<string> _zoneOrder = [];
     private readonly Dictionary<string, IReadOnlyList<string>?> _zones = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DesiredRoom> _rooms = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, DesiredZoneLevel> _levels = new(StringComparer.Ordinal);
+    // The zones given a mute of their own, muted or not.
+    private readonly Dictionary<string, bool> _zoneMuted = new(StringComparer.Ordinal);
 
     // Every zone that must exist, in creation order, with the membership
     // asked for (null: none asked).
@@ -84,14 +87,14 @@ public sealed class DesiredState
         }
     }
 
-    // The zones given a volume or a mute of their own; any other is at 1.0,
-    // not muted.
-    public IReadOnlyDictionary<string, DesiredZoneLevel> ZoneLevels
+    // The zone's volume, its loudest member's (0 with none), and its mute.
+    public DesiredZoneLevel ZoneLevel(string zone)
     {
-        get
+        lock (_lock)
         {
-            lock (_lock)
-                return new Dictionary<string, DesiredZoneLevel>(_levels, StringComparer.Ordinal);
+            var members = _zones.GetValueOrDefault(zone) ?? [];
+            var volume = members.Count == 0 ? 0.0 : Math.Clamp(members.Max(RawVolumeLocked), 0.0, 1.0);
+            return new DesiredZoneLevel(volume, _zoneMuted.GetValueOrDefault(zone));
         }
     }
 
@@ -109,8 +112,15 @@ public sealed class DesiredState
     // must not wait on anything.
     public event EventHandler? Changed;
 
+    // Raised after a room's own volume was recorded, with the room; its zone's
+    // volume (ZoneLevel) is its loudest member's, so it may have changed too.
+    // Outside the lock, like Changed.
+    public event EventHandler<string>? RoomVolumeChanged;
+
     // At startup, before CoreLink first connects: the table as a previous run
     // of this server left it, so a core that restarts meanwhile is rebuilt.
+    // A zone volume other than 1.0 is from a file that kept one over its
+    // rooms: it is moved into them, so each room plays as loud as it did.
     public void Restore(IEnumerable<(string Zone, IReadOnlyList<string>? Clients)> zones,
         IReadOnlyDictionary<string, DesiredRoom> rooms,
         IReadOnlyDictionary<string, DesiredZoneLevel>? levels = null)
@@ -125,7 +135,11 @@ public sealed class DesiredState
             foreach (var (client, room) in rooms)
                 _rooms[client] = room;
             foreach (var (zone, level) in levels ?? new Dictionary<string, DesiredZoneLevel>())
-                _levels[zone] = level;
+            {
+                _zoneMuted[zone] = level.Muted;
+                if (level.Volume != 1.0)
+                    MoveLocked(_zones.GetValueOrDefault(zone) ?? [], level.Volume - 1.0);
+            }
         }
     }
 
@@ -144,18 +158,29 @@ public sealed class DesiredState
                     AddZone(c.Zone);
                     break;
                 case ZoneDelete c:
+                    foreach (var client in _zones.GetValueOrDefault(c.Zone) ?? [])
+                        SettleLocked(client);
                     _zones.Remove(c.Zone);
                     _zoneOrder.Remove(c.Zone);
-                    _levels.Remove(c.Zone);
+                    _zoneMuted.Remove(c.Zone);
                     break;
                 case ZoneSetClients c:
+                {
+                    var moving = c.Clients.Concat(_zones.GetValueOrDefault(c.Zone) ?? []).Distinct(StringComparer.Ordinal)
+                        .ToDictionary(client => client, ZoneOfLocked, StringComparer.Ordinal);
                     AddZone(c.Zone);
                     _zones[c.Zone] = [.. c.Clients];
                     // A room is in one zone at most: asked in here, it is out
                     // of wherever it was asked before.
                     foreach (var other in _zoneOrder.Where(z => z != c.Zone && _zones[z] is not null).ToList())
                         _zones[other] = [.. _zones[other]!.Where(client => !c.Clients.Contains(client))];
+                    foreach (var (client, was) in moving)
+                    {
+                        if (ZoneOfLocked(client) != was)
+                            SettleLocked(client);
+                    }
                     break;
+                }
                 case ClientSetAudioControl c:
                     SetRoom(c.Client, r => r with { AudioControl = c.AudioControl });
                     break;
@@ -171,6 +196,8 @@ public sealed class DesiredState
             }
         }
         Changed?.Invoke(this, EventArgs.Empty);
+        if (command is ClientSetVolume { Value: not null } volume)
+            RoomVolumeChanged?.Invoke(this, volume.Client);
     }
 
     // The name the room said last; unchanged is not a change.
@@ -211,13 +238,19 @@ public sealed class DesiredState
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    // A zone's own volume and mute; null leaves one as it is.
+    // A zone's volume and mute; null leaves one as it is. The volume moves
+    // every member by what takes the loudest to it (Raumfeld's ZoneVolume): a
+    // member pushed below 0 keeps its distance there and plays silence, so
+    // turning the zone up again brings every room back where it was.
     public void SetZoneLevel(string zone, double? volume, bool? muted)
     {
         lock (_lock)
         {
-            var level = _levels.GetValueOrDefault(zone) ?? new DesiredZoneLevel();
-            _levels[zone] = level with { Volume = volume ?? level.Volume, Muted = muted ?? level.Muted };
+            var members = _zones.GetValueOrDefault(zone) ?? [];
+            if (volume is { } v && members.Count > 0)
+                MoveLocked(members, v - members.Max(RawVolumeLocked));
+            if (muted is { } m)
+                _zoneMuted[zone] = m;
         }
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -270,8 +303,8 @@ public sealed class DesiredState
                 copy._zones[zone] = clients;
             foreach (var (client, room) in _rooms)
                 copy._rooms[client] = room;
-            foreach (var (zone, level) in _levels)
-                copy._levels[zone] = level;
+            foreach (var (zone, muted) in _zoneMuted)
+                copy._zoneMuted[zone] = muted;
         }
         copy.Record(command);
         return copy;
@@ -342,31 +375,46 @@ public sealed class DesiredState
     private List<string> ClientsLocked() =>
         [.. _rooms.Keys.Concat(_zones.Values.SelectMany(c => c ?? [])).Distinct(StringComparer.Ordinal)];
 
-    // A room never given a volume counts as 1.0 once its zone has a level of
-    // its own, so the zone can turn it down and back; so does one with a
-    // maximum. Volume is a slider position linear in decibels over
-    // VolumeRangeDb (the core's gainForPosition), so levels combine by adding
-    // their decibels: a zone at 0.5 takes 30 dB off its room, and MaxVolumeDb
-    // takes exactly itself. A position at 0 stays silence; a sum below the
-    // scale plays its quietest step rather than turning into a mute. Rounded,
-    // so that 0.8 lowered by 0.5 is sent as 0.3 and not as its binary residue.
+    // Volume is a slider position linear in decibels over VolumeRangeDb (the
+    // core's gainForPosition), as Raumfeld's percent is: moving positions by
+    // the same amount moves rooms by the same decibels, and MaxVolumeDb takes
+    // exactly itself. A room's own position may lie outside 0..1 after its
+    // zone moved it; it is played within. A position at 0 stays silence; a
+    // maximum below the scale plays its quietest step rather than a mute.
+    // Rounded, so that 0.8 moved by -0.5 is kept as 0.3 and not as its binary
+    // residue.
     private const double VolumeRangeDb = 60.0;
     private const double QuietestPosition = 0.001;
 
     private static double Lower(double position, double byDb) =>
         position <= 0.0 ? 0.0 : Math.Max(Math.Round(position + byDb / VolumeRangeDb, 9), QuietestPosition);
 
+    // A room never given a volume plays at full, as far as its zone knows.
+    private double RawVolumeLocked(string client) => _rooms.GetValueOrDefault(client)?.Volume ?? 1.0;
+
+    private void MoveLocked(IEnumerable<string> clients, double by)
+    {
+        foreach (var client in clients)
+            SetRoom(client, r => r with { Volume = Math.Round((r.Volume ?? 1.0) + by, 9) });
+    }
+
+    // Out of its zone, a room's distance to the others means nothing: its
+    // position is taken back within 0..1, which plays the same.
+    private void SettleLocked(string client)
+    {
+        if (_rooms.GetValueOrDefault(client)?.Volume is { } v and (< 0.0 or > 1.0))
+            SetRoom(client, r => r with { Volume = Math.Clamp(v, 0.0, 1.0) });
+    }
+
     private EffectiveRoom EffectiveLocked(string client)
     {
         var room = _rooms.GetValueOrDefault(client) ?? new DesiredRoom();
         var zone = ZoneOfLocked(client);
-        var level = zone is null ? null : _levels.GetValueOrDefault(zone);
-        var volume = level is null ? room.Volume
-            : level.Volume <= 0.0 ? 0.0
-            : Lower(room.Volume ?? 1.0, (level.Volume - 1.0) * VolumeRangeDb);
+        double? volume = room.Volume is { } own ? Math.Clamp(own, 0.0, 1.0) : null;
         if (room.MaxVolumeDb is { } maxDb)
             volume = Lower(volume ?? 1.0, maxDb);
-        var muted = level is null ? room.Muted : (room.Muted ?? false) || level.Muted;
+        bool? zoneMuted = zone is not null && _zoneMuted.TryGetValue(zone, out var m) ? m : null;
+        var muted = zoneMuted is null ? room.Muted : (room.Muted ?? false) || zoneMuted.Value;
 
         var grouped = zone is not null && _zones[zone]!.Count > 1;
         return new EffectiveRoom(volume, muted, grouped);

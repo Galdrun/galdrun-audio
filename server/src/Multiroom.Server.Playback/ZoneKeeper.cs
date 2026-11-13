@@ -172,19 +172,19 @@ public sealed partial class ZoneKeeper : BackgroundService, ICoreEventSubscriber
         base.Dispose();
     }
 
-    // Each room into a zone of its own that already has `zone`'s volume and
-    // mute, before `zone` lets it go: its effective level never changes, so
-    // it is not sent full volume in between (nor anything at all).
+    // Each room into a zone of its own that already has `zone`'s mute, before
+    // `zone` lets it go: its volume is its own, so its effective level never
+    // changes and it is not sent anything in between.
     private async Task TakeOutLockedAsync(string zone, List<string> leaving, CancellationToken cancellationToken)
     {
         if (leaving.Count == 0)
             return;
-        var level = _link.Desired.ZoneLevels.GetValueOrDefault(zone);
+        var muted = _link.Desired.ZoneLevel(zone).Muted;
         foreach (var client in leaving)
         {
             var own = NewZone();
-            if (level is not null)
-                _link.Desired.SetZoneLevel(own, level.Volume, level.Muted);
+            if (muted)
+                _link.Desired.SetZoneLevel(own, null, true);
             LogCreated(_log, own, client);
             var set = await _queues.SetClientsAsync(own, [client], cancellationToken).ConfigureAwait(false);
             if (!set.IsSuccess)

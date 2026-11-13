@@ -45,6 +45,8 @@ install_package() {
     package=$work/package.tar.gz
     staged=$work/staged
     [ -f "$package" ] || { say "no package"; return 1; }
+    # Any client's trial in this folder: its rollback copy is the only one.
+    [ -e "$work/trial" ] && { say "the last update is still on trial"; return 1; }
     actual=$(sha256sum "$package" | cut -d' ' -f1)
     [ "$actual" = "$sha" ] || { say "checksum mismatch: $actual, expected $sha"; return 1; }
     # The last update's rollback copy goes before unpacking: room for this one

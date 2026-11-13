@@ -111,8 +111,11 @@ inactive clients; an ordinary disconnected room remains visible.
 Keep ownership straight when changing settings:
 
 - `.NET DesiredState`: requested memberships, audio control, latency, EQ, room
-  levels and zone levels. Effective volume incorporates zone and maximum level
-  in decibels; preserve the room's own slider value separately. A room is
+  levels and zone mutes. A zone has no volume of its own (Raumfeld's model):
+  it is its loudest member's, and setting it moves every member's position by
+  the same amount, kept unclamped so the balance survives silence; positions
+  are linear in dB, so this is the same dB shift. Effective volume clamps the
+  position to 0..1 and applies the maximum level. A room is
   grouped exactly while its zone's wanted list names another room; the core
   decides when a room left alone changes plan (next track while playing).
 - Client config: identity/name, device, buffer, Volume Control, drift actuator,

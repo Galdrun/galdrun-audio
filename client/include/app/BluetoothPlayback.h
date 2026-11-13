@@ -61,6 +61,7 @@ private:
     void takeOver(uint64_t nowNs);
     void release(bool restorePower);
     // The room's volume onto its path: the device's control, else the samples.
+    // A control that refuses leaves it unapplied, for the poll to try again.
     void applyVolume();
 
     ClientRuntime& runtime_;
@@ -82,11 +83,20 @@ private:
     // The open device's own volume control, null without one.
     std::unique_ptr<IHardwareVolume> hardwareVolume_;
     bool hardwareMute_ = false; // it has a mute switch
-    // The room volume last applied, to apply only changes.
+    // What this playback last put on a device control: the room's level (and
+    // mute) under Hardware, or only its mute under Disabled. A path that stops
+    // using the control puts it back to the board's ceiling, unmuted.
+    enum class Control { Untouched, Level, Mute };
+    Control control_ = Control::Untouched;
+    // The room volume last applied, to apply only changes. Not applied while
+    // the control refuses: tried again at volumeRetryNs_.
     bool volumeApplied_ = false;
+    uint64_t volumeRetryNs_ = 0;
     double appliedGain_ = 1.0;
     bool appliedMuted_ = false;
+    bool appliedSet_ = false;
     matp::VolumeControlMode appliedPath_ = matp::VolumeControlMode::Disabled;
+    matp::AudioControl appliedAudioControl_ = matp::AudioControl::BitPerfect;
 
     uint32_t lastFrames_ = 0;
     uint64_t lastAudioNs_ = 0;

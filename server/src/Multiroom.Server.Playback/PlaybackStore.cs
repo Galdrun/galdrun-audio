@@ -256,12 +256,10 @@ public sealed partial class PlaybackStore : BackgroundService
 
     private void Write()
     {
-        var levels = _desired.ZoneLevels;
+        // A zone's volume is its rooms' (DesiredState.ZoneLevel): only the
+        // mute is its own. Volume stays 1.0, which Restore leaves as it is.
         var saved = new Saved(FormatVersion, [.. _desired.Zones.Select(z =>
-            {
-                var level = levels.GetValueOrDefault(z.Zone) ?? new DesiredZoneLevel();
-                return new SavedZone(z.Zone, z.Clients, level.Volume, level.Muted);
-            })],
+                new SavedZone(z.Zone, z.Clients, Muted: _desired.ZoneLevel(z.Zone).Muted))],
             _desired.Rooms, _engine.Save(), _autoFill?.Save(), _settings?.Current, null,
             _equalizerProfiles?.Save(), _users?.Save(), _generation + 1);
         // Counted only once written: a positions file must never name a

@@ -147,8 +147,8 @@ public sealed partial class InputActions : BackgroundService, ICoreEventSubscrib
         CancellationToken cancellationToken)
     {
         var current = scope == VolumeScope.Zone
-            ? (_link.Desired.ZoneLevels.GetValueOrDefault(zone!) ?? new DesiredZoneLevel()).Volume
-            : _link.Desired.Rooms.GetValueOrDefault(input.Client)?.Volume ?? 1.0;
+            ? _link.Desired.ZoneLevel(zone!).Volume
+            : Math.Clamp(_link.Desired.Rooms.GetValueOrDefault(input.Client)?.Volume ?? 1.0, 0.0, 1.0);
         var delta = (input.Step ?? 0.0) * input.Count;
         var target = Math.Clamp(input.Action switch
         {
@@ -171,7 +171,7 @@ public sealed partial class InputActions : BackgroundService, ICoreEventSubscrib
     {
         if (scope == VolumeScope.Zone)
         {
-            var muted = (_link.Desired.ZoneLevels.GetValueOrDefault(zone!) ?? new DesiredZoneLevel()).Muted;
+            var muted = _link.Desired.ZoneLevel(zone!).Muted;
             return await SetZoneLevelAsync(zone!, null, !muted, cancellationToken).ConfigureAwait(false);
         }
         var roomMuted = _link.Desired.Rooms.GetValueOrDefault(client)?.Muted ?? false;

@@ -639,7 +639,7 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
         response["supported"] = json::Value(reason.empty());
         if (!reason.empty())
             response["reason"] = json::Value(reason);
-        response["trial"] = json::Value(runtime_.updateTrial);
+        response["trial"] = json::Value(runtime_.updateTrial || self_update::trialPending());
         response["updating"] = json::Value(!runtime_.updateAction.empty());
         return response;
     }
@@ -655,7 +655,8 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
         const std::string reason = self_update::unsupportedReason();
         if (!reason.empty())
             return makeControlError(request, control_error::kUnavailable, reason);
-        if (runtime_.updateTrial)
+        // Also another client's trial in this folder: they share its rollback copy.
+        if (runtime_.updateTrial || self_update::trialPending())
             return makeControlError(request, control_error::kUnavailable,
                                     "the last update is still on trial");
         if (!fileutil::exists(self_update::packagePath()))

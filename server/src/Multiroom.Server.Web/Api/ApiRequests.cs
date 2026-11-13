@@ -100,7 +100,8 @@ public sealed record CoreAudioPatch(
 // The server core to use by its beacon id, or null for core.host/core.port.
 public sealed record CoreSelectionRequest(string? CoreId);
 
-// A zone's own volume and mute (phase 15), over its rooms' own.
+// A zone's volume and mute (phase 15): the volume moves every room alike
+// (DesiredState.SetZoneLevel); the mute is over each room's own.
 // Phase 15: the zone's level; phase 26: its AutoFill, a patch of its own.
 // Its listener follows from its rooms' (RoomPatch.User).
 public sealed record ZonePatch(double? Volume = null, bool? Muted = null, AutoFillPatch? AutoFill = null);

@@ -123,7 +123,8 @@ public sealed class House(CoreLink link, QueueEngine queues, ProviderRegistry pr
         var settings = link.Desired.Rooms.GetValueOrDefault(client) ?? new DesiredRoom();
         var effective = link.Desired.Effective(client);
         var zone = link.Desired.ZoneOf(client);
-        var volume = settings.Volume ?? (zone is not null && link.Desired.ZoneLevels.ContainsKey(zone) ? 1.0 : null);
+        // Its zone may have moved it past either end; it plays, and shows, within.
+        double? volume = settings.Volume is { } own ? Math.Clamp(own, 0.0, 1.0) : null;
         return new RoomView(client, NameOf(client),
             new RoomDesired(zone, settings.AudioControl, volume,
                 settings.Muted, settings.OutputLatencyMs, effective.Volume, effective.Muted,
@@ -282,7 +283,7 @@ public sealed class House(CoreLink link, QueueEngine queues, ProviderRegistry pr
     private ZoneView ZoneOf(string zone)
     {
         var desired = link.Desired.Zones.FirstOrDefault(z => z.Zone == zone);
-        var level = link.Desired.ZoneLevels.GetValueOrDefault(zone) ?? new DesiredZoneLevel();
+        var level = link.Desired.ZoneLevel(zone);
         var queue = queues.GetQueue(zone);
         var state = queue.IsSuccess ? queue.Value : null;
         var title = StreamTitleOf(state);

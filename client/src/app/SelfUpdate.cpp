@@ -244,6 +244,15 @@ Trial beginTrial(const std::string& configPath)
 #endif
 }
 
+bool trialPending()
+{
+#if defined(ESP_PLATFORM)
+    return false;
+#else
+    return fileutil::exists(trialPath());
+#endif
+}
+
 void confirmTrial()
 {
 #if !defined(ESP_PLATFORM)

@@ -697,15 +697,23 @@ public sealed partial class ApiTests : IAsyncDisposable
 
         using var stream = await EventsAsync(null);
         var zone = await Ok(HttpMethod.Patch, "zones/living", """{"volume":0.5}""");
-        Assert.Equal(("client.setVolume", """{"client":"roomA","value":0.3}"""), (_core.All[^1].Command, _core.All[^1].Params));
+        Assert.Equal(("client.setVolume", """{"client":"roomA","value":0.5}"""), (_core.All[^1].Command, _core.All[^1].Params));
         Assert.Equal((0.5, false), (zone["desired"]!["volume"]!.GetValue<double>(), zone["desired"]!["muted"]!.GetValue<bool>()));
         var changed = JsonNode.Parse((await stream.NextAsync(e => e.Type == "zone.volumeChanged")).Data)!;
         Assert.Equal(("living", 0.5, false),
             (changed["zone"]!.GetValue<string>(), changed["volume"]!.GetValue<double>(), changed["muted"]!.GetValue<bool>()));
 
+        // A room's own volume moves its zone's (the loudest room's): every
+        // page is told, not only the one that changed it.
+        await Ok(HttpMethod.Patch, "rooms/roomA", """{"volume":0.7}""");
+        changed = JsonNode.Parse((await stream.NextAsync(e => e.Type == "zone.volumeChanged")).Data)!;
+        Assert.Equal(("living", 0.7), (changed["zone"]!.GetValue<string>(), changed["volume"]!.GetValue<double>()));
+        await Ok(HttpMethod.Patch, "rooms/roomA", """{"volume":0.5}""");
+
         var desired = (await Ok(HttpMethod.Get, "rooms/roomA"))["desired"]!;
-        Assert.Equal((0.8, 0.3), (desired["volume"]!.GetValue<double>(), desired["effectiveVolume"]!.GetValue<double>()));
-        Assert.False(desired["effectiveMuted"]!.GetValue<bool>());
+        Assert.Equal((0.5, 0.5), (desired["volume"]!.GetValue<double>(), desired["effectiveVolume"]!.GetValue<double>()));
+        // A zone volume asks for no mute: none is sent for the room.
+        Assert.Null(desired["effectiveMuted"]);
         Assert.False(desired["grouped"]!.GetValue<bool>());
 
         await Refused(HttpMethod.Patch, "zones/living", "{}", HttpStatusCode.BadRequest, "invalidArgument");
@@ -716,19 +724,18 @@ public sealed partial class ApiTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_room_that_never_set_its_volume_answers_full_volume_in_a_zone_with_a_level()
+    public async Task A_room_that_never_set_its_volume_takes_its_zone_s_and_answers_what_it_plays()
     {
         await StartAsync();
         await Ok(HttpMethod.Put, "zones/living/clients", """{"clients":["roomA"]}""");
         await Ok(HttpMethod.Patch, "zones/living", """{"volume":0.5}""");
 
-        // Its own volume counts as 1.0 under the zone's: answering null let a
-        // UI show the effective 0.5 as the room's own, and raising that made it
-        // quieter.
+        // Its own volume counted as 1.0 and was moved to the zone's; the room
+        // answers what it plays, and raising that makes it louder.
         var desired = (await Ok(HttpMethod.Get, "rooms/roomA"))["desired"]!;
-        Assert.Equal((1.0, 0.5), (desired["volume"]!.GetValue<double>(), desired["effectiveVolume"]!.GetValue<double>()));
+        Assert.Equal((0.5, 0.5), (desired["volume"]!.GetValue<double>(), desired["effectiveVolume"]!.GetValue<double>()));
         desired = (await Ok(HttpMethod.Patch, "rooms/roomA", """{"volume":0.9}"""))["desired"]!;
-        Assert.Equal(0.4, desired["effectiveVolume"]!.GetValue<double>(), 9);
+        Assert.Equal(0.9, desired["effectiveVolume"]!.GetValue<double>(), 9);
     }
 
     [Fact]

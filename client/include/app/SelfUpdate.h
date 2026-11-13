@@ -54,6 +54,10 @@ enum class Trial
 // that names no config (an older updater wrote it) belongs to any client.
 Trial beginTrial(const std::string& configPath);
 
+// An update of this folder is on trial, whichever client owns it: the folder
+// has one rollback copy, so no client installs another until it is resolved.
+bool trialPending();
+
 // The trial run is healthy; the update stays.
 void confirmTrial();
 

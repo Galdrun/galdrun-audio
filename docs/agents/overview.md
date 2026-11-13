@@ -81,7 +81,9 @@ Root `BugFindings*.md`, `TODOS.md`, and `client/docs/Info.md` are background;
 check the current implementation/tests before treating a finding as open.
 
 For analysis-only reviews, use the project agent
-[`bug_analyst`](../../.codex/agents/bug-analyst.toml) and specify `client`,
+[`bug_analyst`](../../.codex/agents/bug-analyst.toml) (Claude Code:
+[`bug-analyst`](../../.claude/agents/bug-analyst.md), which defers to the Codex
+file) and specify `client`,
 `server-core`, or `server`. It updates the matching root findings report with
 verified bugs, consolidation proposals, and a scoped code rating; it does not
 change implementation or tests.

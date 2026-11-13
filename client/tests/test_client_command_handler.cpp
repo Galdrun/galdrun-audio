@@ -135,6 +135,25 @@ MULTIROOM_TEST(update_reports_its_target_and_is_refused_without_an_updater)
     CHECK(fixture.runtime.updateAction.empty());
 }
 
+MULTIROOM_TEST(another_clients_update_trial_is_reported_for_the_whole_folder)
+{
+    // The trial marker beside this test binary, as the updater writes it.
+    const std::string work = fileutil::directoryOf(self_update::packagePath());
+    const std::string trial = fileutil::joinPath(work, "trial");
+    std::string error;
+    CHECK(fileutil::createDirectories(work));
+    CHECK(fileutil::writeTextFileAtomic(trial, "running /somewhere/else.json\n", error));
+
+    CHECK(self_update::beginTrial("/this/client.json") == self_update::Trial::None);
+    CHECK(self_update::trialPending());
+    Fixture fixture;
+    ClientCommandHandler handler(fixture.runtime);
+    CHECK(fieldBool(handler.handle(makeRequest("getUpdate", ControlCommand::GetUpdate)), "trial", false));
+
+    fileutil::removeFile(trial);
+    CHECK(!self_update::trialPending());
+}
+
 MULTIROOM_TEST(power_commands_and_button_actions_work_without_a_server)
 {
     Fixture fixture;

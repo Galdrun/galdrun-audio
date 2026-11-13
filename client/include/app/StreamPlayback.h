@@ -348,6 +348,11 @@ private:
     HardwareVolumeInfo hardwareInfo_; // what the scan said of the open control
     bool deviceOpen_ = false;
     VolumePath volumePath_;
+    // An unscheduled change for the device's control, applied by the next
+    // poll() with the newest volumeGain_/volumeMuted_: a control can be slow
+    // (Connector 3's MCU answers over a UART in up to 0.2 s), and a slider's
+    // burst drained in one session poll then sets it once, not once per message.
+    bool hardwareDue_ = false;
     bool hardwarePending_ = false;
     uint64_t hardwarePendingStreamFrame_ = 0;
     double hardwarePendingGain_ = 1.0;

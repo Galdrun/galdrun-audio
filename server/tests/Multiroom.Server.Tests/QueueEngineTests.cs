@@ -785,7 +785,7 @@ public sealed partial class QueueEngineTests : IAsyncDisposable
 
         await inputs.RunAsync(new RoomInput("roomA", "knob", "clockwise", InputAction.SetVolume, 1, Value: 0.4,
             Scope: VolumeScope.Zone, Zone: Zone), Ct);
-        Assert.Equal(0.4, _link.Desired.ZoneLevels[Zone].Volume);
+        Assert.Equal(0.4, _link.Desired.ZoneLevel(Zone).Volume);
         Assert.Equal(("client.setVolume", """{"client":"roomA","value":0.4}"""), Sent()[^1]);
         Assert.Equal([Zone], changed);
 

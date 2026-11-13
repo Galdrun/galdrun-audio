@@ -367,7 +367,8 @@ public sealed class MultiroomTools
             ([Description(ZoneParameter)] string zone, [Description("Minutes from now, 1 to 720; 0 switches it off.")] int minutes) =>
                 Ok(house.SetSleepTimer(zone, minutes)));
 
-        Add(McpTier.Control, "set_zone_volume", "Sets a zone's own volume (0.0 to 1.0) over its rooms', its mute, or both.",
+        Add(McpTier.Control, "set_zone_volume", "Sets a zone's volume (0.0 to 1.0), its mute, or both. A zone's volume is its loudest room's; setting it " +
+            "moves every room in the zone by the same amount, so the rooms keep their balance.",
             async ([Description(ZoneParameter)] string zone, double? volume = null, bool? muted = null, CancellationToken cancellationToken = default) =>
                 Ok(await house.SetZoneLevelAsync(zone, volume, muted, cancellationToken).ConfigureAwait(false)));
 

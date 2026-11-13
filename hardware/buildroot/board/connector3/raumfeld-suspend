@@ -141,4 +141,12 @@ sync
 result=0
 echo mem >/sys/power/state || result=$?
 if [ "$result" -ne 0 ]; then logger -t raumfeld-suspend 'Kernel deep sleep failed'; fi
+# Woken by a touch (the MCU's UART): someone wants the device on, so manual
+# standby is not restored. A magic packet from the server keeps it.
+wake_irq=$(cat /sys/power/pm_wakeup_irq 2>/dev/null || :)
+mcu=$(basename "$(readlink -f /sys/class/tty/ttymxc2/device 2>/dev/null)" 2>/dev/null || :)
+if [ "$result" -eq 0 ] && [ -n "$wake_irq" ] && [ -n "$mcu" ] &&
+   tr ',' '\n' 2>/dev/null <"/sys/kernel/irq/$wake_irq/actions" | grep -qxF "$mcu"; then
+    power=on
+fi
 exit "$result"

@@ -260,13 +260,17 @@ class Connector3HardwareVolume final : public IHardwareVolume
 public:
     bool set(double gain, bool muted, std::string& error) override
     {
-        const long requested = static_cast<long>(std::floor(hardware_volume::clampGain(gain) * 100));
+        // The MCU's 0..100 is Raumfeld's percent, linear in decibels as the
+        // room's slider is: the slider's position, not the gain's amplitude.
+        const long requested = static_cast<long>(std::lround(hardware_volume::positionForGain(gain) * 100));
         long mute = 0, volume = 0;
         // Mute before changing level; unmute only after the new level is applied.
         if (muted && !setMute(true, error)) return false;
         if (!connector3McuRequest("volume " + std::to_string(requested), mute, volume, error)) return false;
         if (volume != requested) { error = "MCU volume readback differs from requested value"; return false; }
-        return muted || setMute(false, error);
+        // Each request is a UART round trip: an MCU that says it is not muted
+        // is not unmuted again.
+        return muted || mute == 0 || setMute(false, error);
     }
 
     bool setMute(bool muted, std::string& error) override
@@ -283,7 +287,7 @@ public:
         long mute = 0, volume = 0;
         if (!connector3McuRequest("get", mute, volume, error)) return false;
         out = {};
-        out.gain = static_cast<double>(volume) / 100;
+        out.gain = hardware_volume::gainForPosition(static_cast<double>(volume) / 100);
         out.muted = mute != 0;
         return true;
     }

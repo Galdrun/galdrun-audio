@@ -61,7 +61,7 @@ function renderHardwareInputs(data, container, saveBindings) {
   const actionHint = value => /^action\d+$/.test(value) ? tt('inputs.userActionHint') : tv('inputs.actionHint', value, '');
   const normalize = binding => {
     const result = {action: binding.action};
-    if (binding.action === 'volumeUp' || binding.action === 'volumeDown') result.step = binding.step ?? .05;
+    if (binding.action === 'volumeUp' || binding.action === 'volumeDown') result.step = binding.step ?? .02;
     if (binding.action === 'setVolume') result.value = binding.value;
     if (['volumeUp', 'volumeDown', 'setVolume', 'toggleMute'].includes(binding.action)) result.scope = binding.scope || 'room';
     return result;

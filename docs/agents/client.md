@@ -91,7 +91,16 @@ A board file may list `inputs` (client.json's format):
 `client_config::appendBoardInputs` adds those whose id `client.json` lacks at
 startup, before device discovery, so fixed buttons added to an image reach an
 older settings volume. Connector 3 lists its rear BT/Setup buttons there.
-Board flag `inputSounds` (Connector 3): each button press calls
+A button press while the power state is not `on` (automatic or manual standby)
+only wakes the device: `InputController`'s press gate consumes that press until
+its release and `InputPump` sends one `standbyOff`, so a tap in the dark never
+also changes volume or skips a track. Buttons bound to a power action
+(standby/deep sleep) keep their own gestures. Connector 3's `raumfeld-suspend`
+likewise skips restoring manual standby when the wake IRQ is the MCU UART's
+(touch); a magic-packet wake keeps it.
+Board flag `inputSounds` (Connector 3): each button gesture that was recognized
+and dispatched successfully (not the raw touch: a double click clicks once, a
+long press at 2 s, a press that makes no gesture never) calls
 `FeedbackSound::play` (`src/audio/FeedbackSound.cpp`), and every open
 `AudioEngine` mixes the click over its source in the render callback, at the
 device rate; `KEY_PLAYPAUSE` gets the play/pause click. The clicks are
@@ -167,7 +176,9 @@ during the trial resets it to `pending`. The trial file names the client's
 config path (`--config`, else the default), which `handOver()` passes to the
 updater explicitly (`GALDRUN_TRIAL_OWNER` / `-Owner`) so the scripts never
 parse client arguments; another client in the same folder (Connector 3
-headphone client) ignores it. A new update is refused while one is on trial. The script frees
+headphone client) ignores it for confirming and rolling back. A new update is
+refused while any client's trial is in the folder (`trialPending()`, rechecked
+by both scripts at install), because the folder has one rollback copy. The script frees
 the last rollback copy (`.update/previous`) only after the checksum passed,
 before unpacking, so small volumes need room for only one extra copy.
 
@@ -281,7 +292,15 @@ the board enables `mcuAudioControls`, reusing the existing DAC page and
 card-specific persistence for hardware output level/mute. These two MCU values
 are read-only in DAC settings: API writes are rejected and reset preserves them;
 firmware restoration remains internal. The MCU reports 0..100 raw level with
-no dB calibration; no dB scale is invented. Clock trim is transient and belongs
+no dB calibration; no dB scale is invented. Invariant: the room volume sets it
+to the slider position (`hardware_volume::positionForGain`), never the linear
+gain: Raumfeld's own firmware treats this 0..100 as linear in dB (`libraumfeldcpp`
+`VolumeConversion::mapPercentToDb`, -41..+24 dB on the Streamer), so the
+amplitude made half the slider about -40 dB. Each MCU request is a UART round
+trip of up to 0.2 s, so an unscheduled room volume on a hardware control is set
+by the next `StreamPlayback::poll()` (`hardwareDue_`), not per SET_VOLUME: a
+dragged slider's burst sets it once, to the newest, instead of queueing
+seconds of writes. Clock trim is transient and belongs
 to synchronization; soundbar DSP commands are not exposed. MCU volume/mute API
 readbacks passed, but their audible effect remains a pending hardware test,
 explicitly deferred by the user; both RCA channels playing are confirmed.

@@ -76,18 +76,37 @@ double gainForDecibels(const HardwareVolumeInfo& info, double db)
     return clampGain(std::pow(10.0, (db - topDecibels(info)) / 20.0));
 }
 
+// The core's kVolumeRangeDb (server-core/src/client/ClientSession.cpp).
+constexpr double kVolumeRangeDb = 60.0;
+
+double positionForGain(double gain)
+{
+    gain = clampGain(gain);
+    if (gain == 0.0)
+        return 0.0;
+    const double position = 1.0 + 20.0 * std::log10(gain) / kVolumeRangeDb;
+    return position > 0.0 ? position : 0.0;
+}
+
+double gainForPosition(double position)
+{
+    if (!(position > 0.0))
+        return 0.0;
+    return clampGain(std::pow(10.0, kVolumeRangeDb * (position - 1.0) / 20.0));
+}
+
 int64_t stepForGain(const HardwareVolumeInfo& info, double gain)
 {
     const double span = static_cast<double>(info.maxStep - info.minStep);
-    return info.minStep + static_cast<int64_t>(std::llround(clampGain(gain) * span));
+    return info.minStep + static_cast<int64_t>(std::llround(positionForGain(gain) * span));
 }
 
 double gainForStep(const HardwareVolumeInfo& info, int64_t step)
 {
     if (info.maxStep <= info.minStep)
         return 1.0;
-    return clampGain(static_cast<double>(step - info.minStep) /
-                     static_cast<double>(info.maxStep - info.minStep));
+    return gainForPosition(static_cast<double>(step - info.minStep) /
+                           static_cast<double>(info.maxStep - info.minStep));
 }
 
 } // namespace hardware_volume

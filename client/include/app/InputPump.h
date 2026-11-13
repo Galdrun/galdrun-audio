@@ -46,6 +46,8 @@ private:
     std::vector<RawInputEvent> rawInputs_;
     std::vector<matp::InputActionEvent> actions_;
     uint32_t droppedSeen_ = 0;
+    bool sounds_ = false;        // the board's inputSounds: a click per gesture run
+    bool wakeRequested_ = false; // a press in standby, to switch the device on
     // Last, so its thread is stopped before the queue it posts to is gone.
     std::unique_ptr<IInputBackend> backend_;
 };
