@@ -28,6 +28,14 @@ const size_t kMaxPendingBoundaries = 64;
 // silent for good.
 const uint64_t kFlushWaitNs = 1000000000ULL;
 
+// How long an unscheduled track gain is left to reach the render path before
+// the next boundary's gain is armed behind it. VolumeControl is a one-slot
+// mailbox: both published inside one render period, the armed one would
+// replace the immediate one, and the track playing now would keep its old
+// gain until the boundary. A few render periods on every backend.
+const uint64_t kTrackGainSettleNs = 100000000ULL;
+
+
 // How often a hardware volume control is read back for the status. It is a
 // mixer read on the control thread, and a person turning a knob does not need
 // it more often than this.
@@ -727,6 +735,9 @@ void StreamPlayback::updateVolumePath(bool deviceOpened)
 
     runtime_.volumePath = volumePath_;
     publishVolume();
+    // The normalization setting is read here too: on, off, or ended by a
+    // bitPerfect Audio Control.
+    updateTrackGain(monotonicNowNs());
     if (changed && runtime_.session != nullptr)
         runtime_.session->volumeConfigChanged();
 }
@@ -872,10 +883,9 @@ uint32_t StreamPlayback::waitMs(uint32_t maxMs) const
     // Checked every few milliseconds while one waits, rather than predicted
     // from a clock snapshot that may itself be a poll old.
     const uint32_t kHardwarePendingWaitMs = 5;
-    return usesHardware() && hardwarePending_ &&
-                   !source_.waitsForResume(hardwarePendingStreamFrame_)
-               ? std::min(maxMs, kHardwarePendingWaitMs)
-               : maxMs;
+    const bool pending = usesHardware() && hardwarePending_ &&
+                         !source_.waitsForResume(hardwarePendingStreamFrame_);
+    return pending ? std::min(maxMs, kHardwarePendingWaitMs) : maxMs;
 }
 
 void StreamPlayback::pollHardwareVolume(uint64_t nowNs)
@@ -970,6 +980,7 @@ void StreamPlayback::trackBoundary(const matp::TrackBoundary& boundary)
     // now.
     if (runtime_.hasTimelineNsAudible)
         promoteTracks(runtime_.timelineNsAudible);
+    updateTrackGain(monotonicNowNs());
 }
 
 void StreamPlayback::promoteTracks(uint64_t audibleTimelineNs)
@@ -1005,12 +1016,15 @@ void StreamPlayback::trackInfo(const matp::TrackInfo& info)
     track_ = matp::TrackBoundary();
     track_.trackId = info.trackId;
     track_.title = info.title;
+    track_.hasGainDb = info.hasGainDb;
+    track_.gainDb = info.gainDb;
     hasTrack_ = true;
     trackTimelineKnown_ = false;
 
     MULTIROOM_INFO("now playing \"%s\"",
              info.title.empty() ? info.trackId.c_str() : info.title.c_str());
     publishTimeline(false);
+    updateTrackGain(monotonicNowNs());
 }
 
 bool StreamPlayback::bufferStatus(matp::BufferStatus& out) const
@@ -1204,7 +1218,85 @@ void StreamPlayback::poll()
     pollRejoin();
     publishTimeline(true);
     pollHardwareVolume(nowNs);
+    updateTrackGain(nowNs);
     publishPlayback(runtime_, supervisor_, engine_, nowNs);
+}
+
+double StreamPlayback::trackGainOf(const matp::TrackBoundary& track) const
+{
+    const bool normalizing = runtime_.config != nullptr && runtime_.config->normalization &&
+                             runtime_.audioControl != matp::AudioControl::BitPerfect;
+    return normalizing && track.hasGainDb ? std::pow(10.0, track.gainDb / 20.0) : 1.0;
+}
+
+void StreamPlayback::updateTrackGain(uint64_t nowNs)
+{
+
+    // The armed boundary has been reached and promoted: its gain came round in
+    // the render path at its frame, before the sound card made it audible.
+    // Gone from the queue any other way -- a flush, a lost stream -- it may
+    // not have, and the slot is cleared by setting what is in force.
+    if (trackGainArmed_)
+    {
+        const bool promoted = hasTrack_ && trackTimelineKnown_ &&
+                              track_.timelineNs == trackGainArmedTimelineNs_;
+        const bool pending =
+            std::any_of(pendingTracks_.begin(), pendingTracks_.end(),
+                        [this](const matp::TrackBoundary& boundary)
+                        { return boundary.timelineNs == trackGainArmedTimelineNs_; });
+        if (promoted)
+        {
+            trackGainArmed_ = false;
+            trackGain_ = trackGainArmedGain_;
+        }
+        else if (!pending)
+        {
+            trackGainArmed_ = false;
+            source_.setTrackGain(trackGain_);
+        }
+    }
+
+    // What is playing now, at once: a room that joined mid-track, a setting
+    // turned on or off, a boundary promoted that was never armed.
+    const double current = hasTrack_ ? trackGainOf(track_) : 1.0;
+    if (current != trackGain_)
+    {
+        trackGainArmed_ = false;
+        trackGain_ = current;
+        trackGainSetNs_ = nowNs;
+        source_.setTrackGain(current);
+        MULTIROOM_INFO("track gain %.2f dB", 20.0 * std::log10(std::max(current, 1e-6)));
+        return;
+    }
+
+    // Then the next boundary's, on its frame.
+    if (pendingTracks_.empty() || nowNs - trackGainSetNs_ < kTrackGainSettleNs)
+        return;
+    const matp::TrackBoundary& next = pendingTracks_.front();
+    const double gain = trackGainOf(next);
+    if (trackGainArmed_ && trackGainArmedTimelineNs_ == next.timelineNs &&
+        trackGainArmedGain_ == gain)
+        return;
+    if (!trackGainArmed_ && gain == trackGain_)
+        return; // the boundary changes nothing
+
+    uint64_t streamFrame = 0;
+    if (!source_.isScheduled() || !timelineToStream(next.timelineNs, streamFrame))
+        return; // no start yet: armed once there is one
+    if (source_.setTrackGainAt(gain, streamFrame))
+    {
+        trackGainArmed_ = true;
+        trackGainArmedTimelineNs_ = next.timelineNs;
+        trackGainArmedGain_ = gain;
+        return;
+    }
+
+    // Behind the start this room plays from: the boundary is audible from
+    // the first frame, so its gain is in force from now on.
+    trackGainArmed_ = false;
+    trackGain_ = gain;
+    trackGainSetNs_ = nowNs;
+    source_.setTrackGain(gain);
 }
 
 void StreamPlayback::pollRejoin()

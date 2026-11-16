@@ -972,6 +972,8 @@ void Zone::announceBoundary(const StagedSource& staged)
             command.boundary.timelineNs = std::to_underlying(staged.timelineStartNs);
             command.boundary.trackId = staged.segment.trackId;
             command.boundary.title = staged.segment.title;
+            command.boundary.hasGainDb = staged.segment.gainDb.has_value();
+            command.boundary.gainDb = staged.segment.gainDb.value_or(0.0);
             commands.push_back(std::move(command));
         }
     }
@@ -999,15 +1001,18 @@ void Zone::announceTracksTo(const ClientId& client, TimelineNs position)
         // Section 44's case: this room's stream begins in the middle of a
         // track whose boundary was announced before it was here. A source that
         // names neither a track id nor a title has nothing to say about
-        // itself, and TRACK_INFO is nothing but those two.
+        // itself, and TRACK_INFO is nothing but those two and its gain.
         if (current != nullptr &&
-            (!current->segment.trackId.empty() || !current->segment.title.empty()))
+            (!current->segment.trackId.empty() || !current->segment.title.empty() ||
+             current->segment.gainDb))
         {
             RoomCommand command;
             command.kind = RoomCommandKind::TrackInfo;
             command.client = client;
             command.info.trackId = current->segment.trackId;
             command.info.title = current->segment.title;
+            command.info.hasGainDb = current->segment.gainDb.has_value();
+            command.info.gainDb = current->segment.gainDb.value_or(0.0);
             commands.push_back(std::move(command));
         }
 
@@ -1025,6 +1030,8 @@ void Zone::announceTracksTo(const ClientId& client, TimelineNs position)
             command.boundary.timelineNs = std::to_underlying(source.timelineStartNs);
             command.boundary.trackId = source.segment.trackId;
             command.boundary.title = source.segment.title;
+            command.boundary.hasGainDb = source.segment.gainDb.has_value();
+            command.boundary.gainDb = source.segment.gainDb.value_or(0.0);
             commands.push_back(std::move(command));
         }
     }

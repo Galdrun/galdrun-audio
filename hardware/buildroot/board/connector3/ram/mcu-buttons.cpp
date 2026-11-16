@@ -289,6 +289,15 @@ void handleAudio(int listener, int uart, int input, std::array<bool, buttons.siz
             ok = exchange(uart, input, pressed, bytes, 0, 0x21, value);
         }
     }
+    // Global front-LED brightness (LedBrightness), percent; write-only like the
+    // indications. Range assumed 0-100 like the volume: not yet hardware-verified.
+    if (operation == "brightness") {
+        ok = bool(requestLine >> requested) && !(requestLine >> extra) && requested <= 100;
+        if (ok) {
+            uint32_t value = requested;
+            ok = exchange(uart, input, pressed, bytes, 0, 0x22, value);
+        }
+    }
     uint32_t mute = 0, volume = 0;
     if (ok) ok = exchange(uart, input, pressed, bytes, 1, 0x10, mute) &&
                  exchange(uart, input, pressed, bytes, 1, 0x11, volume) && mute <= 1 && volume <= 100;
@@ -357,7 +366,7 @@ void selfTest()
             if (!synced && !sync && !start) continue;
             const bool known = sync || start || command == 0x50 || command == 0x10 ||
                                command == 0x11 || command == 0x15 || command == 0x16 ||
-                               (command == 0x20 && packet[1] == 0);
+                               ((command == 0x20 || command == 0x22) && packet[1] == 0);
             const auto ack = request(2, 0, known ? 0 : 3, packet[8]);
             assert(write(pair[1], ack.data(), ack.size()) == static_cast<ssize_t>(ack.size()));
             if (!known) continue;
@@ -405,6 +414,8 @@ void selfTest()
     for (uint32_t indication : {0u, 4u, 5u, 6u, 10u, 22u})
         assert(exchange(pair[0], -1, pressed, buffer, 0, 0x20, indication));
     assert(!exchange(pair[0], -1, pressed, buffer, 1, 0x20, value));
+    value = 40;
+    assert(exchange(pair[0], -1, pressed, buffer, 0, 0x22, value));
     assert(synchronize(pair[0], -1, pressed, buffer)); // already running application
     assert(setAudio(pair[0], -1, pressed, buffer, 0x50, 0));
     assert(exchange(pair[0], -1, pressed, buffer, 1, 0x50, value) && value == 0);

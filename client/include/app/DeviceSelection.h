@@ -110,6 +110,12 @@ enum class VolumeControlChange
 VolumeControlChange changeVolumeControl(ClientRuntime& runtime, matp::VolumeControlMode mode,
                                         std::string& error);
 
+// The same for loudness normalization (section 59): turning it on is refused
+// while the room's Audio Control is bitPerfect. Accepted, it is written to
+// client.json and the track gain applied or taken off; the room volume's path
+// does not change. A live session reports it.
+VolumeControlChange changeNormalization(ClientRuntime& runtime, bool enabled, std::string& error);
+
 enum class DriftCorrectionChange
 {
     Changed,

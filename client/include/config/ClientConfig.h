@@ -120,6 +120,12 @@ struct ClientConfig
     // where it is kept.
     matp::VolumeControlMode volumeControl = matp::VolumeControlMode::Auto;
 
+    // Loudness normalization (MATP section 59): play each track's gainDb from
+    // TRACK_BOUNDARY and TRACK_INFO, in the render path; the room volume
+    // keeps its own path. Never on under a bitPerfect Audio Control. Off by
+    // default.
+    bool normalization = false;
+
     // How the server corrects this room's drift when it corrects it: by
     // resampling, or by trimming the DAC clock where the board has a verified
     // trim (audio/HardwareClock.h). Reported in AUDIO_CAPABILITIES; the server
@@ -134,6 +140,9 @@ struct ClientConfig
 
     // Raumfeld status LEDs; boot/update indications remain enabled.
     bool ledsOff = false;
+    // Maximum status LED brightness in percent (1-100) on dimmable boards
+    // (board flag "ledBrightness"); other boards ignore it.
+    uint32_t ledBrightness = 100;
 
     // Zero disables automatic audio standby. Network and buttons stay active.
     uint32_t standbyAfterSeconds = 0;

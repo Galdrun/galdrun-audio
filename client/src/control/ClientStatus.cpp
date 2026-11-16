@@ -162,6 +162,7 @@ json::Value toJson(const ClientStatus& status)
         json::Value(matp::volumeControlModeName(status.volumePath.effective));
     if (!status.volumePath.reason.empty())
         volumeControl["reason"] = json::Value(status.volumePath.reason);
+    volumeControl["normalization"] = json::Value(status.normalization);
     audio["volumeControl"] = volumeControl;
 
     // The actuator asked for, the one in use and, where they differ, why (auto

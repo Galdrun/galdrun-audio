@@ -450,9 +450,11 @@ std::string serialize(const ClientConfig& config)
     root["i2sExternalFormats"] = i2sFormatsToJson(config.i2s.externalFormats);
     root["bufferMs"] = json::Value(config.bufferMs);
     root["volumeControl"] = json::Value(matp::volumeControlModeName(config.volumeControl));
+    root["normalization"] = json::Value(config.normalization);
     root["driftCorrection"] = json::Value(matp::driftCorrectionModeName(config.driftCorrection));
     root["declick"] = json::Value(config.declick);
     root["ledsOff"] = json::Value(config.ledsOff);
+    root["ledBrightness"] = json::Value(config.ledBrightness);
     root["standbyAfterSeconds"] = json::Value(config.standbyAfterSeconds);
     root["deepSleepAfterSeconds"] = json::Value(config.deepSleepAfterSeconds);
     root["controlPort"] = json::Value(static_cast<uint32_t>(config.controlPort));
@@ -611,6 +613,13 @@ bool deserialize(const std::string& text, ClientConfig& out, std::string& error)
         }
     }
 
+    if (root.find("normalization") != nullptr &&
+        !json::getBool(root, "normalization", config.normalization))
+    {
+        error = "normalization must be true or false";
+        return false;
+    }
+
     if (root.find("declick") != nullptr && !json::getBool(root, "declick", config.declick))
     {
         error = "declick must be true or false";
@@ -621,6 +630,17 @@ bool deserialize(const std::string& text, ClientConfig& out, std::string& error)
     {
         error = "ledsOff must be true or false";
         return false;
+    }
+
+    if (root.find("ledBrightness") != nullptr)
+    {
+        int64_t percent = 0;
+        if (!json::getInt(root, "ledBrightness", percent) || percent < 1 || percent > 100)
+        {
+            error = "ledBrightness must be an integer from 1 to 100";
+            return false;
+        }
+        config.ledBrightness = static_cast<uint32_t>(percent);
     }
 
     if (root.find("standbyAfterSeconds") != nullptr)

@@ -150,12 +150,15 @@ Place `.section-menu` inside `.topbar`, immediately after `.topbar-inner`. Its
 ID. Give those headings `tabindex="-1"` so keyboard navigation can focus the
 destination. The brand header and menu stick together at the top. A full-width
 ivory menu row with matching line icons and teal active items sits directly below the brand.
-All links remain visible: the menu wraps as needed, and phones use up to three
-columns with 44px touch targets. Do not hide links behind horizontal scrolling.
+Wider screens show all links, wrapping as needed. Phones (600px and below)
+collapse them behind a full-width menu button that names the current section;
+opened, the links use up to three columns with 44px touch targets, and choosing
+one, Escape or a click outside closes the menu. Do not hide links behind
+horizontal scrolling.
 Keep menu and card order aligned: Status, Wi-Fi, Address, Client, Audio, then
 Buttons & encoders. Omit sections that a platform does not provide.
 
-`navigation.js` adds each card's existing SVG icon, hides links to hidden cards,
+`navigation.js` creates the phone menu button, adds each card's existing SVG icon, hides links to hidden cards,
 and marks the current group with `aria-current="location"`. Native anchors and
 CSS handle scrolling; a ResizeObserver measures the combined header height so
 heading scroll margins keep destinations below both rows at any phone width.

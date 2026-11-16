@@ -211,6 +211,8 @@ country_code=$WIFI_COUNTRY
 ieee80211d=1
 hw_mode=g
 channel=1
+# mwifiex (Connector 3) completes WPA but drops every data frame without WMM.
+wmm_enabled=1
 wpa=2
 wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP

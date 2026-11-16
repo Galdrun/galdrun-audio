@@ -132,7 +132,7 @@ public sealed partial class ApiEndpoint
             var ct = context.RequestAborted;
             if (patch is { AudioControl: null, OutputLatencyMs: null, Volume: null, Muted: null,
                 AudioDeviceId: null, BufferMs: null, VolumeControl: null, Name: null, Equalizer: null,
-                MaxVolumeDb: null, DriftCorrection: null, User: null, InputsEnabled: null })
+                MaxVolumeDb: null, DriftCorrection: null, User: null, InputsEnabled: null, Normalization: null })
                 return Result.Fail(CoreError.InvalidArgument, "a room patch needs at least one setting");
             if (patch.Volume is < 0.0 or > 1.0)
                 return Result.Fail(CoreError.InvalidArgument,
@@ -183,10 +183,12 @@ public sealed partial class ApiEndpoint
             {
                 return f6;
             }
-            // The client keeps this as well. After the Audio Control, so that
-            // one patch can leave bitPerfect and ask for software together.
-            if (patch.VolumeControl is { } volumeControl &&
-                Refused(await link.SendAsync(new ClientSetVolumeControl(client, volumeControl), ct).ConfigureAwait(false)) is { } f7)
+            // The client keeps these as well. After the Audio Control, so that
+            // one patch can leave bitPerfect and ask for software or
+            // normalization together.
+            if ((patch.VolumeControl is not null || patch.Normalization is not null) &&
+                Refused(await link.SendAsync(new ClientSetVolumeControl(client, patch.VolumeControl, patch.Normalization), ct)
+                    .ConfigureAwait(false)) is { } f7)
             {
                 return f7;
             }

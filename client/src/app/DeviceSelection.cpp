@@ -486,6 +486,36 @@ NameChange changeName(ClientRuntime& runtime, const std::string& name, std::stri
     return NameChange::Changed;
 }
 
+VolumeControlChange changeNormalization(ClientRuntime& runtime, bool enabled, std::string& error)
+{
+    if (enabled && runtime.audioControl == matp::AudioControl::BitPerfect)
+    {
+        error = "volume normalization is not available while the room's Audio Control is "
+                "bitPerfect";
+        return VolumeControlChange::Refused;
+    }
+
+    ClientConfig& config = *runtime.config;
+    if (enabled == config.normalization)
+        return VolumeControlChange::Unchanged;
+
+    config.normalization = enabled;
+    std::string saveError;
+    if (!saveConfig(runtime, config, saveError))
+    {
+        config.normalization = !enabled;
+        error = "could not write " + runtime.configPath + ": " + saveError;
+        return VolumeControlChange::NotSaved;
+    }
+
+    MULTIROOM_INFO("volume normalization %s", enabled ? "on" : "off");
+    if (runtime.playback != nullptr)
+        runtime.playback->updateVolumePath();
+    if (runtime.session != nullptr)
+        runtime.session->volumeConfigChanged();
+    return VolumeControlChange::Changed;
+}
+
 VolumeControlChange changeVolumeControl(ClientRuntime& runtime, matp::VolumeControlMode mode,
                                         std::string& error)
 {
@@ -571,6 +601,16 @@ void applyAudioControl(ClientRuntime& runtime, matp::AudioControl control, bool 
             MULTIROOM_WARN("could not write %s: %s", runtime.configPath.c_str(), saveError.c_str());
         MULTIROOM_WARN("volume control reset from software to auto: the room's Audio Control is "
                  "bitPerfect, which allows no software volume");
+    }
+    // The same rule for normalization, which scales the samples as well.
+    if (control == matp::AudioControl::BitPerfect && config.normalization)
+    {
+        config.normalization = false;
+        std::string saveError;
+        if (!saveConfig(runtime, config, saveError))
+            MULTIROOM_WARN("could not write %s: %s", runtime.configPath.c_str(), saveError.c_str());
+        MULTIROOM_WARN("volume normalization turned off: the room's Audio Control is bitPerfect, "
+                 "which allows no scaled samples");
     }
 
     if (runtime.playback != nullptr)

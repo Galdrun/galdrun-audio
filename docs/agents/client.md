@@ -68,6 +68,18 @@ come from root `shared/matp/include/`, not a second client definition.
   axis for another or compare frame positions from different rooms.
 - Starts, pauses and volume changes are scheduled on device frames. Underrun
   silence advances device time, so stale audio must be discarded afterward.
+- Loudness normalization (`ClientConfig::normalization`, off by default, MATP
+  section 59) is a second `VolumeControl` in `TimelineSource` (`trackGain_`),
+  driven by `StreamPlayback::updateTrackGain()` from each boundary's `gainDb`.
+  Invariant: it never shares the volume's one-slot mailbox, because the next
+  track's gain is armed long before its boundary and a volume change meanwhile
+  would replace it; an unscheduled track gain is given `kTrackGainSettleNs`
+  before the next one is armed behind it. It is never on under bitPerfect.
+  Invariant: normalization does not change the room volume's path
+  (`resolveVolumePath` ignores it), so toggling it never moves the device's
+  control. An earlier design played the volume in software while it was on;
+  every toggle then moved the control, and Connector 3's MCU ramps its level
+  for over a second, which made full-volume bursts that no timing fixed.
 - The client measures/reports clock drift; core chooses correction. Hardware
   trim executes core feedback only on verified supported hardware. No client
   software resampling or independent catch-up controller.
@@ -317,7 +329,14 @@ Connector 3 builds the existing `board/connector2/status-leds.cpp` monitor with
 `CONNECTOR3_STATUS_LEDS`, passing `/settings/client.json` (persistent) or
 `/run/client.json` (RAM). It uses the MCU's three-front-LED indications through
 the same socket; Connector 2 retains its GPIO patterns. `ledsOff` and standby
-switch off the status LEDs. The rear Bluetooth indicator is separate and is
+switch off the status LEDs. Boards with the `ledBrightness` flag (Connector 3
+only; Connector 2's `gpio-leds` are on/off) also get `ledBrightness` (1-100 %,
+`getLeds`/`setLeds` `brightness`, the device page's LED card); the monitor
+sends it as MCU `brightness` (`0x22`) after its first indication and on change.
+The 0-100 range of `0x22` is assumed like the volume, not hardware-verified.
+The persistent init shows "initializing" (`--indication ... 4`, synchronous so
+the UART is free for the MCU service) right after mounting `/dev`, since the
+monitor starts only after network, SSH and MCU audio setup. The rear Bluetooth indicator is separate and is
 not used to imply an available Bluetooth playback backend. Verify with
 `hardware/buildroot/scripts/test-status-leds.py`,
 `hardware/buildroot/scripts/test-connector3-status-leds.py`, the MCU self-test,

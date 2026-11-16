@@ -144,6 +144,22 @@ MULTIROOM_TEST(config_led_off_is_optional_boolean_and_persists)
     CHECK(config.ledsOff);
 }
 
+MULTIROOM_TEST(config_led_brightness_is_percent_and_persists)
+{
+    ClientConfig config;
+    std::string error;
+    CHECK(client_config::deserialize("{}", config, error));
+    CHECK_EQ(config.ledBrightness, 100u);
+    CHECK(!client_config::deserialize("{\"ledBrightness\":0}", config, error));
+    CHECK(!client_config::deserialize("{\"ledBrightness\":101}", config, error));
+    CHECK(!client_config::deserialize("{\"ledBrightness\":\"50\"}", config, error));
+    CHECK(client_config::deserialize("{\"ledBrightness\":30}", config, error));
+    const auto saved = client_config::serialize(config);
+    config.ledBrightness = 100;
+    CHECK(client_config::deserialize(saved, config, error));
+    CHECK_EQ(config.ledBrightness, 30u);
+}
+
 MULTIROOM_TEST(config_active_defaults_on_and_persists)
 {
     ClientConfig config;

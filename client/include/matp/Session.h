@@ -204,7 +204,9 @@ public:
     // VOLUME_CONFIG and answers SET_VOLUME_CONTROL with an ERROR.
     using AudioControlHook = std::function<void(AudioControl control, bool known)>;
     using VolumeConfigProvider = std::function<VolumeConfig()>;
-    using VolumeControlSetter = std::function<bool(VolumeControlMode mode, std::string& error)>;
+    // Either setting of the request may be absent, which leaves it unchanged.
+    using VolumeControlSetter =
+        std::function<bool(const SetVolumeControl& request, std::string& error)>;
     void setVolumeControlHooks(AudioControlHook audioControl, VolumeConfigProvider provider,
                                VolumeControlSetter setter);
 

@@ -78,6 +78,7 @@ std::pair<bool, bool> brightness(State state, uint64_t elapsedMs)
 #include <arpa/inet.h>
 #include <chrono>
 #include <csignal>
+#include <cstdio>
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
@@ -186,6 +187,7 @@ int main(int argc, char** argv)
     State state = State::Boot;
 #ifdef CONNECTOR3_STATUS_LEDS
     int previousIndication = -1;
+    int64_t brightness = 100, previousBrightness = -1;
 #else
     int previousA = -1, previousB = -1;
 #endif
@@ -208,6 +210,11 @@ int main(int argc, char** argv)
                     !bind.empty() && bind != "0.0.0.0") host = bind;
                 bool off = false;
                 multiroom::json::getBool(config, "ledsOff", off);
+#ifdef CONNECTOR3_STATUS_LEDS
+                int64_t percent = 100;
+                if (multiroom::json::getInt(config, "ledBrightness", percent) &&
+                    percent >= 1 && percent <= 100) brightness = percent;
+#endif
                 if (off) desired = State::Off;
                 else if (port > 0 && port <= 65535 && query(static_cast<uint16_t>(port), host, response))
                     desired = statusState(response);
@@ -233,6 +240,15 @@ int main(int argc, char** argv)
                 continue;
             }
             previousIndication = pattern;
+        }
+        // After an indication succeeded the service is up: a failure here is a
+        // rejection (an older MCU service), not retried; the status still shows.
+        if (previousBrightness != brightness)
+        {
+            long mute = 0, volume = 0;
+            if (!multiroom::connector3McuRequest("brightness " + std::to_string(brightness), mute, volume, error))
+                std::fprintf(stderr, "LED brightness %lld: %s\n", static_cast<long long>(brightness), error.c_str());
+            previousBrightness = brightness;
         }
 #else
         const auto levels = brightness(state, milliseconds() - stateSince);

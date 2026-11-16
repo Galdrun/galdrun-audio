@@ -81,21 +81,22 @@ public sealed class LocalFilesProvider(LibraryFolders folders, LibraryCatalog ca
     // A library track ("track:<id>") resolves to wherever its file is now. A
     // full path (or an smb URI) inside a folder resolves as itself, so a file
     // can be queued before the indexer reaches it.
-    public Task<Result<ResolvedStream, ProviderError>> ResolveAsync(Track track, CancellationToken cancellationToken)
+    // The loudness its tags gave the indexer goes with it.
+    public async Task<Result<ResolvedStream, ProviderError>> ResolveAsync(Track track, CancellationToken cancellationToken)
     {
         var path = track.ProviderItemId;
         if (path.StartsWith(LibraryCatalog.TrackPrefix, StringComparison.Ordinal))
         {
             var found = catalog.PathOf(path);
             if (!found.IsSuccess)
-                return Task.FromResult<Result<ResolvedStream, ProviderError>>(found.Failure);
+                return found.Failure;
             path = found.Value;
         }
 
-        return folders.FilesFor(path) is { } files
-            ? files.ResolveAsync(path, cancellationToken)
-            : Task.FromResult<Result<ResolvedStream, ProviderError>>(
-                Result.Fail(ProviderError.NotFound, $"{path} is in no local folder"));
+        if (folders.FilesFor(path) is not { } files)
+            return Result.Fail(ProviderError.NotFound, $"{path} is in no local folder");
+        var resolved = await files.ResolveAsync(path, cancellationToken).ConfigureAwait(false);
+        return resolved.IsSuccess ? resolved.Value.WithLoudness(catalog.LoudnessOf(track.ProviderItemId)) : resolved;
     }
 
     // "album:<id>": the cover the store keeps, else the picture of the

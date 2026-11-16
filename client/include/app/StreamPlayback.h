@@ -389,6 +389,19 @@ private:
     // position the room is at.
     bool trackTimelineKnown_ = false;
     matp::TrackBoundary track_;
+
+    // Loudness normalization (MATP section 59): the gain of the track playing
+    // now is set at once, the next boundary's is armed on its frame in the
+    // render path's second gain (TimelineSource::setTrackGainAt). Both are
+    // 1.0 while the room's normalization is off. Called from poll() and
+    // whenever a boundary, a TRACK_INFO or the setting arrives.
+    double trackGainOf(const matp::TrackBoundary& track) const;
+    void updateTrackGain(uint64_t nowNs);
+    double trackGain_ = 1.0; // in force, or come round in the render path
+    uint64_t trackGainSetNs_ = 0;
+    bool trackGainArmed_ = false;
+    uint64_t trackGainArmedTimelineNs_ = 0;
+    double trackGainArmedGain_ = 1.0;
 };
 
 } // namespace multiroom

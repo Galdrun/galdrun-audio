@@ -582,7 +582,8 @@ public sealed partial class LibraryIndexer : IHostedService, IDisposable
                 chapters,
                 cut,
                 new MusicBrainzIds(MusicBrainzId(tag.MusicBrainzReleaseGroupId), MusicBrainzId(tag.MusicBrainzReleaseId),
-                    MusicBrainzId(tag.MusicBrainzArtistId), MusicBrainzId(tag.MusicBrainzReleaseArtistId)));
+                    MusicBrainzId(tag.MusicBrainzArtistId), MusicBrainzId(tag.MusicBrainzReleaseArtistId)),
+                LoudnessOf(tagged));
         }
 #pragma warning disable CA1031 // A file's bytes are untrusted: whatever TagLib throws on them is that file's failure.
         catch (Exception e)
@@ -590,6 +591,28 @@ public sealed partial class LibraryIndexer : IHostedService, IDisposable
         {
             return Result.Fail(LibraryError.UnreadableFile, $"{e.GetType().Name}: {e.Message}");
         }
+    }
+
+    // The track's integrated loudness in LUFS, from its tags; null without
+    // them. Opus's R128_TRACK_GAIN (Q7.8 dB to -23 LUFS) first, as that codec
+    // carries no ReplayGain; otherwise ReplayGain's track gain, which TagLib
+    // reads from ID3v2, Xiph, APE and MP4 alike (dB to -18 LUFS). A value
+    // outside what any real track measures is a broken tag, not a loudness.
+    private static double? LoudnessOf(TagLib.File tagged)
+    {
+        double? lufs = null;
+        if (tagged.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph &&
+            xiph.GetFirstField("R128_TRACK_GAIN") is { } r128 &&
+            int.TryParse(r128, System.Globalization.NumberStyles.AllowLeadingSign,
+                System.Globalization.CultureInfo.InvariantCulture, out var q78))
+        {
+            lufs = -23.0 - q78 / 256.0;
+        }
+        else if (tagged.Tag.ReplayGainTrackGain is var gain && double.IsFinite(gain))
+        {
+            lufs = -18.0 - gain;
+        }
+        return lufs is > -70.0 and < 5.0 ? Math.Round(lufs.Value, 2) : null;
     }
 
     // MP4's `stik` (2 is an audiobook), where the file has an Apple tag.

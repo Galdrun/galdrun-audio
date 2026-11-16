@@ -118,6 +118,8 @@ public sealed class CoreLinkTests : IAsyncDisposable
                 """{"zone":"living","sourceId":"1","mediaUri":"http://127.0.0.1:4714/media/h1","trackId":"t1","title":"Träumerei"}"""));
         await Send(new SourceStage("living", "2", "http://127.0.0.1:4714/media/h2", StartOffsetNs: 5_000_000),
             """{"zone":"living","sourceId":"2","mediaUri":"http://127.0.0.1:4714/media/h2","startOffsetNs":5000000}""");
+        await Send(new SourceStage("living", "3", "http://127.0.0.1:4714/media/h3", GainDb: -6.5),
+            """{"zone":"living","sourceId":"3","mediaUri":"http://127.0.0.1:4714/media/h3","gainDb":-6.5}""");
         Assert.Equal(new StagedCleared("living", 0), await Send(new SourceClearStaged("living"), """{"zone":"living"}"""));
         Assert.Equal(new ZonePlayed("living", ZoneState.Playing, TransportState.Starting),
             await Send(new ZonePlay("living"), """{"zone":"living"}"""));
@@ -130,6 +132,9 @@ public sealed class CoreLinkTests : IAsyncDisposable
         Assert.Equal(new AudioControlSet("roomA", AudioControl.Auto, true),
             await Send(new ClientSetAudioControl("roomA", AudioControl.Auto),
                 """{"client":"roomA","audioControl":"auto"}"""));
+        Assert.Equal(new VolumeControlSet("roomA", VolumeControl.Auto, true, Normalization: true),
+            await Send(new ClientSetVolumeControl("roomA", Normalization: true),
+                """{"client":"roomA","normalization":true}"""));
         Assert.Equal(new VolumeSet("roomA", true, 0.5, false),
             await Send(new ClientSetVolume("roomA", 0.5, false), """{"client":"roomA","value":0.5,"muted":false}"""));
         Assert.Equal(new VolumeSet("roomA", true, Muted: true),

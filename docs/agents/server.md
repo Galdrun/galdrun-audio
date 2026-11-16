@@ -140,6 +140,12 @@ Keep ownership straight when changing settings:
 - Providers return `ResolvedStream`, not decoded PCM. `KnownLength` must
   provide independent seekable readers with stable bytes/length per URL;
   `Live` provides nonseekable readers. Keep stream/cache release lifetimes.
+- Loudness normalization: the indexer reads ReplayGain/R128 tags into
+  `track.loudness_lufs` (`LibraryIndexer.LoudnessOf`), the local provider
+  attaches it with `ResolvedStream.WithLoudness`, and `ZoneSession` stages
+  `gainDb = min(0, -18 - LUFS)` (`NormalizationGainDb`). Attenuation only:
+  clients have no headroom. The per-room on/off is the client's setting,
+  `normalization` in `client.setVolumeControl` / room PATCH, off by default.
 - On-demand streaming providers (today Tidal) resolve through
   `Providers/Streaming/StreamWindow.cs`, one per provider: it holds only a
   window of pieces around each reader (memory or disk, top-level `streaming`

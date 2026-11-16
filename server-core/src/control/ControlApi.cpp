@@ -6,6 +6,7 @@
 #include "util/Logger.h"
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <cstdint>
 #include <initializer_list>
@@ -146,6 +147,9 @@ json::Value volumeControlJson(const matp::VolumeConfig& config)
     out["effective"] = json::Value(matp::volumeControlModeName(config.effective));
     if (!config.reason.empty())
         out["reason"] = json::Value(config.reason);
+    // Absent for a client that does not know the setting (section 59).
+    if (config.hasNormalization)
+        out["normalization"] = json::Value(config.normalization);
     return out;
 }
 
@@ -160,6 +164,8 @@ json::Value segmentJson(const SourceSegment& segment)
         out["title"] = json::Value(segment.title);
     if (segment.startOffsetNs != 0)
         out["startOffsetNs"] = json::Value(segment.startOffsetNs);
+    if (segment.gainDb)
+        out["gainDb"] = json::Value(*segment.gainDb);
     return out;
 }
 
@@ -426,7 +432,8 @@ std::string ControlApi::handleLine(const std::string& line, bool& subscribed)
                                                                        : reply;
     else if (command == "source.stage")
         reply = onlyKeys(params,
-                         {"zone", "sourceId", "mediaUri", "trackId", "title", "startOffsetNs"},
+                         {"zone", "sourceId", "mediaUri", "trackId", "title", "startOffsetNs",
+                          "gainDb"},
                          command, reply)
                     ? sourceStage(params)
                     : reply;
@@ -477,7 +484,7 @@ std::string ControlApi::handleLine(const std::string& line, bool& subscribed)
                     ? audioConfigure(params)
                     : reply;
     else if (command == "client.setVolumeControl")
-        reply = onlyKeys(params, {"client", "volumeControl"}, command, reply)
+        reply = onlyKeys(params, {"client", "volumeControl", "normalization"}, command, reply)
                     ? clientSetVolumeControl(params)
                     : reply;
     else if (command == "client.setDriftCorrection")
@@ -1001,6 +1008,14 @@ ControlApi::Reply ControlApi::sourceStage(const json::Value& params)
         !nanoseconds(params, "startOffsetNs", false, segment.startOffsetNs, reply))
     {
         return reply;
+    }
+    if (const json::Value* gain = params.find("gainDb"); gain != nullptr)
+    {
+        // An attenuation: the rooms have no headroom to amplify into.
+        if (!gain->isNumber() || !std::isfinite(gain->asDouble()) || gain->asDouble() > 0.0)
+            return Reply::failure(kInvalidArgument,
+                                  "\"gainDb\" must be a finite number of zero or less");
+        segment.gainDb = gain->asDouble();
     }
 
     // Media comes from the high-end server and nowhere else: a path, another
@@ -2000,47 +2015,81 @@ ControlApi::Reply ControlApi::clientSetVolumeControl(const json::Value& params)
 {
     Reply reply;
     std::string name;
-    std::string text;
-    if (!requireString(params, "client", name, reply) ||
-        !requireString(params, "volumeControl", text, reply))
+    if (!requireString(params, "client", name, reply))
         return reply;
-    matp::VolumeControlMode mode = matp::VolumeControlMode::Auto;
-    if (!matp::parseVolumeControlMode(text, mode))
-        return Reply::failure(kInvalidArgument, "\"volumeControl\" is " + text +
-                                                    ", expected auto|hardware|software|disabled");
+
+    matp::SetVolumeControl request;
+    if (const json::Value* mode = params.find("volumeControl"); mode != nullptr)
+    {
+        if (!mode->isString() ||
+            !matp::parseVolumeControlMode(mode->asString(), request.volumeControl))
+            return Reply::failure(kInvalidArgument,
+                                  "\"volumeControl\" must be auto|hardware|software|disabled");
+        request.hasVolumeControl = true;
+    }
+    if (const json::Value* normalization = params.find("normalization"); normalization != nullptr)
+    {
+        if (!normalization->isBool())
+            return Reply::failure(kInvalidArgument, "\"normalization\" must be a boolean");
+        request.hasNormalization = true;
+        request.normalization = normalization->asBool();
+    }
+    if (!request.hasVolumeControl && !request.hasNormalization)
+        return Reply::failure(kInvalidArgument,
+                              "client.setVolumeControl needs \"volumeControl\", "
+                              "\"normalization\" or both");
 
     // Refused here, not only by the client: under bitPerfect software volume
-    // does not exist (section 59), and a request for it is a mistake to say
-    // so about rather than to forward.
+    // and normalization do not exist (section 59), and a request for either
+    // is a mistake to say so about rather than to forward.
     const ClientId client(name);
-    if (mode == matp::VolumeControlMode::Software &&
-        rooms_.preference(client).audioControl == AudioControl::BitPerfect)
+    const bool strict = rooms_.preference(client).audioControl == AudioControl::BitPerfect;
+    if (strict && request.hasVolumeControl &&
+        request.volumeControl == matp::VolumeControlMode::Software)
         return Reply::failure(kInvalidArgument, "software volume is not available while " +
+                                                    name + "'s Audio Control is bitPerfect");
+    if (strict && request.hasNormalization && request.normalization)
+        return Reply::failure(kInvalidArgument, "volume normalization is not available while " +
                                                     name + "'s Audio Control is bitPerfect");
 
     // Not desired state, like the buffer: the client keeps it in its own
-    // config, and one that has reported it understands section 59.
+    // config, and one that has reported it understands section 59. One that
+    // has not reported normalization cannot read a message that sets it.
     const std::optional<RoomRecord> room = rooms_.find(client);
     if (!room || !room->connected || !room->hasVolumeConfig)
         return Reply::failure(kUnavailable,
                               name + " is not connected or has not reported its volume control");
+    const matp::VolumeConfig& current = room->volumeConfig;
+    if (request.hasNormalization && !current.hasNormalization)
+        return Reply::failure(kUnavailable,
+                              name + "'s client does not support volume normalization");
 
-    const bool changed = mode != room->volumeConfig.volumeControl;
+    // Only what differs is sent.
+    matp::SetVolumeControl changes = request;
+    changes.hasVolumeControl =
+        request.hasVolumeControl && request.volumeControl != current.volumeControl;
+    changes.hasNormalization =
+        request.hasNormalization && request.normalization != current.normalization;
+    const bool changed = changes.hasVolumeControl || changes.hasNormalization;
     if (changed)
     {
         RoomCommand command;
         command.kind = RoomCommandKind::SetVolumeControl;
         command.client = room->client;
-        command.volumeControl.volumeControl = mode;
+        command.volumeControl = changes;
         if (!sendToRoom_(command))
             return Reply::failure(kFailed, name + " could not be sent the volume control");
-        MULTIROOM_INFO("control API: {} volume control {}", name, text);
+        MULTIROOM_INFO("control API: {} volume control {}", name, json::serialize(params));
     }
 
     // The client answers with VOLUME_CONFIG, or refuses with an ERROR and
     // keeps its old setting; `clients` shows which.
     reply.body["client"] = json::Value(name);
-    reply.body["volumeControl"] = json::Value(text);
+    reply.body["volumeControl"] = json::Value(matp::volumeControlModeName(
+        request.hasVolumeControl ? request.volumeControl : current.volumeControl));
+    if (request.hasNormalization || current.hasNormalization)
+        reply.body["normalization"] =
+            json::Value(request.hasNormalization ? request.normalization : current.normalization);
     reply.body["changed"] = json::Value(changed);
     return reply;
 }

@@ -2537,14 +2537,14 @@ MULTIROOM_TEST(matp_session_hands_on_the_audio_control_and_answers_set_volume_co
                                    : matp::VolumeControlMode::Disabled;
             return report;
         },
-        [&](matp::VolumeControlMode mode, std::string& error) {
-            if (mode == matp::VolumeControlMode::Software &&
+        [&](const matp::SetVolumeControl& request, std::string& error) {
+            if (request.volumeControl == matp::VolumeControlMode::Software &&
                 audio == matp::AudioControl::BitPerfect)
             {
                 error = "software volume is not available";
                 return false;
             }
-            configured = mode;
+            configured = request.volumeControl;
             return true;
         });
     CHECK(fixture.start(listener));
@@ -2567,8 +2567,11 @@ MULTIROOM_TEST(matp_session_hands_on_the_audio_control_and_answers_set_volume_co
 
     // Refused under bitPerfect: an ERROR with the code, the setting kept.
     matp::SetVolumeControl request;
+    request.hasVolumeControl = true;
     request.volumeControl = matp::VolumeControlMode::Software;
-    CHECK(peer.send(matp::MessageType::SetVolumeControl, matp::makeSetVolumeControl(request)));
+    json::Value requestPayload;
+    CHECK(matp::makeSetVolumeControl(request, requestPayload, error));
+    CHECK(peer.send(matp::MessageType::SetVolumeControl, requestPayload));
     CHECK(nextOfType(peer, matp::MessageType::Error, message, 3000));
     std::string code;
     CHECK(json::getString(message.payload, "code", code));
@@ -2586,7 +2589,7 @@ MULTIROOM_TEST(matp_session_hands_on_the_audio_control_and_answers_set_volume_co
         },
         3000));
     CHECK(audioKnown);
-    CHECK(peer.send(matp::MessageType::SetVolumeControl, matp::makeSetVolumeControl(request)));
+    CHECK(peer.send(matp::MessageType::SetVolumeControl, requestPayload));
     CHECK(nextOfType(peer, matp::MessageType::VolumeConfig, message, 3000));
     CHECK(matp::parseVolumeConfig(message.payload, report, error));
     CHECK(report.volumeControl == matp::VolumeControlMode::Software);

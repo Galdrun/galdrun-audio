@@ -118,6 +118,7 @@ MULTIROOM_TEST(volume_path_follows_the_table_of_section_59)
     }
 }
 
+
 MULTIROOM_TEST(hardware_clock_setting_rounds_clamps_and_holds_near_the_current_step)
 {
     HardwareClockInfo info;

@@ -31,7 +31,7 @@ internal sealed class FakeCore : IAsyncDisposable
         ["zone.create"] = ["zone"],
         ["zone.delete"] = ["zone"],
         ["zone.setClients"] = ["zone", "clients"],
-        ["source.stage"] = ["zone", "sourceId", "mediaUri", "trackId?", "title?", "startOffsetNs?"],
+        ["source.stage"] = ["zone", "sourceId", "mediaUri", "trackId?", "title?", "startOffsetNs?", "gainDb?"],
         ["source.clearStaged"] = ["zone"],
         ["zone.play"] = ["zone"],
         ["zone.pause"] = ["zone"],
@@ -49,7 +49,7 @@ internal sealed class FakeCore : IAsyncDisposable
         ["client.setBuffer"] = ["client", "bufferMs"],
         ["client.setName"] = ["client", "name"],
         ["client.forget"] = ["client"],
-        ["client.setVolumeControl"] = ["client", "volumeControl"],
+        ["client.setVolumeControl"] = ["client", "volumeControl?", "normalization?"],
         ["client.setDriftCorrection"] = ["client", "driftCorrection"],
         ["audio.settings"] = [],
         ["audio.configure"] = ["minimumStartBufferMs?", "clientReadyTimeoutMs?", "startDelayMs?",
@@ -316,7 +316,8 @@ internal sealed class FakeCore : IAsyncDisposable
         "client.setVolumeControl" => p => new JsonObject
         {
             ["client"] = Copy(p, "client"),
-            ["volumeControl"] = Copy(p, "volumeControl"),
+            ["volumeControl"] = Copy(p, "volumeControl") ?? "auto",
+            ["normalization"] = Copy(p, "normalization"),
             ["changed"] = true,
         },
         "client.setDriftCorrection" => p => new JsonObject

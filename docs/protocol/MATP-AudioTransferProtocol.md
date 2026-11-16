@@ -1431,6 +1431,11 @@ did not need it.
 that names neither is still a boundary. The position is the part every room has
 to agree on.
 
+`gainDb` is optional: the next track's loudness normalization, a finite
+number of zero or less, absent where the server knows no loudness for it
+(section 59). Every room is sent the same value; a room plays it from the
+boundary's frame on only while its own normalization setting is on.
+
 ---
 
 # 24. Source sample-rate changes and format transitions
@@ -3436,6 +3441,45 @@ Control, another device, a hardware control that stopped answering. The server
 keeps the latest per room, to show, and forgets it with the connection. One
 that does not parse is logged and ignored.
 
+## Loudness normalization
+
+Tracks are mastered at different loudness. The server knows a track's
+integrated loudness (EBU R128) where it can, and sends the attenuation that
+brings it to its reference level as `gainDb` with the track's
+`TRACK_BOUNDARY` (section 23), and with `TRACK_INFO` for a room that joined
+after that boundary (section 44). `gainDb` is zero or less: a room has no
+headroom to amplify into. Absent, the track plays unchanged.
+
+Whether a room plays it is the client's setting, `normalization`, kept and
+persisted like the Volume Control and **off by default**:
+
+```json
+{"type": "setVolumeControl", "sessionId": "s-1", "normalization": true}
+```
+
+```json
+{"type": "volumeConfig", "sessionId": "s-1", "volumeControl": "auto", "effective": "hardware",
+ "normalization": true}
+```
+
+- `SET_VOLUME_CONTROL` carries `volumeControl`, `normalization` or both; an
+  absent one is unchanged, and naming neither is an error.
+- `VOLUME_CONFIG` always carries `normalization` from a client that supports
+  it. A client that does not leaves it out, and the server sends it no
+  `normalization`: such a client cannot read a `SET_VOLUME_CONTROL` without
+  `volumeControl`.
+- While it is on, the client applies each track's gain in its render path,
+  on the boundary's frame, as a second gain beside the room volume -- also
+  when the room volume plays on the device's control: a hardware control is
+  not exact to the frame, and the track gain must be. The room volume keeps
+  its own path; `effective` describes that path alone. The samples are scaled
+  while normalization is on, so the room is not bitperfect then.
+- The setting never moves the room volume between paths: a device's control
+  may ramp to a new level over a second or more (Connector 3), and audio
+  played over one still on its way is a burst.
+- Under `bitPerfect` it is refused, like `software`, and a client whose room
+  becomes `bitPerfect` turns it off, persists that and reports it.
+
 ## Old names are refused
 
 This setting was `bitperfect` with the values `force`, `whenPossible` and
@@ -3724,6 +3768,6 @@ reference core always supplies it.
 | `PING` | `sequence` (uint64). Server → client only. |
 | `PONG` | the `PING` body echoed with `type` changed; a `PONG` without `sequence` is refused |
 | `SET_VOLUME` | optional `value` (linear gain, ≥ 0), optional `muted` (bool), optional `applyAtTimelineNs`. An absent field is unchanged; naming neither `value` nor `muted` is an error. |
-| `TRACK_INFO` | optional `sessionId`, `trackId`, `title`; at least one of the last two. No position (section 44). |
+| `TRACK_INFO` | optional `sessionId`, `trackId`, `title`, `gainDb` (section 59); at least one of the last three. No position (section 44). |
 | `STREAM_READY` | also `standby: true` for automatic standby (section 12) |
 | `ERROR` | `message` (for people), optional `code` (machine-readable, e.g. `setBuffer`) |

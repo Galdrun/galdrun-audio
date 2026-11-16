@@ -52,12 +52,28 @@ void connectSessionHooks(matp::Session& session, ClientRuntime& runtime)
             report.volumeControl = runtime.config->volumeControl;
             report.effective = runtime.volumePath.effective;
             report.reason = runtime.volumePath.reason;
+            report.hasNormalization = true;
+            report.normalization = runtime.config->normalization;
             return report;
         },
-        [&runtime](matp::VolumeControlMode mode, std::string& error) {
-            const VolumeControlChange result = changeVolumeControl(runtime, mode, error);
-            return result == VolumeControlChange::Changed ||
-                   result == VolumeControlChange::Unchanged;
+        [&runtime](const matp::SetVolumeControl& request, std::string& error) {
+            const auto applied = [](VolumeControlChange result) {
+                return result == VolumeControlChange::Changed ||
+                       result == VolumeControlChange::Unchanged;
+            };
+            // Refused before either is applied: one message is one answer.
+            if (request.hasNormalization && request.normalization &&
+                runtime.audioControl == matp::AudioControl::BitPerfect)
+            {
+                error = "volume normalization is not available while the room's Audio Control "
+                        "is bitPerfect";
+                return false;
+            }
+            if (request.hasVolumeControl &&
+                !applied(changeVolumeControl(runtime, request.volumeControl, error)))
+                return false;
+            return !request.hasNormalization ||
+                   applied(changeNormalization(runtime, request.normalization, error));
         });
     // The server decides the correction; the stream only executes it.
     session.setDriftCorrectionHooks(

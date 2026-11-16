@@ -55,6 +55,7 @@ main { padding: 22px 24px 32px; }
 .section-menu a[aria-current] { color: white; background: var(--accent); box-shadow: 0 3px 10px #1d706d30; }
 .section-menu a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .section-menu a[hidden] { display: none; }
+.section-menu-toggle { display: none; }
 .settings-card h2 { scroll-margin-top: calc(var(--header-height, 140px) + 24px); }
 h1 { font-size: 28px; line-height: 1.2; margin: 0 0 2px; letter-spacing: -.02em; }
 .subtitle { color: var(--muted); margin: 0; font-size: 18px; }
@@ -201,6 +202,15 @@ body.has-save-bar { padding-bottom: 120px; }
   .section-menu-links { padding: 6px 16px; }
   .section-menu a { flex: 1 1 calc(33.333% - 4px); min-width: 0; padding: 8px 6px; gap: 5px; font-size: 12px; white-space: normal; overflow-wrap: anywhere; text-align: center; }
   .section-menu a svg { width: 16px; height: 16px; }
+  .section-menu-toggle { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 10px 16px; border-radius: 0; background: transparent; color: var(--fg); text-align: left; }
+  .section-menu-toggle:hover { background: var(--soft); }
+  .section-menu-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .section-menu-toggle svg { width: 22px; height: 22px; flex: 0 0 auto; color: var(--accent); }
+  .section-menu-toggle span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .section-menu .menu-close, .section-menu.open .menu-open { display: none; }
+  .section-menu.open .menu-close { display: inline; }
+  .section-menu:not(.open) .section-menu-links { display: none; }
+  .section-menu.open .section-menu-links { max-height: 70vh; overflow-y: auto; border-top: 1px solid #e9e4da; }
   .settings-card { display: block; padding: 18px; }
   .card-intro { grid-template-columns: 56px minmax(0, 1fr); gap: 16px; padding: 0 0 16px; }
   h2 { margin-top: 3px; }

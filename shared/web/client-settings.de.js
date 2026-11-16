@@ -315,6 +315,7 @@ i18n.add('de-AT', {
   'leds.ledMode': 'LED-Modus',
   'leds.onLightsOn': 'EIN = Leuchten an',
   'leds.offLightsOff': 'AUS = Leuchten aus',
+  'leds.maxBrightness': 'Maximale Helligkeit',
   'leds.bootAndFirmware': 'Anzeigen f\u00fcr Start und Firmware-Update bleiben aktiv.',
   // footer
   'footer.multiroomAudioFor': 'Multiroom-Audio f\u00fcr ein vernetzteres Zuhause',

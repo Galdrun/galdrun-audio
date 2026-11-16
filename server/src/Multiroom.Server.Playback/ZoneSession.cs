@@ -848,7 +848,7 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
             ? (t.ProviderId, t.ProviderItemId)
             : (item.Station!.ProviderId, item.Station.ProviderItemId);
         var answer = await SendAsync(new SourceStage(zone, sourceId, uri.AbsoluteUri, $"{providerId}:{providerItemId}",
-            title, offsetNs == 0 ? null : offsetNs)).ConfigureAwait(false);
+            title, offsetNs == 0 ? null : offsetNs, NormalizationGainDb(resolved.Value.LoudnessLufs))).ConfigureAwait(false);
         if (!answer.IsSuccess)
         {
             engine.Media.Retire(uri);
@@ -857,6 +857,19 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
         LogStaged(engine.Log, zone, sourceId, title);
         return new Staging(sourceId, item.Id, part, uri, retune);
     }
+
+    // ReplayGain 2.0's reference level. Every track louder than it is
+    // attenuated to it; a quieter one is left as it is, because a room has no
+    // headroom to amplify into (MATP section 59). Most music is louder, so
+    // the room volume is turned up once and tracks then match.
+    internal const double NormalizationTargetLufs = -18.0;
+
+    // The gain a room with normalization on plays a track at; null where its
+    // loudness is not known, which plays it unchanged.
+    internal static double? NormalizationGainDb(double? loudnessLufs) =>
+        loudnessLufs is { } lufs && double.IsFinite(lufs)
+            ? Math.Round(Math.Min(0.0, NormalizationTargetLufs - lufs), 2)
+            : null;
 
     private async Task<Result<ResolvedStream, ProviderError>> ResolveAsync(Track? track, RadioStation? station)
     {

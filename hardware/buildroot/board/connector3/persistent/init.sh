@@ -10,6 +10,15 @@ mount -t tmpfs tmpfs /tmp
 mkdir -p /dev/pts
 mount -t devpts devpts /dev/pts
 exec 0</dev/console 1>/dev/console 2>/dev/console
+# Front lights "initializing" at once, like Connector 2's early heartbeat: the
+# status monitor starts only after network, SSH and MCU audio setup (seconds).
+# One-shot and synchronous, so the UART is free before the MCU service claims it.
+# Its uptime stamps in /run/early-lights.log tell kernel time from MCU time.
+{
+    echo "start $(cut -d' ' -f1 /proc/uptime)"
+    /usr/sbin/galdrun-connector3-mcu --indication /dev/ttymxc2 4
+    echo "exit $? at $(cut -d' ' -f1 /proc/uptime)"
+} >/run/early-lights.log 2>&1 || :
 
 failed() {
     echo "Persistent startup stopped: $*"
@@ -62,9 +71,12 @@ mkdir -p /run/sshd
 sync
 /usr/sbin/galdrun-connector3-mcu /dev/ttymxc2 >/run/mcu-buttons.log 2>&1 &
 echo $! >/run/mcu-buttons.pid
-for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+# Up to 20 s, checked every 0.2 s so the client and lights start promptly.
+attempt=0
+while [ "$attempt" -lt 100 ]; do
     [ -S /run/galdrun-connector3-mcu.sock ] && break
-    sleep 1
+    sleep 0.2
+    attempt=$((attempt + 1))
 done
 [ -S /run/galdrun-connector3-mcu.sock ] || failed 'MCU audio initialization failed; client not started'
 export LD_LIBRARY_PATH=/opt/galdrun-client/lib

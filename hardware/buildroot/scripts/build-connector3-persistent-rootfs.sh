@@ -38,6 +38,8 @@ install -m 0755 "$project/board/connector3/raumfeld-suspend" "$stage/rootfs/usr/
     "$project/../../client/src/audio/linux/Connector3Mcu.cpp" -o "$stage/rootfs/usr/sbin/galdrun-status-leds"
 common="$project/board/common/overlay"
 install -m 0755 "$common/usr/sbin/raumfeld-ssh" "$stage/rootfs/usr/sbin/raumfeld-ssh"
+install -m 0755 "$common/usr/sbin/raumfeld-network" "$common/usr/sbin/raumfeld-wifi-scan" \
+    "$common/usr/sbin/galdrun-restart" "$common/usr/sbin/galdrun-time-sources" "$stage/rootfs/usr/sbin/"
 install -m 0755 "$common/etc/init.d/S50sshd" "$stage/rootfs/etc/init.d/S50sshd"
 if [[ $profile == release ]]; then
     rm -f "$stage/rootfs/root/.ssh/authorized_keys" "$stage/rootfs/etc/galdrun-ssh.conf"

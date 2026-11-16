@@ -98,6 +98,7 @@ void TimelineSource::prepare(const AudioFormat& format)
     // The room's volume survives a reopened device; the ramp and the frame
     // size do not, because both belong to the format that was just granted.
     volume_.prepare(format);
+    trackGain_.prepare(format);
 
 #if defined(_WIN32) || defined(ESP_PLATFORM)
     leftJustify24_ = format.sampleType == AudioFormat::SampleType::Int24In32;
@@ -195,6 +196,8 @@ uint32_t TimelineSource::render(void* buffer, uint32_t frameCount)
                     static_cast<size_t>(frameCount - tail) * frameBytes);
         volume_.process(target, tail, periodStart);
         volume_.silence(frameCount - tail, periodStart + tail);
+        trackGain_.process(target, tail, periodStart);
+        trackGain_.silence(frameCount - tail, periodStart + tail);
         audible_ = false;
         advance(frameCount);
         state_.store(static_cast<uint32_t>(silentState()), std::memory_order_relaxed);
@@ -296,6 +299,8 @@ uint32_t TimelineSource::render(void* buffer, uint32_t frameCount)
     // a ramp or a scheduled change moves through them as it would through
     // audio, rather than starting where it left off when the audio returns.
     volume_.silence(frameCount - produced, periodStart + produced);
+    trackGain_.process(target, produced, periodStart);
+    trackGain_.silence(frameCount - produced, periodStart + produced);
 
     if (ending)
         applyEnd();
@@ -723,31 +728,54 @@ bool TimelineSource::setVolumeAt(double gain, bool muted, uint64_t streamFrame)
     return true;
 }
 
+void TimelineSource::setTrackGain(double gain)
+{
+    trackGainAt_ = false;
+    trackGain_.set(gain, false);
+}
+
+bool TimelineSource::setTrackGainAt(double gain, uint64_t streamFrame)
+{
+    uint64_t deviceFrame = 0;
+    if (!deviceFrameForStream(streamFrame, deviceFrame))
+        return false;
+
+    trackGainAt_ = true;
+    trackGainAtStreamFrame_ = streamFrame;
+    trackGain_.setAt(gain, false, waitsForResume(streamFrame) ? kHeldDeviceFrame : deviceFrame);
+    return true;
+}
+
+void TimelineSource::placeVolume()
+{
+    placeGain(volume_, volumeAt_, volumeAtStreamFrame_);
+    placeGain(trackGain_, trackGainAt_, trackGainAtStreamFrame_);
+}
+
 // A paused room's device frames run on while its timeline does not, so a
 // change past the pause is held rather than left to fire on elapsed device
 // time, and the resume's start places it on its own mapping.
-void TimelineSource::placeVolume()
+void TimelineSource::placeGain(VolumeControl& control, bool& at, uint64_t streamFrame)
 {
     // One the render cursor has reached has come round, or comes round at the
     // next callback whatever is placed now.
-    if (volumeAt_ && volume_.scheduledDeviceFrame() != kHeldDeviceFrame &&
-        submittedFrames() >= volume_.scheduledDeviceFrame())
-        volumeAt_ = false;
-    if (!volumeAt_)
+    if (at && control.scheduledDeviceFrame() != kHeldDeviceFrame &&
+        submittedFrames() >= control.scheduledDeviceFrame())
+        at = false;
+    if (!at)
         return;
 
     uint64_t deviceFrame = kHeldDeviceFrame;
-    if (!waitsForResume(volumeAtStreamFrame_) &&
-        !deviceFrameForStream(volumeAtStreamFrame_, deviceFrame))
+    if (!waitsForResume(streamFrame) && !deviceFrameForStream(streamFrame, deviceFrame))
     {
         // The start has gone past it: its position has been played, or
         // skipped, so it is in force from now on.
-        volumeAt_ = false;
-        volume_.set(volume_.gain(), volume_.muted());
+        at = false;
+        control.set(control.gain(), control.muted());
         return;
     }
-    if (deviceFrame != volume_.scheduledDeviceFrame())
-        volume_.setAt(volume_.gain(), volume_.muted(), deviceFrame);
+    if (deviceFrame != control.scheduledDeviceFrame())
+        control.setAt(control.gain(), control.muted(), deviceFrame);
 }
 
 void TimelineSource::cancel()
@@ -763,6 +791,9 @@ void TimelineSource::cancel()
     if (volumeAt_ && volume_.scheduledDeviceFrame() == kHeldDeviceFrame)
         volume_.set(volume_.gain(), volume_.muted());
     volumeAt_ = false;
+    if (trackGainAt_ && trackGain_.scheduledDeviceFrame() == kHeldDeviceFrame)
+        trackGain_.set(trackGain_.gain(), false);
+    trackGainAt_ = false;
 
     scheduled_ = false;
     startDeviceFrame_ = 0;

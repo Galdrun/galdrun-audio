@@ -45,6 +45,12 @@ struct SourceSegment
     std::string trackId;
     std::string title;
 
+    // The track's loudness normalization in dB, zero or less, absent where
+    // the high-end server knows no loudness. Carried like the two above:
+    // TRACK_BOUNDARY and TRACK_INFO take it to the rooms, which apply it
+    // only where their own normalization setting is on (MATP section 59).
+    std::optional<double> gainDb;
+
     // Phase 26: where in the source to begin, zero being its first frame --
     // a track resumed where it was left, and a seek, which re-opens the
     // source that is audible at the offset asked for. It moves nothing on

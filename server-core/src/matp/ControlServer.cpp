@@ -223,7 +223,7 @@ private:
         case RoomCommandKind::SetBuffer:
             return session.setBuffer(command.buffer.bufferMs);
         case RoomCommandKind::SetVolumeControl:
-            return session.setVolumeControl(command.volumeControl.volumeControl);
+            return session.setVolumeControl(command.volumeControl);
         case RoomCommandKind::SetRoomName:
             return session.setRoomName(command.roomName.name);
         case RoomCommandKind::SetDriftCorrection:

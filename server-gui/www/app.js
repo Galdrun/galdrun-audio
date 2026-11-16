@@ -2323,7 +2323,9 @@ function renderClients() {
 // Value is null without a plan; reason says why it is not.
 function bitPerfectOf(a) {
   const plan = a?.plan, settings = a?.settings;
-  const scaling = a?.volumeControl?.effective === 'software' && ((settings?.volume ?? 1) < 1 || settings?.muted);
+  // Normalization scales the samples on any volume path.
+  const scaling = Boolean(a?.volumeControl?.normalization) || (a?.volumeControl?.effective === 'software' &&
+    ((settings?.volume ?? 1) < 1 || settings?.muted));
   const shared = a?.capabilities?.accessMode === 'shared';
   return {
     value: plan ? plan.bitPerfect && !scaling && !shared : null,
@@ -2656,6 +2658,8 @@ function roomSettings(r) {
     (a?.bufferMs != null || offline) && field('room.bufferSizeMs', live(a?.bufferMs != null ? bufferEditor(a.bufferMs, path) : unknown())),
     (a?.volumeControl || offline) && field('room.volumeControl', live(a?.volumeControl
       ? volumeControlEditor(a.volumeControl, d.audioControl ?? s?.audioControl, a.capabilities?.hardwareVolume, path) : unknown())),
+    a?.volumeControl?.normalization != null && field('room.normalization',
+      live(normalizationEditor(a.volumeControl, d.audioControl ?? s?.audioControl, path))),
     (a?.driftCorrection?.mode || offline) && field('room.driftCorrection', live(a?.driftCorrection?.mode ? driftCorrectionEditor(a.driftCorrection, path) : unknown())),
     field('room.audioControl',
       h('select', { value: d.audioControl ?? s?.audioControl ?? 'auto', 'aria-label': tt('room.audioControl'), onchange: (e) => patch({ audioControl: e.target.value }) },
@@ -2910,11 +2914,12 @@ function fmtHardwareVolume(hv) {
 // What the room's volume actually does: bad where the client plays none,
 // warn where it scales the samples (the room is not bitperfect while it does).
 function volumeBadge(vc, s) {
-  const scaling = vc.effective === 'software' && ((s?.volume ?? 1) < 1 || s?.muted);
+  // Normalization scales the samples in software whatever path the volume takes.
+  const scaling = Boolean(vc.normalization) || (vc.effective === 'software' && ((s?.volume ?? 1) < 1 || s?.muted));
   return h('span', {
-    class: 'pill badge ' + (vc.effective === 'hardware' ? 'good' : vc.effective === 'software' ? 'warn' : 'muted'),
+    class: 'pill badge ' + (vc.effective === 'hardware' && !scaling ? 'good' : vc.effective === 'disabled' ? 'muted' : 'warn'),
     title: vc.reason ?? tt(VOLUME_CONTROLS.find(([v]) => v === vc.effective)?.[2] ?? ''),
-  }, `${tt('room.volume')}: ${volumeControlLabel(vc.effective)}${scaling ? ` ${tt('room.scalingNotBitperfect')}` : ''}`);
+  }, `${tt('room.volume')}: ${volumeControlLabel(vc.effective)}${vc.normalization ? ` + ${tt('room.normalizationSoftware')}` : ''}${scaling ? ` ${tt('room.scalingNotBitperfect')}` : ''}`);
 }
 
 // --- a room's equalizer (../_docs/EqualizerRoadmap.md, step 3) ---------------
@@ -3459,6 +3464,41 @@ function volumeControlEditor(vc, audioControl, hardwareVolume, path) {
     }, tt(label)))),
     h('span', { class: 'small ' + (vc.effective === 'disabled' && vc.configured !== 'disabled' ? 'warn' : 'muted') },
       `→ ${volumeControlLabel(vc.effective)}`, vc.reason && ` (${vc.reason})`));
+}
+
+// Loudness normalization, its own field: the client keeps it, like the
+// Volume Control, and a client that does not support it reports none. It
+// plays the volume in software, so not under Bit-Perfect either.
+// The value asked for is shown until the client reports it (its VOLUME_CONFIG
+// comes back a moment after the PATCH answers), else the refresh in between
+// draws the old one and the switch flips back and forth. Given up after 5 s:
+// a client that refused keeps what it reports.
+const pendingNormalization = new Map(); // path -> { value, until }
+function normalizationShown(vc, path) {
+  const pending = pendingNormalization.get(path);
+  if (pending && (pending.value === vc.normalization || Date.now() > pending.until))
+    pendingNormalization.delete(path);
+  return pendingNormalization.get(path)?.value ?? vc.normalization;
+}
+
+function normalizationEditor(vc, audioControl, path) {
+  const strict = audioControl === 'bitPerfect';
+  const shown = normalizationShown(vc, path);
+  return h('div', { class: 'room-controls' },
+    h('label', { class: 'switch', title: tt(strict ? 'room.notAvailableUnder' : 'room.normalizationHint') },
+      h('input', {
+        type: 'checkbox', role: 'switch', checked: shown, disabled: strict && !shown,
+        'aria-label': tt('room.normalization'),
+        onchange: (e) => {
+          const value = e.target.checked;
+          pendingNormalization.set(path, { value, until: Date.now() + 5000 });
+          act(() => api('PATCH', path, { normalization: value }),
+            tt(value ? 'room.normalizationOn' : 'room.normalizationOff'))
+            .then((answer) => { if (answer === undefined) { pendingNormalization.delete(path); renderRooms(); } });
+        },
+      }),
+      h('span', { class: 'switch-track', 'aria-hidden': 'true' })),
+    h('span', { class: 'muted small' }, tt(strict ? 'room.notAvailableUnder' : 'room.normalizationHint')));
 }
 
 // The actuator a room's drift is corrected through

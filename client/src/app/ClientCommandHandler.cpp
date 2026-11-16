@@ -395,6 +395,7 @@ ClientStatus buildClientStatus(const ClientRuntime& runtime)
     if (runtime.config != nullptr)
     {
         status.volumeControl = runtime.config->volumeControl;
+        status.normalization = runtime.config->normalization;
         status.driftCorrection = runtime.config->driftCorrection;
     }
     status.driftCorrectionState = runtime.driftCorrection;
@@ -782,9 +783,10 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
     case ControlCommand::SetLeds:
     {
         auto response = makeControlSuccess(request);
-        bool supported = false;
+        bool supported = false, dimmable = false;
 #if defined(__linux__) && !defined(ESP_PLATFORM)
         supported = board_config::enabled(board_config::current(), "statusLeds");
+        dimmable = supported && board_config::enabled(board_config::current(), "ledBrightness");
 #endif
         response["supported"] = json::Value(supported);
         if (!supported)
@@ -794,17 +796,27 @@ json::Value ClientCommandHandler::handle(const ControlRequest& request)
             return makeControlError(request, control_error::kUnavailable, "no configuration loaded");
         if (request.command == ControlCommand::SetLeds)
         {
-            bool off = false;
-            if (request.params.members().size() != 1 || !json::getBool(request.params, "off", off))
-                return makeControlError(request, control_error::kInvalidArgument, "LED setting must contain only an off boolean");
             ClientConfig next = *runtime_.config;
-            next.ledsOff = off;
+            const bool hasOff = request.params.find("off") != nullptr;
+            const bool hasBrightness = request.params.find("brightness") != nullptr;
+            int64_t brightness = next.ledBrightness;
+            if (request.params.members().size() != static_cast<size_t>(hasOff) + hasBrightness ||
+                (!hasOff && !hasBrightness) ||
+                (hasOff && !json::getBool(request.params, "off", next.ledsOff)) ||
+                (hasBrightness && (!dimmable || !json::getInt(request.params, "brightness", brightness) ||
+                                   brightness < 1 || brightness > 100)))
+                return makeControlError(request, control_error::kInvalidArgument,
+                    dimmable ? "LED setting must contain an off boolean and/or a brightness from 1 to 100"
+                             : "LED setting must contain only an off boolean");
+            next.ledBrightness = static_cast<uint32_t>(brightness);
             std::string saveError;
             if (!saveConfig(runtime_, next, saveError))
                 return makeControlError(request, control_error::kFailed, saveError);
-            runtime_.config->ledsOff = off;
+            runtime_.config->ledsOff = next.ledsOff;
+            runtime_.config->ledBrightness = next.ledBrightness;
         }
         response["off"] = json::Value(runtime_.config->ledsOff);
+        if (dimmable) response["brightness"] = json::Value(runtime_.config->ledBrightness);
         return response;
     }
     case ControlCommand::GetAudioProfile:

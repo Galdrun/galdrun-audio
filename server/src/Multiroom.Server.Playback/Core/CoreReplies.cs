@@ -42,7 +42,9 @@ public sealed record AudioControlSet(string Client, AudioControl AudioControl, b
 
 // Changed is false when the room already reported this setting, and nothing
 // was relayed.
-public sealed record VolumeControlSet(string Client, VolumeControl VolumeControl, bool Changed);
+// Normalization is absent for a client that does not support it.
+public sealed record VolumeControlSet(string Client, VolumeControl VolumeControl, bool Changed,
+    bool? Normalization = null);
 
 // Changed is false when the room already reported this setting.
 public sealed record DriftCorrectionSet(string Client, DriftCorrection DriftCorrection, bool Changed);
@@ -269,8 +271,11 @@ public sealed record CoreClientInfo(
 
 // The room's Volume Control as its client reported it (MATP section 59), and
 // the path it resolved: never Auto. Reason says why Effective is not what
-// Configured asked for; absent where it is.
-public sealed record CoreVolumeControl(VolumeControl Configured, VolumeControl Effective, string? Reason = null);
+// Configured asked for; absent where it is. Normalization is the client's
+// loudness-normalization setting (Software while on), absent for a client
+// that does not support it.
+public sealed record CoreVolumeControl(VolumeControl Configured, VolumeControl Effective, string? Reason = null,
+    bool? Normalization = null);
 
 // A room's buttons and encoders as its client reported them (MATP section
 // 57): every gesture of the input's kind -- click, doubleClick and longPress

@@ -75,6 +75,9 @@ struct VolumePath
     bool operator!=(const VolumePath& other) const { return !(*this == other); }
 };
 
+// Loudness normalization does not take part: its track gain is always
+// applied in the render path, whatever path the room volume takes, so
+// switching it never moves the device's control.
 VolumePath resolveVolumePath(matp::AudioControl audioControl,
                              matp::VolumeControlMode volumeControl, bool hardwareAvailable);
 

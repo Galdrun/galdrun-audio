@@ -329,7 +329,30 @@ public sealed class LibraryTests : IAsyncDisposable
         Assert.Equal(1, second.Status.Indexed);
         Assert.Equal(id, await IdOf("alpha"));
         Assert.Equal(["Jazz"], (await Catalog.BrowseAsync(new("genres"), Ct)).Value.Nodes.Select(n => n.Title));
-        Assert.Equal(6, Count("SELECT tags FROM library_file"));
+        Assert.Equal(7, Count("SELECT tags FROM library_file"));
+    }
+
+    [Fact]
+    public async Task A_tracks_replaygain_tag_is_kept_as_its_loudness_and_a_file_without_one_has_none()
+    {
+        var music = Folder("music");
+        var loud = Path.Combine(music, "loud.wav");
+        WriteTrack(loud, "Loud");
+        using (var file = TagLib.File.Create(loud))
+        {
+            file.Tag.ReplayGainTrackGain = -7.5;
+            file.Save();
+        }
+        WriteTrack(Path.Combine(music, "plain.wav"), "Plain");
+
+        var indexer = await Start(TimeSpan.FromMinutes(5), new LibraryFolder(music, LibraryFolderType.Local));
+        await Until(() => indexer.Status.Passes == 1, "the first pass");
+
+        // ReplayGain's track gain is relative to -18 LUFS.
+        Assert.Equal(-10.5, Catalog.LoudnessOf(await IdOf("loud")));
+        Assert.Equal(-10.5, Catalog.LoudnessOf(loud));
+        Assert.Null(Catalog.LoudnessOf(await IdOf("plain")));
+        Assert.Null(Catalog.LoudnessOf("track:999999"));
     }
 
     [Fact]
@@ -454,7 +477,7 @@ public sealed class LibraryTests : IAsyncDisposable
             command.ExecuteNonQuery();
         }
 
-        Assert.Equal(32, _database.Migrate().Value);
+        Assert.Equal(33, _database.Migrate().Value);
 
         Assert.Equal(7, Count("SELECT track_id FROM library_file WHERE path = 'C:\\m\\one.wav'"));
         Assert.Equal(3, Count("SELECT artist_id FROM track WHERE id = 7"));
@@ -489,7 +512,7 @@ public sealed class LibraryTests : IAsyncDisposable
             command.ExecuteNonQuery();
         }
 
-        Assert.Equal(32, _database.Migrate().Value);
+        Assert.Equal(33, _database.Migrate().Value);
 
         var store = new PlaylistStore(_database);
         var entries = store.Entries(1).Value;
@@ -527,7 +550,7 @@ public sealed class LibraryTests : IAsyncDisposable
             command.ExecuteNonQuery();
         }
 
-        Assert.Equal(32, _database.Migrate().Value);
+        Assert.Equal(33, _database.Migrate().Value);
 
         var store = new PlaylistStore(_database);
         var kept = store.Favorites(UserStore.Everyone).Value;
@@ -541,8 +564,8 @@ public sealed class LibraryTests : IAsyncDisposable
     [Fact]
     public async Task Migrating_twice_changes_nothing_and_a_newer_schema_is_refused()
     {
-        Assert.Equal(32, _database.Migrate().Value);
-        Assert.Equal(32, _database.Migrate().Value);
+        Assert.Equal(33, _database.Migrate().Value);
+        Assert.Equal(33, _database.Migrate().Value);
 
         await using (var connection = _database.Open())
         {

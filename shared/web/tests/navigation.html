@@ -50,12 +50,30 @@
     window.scrollTo({top: 0});
     await waitFor(() => window.scrollY === 0 && links[0].hasAttribute('aria-current'));
     check(document.documentElement.scrollWidth <= innerWidth, 'No horizontal page overflow');
+    const toggle = document.querySelector('.section-menu-toggle');
+    const phone = toggle.getBoundingClientRect().height > 0;
+    if (phone) {
+      check(toggle.textContent === 'Status', 'Toggle names the current section');
+      check(toggle.getAttribute('aria-expanded') === 'false' && links[0].getBoundingClientRect().height === 0, 'Phone menu starts collapsed');
+      toggle.click();
+      check(toggle.getAttribute('aria-expanded') === 'true', 'Toggle opens the menu');
+    }
     for (const link of links) {
       const rect = link.getBoundingClientRect();
       check(rect.left >= 0 && rect.right <= innerWidth, 'Every menu item is visible without swiping');
       check(rect.height >= 44, 'Touch targets are at least 44px high');
     }
     check(links[5].hash === '#third', 'Buttons are last');
+    if (phone) {
+      links[4].click();
+      check(toggle.getAttribute('aria-expanded') === 'false', 'Choosing a section closes the menu');
+      await waitFor(() => toggle.textContent === 'Audio');
+      check(document.getElementById('audio').getBoundingClientRect().top >= menu.getBoundingClientRect().bottom,
+        'Target heading stays below the collapsed menu');
+      toggle.click();
+      document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+      check(toggle.getAttribute('aria-expanded') === 'false' && document.activeElement === toggle, 'Escape closes and refocuses');
+    }
     document.body.dataset.verification = 'PASS';
     document.getElementById('result').textContent = 'PASS';
   } catch (error) {

@@ -48,14 +48,17 @@ public sealed record ZoneSetClients(string Zone, IReadOnlyList<string> Clients)
     : CoreCommand<ZoneClientsSet>("zone.setClients");
 
 // A sourceId names one staging of one zone, not a track: stage a track twice
-// and it is two ids.
+// and it is two ids. GainDb is the track's loudness normalization, zero or
+// less, absent where its loudness is not known; the rooms apply it only where
+// their normalization is on.
 public sealed record SourceStage(
     string Zone,
     string SourceId,
     string MediaUri,
     string? TrackId = null,
     string? Title = null,
-    ulong? StartOffsetNs = null) : CoreCommand<SourceStaged>("source.stage");
+    ulong? StartOffsetNs = null,
+    double? GainDb = null) : CoreCommand<SourceStaged>("source.stage");
 
 public sealed record SourceClearStaged(string Zone) : CoreCommand<StagedCleared>("source.clearStaged");
 
@@ -82,8 +85,11 @@ public sealed record ClientSetAudioControl(string Client, AudioControl AudioCont
 // (MATP section 59), and the core refuses Software while the room's Audio
 // Control is BitPerfect. The client's VOLUME_CONFIG shows in the next
 // `clients` as the room's volumeControl, with the path it resolved.
-public sealed record ClientSetVolumeControl(string Client, VolumeControl VolumeControl)
-    : CoreCommand<VolumeControlSet>("client.setVolumeControl");
+// Normalization (loudness normalization, off by default) is the client's as
+// well, refused under BitPerfect and for a client that does not report it.
+// At least one of the two.
+public sealed record ClientSetVolumeControl(string Client, VolumeControl? VolumeControl = null,
+    bool? Normalization = null) : CoreCommand<VolumeControlSet>("client.setVolumeControl");
 
 // Not desired state either: the client keeps the actuator its drift is
 // corrected through, and the core

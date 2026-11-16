@@ -120,6 +120,11 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
 - `FfmpegDecoder` sets `protocol_whitelist` to `none`: all media bytes come
   through the custom AVIO source, and a nested demuxer (concat, playlists)
   inherits the list, so media content cannot open local files or URLs.
+- Loudness normalization never touches the core's samples: `source.stage`'s
+  optional `gainDb` rides on `SourceSegment` into `TRACK_BOUNDARY`/
+  `TRACK_INFO` (`Zone::announceBoundary`, `announceTracksTo`), and each
+  client applies it only where its own setting is on (MATP section 59). A
+  bitperfect stream stays bitperfect for every room that has it off.
 
 ## Thread boundaries and the .NET contract
 

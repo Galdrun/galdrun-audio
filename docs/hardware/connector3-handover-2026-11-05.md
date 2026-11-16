@@ -39,6 +39,33 @@ sections.
   written with `json.dump`). Send `echo UART_ALIVE` first; the first command
   can be lost.
 
+## LED brightness and early boot light (2026-11-16, built, not installed)
+
+`scripts/build-client.ps1 -Target connector3`: USB `a4a0f7f7...`, payload
+`7a69eba9...`, in `releases/client/raumfeld/connector3/connect3.img`
+(supersedes `cbcf4a32...`: slider layout fix, `/run/early-lights.log`). The
+first image showed the first front light about 8 s after power-on; the log's
+uptime stamps and exit code tell kernel time from a failed MCU sync.
+**Installed and measured** (`a4a0f7f7...`, after a power cycle): `/init` at
+2.73 s kernel time, early indication 4 sent 2.84 s, accepted (`exit 0`) 3.23 s.
+The rest of the ~8 s is the factory U-Boot (no boot delay; fixed 12 MiB FIT
+read from NAND plus signature check), the same as stock. That U-Boot also sends
+indication 1 (`TEUFEL_LED_BOOTLOADER`) before loading, since the erased env has
+no `disable_leds`, yet nothing is visible: check the U-Boot UART output for an
+MCU timeout. Stock additionally sets indication 1 in bootloader mode on
+shutdown (`S84mcu`), which Galdrun does not.
+**UART power cycle (2026-11-16):** U-Boot prints nothing; from the first byte
+(OP-TEE) the kernel's first message came after 3.57 s, 3.1 s of it XZ
+decompression; `/init` 6.68 s. A gzip kernel (8,103,768 bytes against the
+factory bootm's 8 MiB limit; LZ4/LZO do not fit) would save about 2 s; the
+user rejected it for the small margin: keep XZ. Rebuilt with XZ (zImage
+5,676,912 bytes): USB `2dc64507...`, built, not installed. New:
+saved `ledBrightness` (1-100 %, LED card on the device page) sent as MCU
+`0x22`, and init lights "initializing" (indication 4) right after mounting
+`/dev`. On hardware check: 100/30/1 % visibly differ (the `0x22` range is
+assumed), brightness survives reboot and wake, and the dark time from power-on
+to the first front light (it was about 5 s).
+
 ## Self-update installer (2026-11-08, installed)
 
 The root file system is now **read-write** (kernel `rw`, `init` checks it),

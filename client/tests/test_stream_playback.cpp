@@ -14,6 +14,7 @@
 #include "matp/AudioPacket.h"
 #include "util/Time.h"
 
+#include <cmath>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -957,6 +958,46 @@ MULTIROOM_TEST(stream_playback_volume_during_device_recovery_is_kept)
             return room.stub->hardwareVolume.gain == 0.1;
         },
         3000));
+}
+
+// Normalization never moves the device's control: the room volume stays on
+// it, and only the track's attenuation is applied in the render path.
+MULTIROOM_TEST(stream_playback_normalization_scales_the_track_and_leaves_the_hardware_control)
+{
+    TestListener listener;
+    CHECK(listener.ready());
+    Room room;
+    room.runtime.audioControl = matp::AudioControl::Auto;
+    room.offerHardwareVolume();
+    uint64_t sequence = 0;
+    CHECK(playing(room, listener, sequence));
+
+    std::string error;
+    CHECK(setVolume(room, volumeRequest(0.25), error));
+    CHECK_EQ(room.stub->hardwareVolume.gain, 0.25);
+    const int writes = room.stub->hardwareVolume.sets + room.stub->hardwareVolume.mutes;
+
+    room.config.normalization = true;
+    room.playback->updateVolumePath();
+    matp::TrackInfo info;
+    info.title = "Loud";
+    info.hasGainDb = true;
+    info.gainDb = 20.0 * std::log10(0.5);
+    room.playback->trackInfo(info);
+
+    CHECK(room.runtime.volumePath.effective == matp::VolumeControlMode::Hardware);
+    CHECK_EQ(room.stub->hardwareVolume.gain, 0.25);
+    CHECK_EQ(room.stub->hardwareVolume.sets + room.stub->hardwareVolume.mutes, writes);
+    // Frame n is n - 479; the track at half of it once the 15 ms ramp is done.
+    room.play(3008);
+    CHECK_EQ(room.output[3007], 1264u);
+
+    // Off again: the track plays unscaled, the control still untouched.
+    room.config.normalization = false;
+    room.playback->updateVolumePath();
+    room.play(4008);
+    CHECK_EQ(room.output[4007], 3528u);
+    CHECK_EQ(room.stub->hardwareVolume.sets + room.stub->hardwareVolume.mutes, writes);
 }
 
 MULTIROOM_TEST(stream_playback_leaving_hardware_volume_resets_its_level)

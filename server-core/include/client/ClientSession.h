@@ -371,9 +371,9 @@ public:
 
     // SET_VOLUME_CONTROL (section 59): the client validates and persists how
     // it plays the room's volume and answers with VOLUME_CONFIG, or refuses it
-    // with an ERROR (code "setVolumeControl") -- "software" under bitPerfect
-    // always is -- and keeps the one it had.
-    Status<SessionError> setVolumeControl(matp::VolumeControlMode mode);
+    // with an ERROR (code "setVolumeControl") -- "software" or normalization
+    // under bitPerfect always is -- and keeps the one it had.
+    Status<SessionError> setVolumeControl(const matp::SetVolumeControl& request);
 
     // SET_DRIFT_CORRECTION: the client persists the actuator it asks for and
     // answers with AUDIO_CAPABILITIES, which renegotiates this session -- or

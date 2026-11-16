@@ -913,7 +913,7 @@ Status<SessionError> ClientSession::setRoomName(const std::string& name)
     return send(matp::MessageType::SetRoomName, matp::makeSetRoomName(request));
 }
 
-Status<SessionError> ClientSession::setVolumeControl(matp::VolumeControlMode mode)
+Status<SessionError> ClientSession::setVolumeControl(const matp::SetVolumeControl& request)
 {
     if (state_ == SessionState::Closed)
         return fail(SessionError::Closed, "the session is over");
@@ -921,12 +921,20 @@ Status<SessionError> ClientSession::setVolumeControl(matp::VolumeControlMode mod
         return fail(SessionError::UnexpectedMessage,
                     "setVolumeControl before " + clientId_.str() + " has a session");
 
-    matp::SetVolumeControl request;
-    request.sessionId = sessionId_.toHex();
-    request.volumeControl = mode;
-    MULTIROOM_INFO("session {}: asking {} for volume control {}", sessionId_.toHex(), clientId_.str(),
-             matp::volumeControlModeName(mode));
-    return send(matp::MessageType::SetVolumeControl, matp::makeSetVolumeControl(request));
+    matp::SetVolumeControl outgoing = request;
+    outgoing.sessionId = sessionId_.toHex();
+    json::Value payload;
+    std::string error;
+    if (!matp::makeSetVolumeControl(outgoing, payload, error))
+        return fail(SessionError::MalformedMessage, std::move(error));
+    MULTIROOM_INFO("session {}: asking {} for volume control {}{}", sessionId_.toHex(),
+             clientId_.str(),
+             outgoing.hasVolumeControl ? matp::volumeControlModeName(outgoing.volumeControl)
+                                       : "(unchanged)",
+             !outgoing.hasNormalization ? ""
+             : outgoing.normalization   ? ", normalization on"
+                                        : ", normalization off");
+    return send(matp::MessageType::SetVolumeControl, payload);
 }
 
 Status<SessionError> ClientSession::setDriftCorrection(matp::DriftCorrectionMode mode)

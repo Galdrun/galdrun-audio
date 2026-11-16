@@ -8,6 +8,7 @@
   "mcuAudioControls": true,
   "resetHardwareVolume": true,
   "statusLeds": true,
+  "ledBrightness": true,
   "bluetooth": true,
   "inputSounds": true,
   "inputs": [

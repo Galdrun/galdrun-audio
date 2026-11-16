@@ -49,6 +49,17 @@ public sealed class ResolvedStream
     // Null when the track's own Format stands.
     public AudioFormat? Format { get; }
 
+    // The track's integrated loudness in LUFS, where its provider knows it:
+    // what the zone's loudness normalization is computed from. Null otherwise.
+    public double? LoudnessLufs { get; private set; }
+
+    // Set by the provider that resolved it, before it is published.
+    public ResolvedStream WithLoudness(double? lufs)
+    {
+        LoudnessLufs = lufs;
+        return this;
+    }
+
     // `release` is called once no GET will come any more (Release), so a cache
     // may evict what backs it.
     public static ResolvedStream KnownLength(long length, string contentType,

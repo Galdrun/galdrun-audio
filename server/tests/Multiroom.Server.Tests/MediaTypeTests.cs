@@ -100,7 +100,7 @@ public sealed class MediaTypeTests : IAsyncDisposable
         Assert.Equal((MediaType.Audiobook, MediaTypeSource.Tag), await TypeOf("Tagged Chapter"));
         Assert.Equal((MediaType.Audiobook, MediaTypeSource.Extension), await TypeOf("Contained Chapter"));
         Assert.Equal((MediaType.Music, MediaTypeSource.Folder), await TypeOf("Declared Remix"));
-        Assert.Equal(6, Count("SELECT MIN(tags) FROM library_file"));
+        Assert.Equal(7, Count("SELECT MIN(tags) FROM library_file"));
     }
 
     [Fact]

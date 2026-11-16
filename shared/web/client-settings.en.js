@@ -315,6 +315,7 @@ i18n.add('en-US', {
   'leds.ledMode': 'LED mode',
   'leds.onLightsOn': 'ON = Lights on',
   'leds.offLightsOff': 'OFF = Lights off',
+  'leds.maxBrightness': 'Maximum brightness',
   'leds.bootAndFirmware': 'Boot and firmware update indications remain enabled.',
   // footer
   'footer.multiroomAudioFor': 'Multiroom audio for a more connected home',

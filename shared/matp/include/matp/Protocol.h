@@ -651,12 +651,19 @@ json::Value makeStartAt(const StartAt& start);
 // Only `timelineNs` is required. The section's example carries a track id and
 // a title as well, and a boundary that names neither is still a boundary: the
 // position is the part every room has to agree on.
+//
+// `gainDb` is the next track's loudness normalization (section 59): an
+// attenuation of zero or less, absent where the server knows no loudness for
+// the track. A room plays it from the boundary on only while its own
+// normalization setting is on; every room is sent the same value.
 struct TrackBoundary
 {
     std::string sessionId; // empty when the server did not say
     uint64_t timelineNs = 0;
     std::string trackId;
     std::string title;
+    bool hasGainDb = false;
+    double gainDb = 0.0;
 };
 
 bool parseTrackBoundary(const json::Value& payload, TrackBoundary& out, std::string& error);
@@ -683,11 +690,17 @@ json::Value makeTrackBoundary(const TrackBoundary& boundary);
 // A message naming neither is an error, for the same reason SET_VOLUME's
 // naming neither is: it asks for nothing, and succeeding quietly would hide a
 // server that meant to say something.
+//
+// `gainDb` is TRACK_BOUNDARY's: the normalization of the track playing now,
+// for a room that joined after its boundary. A message carrying only it is
+// valid.
 struct TrackInfo
 {
     std::string sessionId; // empty when the server did not say
     std::string trackId;
     std::string title;
+    bool hasGainDb = false;
+    double gainDb = 0.0;
 };
 
 bool parseTrackInfo(const json::Value& payload, TrackInfo& out, std::string& error);
@@ -964,15 +977,24 @@ bool parseBufferConfig(const json::Value& payload, std::string& sessionId,
 // SET_VOLUME_CONTROL (section 59): the server sets how the room plays its
 // volume. The client persists it and answers with VOLUME_CONFIG -- or with an
 // ERROR (code "setVolumeControl") and its old setting untouched, which is
-// always the answer to "software" while the room's Audio Control is
-// bitPerfect. `sessionId` is optional, as for SET_BUFFER.
+// always the answer to "software" or normalization while the room's Audio
+// Control is bitPerfect. `sessionId` is optional, as for SET_BUFFER.
+//
+// Both settings are optional and an absent one is unchanged; a message naming
+// neither is an error. `normalization` is sent only to a client whose
+// VOLUME_CONFIG reports it: an older one cannot read a message without
+// `volumeControl`.
 struct SetVolumeControl
 {
     std::string sessionId;
+    bool hasVolumeControl = false;
     VolumeControlMode volumeControl = VolumeControlMode::Auto;
+    bool hasNormalization = false;
+    bool normalization = false;
 };
 
-json::Value makeSetVolumeControl(const SetVolumeControl& request);
+// Refused rather than written where it names neither setting.
+bool makeSetVolumeControl(const SetVolumeControl& request, json::Value& out, std::string& error);
 bool parseSetVolumeControl(const json::Value& payload, SetVolumeControl& out,
                            std::string& error);
 
@@ -982,12 +1004,18 @@ bool parseSetVolumeControl(const json::Value& payload, SetVolumeControl& out,
 // software not allowed); empty where it is. Sent once the session is
 // established, as the answer to every SET_VOLUME_CONTROL it accepted, and
 // whenever either value changes by any other way.
+//
+// `normalization` is the client's loudness-normalization setting. A client
+// that knows the setting always reports it; one that does not says nothing,
+// which the server reads as "not supported" rather than as off.
 struct VolumeConfig
 {
     std::string sessionId;
     VolumeControlMode volumeControl = VolumeControlMode::Auto;
     VolumeControlMode effective = VolumeControlMode::Disabled;
     std::string reason;
+    bool hasNormalization = false;
+    bool normalization = false;
 };
 
 json::Value makeVolumeConfig(const VolumeConfig& config);

@@ -490,12 +490,16 @@ public:
     }
 
     // Section 59's report, as the client sends it once established.
-    void reportVolumeConfig(matp::VolumeControlMode configured, matp::VolumeControlMode effective)
+    // `normalization` absent is a client that does not support it.
+    void reportVolumeConfig(matp::VolumeControlMode configured, matp::VolumeControlMode effective,
+                            std::optional<bool> normalization = std::nullopt)
     {
         matp::VolumeConfig config;
         config.sessionId = session_.sessionId().toHex();
         config.volumeControl = configured;
         config.effective = effective;
+        config.hasNormalization = normalization.has_value();
+        config.normalization = normalization.value_or(false);
         feed(matp::MessageType::VolumeConfig, matp::makeVolumeConfig(config));
     }
 
@@ -3404,6 +3408,79 @@ MULTIROOM_TEST(control_api_names_the_audio_control_and_relays_the_volume_control
     CHECK_EQ(text(*volume, "configured"), std::string("auto"));
     CHECK_EQ(text(*volume, "effective"), std::string("disabled"));
     CHECK_EQ(text(*entryA->find("settings"), "audioControl"), std::string("bitPerfect"));
+    // A client that does not report normalization does not support it.
+    CHECK(volume->find("normalization") == nullptr);
+}
+
+MULTIROOM_TEST(control_api_relays_normalization_only_to_a_client_that_supports_it)
+{
+    ApiRig rig;
+    LineClient caller(rig.listener->port());
+    Room room(rig, "roomA", {formatOf(kRate)}, 1);
+    room.connect();
+
+    // Nothing to set before the client has reported it, nor on one that
+    // reports no normalization: it could not read a message carrying it alone.
+    room.reportVolumeConfig(matp::VolumeControlMode::Auto, matp::VolumeControlMode::Software);
+    CHECK_EQ(errorOf(caller.request(
+                 R"({"command":"client.setVolumeControl","params":{"client":"roomA","normalization":true}})")),
+             std::string("unavailable"));
+    CHECK_EQ(errorOf(caller.request(
+                 R"({"command":"client.setVolumeControl","params":{"client":"roomA"}})")),
+             std::string("invalidArgument"));
+    CHECK_EQ(errorOf(caller.request(
+                 R"({"command":"client.setVolumeControl","params":{"client":"roomA","normalization":"on"}})")),
+             std::string("invalidArgument"));
+
+    room.reportVolumeConfig(matp::VolumeControlMode::Auto, matp::VolumeControlMode::Software, false);
+    const json::Value set = caller.request(
+        R"({"command":"client.setVolumeControl","params":{"client":"roomA","normalization":true}})");
+    CHECK(isOk(set));
+    CHECK(flag(set, "changed"));
+    CHECK(flag(set, "normalization"));
+    CHECK_EQ(rig.log.count(RoomCommandKind::SetVolumeControl, "roomA"), size_t(1));
+
+    // Shown as the client reports it.
+    room.reportVolumeConfig(matp::VolumeControlMode::Auto, matp::VolumeControlMode::Software, true);
+    const json::Value clients = caller.request(R"({"command":"clients"})");
+    const json::Value* volume = entry(clients, "clients", "clientId", "roomA")->find("volumeControl");
+    CHECK(volume != nullptr && flag(*volume, "normalization"));
+
+    // Asking for what it has relays nothing.
+    CHECK(!flag(caller.request(
+        R"({"command":"client.setVolumeControl","params":{"client":"roomA","normalization":true}})"),
+        "changed"));
+    CHECK_EQ(rig.log.count(RoomCommandKind::SetVolumeControl, "roomA"), size_t(1));
+
+    // Under bitPerfect it is refused here, before the client is asked.
+    CHECK(isOk(caller.request(
+        R"({"command":"client.setAudioControl","params":{"client":"roomA","audioControl":"bitPerfect"}})")));
+    room.reportVolumeConfig(matp::VolumeControlMode::Auto, matp::VolumeControlMode::Disabled, false);
+    CHECK_EQ(errorOf(caller.request(
+                 R"({"command":"client.setVolumeControl","params":{"client":"roomA","normalization":true}})")),
+             std::string("invalidArgument"));
+    CHECK_EQ(rig.log.count(RoomCommandKind::SetVolumeControl, "roomA"), size_t(1));
+}
+
+MULTIROOM_TEST(control_api_stages_a_track_gain_and_refuses_an_amplification)
+{
+    ApiRig rig;
+    LineClient caller(rig.listener->port());
+    CHECK(isOk(caller.request(R"({"command":"zone.create","params":{"zone":"living"}})")));
+
+    CHECK_EQ(errorOf(caller.request(
+                 R"({"command":"source.stage","params":{"zone":"living","sourceId":"s1","mediaUri":"http://127.0.0.1:4714/one.flac","gainDb":3}})")),
+             std::string("invalidArgument"));
+    CHECK_EQ(errorOf(caller.request(
+                 R"({"command":"source.stage","params":{"zone":"living","sourceId":"s1","mediaUri":"http://127.0.0.1:4714/one.flac","gainDb":"-3"}})")),
+             std::string("invalidArgument"));
+    CHECK(isOk(caller.request(
+        R"({"command":"source.stage","params":{"zone":"living","sourceId":"s1","mediaUri":"http://127.0.0.1:4714/one.flac","gainDb":-6.5}})")));
+
+    const std::vector<SourceSegment> staged = rig.zones->find(ZoneId("living"))->staged();
+    CHECK_EQ(staged.size(), size_t(1));
+    CHECK(staged.front().gainDb.has_value());
+    CHECK_EQ(*staged.front().gainDb, -6.5);
 }
 
 MULTIROOM_TEST(control_api_announces_what_a_room_reports_so_nothing_has_to_be_polled)

@@ -178,6 +178,7 @@ struct ClientStatus
     bool audioControlKnown = false;
     matp::AudioControl audioControl = matp::AudioControl::BitPerfect;
     matp::VolumeControlMode volumeControl = matp::VolumeControlMode::Auto;
+    bool normalization = false;
     VolumePath volumePath;
     bool hardwareVolumeActive = false;
     bool hasHardwareVolumeState = false;

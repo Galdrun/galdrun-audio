@@ -25,7 +25,8 @@ def sign_fit(kernel_path, dtb_path, diagnostic, signing, description, monitor_pa
         stage = Path(directory)
         kernel = kernel_path.read_bytes()
         if not 0 < len(kernel) <= 0x800000:
-            raise ValueError("Kernel exceeds the conservative 8 MiB FIT loader limit")
+            # The factory U-Boot's bootm copies at most CONFIG_SYS_BOOTM_LEN (8 MiB).
+            raise ValueError("Kernel exceeds the factory U-Boot's 8 MiB bootm limit")
         (stage / "zImage").write_bytes(kernel)
         tree = run("dtc", "-I", "dtb", "-O", "dts", dtb_path).stdout.decode()
         tree, count = re.subn(r"(?m)^([ \t]*)bus@30800000 \{", r"\1aips-bus@30800000 {", tree)

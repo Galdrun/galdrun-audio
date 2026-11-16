@@ -1495,7 +1495,7 @@ void Session::handleSetVolumeControl(const Message& message)
     {
         const std::string lastSent = lastVolumeConfig_;
         lastVolumeConfig_.clear();
-        if (setVolumeControl_(request.volumeControl, error))
+        if (setVolumeControl_(request, error))
         {
             ++volumeControlChanges_;
             volumeConfigChanged();
@@ -1504,8 +1504,7 @@ void Session::handleSetVolumeControl(const Message& message)
         lastVolumeConfig_ = lastSent;
     }
 
-    MULTIROOM_WARN("cannot set the volume control to %s: %s",
-             volumeControlModeName(request.volumeControl), error.c_str());
+    MULTIROOM_WARN("cannot set the volume control: %s", error.c_str());
     send(MessageType::Error, makeError("setVolumeControl", error));
 }
 

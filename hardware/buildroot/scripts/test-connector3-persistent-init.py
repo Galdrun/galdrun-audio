@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix='connector3-persistent-init-') as direct
     assert json.loads((settings/'client.json').read_text())['clientId']=='existing-room'
     assert json.loads((settings/'client.json').read_text())['ledsOff'] is True
     assert (settings/'etc/galdrun-dac.json.Connector3').read_text()=='{"Output Level":53}\n'
-    guard=source[source.index('for attempt in '):source.index('export LD_LIBRARY_PATH=')]
+    guard=source[source.index('attempt=0'):source.index('export LD_LIBRARY_PATH=')]
     endpoint=root/'mcu.sock'
     guard=guard.replace('/run/galdrun-connector3-mcu.sock',str(endpoint))
     guard='failed() { exit 99; }; sleep() { :; };\n'+guard

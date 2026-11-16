@@ -207,6 +207,30 @@ public sealed partial class LibraryCatalog(LibraryDatabase database, string prov
         return FileOf("SELECT path FROM library_file WHERE track_id = $id AND missing_since IS NULL", id, trackItemId);
     }
 
+    // A track's integrated loudness in LUFS as the indexer read it from its
+    // tags, for a library track ("track:<id>") or a file path; null where it
+    // has none or the library does not know the file. Playback goes on
+    // without it, so a failed read is no loudness rather than an error.
+    public double? LoudnessOf(string itemId)
+    {
+        try
+        {
+            using var connection = database.Open();
+            var found = Id(itemId, TrackPrefix) is { } id
+                ? Rows(connection, "SELECT loudness_lufs FROM track WHERE id = $id",
+                    r => r.IsDBNull(0) ? (double?)null : r.GetDouble(0), ("$id", id))
+                : Rows(connection, """
+                    SELECT t.loudness_lufs FROM library_file f JOIN track t ON t.id = f.track_id
+                    WHERE f.path = $path
+                    """, r => r.IsDBNull(0) ? (double?)null : r.GetDouble(0), ("$path", itemId));
+            return found.Count == 0 ? null : found[0];
+        }
+        catch (SqliteException)
+        {
+            return null;
+        }
+    }
+
     // The file whose picture shows an album ("album:<id>": its first track in
     // order) or a loose track ("track:<id>"), and its write time as the
     // indexer last saw it, so a cached picture is told from a changed one.

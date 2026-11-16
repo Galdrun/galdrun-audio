@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='connector3-led-test-') as directory:
         '-o', str(binary)], check=True)
     board.write_text('{"statusLeds":false}')
     subprocess.run([str(binary), str(config)], check=True, timeout=2)
-    patterns = []
+    patterns, brightness = [], []
     response = {'status': {'power': {'state': 'on'}, 'server': {'state': 'connected'},
         'session': {'state': 'established'}, 'audio': {'deviceSelected': True}}}
 
@@ -37,8 +37,8 @@ with tempfile.TemporaryDirectory(prefix='connector3-led-test-') as directory:
     class Mcu(socketserver.StreamRequestHandler):
         def handle(self):
             command, value = self.rfile.readline().decode().split()
-            assert command == 'indication'
-            patterns.append(int(value))
+            assert command in ('indication', 'brightness')
+            (patterns if command == 'indication' else brightness).append(int(value))
             self.wfile.write(b'ok 0 53\n')
 
     client = socketserver.ThreadingTCPServer(('127.0.0.1', 0), Client)
@@ -74,6 +74,11 @@ with tempfile.TemporaryDirectory(prefix='connector3-led-test-') as directory:
         expect(0)
         config.write_text(json.dumps({'controlPort': client.server_address[1], 'ledsOff': False}))
         expect(10)
+        config.write_text(json.dumps({'controlPort': client.server_address[1], 'ledBrightness': 30}))
+        deadline = time.monotonic() + 3
+        while brightness[-1:] != [30] and time.monotonic() < deadline:
+            time.sleep(.05)
+        assert brightness == [100, 30], brightness
     finally:
         process.terminate()
         process.wait(timeout=5)
@@ -81,4 +86,4 @@ with tempfile.TemporaryDirectory(prefix='connector3-led-test-') as directory:
             server.shutdown()
             server.server_close()
     assert process.returncode == 0 and patterns[-1] == 0
-print('PASS: Connector 3 MCU LED transport, ready/connecting/setup/standby, saved off switch and shutdown')
+print('PASS: Connector 3 MCU LED transport, ready/connecting/setup/standby, saved off switch, saved brightness and shutdown')

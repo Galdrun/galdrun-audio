@@ -820,6 +820,45 @@ MULTIROOM_TEST(matp_track_info_names_a_track_and_no_position)
     CHECK(!matp::parseTrackInfo(payload, info, error));
 }
 
+MULTIROOM_TEST(matp_track_messages_carry_an_optional_attenuation)
+{
+    std::string error;
+    matp::TrackBoundary boundary;
+    boundary.timelineNs = 5;
+    boundary.title = "Loud Song";
+
+    // Absent where the server knows no loudness, and then not written.
+    matp::TrackBoundary parsed;
+    CHECK(matp::parseTrackBoundary(matp::makeTrackBoundary(boundary), parsed, error));
+    CHECK(!parsed.hasGainDb);
+
+    boundary.hasGainDb = true;
+    boundary.gainDb = -7.5;
+    CHECK(matp::parseTrackBoundary(matp::makeTrackBoundary(boundary), parsed, error));
+    CHECK(parsed.hasGainDb);
+    CHECK_EQ(parsed.gainDb, -7.5);
+
+    // An attenuation only: a room has no headroom to amplify into.
+    json::Value payload = matp::makeTrackBoundary(boundary);
+    payload["gainDb"] = json::Value(1.5);
+    CHECK(!matp::parseTrackBoundary(payload, parsed, error));
+    payload["gainDb"] = json::Value("-3");
+    CHECK(!matp::parseTrackBoundary(payload, parsed, error));
+
+    // TRACK_INFO may carry the gain alone, for a track with no names.
+    matp::TrackInfo info;
+    info.hasGainDb = true;
+    info.gainDb = -2.0;
+    json::Value infoPayload;
+    CHECK(matp::makeTrackInfo(info, infoPayload, error));
+    matp::TrackInfo infoParsed;
+    CHECK(matp::parseTrackInfo(infoPayload, infoParsed, error));
+    CHECK(infoParsed.hasGainDb);
+    CHECK_EQ(infoParsed.gainDb, -2.0);
+    info.gainDb = 0.5;
+    CHECK(!matp::makeTrackInfo(info, infoPayload, error));
+}
+
 MULTIROOM_TEST(matp_pong_answers_with_the_pings_own_body)
 {
     // The protocol gives PING no fields, so whatever the server correlates on
@@ -1129,10 +1168,34 @@ MULTIROOM_TEST(matp_audio_and_volume_control_round_trip_and_refuse_old_names)
 
     matp::SetVolumeControl set;
     set.sessionId = "s-1";
+    set.hasVolumeControl = true;
     set.volumeControl = matp::VolumeControlMode::Hardware;
+    json::Value setPayload;
+    CHECK(matp::makeSetVolumeControl(set, setPayload, error));
     matp::SetVolumeControl setParsed;
-    CHECK(matp::parseSetVolumeControl(matp::makeSetVolumeControl(set), setParsed, error));
+    CHECK(matp::parseSetVolumeControl(setPayload, setParsed, error));
+    CHECK(setParsed.hasVolumeControl);
     CHECK(setParsed.volumeControl == matp::VolumeControlMode::Hardware);
+    CHECK(!setParsed.hasNormalization);
+
+    // Normalization alone, the other setting unchanged.
+    set.hasVolumeControl = false;
+    set.hasNormalization = true;
+    set.normalization = true;
+    CHECK(matp::makeSetVolumeControl(set, setPayload, error));
+    CHECK(setPayload.find("volumeControl") == nullptr);
+    CHECK(matp::parseSetVolumeControl(setPayload, setParsed, error));
+    CHECK(!setParsed.hasVolumeControl);
+    CHECK(setParsed.hasNormalization && setParsed.normalization);
+
+    // Naming neither asks for nothing, on either side.
+    set.hasNormalization = false;
+    CHECK(!matp::makeSetVolumeControl(set, setPayload, error));
+    json::Value empty = json::Value::makeObject();
+    empty["type"] = json::Value("setVolumeControl");
+    CHECK(!matp::parseSetVolumeControl(empty, setParsed, error));
+    empty["normalization"] = json::Value("yes");
+    CHECK(!matp::parseSetVolumeControl(empty, setParsed, error));
 
     matp::VolumeConfig report;
     report.sessionId = "s-1";
@@ -1144,6 +1207,12 @@ MULTIROOM_TEST(matp_audio_and_volume_control_round_trip_and_refuse_old_names)
     CHECK(reportParsed.volumeControl == matp::VolumeControlMode::Software);
     CHECK(reportParsed.effective == matp::VolumeControlMode::Disabled);
     CHECK_EQ(reportParsed.reason, std::string("not allowed"));
+    // A client that does not know normalization says nothing about it.
+    CHECK(!reportParsed.hasNormalization);
+    report.hasNormalization = true;
+    report.normalization = true;
+    CHECK(matp::parseVolumeConfig(matp::makeVolumeConfig(report), reportParsed, error));
+    CHECK(reportParsed.hasNormalization && reportParsed.normalization);
 
     // The effective path is resolved, never auto.
     report.effective = matp::VolumeControlMode::Auto;

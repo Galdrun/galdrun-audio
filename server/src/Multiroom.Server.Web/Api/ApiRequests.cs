@@ -62,6 +62,7 @@ public sealed record ClientsRequest(IReadOnlyList<string> Clients);
 // (phase 41). MaxVolumeDb is the level at full volume, 0 for no limit.
 // User (phase 36): who listens in the room, "" for the household.
 // InputsEnabled: whether a Bluetooth output room follows its device's own room's buttons.
+// Normalization: the client's loudness normalization, sent with VolumeControl.
 public sealed record RoomPatch(
     AudioControl? AudioControl = null,
     ulong? OutputLatencyMs = null,
@@ -75,7 +76,8 @@ public sealed record RoomPatch(
     double? MaxVolumeDb = null,
     DriftCorrection? DriftCorrection = null,
     string? User = null,
-    bool? InputsEnabled = null);
+    bool? InputsEnabled = null,
+    bool? Normalization = null);
 
 // POST rooms/{client}/equalizer/profile: the profile copied into the room.
 public sealed record EqualizerProfileApply(string Profile);

@@ -268,7 +268,7 @@ async function api(command, params) {
   return j;
 }
 
-let networkEnabled = false, cpuEnabled = false, ledsEnabled = false, powerEnabled = false, driftEnabled = false;
+let networkEnabled = false, cpuEnabled = false, ledsEnabled = false, ledBrightnessEnabled = false, powerEnabled = false, driftEnabled = false;
 let sshEnabled = false, ssh = null;
 let dacEnabled = false, dacControls = [], dacRoomVolume = false, audioDevices = [], selectedAudioId = '', explicitAudioDevice = false;
 
@@ -452,8 +452,16 @@ async function loadLeds() {
   show('ledBox', ledsEnabled);
   $('ledOff').disabled = !ledsEnabled;
   if (ledsEnabled) $('ledOff').value = String(r.off);
+  ledBrightnessEnabled = ledsEnabled && r.brightness !== undefined;
+  show('ledBrightnessField', ledBrightnessEnabled);
+  if (ledBrightnessEnabled) $('ledBrightness').value = String(r.brightness);
+  showLedBrightness();
   saved.leds = ledsEnabled ? $('ledOff').value : '';
+  saved.ledBrightness = ledBrightnessEnabled ? $('ledBrightness').value : '';
 }
+
+function showLedBrightness() { $('ledBrightnessValue').textContent = $('ledBrightness').value + ' %'; }
+$('ledBrightness').addEventListener('input', showLedBrightness);
 
 const dacHints = {
   'Output Level': 'dac.hint.outputLevel',
@@ -737,6 +745,7 @@ function controlSettings() {
     cpu: cpuEnabled ? $('cpuMhz').value : '',
     dac: dacEnabled ? JSON.stringify(dacSettings()) : '',
     leds: ledsEnabled ? $('ledOff').value : '',
+    ledBrightness: ledBrightnessEnabled ? $('ledBrightness').value : '',
     power: powerEnabled ? powerSettings() : ''};
 }
 
@@ -788,7 +797,7 @@ async function controlLoad() {
 }
 
 async function controlSave() {
-  const {drift, room, clientId, server, active, device, network, cpu, dac, leds, power} = controlSettings();
+  const {drift, room, clientId, server, active, device, network, cpu, dac, leds, ledBrightness, power} = controlSettings();
   const deviceChanged = device !== saved.device;
   const networkChanged = network !== saved.network;
   if (room !== saved.room) { await api('setName', {name: room}); saved.room = room; }
@@ -799,9 +808,13 @@ async function controlSave() {
     renderPower(await api('setPower', JSON.parse(power)));
     saved.power = powerSettings();
   }
-  if (leds !== saved.leds) {
-    const r = await api('setLeds', {off: leds === 'true'});
+  if (leds !== saved.leds || ledBrightness !== saved.ledBrightness) {
+    const params = {};
+    if (leds !== saved.leds) params.off = leds === 'true';
+    if (ledBrightness !== saved.ledBrightness) params.brightness = Number(ledBrightness);
+    const r = await api('setLeds', params);
     saved.leds = String(r.off);
+    if (r.brightness !== undefined) saved.ledBrightness = String(r.brightness);
   }
   if (deviceChanged) { await api('setAudioDevice', {deviceId: device}); saved.device = device; await loadDac(); }
   if (drift !== saved.drift) { await api('setDriftCorrection', {driftCorrection: drift}); saved.drift = drift; }

@@ -250,6 +250,16 @@ public:
     bool volumeScheduled() const { return volume_.isScheduled(); }
     double appliedGain() const { return volume_.appliedGain(); }
 
+    // Control thread: the playing track's loudness normalization (MATP
+    // section 59), an attenuation of 0 to 1. A second gain on the same frames,
+    // placed exactly as the volume is above, and kept apart from it: the
+    // next track's gain is armed long before its boundary, and a volume
+    // change meanwhile must not replace it in the volume's one-slot mailbox.
+    void setTrackGain(double gain);
+    bool setTrackGainAt(double gain, uint64_t streamFrame);
+    double trackGain() const { return trackGain_.gain(); }
+    bool trackGainScheduled() const { return trackGainAt_; }
+
     // Any thread. Whether the edges of the audio are faded (see De-click
     // above). Off until set; the next callback follows it.
     void setDeclick(bool enabled) { declick_.store(enabled, std::memory_order_relaxed); }
@@ -331,7 +341,8 @@ private:
     };
 
     void dropStart(); // control thread: forgets the start, leaves the end alone
-    void placeVolume(); // control thread: the scheduled volume change on the schedule now in force
+    void placeVolume(); // control thread: the scheduled volume and track gain on the schedule now in force
+    void placeGain(VolumeControl& control, bool& at, uint64_t streamFrame); // one of the two
     void forgetFlush(); // control thread: a new start or no start ends the flush
     void scheduleEnd(uint64_t streamFrame, bool dropBuffer);
     void publish(const Schedule& schedule);
@@ -365,6 +376,9 @@ private:
     // past it or a newer change replaced it.
     bool volumeAt_ = false;
     uint64_t volumeAtStreamFrame_ = 0;
+    // The same for the track gain.
+    bool trackGainAt_ = false;
+    uint64_t trackGainAtStreamFrame_ = 0;
     // The flush in progress, if there is one: where the cut is on the device
     // axis, where the audio after it begins (0 until resumeAfterFlush()), and
     // whether the line it cut is one a resume may carry on.
@@ -416,6 +430,8 @@ private:
     // source the server's stream is played through, and because the mapping a
     // scheduled change needs is the one this class already keeps.
     VolumeControl volume_;
+    // The track's normalization, applied after the volume on the same frames.
+    VolumeControl trackGain_;
 
     // Published to the control thread. 32 bits and widened on the reading side
     // for the same reason as everywhere else in this client.

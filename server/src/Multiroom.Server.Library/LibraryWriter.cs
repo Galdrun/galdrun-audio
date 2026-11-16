@@ -25,7 +25,8 @@ internal sealed record ProbedTrack(
     int? MediaKind = null,
     IReadOnlyList<ProbedChapter>? Chapters = null,
     bool ChaptersCut = false,
-    MusicBrainzIds? Ids = null);
+    MusicBrainzIds? Ids = null,
+    double? LoudnessLufs = null);
 
 // The MusicBrainz ids Picard writes: each the first id of its tag, lower
 // case, or null.
@@ -41,8 +42,9 @@ internal sealed class LibraryWriter(SqliteConnection connection) : IDisposable
     // What a probe reads: 2 since genre, composer and the track's year are
     // read (phase 14), 3 since the audio format is, 4 since the MP4 media
     // kind is (phase 30), 5 since chapter marks are (phase 32), 6 since
-    // Picard's MusicBrainz ids are. A file probed below it is probed again.
-    public const int TagVersion = 6;
+    // Picard's MusicBrainz ids are, 7 since the ReplayGain/R128 loudness is.
+    // A file probed below it is probed again.
+    public const int TagVersion = 7;
 
     private SqliteTransaction? _transaction;
     private int _pending;
@@ -150,6 +152,7 @@ internal sealed class LibraryWriter(SqliteConnection connection) : IDisposable
                 .. LibraryCatalog.FormatValues(tags.Format),
                 ("$mbReleaseGroup", tags.Ids?.ReleaseGroup), ("$mbRelease", tags.Ids?.Release),
                 ("$mbArtist", tags.Ids?.Artist), ("$mbAlbumArtist", tags.Ids?.AlbumArtist),
+                ("$loudness", tags.LoudnessLufs),
             ];
             // `added` is set once, when the track is first recorded.
             trackId = trackId is { } existing
@@ -159,16 +162,17 @@ internal sealed class LibraryWriter(SqliteConnection connection) : IDisposable
                         codec = $codec, sample_rate = $sampleRate, bit_depth = $bitDepth, channels = $channels,
                         bitrate = $bitrate, media_kind = $mediaKind, media_type = $mediaType,
                         media_type_source = $mediaTypeSource, mb_release_group = $mbReleaseGroup,
-                        mb_release = $mbRelease, mb_artist = $mbArtist, mb_album_artist = $mbAlbumArtist
+                        mb_release = $mbRelease, mb_artist = $mbArtist, mb_album_artist = $mbAlbumArtist,
+                        loudness_lufs = $loudness
                     WHERE id = $id RETURNING id
                     """, [.. values, ("$id", existing)])
                 : Write("""
                     INSERT INTO track (title, artist_id, album_id, disc, number, duration_ms, genre, composer, year, added,
                         codec, sample_rate, bit_depth, channels, bitrate, media_kind, media_type, media_type_source,
-                        mb_release_group, mb_release, mb_artist, mb_album_artist)
+                        mb_release_group, mb_release, mb_artist, mb_album_artist, loudness_lufs)
                     VALUES ($title, $artist, $album, $disc, $number, $duration, $genre, $composer, $year, $added,
                         $codec, $sampleRate, $bitDepth, $channels, $bitrate, $mediaKind, $mediaType, $mediaTypeSource,
-                        $mbReleaseGroup, $mbRelease, $mbArtist, $mbAlbumArtist)
+                        $mbReleaseGroup, $mbRelease, $mbArtist, $mbAlbumArtist, $loudness)
                     RETURNING id
                     """, [.. values, ("$added", DateTime.UtcNow.Ticks)]);
             // What the add-ins derived was from the file as it was (phase 12).

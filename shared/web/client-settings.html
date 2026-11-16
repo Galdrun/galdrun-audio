@@ -147,7 +147,7 @@
 
 <section id="ledBox" class="settings-card hidden" aria-labelledby="card-leds">
   <div class="card-intro"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 22h4M8 14a6 6 0 1 1 8 0c-1 1-1 2-1 4H9c0-2 0-3-1-4z"/></svg></div><div><h2 id="card-leds" tabindex="-1" data-i18n="leds.leds"></h2><p data-i18n="leds.controlStatusLights"></p></div></div>
-  <div class="card-content fields"><label for="ledOff" data-i18n="leds.ledMode"></label><select id="ledOff"><option value="false" data-i18n="leds.onLightsOn"></option><option value="true" data-i18n="leds.offLightsOff"></option></select><p class="hint" data-i18n="leds.bootAndFirmware"></p></div>
+  <div class="card-content fields"><label for="ledOff" data-i18n="leds.ledMode"></label><select id="ledOff"><option value="false" data-i18n="leds.onLightsOn"></option><option value="true" data-i18n="leds.offLightsOff"></option></select><div id="ledBrightnessField" class="hidden" style="display: contents"><label for="ledBrightness" data-i18n="leds.maxBrightness"></label><div class="row" style="align-items: center"><input type="range" id="ledBrightness" min="1" max="100" step="1"><output id="ledBrightnessValue" for="ledBrightness"></output></div></div><p class="hint" data-i18n="leds.bootAndFirmware"></p></div>
 </section>
 
 <section id="bluetoothBox" class="settings-card hidden" aria-labelledby="card-bluetooth">

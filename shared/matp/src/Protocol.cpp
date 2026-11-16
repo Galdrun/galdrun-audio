@@ -139,6 +139,24 @@ bool optionalStringFromJson(const json::Value& object, const char* key, std::str
     return true;
 }
 
+// A track's loudness normalization (section 59): an attenuation in decibels,
+// finite and never above zero. Absent leaves `has` false.
+bool optionalGainDbFromJson(const json::Value& object, bool& has, double& out,
+                            std::string& error)
+{
+    const json::Value* value = object.find("gainDb");
+    if (value == nullptr)
+        return true;
+    if (!value->isNumber() || !std::isfinite(value->asDouble()) || value->asDouble() > 0.0)
+    {
+        error = "gainDb must be a finite number of zero or less";
+        return false;
+    }
+    has = true;
+    out = value->asDouble();
+    return true;
+}
+
 // The session a message must name, which is every message the client sends:
 // the server has one stream per client and cannot attribute an answer without
 // it. The optional form above is for the other direction.
@@ -1102,6 +1120,8 @@ bool parseTrackBoundary(const json::Value& payload, TrackBoundary& out, std::str
         return false;
     if (!optionalStringFromJson(payload, "title", boundary.title, error))
         return false;
+    if (!optionalGainDbFromJson(payload, boundary.hasGainDb, boundary.gainDb, error))
+        return false;
 
     out = boundary;
     return true;
@@ -1120,6 +1140,8 @@ json::Value makeTrackBoundary(const TrackBoundary& boundary)
         root["trackId"] = json::Value(boundary.trackId);
     if (!boundary.title.empty())
         root["title"] = json::Value(boundary.title);
+    if (boundary.hasGainDb)
+        root["gainDb"] = json::Value(boundary.gainDb);
     return root;
 }
 
@@ -1132,11 +1154,13 @@ bool parseTrackInfo(const json::Value& payload, TrackInfo& out, std::string& err
         return false;
     if (!optionalStringFromJson(payload, "title", info.title, error))
         return false;
+    if (!optionalGainDbFromJson(payload, info.hasGainDb, info.gainDb, error))
+        return false;
 
-    if (info.trackId.empty() && info.title.empty())
+    if (info.trackId.empty() && info.title.empty() && !info.hasGainDb)
     {
-        // Unlike a boundary, this message is nothing but the two of them.
-        error = "trackInfo names neither a trackId nor a title";
+        // Unlike a boundary, this message is nothing but these.
+        error = "trackInfo names neither a trackId, a title nor a gainDb";
         return false;
     }
 
@@ -1146,9 +1170,14 @@ bool parseTrackInfo(const json::Value& payload, TrackInfo& out, std::string& err
 
 bool makeTrackInfo(const TrackInfo& info, json::Value& out, std::string& error)
 {
-    if (info.trackId.empty() && info.title.empty())
+    if (info.trackId.empty() && info.title.empty() && !info.hasGainDb)
     {
-        error = "trackInfo names neither a trackId nor a title";
+        error = "trackInfo names neither a trackId, a title nor a gainDb";
+        return false;
+    }
+    if (info.hasGainDb && !(std::isfinite(info.gainDb) && info.gainDb <= 0.0))
+    {
+        error = "gainDb must be a finite number of zero or less";
         return false;
     }
 
@@ -1160,6 +1189,8 @@ bool makeTrackInfo(const TrackInfo& info, json::Value& out, std::string& error)
         root["trackId"] = json::Value(info.trackId);
     if (!info.title.empty())
         root["title"] = json::Value(info.title);
+    if (info.hasGainDb)
+        root["gainDb"] = json::Value(info.gainDb);
 
     out = root;
     return true;
@@ -2066,6 +2097,22 @@ bool parseBufferConfig(const json::Value& payload, std::string& sessionId,
 
 namespace {
 
+bool optionalBoolFromJson(const json::Value& payload, const char* key, bool& has, bool& out,
+                          std::string& error)
+{
+    const json::Value* value = payload.find(key);
+    if (value == nullptr)
+        return true;
+    if (!value->isBool())
+    {
+        error = std::string(key) + " must be a boolean";
+        return false;
+    }
+    has = true;
+    out = value->asBool();
+    return true;
+}
+
 bool volumeControlModeFromJson(const json::Value& payload, const char* key,
                                VolumeControlMode& out, std::string& error)
 {
@@ -2080,23 +2127,45 @@ bool volumeControlModeFromJson(const json::Value& payload, const char* key,
 
 } // namespace
 
-json::Value makeSetVolumeControl(const SetVolumeControl& request)
+bool makeSetVolumeControl(const SetVolumeControl& request, json::Value& out, std::string& error)
 {
+    if (!request.hasVolumeControl && !request.hasNormalization)
+    {
+        error = "setVolumeControl must carry a volumeControl, a normalization, or both";
+        return false;
+    }
     json::Value root = json::Value::makeObject();
     root["type"] = json::Value(messageTypeName(MessageType::SetVolumeControl));
     if (!request.sessionId.empty())
         root["sessionId"] = json::Value(request.sessionId);
-    root["volumeControl"] = json::Value(volumeControlModeName(request.volumeControl));
-    return root;
+    if (request.hasVolumeControl)
+        root["volumeControl"] = json::Value(volumeControlModeName(request.volumeControl));
+    if (request.hasNormalization)
+        root["normalization"] = json::Value(request.normalization);
+    out = root;
+    return true;
 }
 
 bool parseSetVolumeControl(const json::Value& payload, SetVolumeControl& out,
                            std::string& error)
 {
     SetVolumeControl request;
-    if (!sessionIdFromJson(payload, request.sessionId, error) ||
-        !volumeControlModeFromJson(payload, "volumeControl", request.volumeControl, error))
+    if (!sessionIdFromJson(payload, request.sessionId, error))
         return false;
+    if (payload.find("volumeControl") != nullptr)
+    {
+        if (!volumeControlModeFromJson(payload, "volumeControl", request.volumeControl, error))
+            return false;
+        request.hasVolumeControl = true;
+    }
+    if (!optionalBoolFromJson(payload, "normalization", request.hasNormalization,
+                              request.normalization, error))
+        return false;
+    if (!request.hasVolumeControl && !request.hasNormalization)
+    {
+        error = "setVolumeControl must carry a volumeControl, a normalization, or both";
+        return false;
+    }
     out = request;
     return true;
 }
@@ -2110,6 +2179,8 @@ json::Value makeVolumeConfig(const VolumeConfig& config)
     root["effective"] = json::Value(volumeControlModeName(config.effective));
     if (!config.reason.empty())
         root["reason"] = json::Value(config.reason);
+    if (config.hasNormalization)
+        root["normalization"] = json::Value(config.normalization);
     return root;
 }
 
@@ -2119,7 +2190,9 @@ bool parseVolumeConfig(const json::Value& payload, VolumeConfig& out, std::strin
     if (!requiredSessionIdFromJson(payload, config.sessionId, error) ||
         !volumeControlModeFromJson(payload, "volumeControl", config.volumeControl, error) ||
         !volumeControlModeFromJson(payload, "effective", config.effective, error) ||
-        !optionalStringFromJson(payload, "reason", config.reason, error))
+        !optionalStringFromJson(payload, "reason", config.reason, error) ||
+        !optionalBoolFromJson(payload, "normalization", config.hasNormalization,
+                              config.normalization, error))
         return false;
     if (config.effective == VolumeControlMode::Auto)
     {
