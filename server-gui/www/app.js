@@ -6221,6 +6221,7 @@ $('#reloadCores').addEventListener('click', () => act(loadCores));
 // read when it starts, so they are shown and not offered.
 const CORE_AUDIO_HINTS = { // translated where shown
   startDelayMs: 'settings.coreHint.startDelayMs',
+  pauseDelayMs: 'settings.coreHint.pauseDelayMs',
   minimumStartBufferMs: 'settings.coreHint.minimumStartBufferMs',
   clientReadyTimeoutMs: 'settings.coreHint.clientReadyTimeoutMs',
   seekFlushLeadMs: 'settings.coreHint.seekFlushLeadMs',

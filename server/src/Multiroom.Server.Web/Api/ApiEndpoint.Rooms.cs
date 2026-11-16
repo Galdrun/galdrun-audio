@@ -101,11 +101,12 @@ public sealed partial class ApiEndpoint
         app.MapMethods("/api/v1/core/audio", [HttpMethods.Patch], (Delegate)((HttpContext c) =>
             WithBody<CoreAudioPatch, AudioSettingsReply, CoreError>(c, p =>
                 p is { MinimumStartBufferMs: null, ClientReadyTimeoutMs: null, StartDelayMs: null,
-                    SeekFlushLeadMs: null, SeekFillLeadMs: null, MemoryLimitMb: null }
+                    PauseDelayMs: null, SeekFlushLeadMs: null, SeekFillLeadMs: null, MemoryLimitMb: null }
                     ? Task.FromResult<Result<AudioSettingsReply, CoreError>>(
                         Result.Fail(CoreError.InvalidArgument, "an audio patch needs at least one setting"))
                     : link.SendAsync(new AudioConfigure(p.MinimumStartBufferMs, p.ClientReadyTimeoutMs,
-                        p.StartDelayMs, p.SeekFlushLeadMs, p.SeekFillLeadMs, p.MemoryLimitMb), c.RequestAborted))));
+                        p.StartDelayMs, p.SeekFlushLeadMs, p.SeekFillLeadMs, p.MemoryLimitMb, p.PauseDelayMs),
+                        c.RequestAborted))));
         app.MapPut("/api/v1/core/resampler", (Delegate)((HttpContext c) =>
             WithBody<ResamplerRequest, ResamplerConfigured, CoreError>(c,
                 r => link.SendAsync(new ResamplerConfigure(r.Resampler), c.RequestAborted))));

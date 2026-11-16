@@ -71,10 +71,13 @@ public sealed record QueueState(string Zone, IReadOnlyList<QueueItem> Items, Rep
 public sealed record ZoneDesired(IReadOnlyList<string>? Clients = null, double? Volume = null, bool? Muted = null);
 // Zone is the id of every request; Name is what people call it (its rooms' names).
 public sealed record ZoneView(string Zone, ZoneDesired? Desired = null, JsonElement? Actual = null,
-    QueueState? Queue = null, string? StreamTitle = null, Track? RadioTrack = null, string? Name = null)
+    QueueState? Queue = null, string? StreamTitle = null, Track? RadioTrack = null, string? Name = null,
+    SleepTimerView? SleepTimer = null)
 {
     public string DisplayName => string.IsNullOrEmpty(Name) ? Zone : Name;
 }
+// A zone's sleep timer: off, or when it ends and the whole seconds left when the server answered.
+public sealed record SleepTimerView(bool Active, DateTimeOffset? EndsAt = null, int RemainingSeconds = 0);
 public sealed record RoomDesired(string? Zone = null, string? AudioControl = null,
     double? Volume = null, bool? Muted = null, ulong? OutputLatencyMs = null,
     double? EffectiveVolume = null, bool? EffectiveMuted = null, bool Grouped = false);
@@ -83,7 +86,11 @@ public sealed record RoomActual(string Client, bool Connected, bool Member, stri
     string? NotReadyReason = null, string? StartDetail = null, JsonElement? Sync = null,
     ulong? BufferedMs = null, JsonElement? Playback = null, ulong? Rejoins = null,
     JsonElement? System = null, ulong? SystemAgeMs = null, JsonElement? AudioDevices = null,
-    JsonElement? DriftCorrection = null);
+    JsonElement? DriftCorrection = null, string? PowerState = null)
+{
+    // In deep sleep with Wake-on-LAN ("sleep"): the core wakes it to play. "sleepButtonOnly" needs its POWER button.
+    [JsonIgnore] public bool CanPlay => Connected || PowerState == "sleep";
+}
 // DriftActuator: none, resampling or hardwareClock; a bitperfect plan corrected
 // through the client's own clock is still bitperfect.
 public sealed record RoomPlan(bool BitPerfect, string Reason, JsonElement OutputFormat, bool DriftCorrected,

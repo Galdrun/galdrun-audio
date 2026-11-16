@@ -153,17 +153,18 @@ public sealed record ClientForget(string Client) : CoreCommand<ClientForgotten>(
 public sealed record GetAudioSettings() : CoreCommand<AudioSettingsReply>("audio.settings");
 
 // The timings and the memory limit: the barrier, the ready timeout, the lead
-// of every START_AT, PAUSE_AT and STOP_AT, a seek's two leads, and the one
-// ceiling over every zone's audio memory (phase 42). The core checks them with
-// its config's own rules, writes them to its config file and uses them from
-// the next message on; at least one is required.
+// of every START_AT and STOP_AT, that of every PAUSE_AT, a seek's two leads,
+// and the one ceiling over every zone's audio memory (phase 42). The core
+// checks them with its config's own rules, writes them to its config file and
+// uses them from the next message on; at least one is required.
 public sealed record AudioConfigure(
     uint? MinimumStartBufferMs = null,
     uint? ClientReadyTimeoutMs = null,
     uint? StartDelayMs = null,
     uint? SeekFlushLeadMs = null,
     uint? SeekFillLeadMs = null,
-    uint? MemoryLimitMb = null) : CoreCommand<AudioSettingsReply>("audio.configure");
+    uint? MemoryLimitMb = null,
+    uint? PauseDelayMs = null) : CoreCommand<AudioSettingsReply>("audio.configure");
 
 // Answered before the client's scan; its new list arrives with the next `clients`.
 public sealed record ClientRescanAudio(string Client) : CoreCommand<AudioRescanRequested>("client.rescanAudio");

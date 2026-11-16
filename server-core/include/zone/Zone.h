@@ -421,6 +421,7 @@ struct ZoneTiming
     uint64_t minimumStartBufferNs = 0;
     uint64_t readyTimeoutNs = 0;
     uint64_t startDelayNs = 0;
+    uint64_t pauseDelayNs = 0;
     uint64_t seekFlushLeadNs = 0;
     uint64_t seekFillLeadNs = 0;
 };

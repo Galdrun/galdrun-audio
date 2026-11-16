@@ -273,6 +273,7 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
                 return resumed.Failure;
             _transport = Mirror(resumed.Value.Transport);
             Anchor(null, running: true);
+            engine.RetryWakes(zone);
             return null;
         }
         if (_transport is QueueTransport.Starting or QueueTransport.Playing)
@@ -561,12 +562,35 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
     {
         if (await EnsureZoneAsync().ConfigureAwait(false) is { } unmade)
             return unmade;
+
+        var item = spot.Item;
+        var fileNs = FileStartNs(ItemOf(item)!, spot.Part) + offsetNs;
+
+        // A start at what is staged already (a next) plays it as staged:
+        // zone.stop leaves the core's staged list alone, and its resolve
+        // (for a streamed track the provider's answer and the first and last
+        // bytes, seconds) is not paid twice. Should the core have opened it
+        // in the lookahead before the stop, nothing is staged and the play
+        // fails; the start then goes the long way.
+        if (offsetNs == 0 && _staged is { } ready && ready.Spot == spot)
+        {
+            if (await StopCoreAsync(keepStaged: true).ConfigureAwait(false) is { } halted)
+                return halted;
+            var reused = await SendAsync(new ZonePlay(zone)).ConfigureAwait(false);
+            if (reused.IsSuccess)
+            {
+                ClearFailure(spot);
+                Begin(spot, fileNs, ready, reused.Value);
+                return null;
+            }
+            engine.Media.Retire(ready.MediaUri);
+            LogReuseFailed(engine.Log, zone, reused.Failure);
+        }
+
         if (await StopCoreAsync().ConfigureAwait(false) is { } unstopped)
             return unstopped;
 
-        var item = spot.Item;
         ClearFailure(spot);
-        var fileNs = FileStartNs(ItemOf(item)!, spot.Part) + offsetNs;
         var staged = await StageAsync(ItemOf(item)!, spot.Part, fileNs).ConfigureAwait(false);
         if (!staged.IsSuccess)
             return staged.Failure;
@@ -582,16 +606,24 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
             return played.Failure;
         }
 
-        _opened.Add(staged.Value);
+        Begin(spot, fileNs, staged.Value, played.Value);
+        return null;
+    }
+
+    // The core opened `staging` for `spot` at fileNs and plays it.
+    private void Begin(Spot spot, ulong fileNs, Staging staging, ZonePlayed played)
+    {
+        var item = spot.Item;
+        _opened.Add(staging);
+        engine.RetryWakes(zone);
         SetCurrent(item, spot.Part);
         _nowPlaying = null;
-        _transport = Mirror(played.Value.Transport);
+        _transport = Mirror(played.Transport);
         // Not audible yet: it runs from sourceStarted.
         _playhead = new Playhead(item, spot.Part, fileNs, engine.Time.GetTimestamp(), Running: false);
         // A saved place is used once: from here the playhead says where it is.
         if (ItemOf(item)?.Group is { Resume: true } book)
             _items[IndexOf(item)] = _items[IndexOf(item)] with { Group = book with { Resume = false } };
-        return null;
     }
 
     // The item again, from the playhead where it is that item's (its part
@@ -731,8 +763,10 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
     }
 
     // Stopped first and cleared second: a clear behind a source still playing
-    // would make the core ask for another with zone.sourceNeeded.
-    private async Task<Failure<QueueError>?> StopCoreAsync()
+    // would make the core ask for another with zone.sourceNeeded. keepStaged
+    // leaves the staged source in the core, for the caller to play, and out
+    // of this session's books (the caller holds it).
+    private async Task<Failure<QueueError>?> StopCoreAsync(bool keepStaged = false)
     {
         var core = engine.Link.Model.Current.Zones.GetValueOrDefault(zone);
         if (core is not null && (core.Transport != TransportState.Stopped || core.State is ZoneState.Playing or ZoneState.Ended))
@@ -741,7 +775,11 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
             if (!stopped.IsSuccess)
                 return stopped.Failure;
         }
-        if (_staged is not null || core?.Staged.Count > 0)
+        if (keepStaged)
+        {
+            _staged = null;
+        }
+        else if (_staged is not null || core?.Staged.Count > 0)
         {
             var cleared = await SendAsync(new SourceClearStaged(zone)).ConfigureAwait(false);
             if (!cleared.IsSuccess)
@@ -1352,6 +1390,9 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "zone {Zone}: could not stage what comes next: {Failure}")]
     private static partial void LogRestageFailed(ILogger log, string zone, string failure);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "zone {Zone}: the staged source did not play ({Failure}); staging it again")]
+    private static partial void LogReuseFailed(ILogger log, string zone, Failure<QueueError> failure);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "zone {Zone}: the queue has played out")]
     private static partial void LogEnded(ILogger log, string zone);

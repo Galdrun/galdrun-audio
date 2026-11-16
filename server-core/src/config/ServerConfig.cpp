@@ -53,10 +53,10 @@ namespace {
 
 constexpr std::array<std::string_view, 8> kRootKeys{"coreId",  "logLevel", "logFile", "logMaxBytes",
                                                     "audio",   "network",  "control", "media"};
-constexpr std::array<std::string_view, 17> kAudioKeys{
+constexpr std::array<std::string_view, 18> kAudioKeys{
     "maxSampleRate",      "maxChannels",          "packetDurationMs",    "memoryLimitMb",
     "targetBufferMs",     "minimumStartBufferMs", "clientReadyTimeoutMs", "startDelayMs",
-    "seekFlushLeadMs",    "seekFillLeadMs",
+    "pauseDelayMs",       "seekFlushLeadMs",      "seekFillLeadMs",
     "driftWindowMs",      "correctionLimitPpm",   "convergenceLimitPpm",  "resampler",
     "audioControl",       "driftCorrection",      "dither"};
 constexpr std::array<std::string_view, 6> kNetworkKeys{
@@ -206,6 +206,13 @@ Status<ConfigError> readAudio(const json::Value& audio, AudioConfig& out)
         !taken)
         return taken;
     out.startDelayMs = static_cast<uint32_t>(value);
+
+    value = out.pauseDelayMs;
+    if (auto taken = readUint(audio, "pauseDelayMs", "audio.",
+                              std::numeric_limits<uint32_t>::max(), value);
+        !taken)
+        return taken;
+    out.pauseDelayMs = static_cast<uint32_t>(value);
 
     value = out.seekFlushLeadMs;
     if (auto taken = readUint(audio, "seekFlushLeadMs", "audio.",
@@ -394,6 +401,7 @@ json::Value audioToJson(const AudioConfig& config)
     audio["minimumStartBufferMs"] = json::Value(config.minimumStartBufferMs);
     audio["clientReadyTimeoutMs"] = json::Value(config.clientReadyTimeoutMs);
     audio["startDelayMs"] = json::Value(config.startDelayMs);
+    audio["pauseDelayMs"] = json::Value(config.pauseDelayMs);
     audio["seekFlushLeadMs"] = json::Value(config.seekFlushLeadMs);
     audio["seekFillLeadMs"] = json::Value(config.seekFillLeadMs);
     audio["driftWindowMs"] = json::Value(config.driftWindowMs);
@@ -604,6 +612,15 @@ Status<ConfigError> validate(const ServerConfig& config)
         return fail(ConfigError::OutOfRange, "audio.startDelayMs is " +
                                                  std::to_string(config.audio.startDelayMs) +
                                                  ", expected 20..30000");
+    }
+
+    // A pause no room hears in time pauses each late, and one seconds ahead
+    // is not a pause any more but a slow one.
+    if (config.audio.pauseDelayMs < 10 || config.audio.pauseDelayMs > 5000)
+    {
+        return fail(ConfigError::OutOfRange, "audio.pauseDelayMs is " +
+                                                 std::to_string(config.audio.pauseDelayMs) +
+                                                 ", expected 10..5000");
     }
 
     // Phase 26. A cut with no lead is one no room hears in time, and a lead

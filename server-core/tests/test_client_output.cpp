@@ -1081,6 +1081,64 @@ MULTIROOM_TEST(client_output_waits_for_a_decode_that_has_not_got_there_yet)
     CHECK_EQ(packets[4].header.timelineStartNs, 4 * kPacketNs);
 }
 
+MULTIROOM_TEST(client_output_does_not_take_a_report_about_the_line_a_room_was_moved_off)
+{
+    // Prev pressed in quick succession: a room moved before it was started
+    // keeps the line it was moved off -- nothing tells it to drop that one
+    // but the first packet of the moved stream -- and goes on reporting a
+    // full buffer of it. Taken as this stream's, that report held the first
+    // packet back for good, and the zone waited for the room for good.
+    multiroomtest::ManualClock clock;
+    FakeZone zone;
+    zone.publishBlocks(100); // two seconds
+
+    ClientOutputSettings settings;
+    settings.targetBufferNs = 1000000000ULL; // fifty packets
+
+    auto state = std::make_shared<SinkState>();
+    auto output = makeOutput(zone, clock, bitperfectPlan(zone.format, zone.format), settings);
+    CHECK_OK(output->joinAt(TimelineNs{0}));
+    output->attach(std::make_unique<FakeSink>(state));
+    output->pump();
+    CHECK_EQ(output->packets(), 50ULL);
+
+    // Moved to where the decode has not got yet: nothing to send at first.
+    output->park();
+    const uint64_t moved = 2 * kNanosecondsPerSecond;
+    CHECK_OK(output->rejoinAt(TimelineNs{moved}));
+    output->pump();
+    CHECK_EQ(output->packets(), 50ULL);
+
+    // The room, never started, still holds the second of the old line.
+    matp::BufferStatus old;
+    old.hasContent = true;
+    old.playheadTimelineNs = 0;
+    old.bufferedUntilTimelineNs = settings.targetBufferNs;
+    old.bufferedDurationNs = settings.targetBufferNs;
+    output->onBufferStatus(old);
+    CHECK_EQ(output->bufferedNs(), 0ULL);
+
+    // So the moved stream goes out as soon as the decode has it.
+    zone.publishBlocks(10);
+    output->pump();
+    CHECK_EQ(output->packets(), 60ULL);
+
+    matp::AudioPacketReader reader;
+    size_t consumed = 0;
+    const std::vector<matp::AudioPacket> packets = decode(*state, reader, consumed);
+    CHECK_EQ(packets.size(), size_t(60));
+    CHECK_EQ(packets[50].header.timelineStartNs, moved);
+
+    // A report about the moved stream counts as it always did.
+    matp::BufferStatus now;
+    now.hasContent = true;
+    now.playheadTimelineNs = moved;
+    now.bufferedUntilTimelineNs = moved + 4 * kPacketNs;
+    now.bufferedDurationNs = 4 * kPacketNs;
+    output->onBufferStatus(now);
+    CHECK_EQ(output->bufferedNs(), 4 * kPacketNs);
+}
+
 MULTIROOM_TEST(client_output_cuts_a_packet_on_an_end_published_while_it_was_being_built)
 {
     // The zone's end arrives in the gap: the packet was sized whole, and is

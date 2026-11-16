@@ -2036,9 +2036,10 @@ MULTIROOM_TEST(a_scheduled_pause_and_resume_land_on_the_named_position)
     rig.clock.advanceMs(2000);
     CHECK_EQ(std::to_underlying(zone->playheadNs()), 1ULL * kNanosecondsPerSecond);
 
+    // Paused a pause delay (the default 100 ms) ahead of what is audible.
     const Result<TimelineNs, ZoneError> paused = zone->pausePlayback();
     CHECK_OK(paused);
-    CHECK_EQ(std::to_underlying(*paused), 2ULL * kNanosecondsPerSecond);
+    CHECK_EQ(std::to_underlying(*paused), 1100ULL * 1000000ULL);
 
     // Section 37: one logical position, and every room told the same one.
     const std::vector<RoomCommand> pauses = rig.starts->of(RoomCommandKind::Pause);

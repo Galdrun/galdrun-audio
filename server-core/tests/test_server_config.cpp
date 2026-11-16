@@ -487,6 +487,22 @@ MULTIROOM_TEST(server_config_carries_section_twenty_s_start_timings)
               ConfigError::OutOfRange);
 }
 
+MULTIROOM_TEST(server_config_carries_the_pause_delay)
+{
+    CHECK_EQ(ServerConfig{}.audio.pauseDelayMs, 100u);
+
+    ServerConfig config;
+    config.audio.pauseDelayMs = 40;
+    const auto parsed = server_config::deserialize(server_config::serialize(config));
+    CHECK_OK(parsed);
+    CHECK_EQ(parsed->audio.pauseDelayMs, 40u);
+
+    CHECK_ERR(server_config::deserialize(R"({"audio":{"pauseDelayMs":9}})"),
+              ConfigError::OutOfRange);
+    CHECK_ERR(server_config::deserialize(R"({"audio":{"pauseDelayMs":5001}})"),
+              ConfigError::OutOfRange);
+}
+
 MULTIROOM_TEST(server_config_carries_phase_26_s_seek_leads)
 {
     const ServerConfig defaults;

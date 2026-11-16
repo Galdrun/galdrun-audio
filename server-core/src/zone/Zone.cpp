@@ -1985,9 +1985,11 @@ void Zone::setTiming(const ZoneTiming& timing)
     settings_.start.minimumStartBufferNs = timing.minimumStartBufferNs;
     settings_.start.readyTimeoutNs = timing.readyTimeoutNs;
     settings_.start.startDelayNs = timing.startDelayNs;
+    settings_.start.pauseDelayNs = timing.pauseDelayNs;
     settings_.seekFlushLeadNs = timing.seekFlushLeadNs;
     settings_.seekFillLeadNs = timing.seekFillLeadNs;
-    scheduler_.setTiming(timing.minimumStartBufferNs, timing.readyTimeoutNs, timing.startDelayNs);
+    scheduler_.setTiming(timing.minimumStartBufferNs, timing.readyTimeoutNs, timing.startDelayNs,
+                         timing.pauseDelayNs);
 }
 
 Result<bool, ZoneError> Zone::setOutputLatency(const ClientId& client, uint64_t latencyNs)

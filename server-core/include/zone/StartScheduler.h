@@ -152,6 +152,13 @@ struct StartSchedulerSettings
     // on a zone that is already playing.
     uint64_t startDelayNs = 1ULL * kNanosecondsPerSecond;
 
+    // How far ahead of now a PAUSE_AT is placed: the pause is heard that long
+    // after it was asked for. It only has to reach every room, which takes
+    // milliseconds on a LAN, and a room it reaches late pauses at its next
+    // callback (the client's scheduleEnd), a few milliseconds after the
+    // others, which the resume's barrier puts right.
+    uint64_t pauseDelayNs = 100ULL * 1000000ULL;
+
     // How long past the instant a START_AT named this waits for the
     // PLAYBACK_REPORT that confirms it before trying again.
     uint64_t ackTimeoutNs = 1ULL * kNanosecondsPerSecond;
@@ -211,9 +218,11 @@ public:
     void setLatency(const ClientId& client, uint64_t latencyNs);
 
     // The control API's audio.configure: the barrier's minimum, the first
-    // start's wait and the lead of every START_AT, PAUSE_AT and STOP_AT from
-    // now on. A room already waiting keeps the deadline it was given.
-    void setTiming(uint64_t minimumStartBufferNs, uint64_t readyTimeoutNs, uint64_t startDelayNs);
+    // start's wait, the lead of every START_AT and STOP_AT and that of every
+    // PAUSE_AT from now on. A room already waiting keeps the deadline it was
+    // given.
+    void setTiming(uint64_t minimumStartBufferNs, uint64_t readyTimeoutNs, uint64_t startDelayNs,
+                   uint64_t pauseDelayNs);
 
     // Where the zone's audio ends once its decode has: a room holding all of
     // it up to there is schedulable with less than the start minimum, which a

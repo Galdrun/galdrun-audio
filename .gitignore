@@ -30,9 +30,9 @@ __pycache__/
 /BugFindings*.md
 /roadmap/
 /.mcp.json
+/.codex/agents/
 /.playwright-mcp/
-/.claude/.doc-state/
-/.claude/settings.local.json
+/.claude/
 # Local release tooling
 /release.ps1
 /scripts/release/

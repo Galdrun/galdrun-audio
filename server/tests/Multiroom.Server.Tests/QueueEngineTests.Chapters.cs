@@ -119,7 +119,7 @@ public sealed partial class QueueEngineTests
     }
 
     [Fact]
-    public async Task A_book_of_two_files_with_chapters_is_one_group_and_next_crosses_files_by_a_restage()
+    public async Task A_book_of_two_files_with_chapters_is_one_group_and_next_crosses_files_by_playing_the_staged_one()
     {
         var (queue, book) = await ChapterBookQueueAsync(files: 2);
         Assert.Equal(6, queue.Items[1].Group!.Parts.Count);
@@ -139,18 +139,11 @@ public sealed partial class QueueEngineTests
         Assert.Equal(["zone.seek", "zone.seek"], Sent(before).Select(s => s.Command));
         Assert.Equal(2, Queue().Part!.Index);
 
-        // From the last chapter of the first file: its second file, from its start.
+        // From the last chapter of the first file: its second file, from its
+        // start, as it was staged.
         before = _core.All.Count;
         var crossed = Ok(await _engine.NextAsync(Zone, Ct));
-        var second = Staged()[^1];
-        Assert.Equal(
-            [
-                ("zone.stop", """{"zone":"living"}"""),
-                ("source.clearStaged", """{"zone":"living"}"""),
-                ("source.stage", $$"""{"zone":"living","sourceId":"{{second.SourceId}}","mediaUri":"{{second.MediaUri}}","trackId":"fake:t3","title":"The Book — File 2"}"""),
-                ("zone.play", """{"zone":"living"}"""),
-            ],
-            Sent(before));
+        Assert.Equal([("zone.stop", """{"zone":"living"}"""), ("zone.play", """{"zone":"living"}""")], Sent(before));
         Assert.Equal((book, 3, 180_000L), (crossed.Current, crossed.Part!.Index, crossed.PositionMs));
     }
 }

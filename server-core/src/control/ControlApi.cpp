@@ -479,7 +479,7 @@ std::string ControlApi::handleLine(const std::string& line, bool& subscribed)
     else if (command == "audio.configure")
         reply = onlyKeys(params,
                          {"minimumStartBufferMs", "clientReadyTimeoutMs", "startDelayMs",
-                          "seekFlushLeadMs", "seekFillLeadMs", "memoryLimitMb"},
+                          "pauseDelayMs", "seekFlushLeadMs", "seekFillLeadMs", "memoryLimitMb"},
                          command, reply)
                     ? audioConfigure(params)
                     : reply;
@@ -1687,7 +1687,7 @@ ControlApi::Reply ControlApi::audioSettings()
     // is read at startup only.
     json::Value live = json::Value::makeArray();
     for (const char* key : {"minimumStartBufferMs", "clientReadyTimeoutMs", "startDelayMs",
-                            "seekFlushLeadMs", "seekFillLeadMs", "memoryLimitMb"})
+                            "pauseDelayMs", "seekFlushLeadMs", "seekFillLeadMs", "memoryLimitMb"})
         live.pushBack(json::Value(key));
     reply.body["live"] = std::move(live);
 
@@ -1729,6 +1729,7 @@ ControlApi::Reply ControlApi::audioConfigure(const json::Value& params)
         {"minimumStartBufferMs", &candidate.minimumStartBufferMs},
         {"clientReadyTimeoutMs", &candidate.clientReadyTimeoutMs},
         {"startDelayMs", &candidate.startDelayMs},
+        {"pauseDelayMs", &candidate.pauseDelayMs},
         {"seekFlushLeadMs", &candidate.seekFlushLeadMs},
         {"seekFillLeadMs", &candidate.seekFillLeadMs},
     };
@@ -1784,6 +1785,7 @@ ControlApi::Reply ControlApi::audioConfigure(const json::Value& params)
     const bool changed = candidate.minimumStartBufferMs != audio_.minimumStartBufferMs ||
                          candidate.clientReadyTimeoutMs != audio_.clientReadyTimeoutMs ||
                          candidate.startDelayMs != audio_.startDelayMs ||
+                         candidate.pauseDelayMs != audio_.pauseDelayMs ||
                          candidate.seekFlushLeadMs != audio_.seekFlushLeadMs ||
                          candidate.seekFillLeadMs != audio_.seekFillLeadMs ||
                          candidate.memoryLimitMb != audio_.memoryLimitMb;
@@ -1796,14 +1798,16 @@ ControlApi::Reply ControlApi::audioConfigure(const json::Value& params)
     timing.minimumStartBufferNs = static_cast<uint64_t>(audio_.minimumStartBufferMs) * 1000000ULL;
     timing.readyTimeoutNs = static_cast<uint64_t>(audio_.clientReadyTimeoutMs) * 1000000ULL;
     timing.startDelayNs = static_cast<uint64_t>(audio_.startDelayMs) * 1000000ULL;
+    timing.pauseDelayNs = static_cast<uint64_t>(audio_.pauseDelayMs) * 1000000ULL;
     timing.seekFlushLeadNs = static_cast<uint64_t>(audio_.seekFlushLeadMs) * 1000000ULL;
     timing.seekFillLeadNs = static_cast<uint64_t>(audio_.seekFillLeadMs) * 1000000ULL;
     zones_.setTiming(timing);
     if (changed)
-        MULTIROOM_INFO("control API: start delay {} ms, minimum start buffer {} ms, ready timeout {} ms, "
-                 "seek leads {}/{} ms, audio memory {} MB",
-                 audio_.startDelayMs, audio_.minimumStartBufferMs, audio_.clientReadyTimeoutMs,
-                 audio_.seekFlushLeadMs, audio_.seekFillLeadMs, audio_.memoryLimitMb);
+        MULTIROOM_INFO("control API: start delay {} ms, pause delay {} ms, minimum start buffer {} ms, "
+                 "ready timeout {} ms, seek leads {}/{} ms, audio memory {} MB",
+                 audio_.startDelayMs, audio_.pauseDelayMs, audio_.minimumStartBufferMs,
+                 audio_.clientReadyTimeoutMs, audio_.seekFlushLeadMs, audio_.seekFillLeadMs,
+                 audio_.memoryLimitMb);
 
     Reply reply = audioSettings();
     reply.body["changed"] = json::Value(changed);

@@ -21,6 +21,45 @@ public sealed class NowPlayingTests
         public override long GetTimestamp() => Milliseconds;
     }
 
+    [Theory]
+    [InlineData(12000, "POST /api/v1/zones/living/seek {\"item\":1,\"positionMs\":0}")]
+    [InlineData(4000, "POST /api/v1/zones/living/previous")]
+    public async Task Previous_restarts_a_track_past_five_seconds_and_goes_back_before(long positionMs, string expected)
+    {
+        var sent = new List<string>();
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (request, ct) =>
+        {
+            var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(ct);
+            sent.Add($"{request.Method} {request.RequestUri!.AbsolutePath} {body}".Trim());
+            return FakeHttp.Json("{}");
+        }));
+        var model = new PlaybackViewModel(action => action(api, TestContext.Current.CancellationToken), new Clock());
+        model.Apply(Snapshot(position: positionMs));
+        await model.TransportCommand.ExecuteAsync("previous");
+        Assert.Equal([expected], sent);
+    }
+
+    [Fact]
+    public void Waking_shows_while_the_zone_plays_and_its_devices_are_asleep()
+    {
+        var clock = new Clock();
+        var model = new PlaybackViewModel(_ => Task.CompletedTask, clock);
+        RoomView Room(bool connected, string? power) => new("speaker", new(Zone: "living"), new("speaker", connected, true, PowerState: power), "Kitchen");
+        void Apply(QueueTransport transport, params RoomView[] rooms) => model.Apply(Snapshot(transport: transport) with { Rooms = rooms });
+        Apply(QueueTransport.Paused, Room(false, "sleep"));
+        Assert.False(model.IsWaking); // asleep, but nothing asked to play
+        Apply(QueueTransport.Playing, Room(false, "sleep"));
+        Assert.True(model.IsWaking); Assert.Equal("Waking up Kitchen…", model.WakingText);
+        Apply(QueueTransport.Playing, Room(true, null));
+        Assert.False(model.IsWaking); Assert.Equal("Waking up Kitchen…", model.WakingText); // kept while it fades out
+        Apply(QueueTransport.Playing, Room(false, "sleepButtonOnly"));
+        Assert.False(model.IsWaking); // no packet wakes it
+        // One that never comes back: not shown for ever.
+        Apply(QueueTransport.Playing, Room(false, "sleep")); Assert.True(model.IsWaking);
+        clock.Milliseconds += (long)PlaybackViewModel.WakeTimeout.TotalMilliseconds; model.RefreshProgress();
+        Assert.False(model.IsWaking);
+    }
+
     private static HttpResponseMessage Marks(bool favorite = false, bool liked = false, string id = "track:1") => BrowserTests.Reply(
         new[] { new ItemStatus(LikeKind.Track, "local", id, liked, favorite, liked ? 7 : null, favorite ? 9 : null) });
 
@@ -185,7 +224,17 @@ public sealed class NowPlayingTests
             Assert.InRange(topLeft.X, 0, page.Bounds.Width); Assert.InRange(bottomRight.X, 0, page.Bounds.Width);
             Assert.InRange(topLeft.Y, 0, page.Bounds.Height); Assert.InRange(bottomRight.Y, 0, page.Bounds.Height);
             var artwork = page.FindControl<ArtworkView>("CoverArtwork")!;
-            Assert.IsType<Viewbox>(artwork.Child); // Missing artwork has a scalable record placeholder.
+            // Missing artwork has a scalable record placeholder.
+            Assert.IsType<Viewbox>(Assert.IsType<Border>(Assert.Single(Assert.IsType<Grid>(artwork.Child).Children)).Child);
+            // On a phone the cover runs edge to edge, square-cornered; elsewhere it keeps 16 px from the sides.
+            var compact = width < 700;
+            Assert.Equal(new Thickness(compact ? 0 : 16, 0, compact ? 0 : 16, 16), coverSpace.Margin);
+            if (width == 390) { Assert.Equal(0, topLeft.X, 1); Assert.Equal(page.Bounds.Width, coverSize, 1); }
+            Assert.Equal(compact ? 0 : 8, artwork.CornerRadius.TopLeft);
+            // The zone row: sleep timer at the left, volume at the right.
+            var zoneBar = view.GetVisualDescendants().OfType<ZoneBar>().Single();
+            Assert.True(zoneBar.FindControl<Button>("SleepButton")!.IsEffectivelyVisible);
+            Assert.Same(model.OpenVolumeCommand, zoneBar.FindControl<Button>("NowPlayingVolumeButton")!.Command);
             var transportBounds = page.GetVisualDescendants().OfType<TransportView>().Single();
             var controlsBottom = transportBounds.TranslatePoint(new Point(transportBounds.Bounds.Width, transportBounds.Bounds.Height), page)!.Value;
             Assert.InRange(controlsBottom.X, 0, page.Bounds.Width); Assert.InRange(controlsBottom.Y, 0, page.Bounds.Height);
@@ -267,7 +316,7 @@ public sealed class NowPlayingTests
     }
 
     [AvaloniaFact]
-    public void Busy_now_playing_uses_an_artwork_spinner_without_moving_the_layout_or_blocking_swipes()
+    public void Busy_now_playing_shows_no_spinner_and_keeps_the_layout_and_swipes()
     {
         var view = new MainView(loadPreferences: false); var model = (ShellViewModel)view.DataContext!; model.BusyDelay = TimeSpan.Zero;
         model.Playback.Apply(Snapshot()); model.SelectedPage = "Now Playing";
@@ -277,14 +326,13 @@ public sealed class NowPlayingTests
             window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             var page = view.GetVisualDescendants().OfType<NowPlayingView>().Single();
             var coverSpace = page.FindControl<Viewbox>("CoverSpace")!; var bounds = coverSpace.Bounds;
-            var overlay = page.FindControl<Border>("ArtworkProgress")!;
-            var spinner = page.FindControl<Avalonia.Controls.Shapes.Path>("LoadingSpinner")!;
             var topProgress = view.FindControl<Avalonia.Controls.Shapes.Ellipse>("BusyDot")!;
-            Assert.False(overlay.IsVisible); Assert.False(topProgress.IsVisible);
+            Assert.False(topProgress.IsVisible);
             model.IsBusy = true; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-            Assert.True(overlay.IsEffectivelyVisible); Assert.True(spinner.IsEffectivelyVisible);
-            Assert.False(topProgress.IsVisible); Assert.False(overlay.IsHitTestVisible);
-            Assert.IsType<Avalonia.Media.RotateTransform>(spinner.RenderTransform);
+            // Neither a spinner over the cover nor the top dot: the transport buttons and the waking pill say it.
+            Assert.False(topProgress.IsVisible);
+            Assert.DoesNotContain(page.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>(),
+                path => path.IsEffectivelyVisible && path.RenderTransform is Avalonia.Media.RotateTransform);
             Assert.Equal(bounds, coverSpace.Bounds);
             var cover = page.FindControl<Button>("CoverButton")!;
             var center = cover.TranslatePoint(new Point(320, 320), window)!.Value;
@@ -292,12 +340,11 @@ public sealed class NowPlayingTests
             { window.TouchMove(touch, center + new Vector(-70, 0)); window.TouchEnd(touch, center + new Vector(-70, 0)); }
             Dispatcher.UIThread.RunJobs(); Assert.Equal("kitchen", model.Playback.SelectedZone);
             model.IsBusy = false; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-            Assert.False(overlay.IsVisible); Assert.False(spinner.IsVisible); Assert.Equal(bounds, coverSpace.Bounds);
+            Assert.Equal(bounds, coverSpace.Bounds);
             model.SelectedPage = "Sources"; model.IsBusy = true; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-            Assert.True(topProgress.IsEffectivelyVisible); Assert.False(overlay.IsVisible);
+            Assert.True(topProgress.IsEffectivelyVisible);
             model.SelectedPage = "Now Playing"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-            Assert.False(topProgress.IsVisible); Assert.True(overlay.IsEffectivelyVisible);
-            model.IsBusy = false; Dispatcher.UIThread.RunJobs(); Assert.False(overlay.IsVisible);
+            Assert.False(topProgress.IsVisible);
         }
         finally { window.Close(); }
     }

@@ -774,6 +774,10 @@ private:
     size_t writtenOfFront_ = 0;                 // guarded by mutex_
     uint64_t queuedNs_ = 0;                     // guarded by mutex_
     uint64_t bufferedNs_ = 0;                   // guarded by mutex_
+    // Where this stream begins since its last join or move (not a format
+    // switch, which stays on the line), so the report thread knows a report
+    // about the line before it.
+    uint64_t streamOriginNs_ = 0;               // guarded by mutex_
     uint64_t producedSinceReportNs_ = 0;        // guarded by mutex_
     std::optional<uint64_t> lastReportNs_;      // guarded by mutex_
     uint64_t longestReportGapNs_ = 0;           // guarded by mutex_

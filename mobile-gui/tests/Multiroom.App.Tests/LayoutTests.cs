@@ -58,6 +58,17 @@ public sealed class LayoutTests
         finally { window.Close(); }
     }
 
+    [AvaloniaFact]
+    public void Back_returns_to_the_previous_page_until_home()
+    {
+        var model = (ShellViewModel)new MainView(loadPreferences: false).DataContext!;
+        foreach (var page in new[] { "Home", "Queue", "Rooms", "Now Playing" }) model.SelectedPage = page;
+        Assert.True(model.GoBack()); Assert.Equal("Rooms", model.SelectedPage);
+        model.SelectedPage = "Queue"; // opening a page on the way back returns to it
+        Assert.True(model.GoBack()); Assert.Equal("Home", model.SelectedPage);
+        Assert.False(model.GoBack()); // Home: the system's back leaves the app
+    }
+
     [AvaloniaTheory]
     [InlineData(390, 844)] [InlineData(900, 850)] [InlineData(1440, 950)]
     public void Collection_room_and_diagnostics_pages_render_at_all_shell_sizes(int width, int height)
@@ -86,9 +97,10 @@ public sealed class LayoutTests
                 if (page == "Rooms") Assert.Contains(content.OfType<TextBlock>(), t => t.Text?.Contains("core reason EXACT", StringComparison.Ordinal) == true);
             }
             // The shell has no padding; every page keeps 16 px from the window's sides itself (16 from the navigation when shown).
+            // Now Playing does inside, so its cover can run edge to edge (NowPlayingTests).
             var pages = view.FindControl<Grid>("Pages")!;
             var left = width < 700 ? 16 : view.FindControl<ListBox>("Navigation")!.TranslatePoint(new Point(view.FindControl<ListBox>("Navigation")!.Bounds.Width + 4 + 16, 0), window)!.Value.X;
-            foreach (var page in new[] { "Home", "Queue", "Zones", "Sources", "Playlists", "Rooms", "Diagnostics", "Now Playing" })
+            foreach (var page in new[] { "Home", "Queue", "Zones", "Sources", "Playlists", "Rooms", "Diagnostics" })
             {
                 model.SelectedPage = page; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
                 var shown = pages.Children.Single(c => c.IsVisible);

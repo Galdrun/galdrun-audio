@@ -138,5 +138,14 @@ public sealed partial class MultiroomClient : IDisposable
         SendAsync(HttpMethod.Patch, $"rooms/{Escape(client)}", new { volume }, ct);
     public Task<ZoneView> SetZoneVolumeAsync(string zone, double? volume, bool? muted, CancellationToken ct) =>
         SendTypedAsync<ZoneView>(HttpMethod.Patch, $"zones/{Escape(zone)}", new { volume, muted }, ct);
+    // Minutes from now (1 to 720); 0 switches it off.
+    public async Task<SleepTimerView> SetSleepTimerAsync(string zone, int minutes, CancellationToken ct)
+    {
+        var path = $"zones/{Escape(zone)}/sleep-timer";
+        var result = minutes > 0 ? await SendAsync(HttpMethod.Put, path, new { minutes }, ct).ConfigureAwait(false)
+            : await SendAsync(HttpMethod.Delete, path, null, ct).ConfigureAwait(false);
+        try { return result?.Deserialize<SleepTimerView>(Json) ?? throw new JsonException(); }
+        catch (JsonException) { throw new ApiException(HttpStatusCode.OK, "invalidResponse", "The server returned an unexpected response."); }
+    }
     public void Dispose() => _http.Dispose();
 }

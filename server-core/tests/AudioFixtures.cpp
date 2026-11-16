@@ -1,8 +1,9 @@
 #include "AudioFixtures.h"
 
 #include <algorithm>
-#include <iterator>
 #include <cstring>
+#include <initializer_list>
+#include <iterator>
 
 namespace multiroomtest {
 namespace {
@@ -193,7 +194,18 @@ std::vector<std::byte> encodeWav(const PcmFixture& fixture)
     return out;
 }
 
-std::vector<std::byte> encodeFlac(const PcmFixture& fixture, uint32_t blockFrames)
+namespace {
+
+// A FLAC stream's parts: its STREAMINFO metadata block (header included) and
+// its frames, each whole, so a container other than FLAC's own can carry them.
+struct FlacParts
+{
+    std::vector<std::byte> streamInfo;
+    std::vector<std::vector<std::byte>> frames;
+    std::vector<uint32_t> frameCounts;
+};
+
+FlacParts flacParts(const PcmFixture& fixture, uint32_t blockFrames)
 {
     // STREAMINFO's minimum has to account for a short final block, which is
     // the normal shape of a stream whose length is not a multiple of one.
@@ -203,8 +215,7 @@ std::vector<std::byte> encodeFlac(const PcmFixture& fixture, uint32_t blockFrame
     else if (fixture.frames % blockFrames != 0)
         minBlock = fixture.frames % blockFrames;
 
-    std::vector<std::byte> out;
-    putTag(out, "fLaC");
+    FlacParts parts;
 
     // STREAMINFO, and the last metadata block.
     BitWriter info;
@@ -221,7 +232,7 @@ std::vector<std::byte> encodeFlac(const PcmFixture& fixture, uint32_t blockFrame
     info.write(fixture.frames, 36);
     for (int index = 0; index < 16; ++index)
         info.write(0, 8); // MD5 of the unencoded audio: all zero means "not computed"
-    out.insert(out.end(), info.bytes().begin(), info.bytes().end());
+    parts.streamInfo = info.bytes();
 
     uint64_t frameNumber = 0;
     for (uint32_t first = 0; first < fixture.frames; first += blockFrames)
@@ -261,11 +272,204 @@ std::vector<std::byte> encodeFlac(const PcmFixture& fixture, uint32_t blockFrame
         frame.alignToByte();
         const uint16_t check = crc16(frame.bytes());
 
-        out.insert(out.end(), frame.bytes().begin(), frame.bytes().end());
-        out.push_back(static_cast<std::byte>((check >> 8) & 0xFF));
-        out.push_back(static_cast<std::byte>(check & 0xFF));
+        std::vector<std::byte> bytes = frame.bytes();
+        bytes.push_back(static_cast<std::byte>((check >> 8) & 0xFF));
+        bytes.push_back(static_cast<std::byte>(check & 0xFF));
+        parts.frames.push_back(std::move(bytes));
+        parts.frameCounts.push_back(count);
 
         ++frameNumber;
+    }
+
+    return parts;
+}
+
+// MP4 is big-endian throughout.
+void putBe(std::vector<std::byte>& out, uint64_t value, int bytes)
+{
+    for (int index = bytes - 1; index >= 0; --index)
+        out.push_back(static_cast<std::byte>((value >> (8 * index)) & 0xFF));
+}
+
+std::vector<std::byte> box(const char (&tag)[5], const std::vector<std::byte>& content)
+{
+    std::vector<std::byte> out;
+    putBe(out, 8 + content.size(), 4);
+    putTag(out, tag);
+    out.insert(out.end(), content.begin(), content.end());
+    return out;
+}
+
+// A full box's version and flags, then its fields.
+std::vector<std::byte> fullBox(const char (&tag)[5], uint8_t version, uint32_t flags,
+                               const std::vector<std::byte>& fields)
+{
+    std::vector<std::byte> content;
+    putBe(content, (static_cast<uint32_t>(version) << 24) | flags, 4);
+    content.insert(content.end(), fields.begin(), fields.end());
+    return box(tag, content);
+}
+
+std::vector<std::byte> join(std::initializer_list<std::vector<std::byte>> parts)
+{
+    std::vector<std::byte> out;
+    for (const auto& part : parts)
+        out.insert(out.end(), part.begin(), part.end());
+    return out;
+}
+
+void putMatrix(std::vector<std::byte>& out)
+{
+    for (uint32_t value : {0x00010000u, 0u, 0u, 0u, 0x00010000u, 0u, 0u, 0u, 0x40000000u})
+        putBe(out, value, 4);
+}
+
+} // namespace
+
+std::vector<std::byte> encodeFlac(const PcmFixture& fixture, uint32_t blockFrames)
+{
+    const FlacParts parts = flacParts(fixture, blockFrames);
+    std::vector<std::byte> out;
+    putTag(out, "fLaC");
+    out.insert(out.end(), parts.streamInfo.begin(), parts.streamInfo.end());
+    for (const auto& frame : parts.frames)
+        out.insert(out.end(), frame.begin(), frame.end());
+    return out;
+}
+
+std::vector<std::byte> encodeFragmentedMp4Flac(const PcmFixture& fixture, uint32_t blockFrames,
+                                               uint32_t blocksPerFragment)
+{
+    const FlacParts parts = flacParts(fixture, blockFrames);
+    const uint32_t rate = fixture.sampleRate;
+
+    std::vector<std::byte> mvhd;
+    putBe(mvhd, 0, 8);          // creation, modification
+    putBe(mvhd, rate, 4);       // timescale
+    putBe(mvhd, 0, 4);          // duration: unknown, as a fragmented file has it
+    putBe(mvhd, 0x00010000, 4); // rate 1.0
+    putBe(mvhd, 0x0100, 2);     // volume 1.0
+    putBe(mvhd, 0, 10);         // reserved
+    putMatrix(mvhd);
+    putBe(mvhd, 0, 24);         // pre-defined
+    putBe(mvhd, 2, 4);          // next track id
+
+    std::vector<std::byte> tkhd;
+    putBe(tkhd, 0, 8);      // creation, modification
+    putBe(tkhd, 1, 4);      // track id
+    putBe(tkhd, 0, 4);      // reserved
+    putBe(tkhd, 0, 4);      // duration
+    putBe(tkhd, 0, 8);      // reserved
+    putBe(tkhd, 0, 4);      // layer, alternate group
+    putBe(tkhd, 0x0100, 2); // volume
+    putBe(tkhd, 0, 2);      // reserved
+    putMatrix(tkhd);
+    putBe(tkhd, 0, 8);      // width, height
+
+    std::vector<std::byte> mdhd;
+    putBe(mdhd, 0, 8);      // creation, modification
+    putBe(mdhd, rate, 4);   // timescale
+    putBe(mdhd, 0, 4);      // duration: 0, as Tidal's are
+    putBe(mdhd, 0x55C4, 2); // language "und"
+    putBe(mdhd, 0, 2);
+
+    std::vector<std::byte> hdlr;
+    putBe(hdlr, 0, 4);
+    putTag(hdlr, "soun");
+    putBe(hdlr, 0, 12);
+    putBe(hdlr, 0, 1); // empty name
+
+    std::vector<std::byte> dref;
+    putBe(dref, 1, 4);
+    const auto dataRef = join({dref, fullBox("url ", 0, 1, {})});
+
+    // ISO/IEC 14496-12 AudioSampleEntry "fLaC", carrying FLAC's own
+    // STREAMINFO in a dfLa box (the FLAC-in-ISOBMFF mapping).
+    std::vector<std::byte> entry;
+    putBe(entry, 0, 6);                 // reserved
+    putBe(entry, 1, 2);                 // data reference index
+    putBe(entry, 0, 8);                 // reserved
+    putBe(entry, fixture.channels, 2);
+    putBe(entry, fixture.bits, 2);
+    putBe(entry, 0, 4);                 // pre-defined, reserved
+    putBe(entry, static_cast<uint64_t>(rate) << 16, 4);
+    const auto sampleEntry = box("fLaC", join({entry, fullBox("dfLa", 0, 0, parts.streamInfo)}));
+    std::vector<std::byte> stsd;
+    putBe(stsd, 1, 4);
+
+    std::vector<std::byte> none; // an empty table: every sample is in a fragment
+    putBe(none, 0, 4);
+    std::vector<std::byte> stsz;
+    putBe(stsz, 0, 8);
+
+    const auto stbl = box("stbl", join({fullBox("stsd", 0, 0, join({stsd, sampleEntry})),
+                                        fullBox("stts", 0, 0, none), fullBox("stsc", 0, 0, none),
+                                        fullBox("stsz", 0, 0, stsz), fullBox("stco", 0, 0, none)}));
+    std::vector<std::byte> smhd;
+    putBe(smhd, 0, 4);
+    const auto minf = box("minf", join({fullBox("smhd", 0, 0, smhd),
+                                        box("dinf", fullBox("dref", 0, 0, dataRef)), stbl}));
+    const auto trak = box("trak", join({fullBox("tkhd", 0, 3, tkhd),
+                                        box("mdia", join({fullBox("mdhd", 0, 0, mdhd),
+                                                          fullBox("hdlr", 0, 0, hdlr), minf}))}));
+    std::vector<std::byte> trex;
+    putBe(trex, 1, 4); // track id
+    putBe(trex, 1, 4); // sample description index
+    putBe(trex, 0, 12);
+
+    std::vector<std::byte> ftyp;
+    putTag(ftyp, "iso6");
+    putBe(ftyp, 0, 4);
+    putTag(ftyp, "iso6");
+    putTag(ftyp, "mp41");
+
+    std::vector<std::byte> out = join({box("ftyp", ftyp),
+                                       box("moov", join({fullBox("mvhd", 0, 0, mvhd), trak,
+                                                         box("mvex", fullBox("trex", 0, 0, trex))}))});
+
+    // One moof and mdat per fragment, no sidx and no mfra: the demuxer can
+    // only learn where fragments are by reading them.
+    uint64_t decodeTime = 0;
+    uint32_t sequence = 1;
+    for (size_t first = 0; first < parts.frames.size(); first += blocksPerFragment)
+    {
+        const size_t last = std::min(parts.frames.size(), first + blocksPerFragment);
+
+        std::vector<std::byte> mdat;
+        std::vector<std::byte> samples;
+        for (size_t index = first; index < last; ++index)
+        {
+            putBe(samples, parts.frameCounts[index], 4);
+            putBe(samples, parts.frames[index].size(), 4);
+            mdat.insert(mdat.end(), parts.frames[index].begin(), parts.frames[index].end());
+        }
+
+        std::vector<std::byte> mfhd;
+        putBe(mfhd, sequence++, 4);
+        std::vector<std::byte> tfhd;
+        putBe(tfhd, 1, 4);
+        std::vector<std::byte> tfdt;
+        putBe(tfdt, decodeTime, 8);
+
+        // trun's data offset counts from the moof, whose size depends on the
+        // trun: built once with 0 to measure, then again with the offset.
+        const auto moofWith = [&](uint32_t dataOffset) {
+            std::vector<std::byte> trun;
+            putBe(trun, last - first, 4);
+            putBe(trun, dataOffset, 4);
+            trun.insert(trun.end(), samples.begin(), samples.end());
+            return box("moof", join({fullBox("mfhd", 0, 0, mfhd),
+                                     box("traf", join({fullBox("tfhd", 0, 0x020000, tfhd),
+                                                       fullBox("tfdt", 1, 0, tfdt),
+                                                       fullBox("trun", 0, 0x000301, trun)}))}));
+        };
+        const auto moof = moofWith(static_cast<uint32_t>(moofWith(0).size() + 8));
+        out.insert(out.end(), moof.begin(), moof.end());
+        const auto data = box("mdat", mdat);
+        out.insert(out.end(), data.begin(), data.end());
+
+        for (size_t index = first; index < last; ++index)
+            decodeTime += parts.frameCounts[index];
     }
 
     return out;

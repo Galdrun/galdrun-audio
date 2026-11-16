@@ -218,6 +218,7 @@ Status<OutputError> ClientOutput::joinAt(TimelineNs position)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         state_ = OutputState::Streaming;
+        streamOriginNs_ = std::to_underlying(position);
     }
 
     MULTIROOM_INFO("client output {}: {} from timeline {} ns, source frame {}{}", client_.str(),
@@ -364,6 +365,9 @@ Status<OutputError> ClientOutput::rejoinAt(TimelineNs position)
         std::lock_guard<std::mutex> lock(mutex_);
         trim = trim_;
         state_ = OutputState::Streaming;
+        // A move, and the one place a stream begins again: a format switch
+        // re-anchors the grid on the same line, whose audio the room holds.
+        streamOriginNs_ = std::to_underlying(position);
         logged = moveLog_.allow(clock_.monotonicNowNs(), unlogged);
     }
 
@@ -1635,7 +1639,19 @@ void ClientOutput::onBufferStatus(const matp::BufferStatus& status)
     uint64_t endedGapNs = 0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        bufferedNs_ = status.bufferedDurationNs;
+
+        // A report about audio this stream never sent holds nothing of it: a
+        // room moved before it was started keeps the line it was moved off,
+        // and reports it, until the first packet of the moved stream arrives.
+        // Taken as what it says -- a full buffer -- it would stop that first
+        // packet from ever being built, and the room would hold the old line
+        // and the zone wait for it for good (prev pressed in quick succession).
+        // One packet of slack for how the client rounds the end it reports.
+        const bool ofThisStream =
+            !status.hasContent ||
+            (status.playheadTimelineNs >= streamOriginNs_ &&
+             status.bufferedUntilTimelineNs <= producedThroughNs_.load() + packetDurationNs_);
+        bufferedNs_ = ofThisStream ? status.bufferedDurationNs : 0;
 
         // What is still queued here is audio this room does not hold yet but is
         // going to, so it counts against the target from this report onwards.

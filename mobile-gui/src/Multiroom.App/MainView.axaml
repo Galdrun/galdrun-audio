@@ -119,7 +119,7 @@
        <Button Content="Apply full room membership" Command="{Binding Playback.SaveMembershipCommand}" IsEnabled="{Binding Playback.HasZone}" />
       </StackPanel>
      </ScrollViewer>
-     <Grid IsVisible="{Binding IsNowPlaying}" Margin="16,16,16,12"><vm:NowPlayingView /></Grid>
+     <Grid IsVisible="{Binding IsNowPlaying}" Margin="0,16,0,12"><vm:NowPlayingView /></Grid>
       <Grid IsVisible="{Binding IsSources}" RowDefinitions="Auto,*,Auto">
       <TextBlock Text="Choose where the music begins." Classes="muted" Margin="0,0,0,20" />
       <ListBox Grid.Row="1" ItemsSource="{Binding Providers}" Background="Transparent" SelectedItem="{Binding SelectedProvider}">
@@ -315,6 +315,22 @@
       </StackPanel>
      </Border>
     </Grid>
+    <!-- Devices waking from deep sleep to play: a pill over the page's bottom (beneath an error's toast) until
+         one is back (PlaybackViewModel.WakingText). -->
+    <Border x:Name="WakingToast" Grid.Row="1" Classes.shown="{Binding Playback.IsWaking}" IsHitTestVisible="False"
+     HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="16,0,16,16" MaxWidth="480"
+     Background="#F21B2123" BorderBrush="#3A4A33" BorderThickness="1" CornerRadius="20" Padding="12,8,16,8"
+     AutomationProperties.LiveSetting="Polite">
+     <Border.Styles>
+      <Style Selector="Border#WakingToast"><Setter Property="Opacity" Value="0" /></Style>
+      <Style Selector="Border#WakingToast.shown"><Setter Property="Opacity" Value="1" /></Style>
+     </Border.Styles>
+     <Border.Transitions><Transitions><DoubleTransition Property="Opacity" Duration="0:0:0.3" /></Transitions></Border.Transitions>
+     <StackPanel Orientation="Horizontal" Spacing="10">
+      <Arc Classes="busy" Width="18" Height="18" StrokeThickness="2.5" IsVisible="{Binding Playback.IsWaking}" />
+      <TextBlock x:Name="WakingText" Text="{Binding Playback.WakingText}" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+     </StackPanel>
+    </Border>
     <!-- Errors: a toast over the page's bottom that fades out by itself, never moving the page. -->
     <Border x:Name="ErrorToast" Grid.Row="1" Classes.shown="{Binding ShowError}" IsHitTestVisible="False"
      HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="16,0,16,16" MaxWidth="480"

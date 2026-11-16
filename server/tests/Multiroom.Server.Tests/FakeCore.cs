@@ -53,7 +53,7 @@ internal sealed class FakeCore : IAsyncDisposable
         ["client.setDriftCorrection"] = ["client", "driftCorrection"],
         ["audio.settings"] = [],
         ["audio.configure"] = ["minimumStartBufferMs?", "clientReadyTimeoutMs?", "startDelayMs?",
-            "seekFlushLeadMs?", "seekFillLeadMs?", "memoryLimitMb?"],
+            "pauseDelayMs?", "seekFlushLeadMs?", "seekFillLeadMs?", "memoryLimitMb?"],
         ["client.setInputBindings"] = ["client", "inputId", "bindings"],
         ["discovery.clients"] = [],
         ["client.attach"] = ["client", "server?"],
@@ -83,7 +83,7 @@ internal sealed class FakeCore : IAsyncDisposable
     private readonly Lock _lock = new();
     private readonly List<Received> _received = [];
     private readonly Dictionary<string, Func<JsonObject, JsonObject>> _answers = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, (string Code, string Message)> _refusals = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (string Code, string Message, bool Once)> _refusals = new(StringComparer.Ordinal);
     private readonly Task _accepting;
     private Session? _session;
     private int _connections;
@@ -117,10 +117,10 @@ internal sealed class FakeCore : IAsyncDisposable
             _answers[command] = body;
     }
 
-    public void Refuse(string command, string code, string message)
+    public void Refuse(string command, string code, string message, bool once = false)
     {
         lock (_lock)
-            _refusals[command] = (code, message);
+            _refusals[command] = (code, message, once);
     }
 
     public void Accept(string command)
@@ -207,7 +207,11 @@ internal sealed class FakeCore : IAsyncDisposable
         lock (_lock)
         {
             if (_refusals.TryGetValue(command, out var refusal))
+            {
+                if (refusal.Once)
+                    _refusals.Remove(command);
                 return Error(command, id, refusal.Code, refusal.Message);
+            }
             _answers.TryGetValue(command, out answer);
         }
 
@@ -387,12 +391,13 @@ internal sealed class FakeCore : IAsyncDisposable
                 ["maxSampleRate"] = 192000, ["maxChannels"] = 2, ["packetDurationMs"] = 20,
                 ["memoryLimitMb"] = memoryLimitMb,
                 ["targetBufferMs"] = 1500, ["minimumStartBufferMs"] = 1000, ["clientReadyTimeoutMs"] = 5000,
-                ["startDelayMs"] = startDelayMs, ["seekFlushLeadMs"] = 100, ["seekFillLeadMs"] = 150,
+                ["startDelayMs"] = startDelayMs, ["pauseDelayMs"] = 100, ["seekFlushLeadMs"] = 100,
+                ["seekFillLeadMs"] = 150,
                 ["driftWindowMs"] = 20000, ["correctionLimitPpm"] = 100, ["convergenceLimitPpm"] = 500,
                 ["resampler"] = "soxr", ["audioControl"] = "auto", ["dither"] = "off",
             },
             ["live"] = new JsonArray("minimumStartBufferMs", "clientReadyTimeoutMs", "startDelayMs",
-                "seekFlushLeadMs", "seekFillLeadMs", "memoryLimitMb"),
+                "pauseDelayMs", "seekFlushLeadMs", "seekFillLeadMs", "memoryLimitMb"),
             ["memoryLimit"] = new JsonObject
             {
                 ["mb"] = memoryLimitMb, ["minMb"] = 8, ["maxMb"] = 512, ["usedMb"] = 0,

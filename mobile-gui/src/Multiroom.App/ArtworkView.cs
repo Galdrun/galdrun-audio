@@ -13,15 +13,24 @@ public sealed class ArtworkView : Border
     // The item's artworkId (server phase 40).
     public string? Reference { get => GetValue(ReferenceProperty); set => SetValue(ReferenceProperty, value); }
     public ArtworkCache? Cache { get => GetValue(CacheProperty); set => SetValue(CacheProperty, value); }
+    // The next picture fades in over the one shown, which stays until it has loaded (Now Playing's cover);
+    // otherwise the placeholder shows while it loads.
+    public static readonly StyledProperty<bool> CrossfadeProperty = AvaloniaProperty.Register<ArtworkView, bool>(nameof(Crossfade));
+    public bool Crossfade { get => GetValue(CrossfadeProperty); set => SetValue(CrossfadeProperty, value); }
+    private static readonly TimeSpan FadeTime = TimeSpan.FromMilliseconds(400);
+    private static readonly IBrush Empty = Brush.Parse("#303C36");
     private CancellationTokenSource? _load;
-    private Bitmap? _bitmap;
+    // What is shown, newest last: during a crossfade, the pictures fading out beneath the new one.
+    private readonly Grid _layers = new();
     private bool _attached;
+    // A default, not a local value, so a style can square the corners (NowPlayingView's phone layout).
+    static ArtworkView() => CornerRadiusProperty.OverrideDefaultValue<ArtworkView>(new CornerRadius(8));
     public ArtworkView()
     {
-        Width = Height = 64; CornerRadius = new CornerRadius(8); ClipToBounds = true;
-        Background = Brush.Parse("#303C36"); Placeholder();
+        Width = Height = 64; ClipToBounds = true;
+        Background = Empty; Child = _layers; Show(Placeholder());
         AttachedToVisualTree += (_, _) => { _attached = true; if (Cache is { } cache) cache.Found += OnFound; Load(); };
-        DetachedFromVisualTree += (_, _) => { _attached = false; if (Cache is { } cache) cache.Found -= OnFound; Cancel(); };
+        DetachedFromVisualTree += (_, _) => { _attached = false; if (Cache is { } cache) cache.Found -= OnFound; Cancel(); Show(Placeholder()); };
     }
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -38,7 +47,7 @@ public sealed class ArtworkView : Border
     {
         if (id == Reference) Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (id == Reference) Load(); });
     }
-    private void Placeholder()
+    private static Control Placeholder()
     {
         var record = new Grid { Width = 160, Height = 160 };
         record.Children.Add(new Avalonia.Controls.Shapes.Ellipse { Fill = Brush.Parse("#202C27"), Stroke = Brush.Parse("#617568"), StrokeThickness = 2 });
@@ -49,17 +58,36 @@ public sealed class ArtworkView : Border
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
         record.Children.Add(new TextBlock { Text = "♪", FontSize = 42, Foreground = Brush.Parse("#202C27"),
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
-        Child = new Viewbox { Margin = new Thickness(12), Child = new Border { Padding = new Thickness(24), Child = record } };
+        // Opaque, so it covers a picture it fades in over.
+        return new Border { Tag = nameof(Placeholder), Background = Empty, Child =new Viewbox { Margin = new Thickness(12), Child = new Border { Padding = new Thickness(24), Child = record } } };
     }
-    private void Cancel()
+    private void Show(Control content)
     {
-        _load?.Cancel(); _load?.Dispose(); _load = null;
-        Child = null; _bitmap?.Dispose(); _bitmap = null; Placeholder();
+        if (content.Tag is nameof(Placeholder) && _layers.Children.Count > 0 && _layers.Children[^1].Tag is nameof(Placeholder)) return;
+        if (!Crossfade || !_attached || _layers.Children.Count == 0)
+        {
+            while (_layers.Children.Count > 0) Remove(_layers.Children[0]);
+            _layers.Children.Add(content);
+            return;
+        }
+        content.Opacity = 0;
+        content.Transitions = [new Avalonia.Animation.DoubleTransition { Property = OpacityProperty, Duration = FadeTime }];
+        _layers.Children.Add(content);
+        content.Opacity = 1;
+        // Once it covers them, what it faded in over goes (unless something newer replaced it all meanwhile).
+        Avalonia.Threading.DispatcherTimer.RunOnce(() => { while (_layers.Children.IndexOf(content) > 0) Remove(_layers.Children[0]); }, FadeTime);
     }
+    private void Remove(Control layer)
+    {
+        _layers.Children.Remove(layer);
+        if (layer is Image { Source: Bitmap bitmap }) bitmap.Dispose();
+    }
+    private void Cancel() { _load?.Cancel(); _load?.Dispose(); _load = null; }
     private async void Load()
     {
         Cancel();
-        if (!_attached || Reference is not { } reference || Cache is not { } cache) return;
+        if (!Crossfade) Show(Placeholder());
+        if (!_attached || Reference is not { } reference || Cache is not { } cache) { if (Crossfade) Show(Placeholder()); return; }
         _load = new(); var token = _load.Token;
         try
         {
@@ -67,10 +95,10 @@ public sealed class ArtworkView : Border
             var decodeWidth = Math.Clamp(double.IsFinite(Width) ? (int)Width : 256, 64, 1024);
             var bitmap = await Task.Run(() => { using var stream = new MemoryStream(bytes); return Bitmap.DecodeToWidth(stream, decodeWidth); }, token);
             if (token.IsCancellationRequested) { bitmap.Dispose(); return; }
-            _bitmap = bitmap; Child = new Image { Source = bitmap, Stretch = Stretch.UniformToFill };
+            Show(new Image { Source = bitmap, Stretch = Stretch.UniformToFill });
         }
         catch (OperationCanceledException) { }
         catch (Exception e) when (e is IOException or HttpRequestException or ApiException or ArgumentException or InvalidOperationException)
-        { if (!token.IsCancellationRequested) Placeholder(); }
+        { if (!token.IsCancellationRequested) Show(Placeholder()); }
     }
 }

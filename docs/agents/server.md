@@ -69,6 +69,13 @@ replays by the core. Audible `sourceStarted` events and playhead state differ
 from the source currently being decoded. Groups contain parts; chapters of
 one file may share one staged source and use seek for navigation.
 
+A start at what is already staged at offset 0 (a next) is `zone.stop` then
+`zone.play` on that staged source, with no clear and no re-resolve
+(`ZoneSession.StartAtAsync`): `zone.stop` leaves the core's staged list, and a
+streamed track's resolve (provider call plus first and last bytes) costs
+seconds. If the core opened it in the lookahead before the stop, the play
+finds nothing staged and the start falls back to clear, stage, play.
+
 A room's `localSource` (MATP; `bluetooth` while a phone plays on its device)
 is a room fact, not a power state (`actual.localSource`, event
 `room.localSource`). When it starts on a playing zone's **only** room,
@@ -88,6 +95,14 @@ When the source that played fails and nothing playable is left (every item
 failed, e.g. a repeated single track), `ZoneSession.FailedAsync` stops the zone
 and keeps the item current: the core would otherwise wait in `starting` for a
 source that never comes, and a play would find the zone already starting.
+
+The core sends one Wake-on-LAN packet per `zone.play` to the zone's rooms in
+`powerState: "sleep"`. A room still going to sleep at that moment (connected, or
+its NIC not yet listening) misses it, so `QueueEngine.RetryWakes`
+(`Multiroom.Server.Playback/QueueEngine.Wake.cs`) sends `client.wake` again every
+5 s for 90 s after each accepted play, until every member is back or the zone
+no longer plays. It is tied to a play, never to state alone, so a room put to
+sleep while its zone plays on stays asleep.
 
 `CoreLink` connects to the core's JSON-line API, subscribes, reads status and
 reconciles `DesiredState` against `CoreModel`. The core can restart without

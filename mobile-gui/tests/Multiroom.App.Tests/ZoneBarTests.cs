@@ -220,6 +220,15 @@ public sealed class ZoneBarTests
             Rooms = [new("speaker", new(Zone: "living"), new("speaker", Connected: false, Member: false))] });
         var error = await Assert.ThrowsAsync<ApiException>(() => vm.PlayPauseCommand.ExecuteAsync(null));
         Assert.Equal("No device in living is connected. Turn a device on and try again.", error.Message); Assert.Empty(paths);
+        // Woken by its POWER button only: still off as far as play goes.
+        vm.Apply(snapshot with { Zones = [snapshot.Zones[0] with { Queue = snapshot.Zones[0].Queue! with { Transport = QueueTransport.Paused } }],
+            Rooms = [new("speaker", new(Zone: "living"), new("speaker", Connected: false, Member: false, PowerState: "sleepButtonOnly"))] });
+        await Assert.ThrowsAsync<ApiException>(() => vm.PlayPauseCommand.ExecuteAsync(null)); Assert.Empty(paths);
+        // In deep sleep with Wake-on-LAN: the core wakes it, so play is asked without a warning.
+        vm.Apply(snapshot with { Zones = [snapshot.Zones[0] with { Queue = snapshot.Zones[0].Queue! with { Transport = QueueTransport.Paused } }],
+            Rooms = [new("speaker", new(Zone: "living"), new("speaker", Connected: false, Member: false, PowerState: "sleep"))] });
+        await vm.PlayPauseCommand.ExecuteAsync(null);
+        Assert.Equal(["POST /api/v1/zones/living/play"], paths);
     }
 
     [Fact]

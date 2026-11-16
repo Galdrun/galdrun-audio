@@ -405,6 +405,8 @@ int runServer(const CommandLineOptions& options, bool asService)
         static_cast<uint64_t>(config.audio.clientReadyTimeoutMs) * 1000000ULL;
     zoneSettings.start.startDelayNs =
         static_cast<uint64_t>(config.audio.startDelayMs) * 1000000ULL;
+    zoneSettings.start.pauseDelayNs =
+        static_cast<uint64_t>(config.audio.pauseDelayMs) * 1000000ULL;
     zoneSettings.seekFlushLeadNs = static_cast<uint64_t>(config.audio.seekFlushLeadMs) * 1000000ULL;
     zoneSettings.seekFillLeadNs = static_cast<uint64_t>(config.audio.seekFillLeadMs) * 1000000ULL;
     zoneSettings.sync.driftWindowNs =
@@ -458,6 +460,7 @@ int runServer(const CommandLineOptions& options, bool asService)
         onDisk.audio.minimumStartBufferMs = audio.minimumStartBufferMs;
         onDisk.audio.clientReadyTimeoutMs = audio.clientReadyTimeoutMs;
         onDisk.audio.startDelayMs = audio.startDelayMs;
+        onDisk.audio.pauseDelayMs = audio.pauseDelayMs;
         onDisk.audio.seekFlushLeadMs = audio.seekFlushLeadMs;
         onDisk.audio.seekFillLeadMs = audio.seekFillLeadMs;
         onDisk.audio.memoryLimitMb = audio.memoryLimitMb;
@@ -483,9 +486,9 @@ int runServer(const CommandLineOptions& options, bool asService)
     // Section 20's barrier, in the log once, because "nothing is audible yet"
     // and "the server is broken" look identical from a room.
     MULTIROOM_INFO("a zone waits for every room to hold {} ms and open its device, up to {} ms, "
-             "then starts {} ms later",
+             "then starts {} ms later; a pause is heard {} ms after it is asked for",
              config.audio.minimumStartBufferMs, config.audio.clientReadyTimeoutMs,
-             config.audio.startDelayMs);
+             config.audio.startDelayMs, config.audio.pauseDelayMs);
 
     // The audio listener starts first: PREPARE_STREAM announces its port, and
     // a client that acted on the announcement before the port was bound would

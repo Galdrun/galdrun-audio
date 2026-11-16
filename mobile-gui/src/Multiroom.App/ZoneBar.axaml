@@ -27,8 +27,36 @@
      </ItemsControl>
     </StackPanel>
    </Button>
+   <!-- On Now Playing, the zone's sleep timer at the left (its minutes left on a badge; a long press or right
+        click switches it off) and its volume at the right, over the zone selector's ends. -->
+   <Button x:Name="SleepButton" Grid.ColumnSpan="2" IsVisible="{Binding IsNowPlaying}" Click="SleepTapped" ContextRequested="SleepHeld"
+    Background="Transparent" BorderThickness="0" CornerRadius="24" Padding="0" Width="48" Height="48" Margin="12,0,0,0"
+    HorizontalAlignment="Left" VerticalAlignment="Center" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+    AutomationProperties.Name="{Binding Playback.SleepLabel}" ToolTip.Tip="{Binding Playback.SleepLabel}">
+    <Grid Width="24" Height="24">
+     <Path x:Name="SleepIcon" Data="M17.5 15.2A7 7 0 1 1 8.8 6.5a5.6 5.6 0 0 0 8.7 8.7z M13.5 3h4l-4 4.4h4 M19 10h2.6L19 12.8h2.6"
+      StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round" Classes.on="{Binding Playback.IsSleepActive}">
+      <Path.Styles>
+       <Style Selector="Path"><Setter Property="Stroke" Value="#A0A8AB" /></Style>
+       <Style Selector="Path.on"><Setter Property="Stroke" Value="#CBEC97" /></Style>
+      </Path.Styles>
+     </Path>
+     <Border IsVisible="{Binding Playback.IsSleepActive}" Background="#CBEC97" CornerRadius="8" MinWidth="16" Height="16" Padding="3,0"
+      Margin="0,0,-10,-8" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+      <TextBlock x:Name="SleepLeft" Text="{Binding Playback.SleepMinutesLeft}" Foreground="#101315" FontSize="10" FontWeight="Bold"
+       HorizontalAlignment="Center" VerticalAlignment="Center" />
+     </Border>
+    </Grid>
+   </Button>
+   <Button x:Name="NowPlayingVolumeButton" Grid.ColumnSpan="2" IsVisible="{Binding IsNowPlaying}" Command="{Binding OpenVolumeCommand}"
+    Background="Transparent" BorderThickness="0" CornerRadius="24" Padding="0" Width="48" Height="48" Margin="0,0,12,0"
+    HorizontalAlignment="Right" VerticalAlignment="Center" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+    AutomationProperties.Name="Zone volume" ToolTip.Tip="Zone volume">
+    <Path Data="M 1.5,7.5 L 5,7.5 L 9,3 L 9,17 L 5,12.5 L 1.5,12.5 Z M 12,6.5 Q 16,10 12,13.5 M 15,3 Q 22,10 15,17"
+     Stroke="#A0A8AB" StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round" Width="24" Height="24" Stretch="Uniform" />
+   </Button>
    <Button x:Name="ArtworkButton" IsVisible="{Binding !IsNowPlaying}" Command="{Binding NavigateCommand}" CommandParameter="Now Playing" Background="Transparent" BorderThickness="0" CornerRadius="0" Padding="0" Margin="0" VerticalAlignment="Stretch" AutomationProperties.Name="Open now playing" ToolTip.Tip="Open now playing">
-    <vm:ArtworkView x:Name="ZoneArtwork" Reference="{Binding Playback.CurrentArtwork}" Cache="{Binding Playback.Artwork}" Width="100" Height="100" CornerRadius="0" />
+    <vm:ArtworkView x:Name="ZoneArtwork" Reference="{Binding Playback.CurrentArtwork}" Cache="{Binding Playback.Artwork}" Width="100" Height="100" CornerRadius="0" Crossfade="True" />
    </Button>
    <Grid x:Name="InfoGrid" Grid.Column="1" RowDefinitions="*,Auto" IsVisible="{Binding !IsNowPlaying}">
     <Grid x:Name="MediaGrid" Margin="12,0,16,0" ColumnDefinitions="*,Auto" VerticalAlignment="Center">

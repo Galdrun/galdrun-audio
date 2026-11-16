@@ -31,6 +31,9 @@ static_assert(std::endian::native == std::endian::little,
               "the decoder passes FFmpeg's host-order samples through as MATP's "
               "little-endian layouts");
 
+// FFmpeg's name for its MP4/QuickTime demuxer, as AVInputFormat::name.
+constexpr const char* kMp4Demuxer = "mov,mp4,m4a,3gp,3g2,mj2";
+
 std::string avErrorText(int code)
 {
     // av_err2str is a macro over a compound literal and does not compile as
@@ -240,7 +243,26 @@ Status<DecodeError> FfmpegDecoder::open(std::unique_ptr<IMediaSource> source)
     if (format_->protocol_whitelist == nullptr)
         return abandon(DecodeError::DecodeFailed, name + ": av_strdup");
 
-    int code = avformat_open_input(&format_, nullptr, nullptr, nullptr);
+    // Probed here rather than inside avformat_open_input, for one container:
+    // MP4. Its demuxer, on a seekable input without a fragment index (sidx
+    // or mfra), reads every moof of a fragmented file before it returns, one
+    // seek and read per fragment -- for a streamed track (Tidal's FLAC in
+    // fragmented MP4, ~100 fragments) seconds of fetching most of the file
+    // before the first sample. Told to ignore the index it stops after the
+    // first fragment and reads the rest as it plays. A seek past what it has
+    // read then lands on the last sample it knows and decodes forward from
+    // there (seekTo), which is exact and costs about what the open did.
+    // Matroska, AVI and FLV read the same flag as "do not use the index at
+    // all", so it is set for MP4 alone.
+    const AVInputFormat* input = nullptr;
+    int code = av_probe_input_buffer2(avio_, &input, "", nullptr, 0, 0);
+    if (code < 0)
+        return sourceOrElse(DecodeError::UnknownContainer, name + ": " + avErrorText(code));
+    const bool mp4 = std::strcmp(input->name, kMp4Demuxer) == 0;
+    if (mp4)
+        format_->flags |= AVFMT_FLAG_IGNIDX;
+
+    code = avformat_open_input(&format_, nullptr, input, nullptr);
     if (code < 0)
     {
         // On failure avformat_open_input frees the context and nulls the
@@ -315,8 +337,12 @@ Status<DecodeError> FfmpegDecoder::open(std::unique_ptr<IMediaSource> source)
                                                   : AudioFormat::validBits(mapping->type);
 
     // Omitted rather than guessed: a container that does not carry a duration
-    // is a stream whose length nobody knows yet.
-    if (stream->duration > 0 && stream->time_base.num > 0 && stream->time_base.den > 0)
+    // is a stream whose length nobody knows yet. So is a fragmented MP4 read
+    // without its index (above): no sample table in its moov (nb_frames 0),
+    // and a duration that is only the fragments read so far.
+    const bool unindexedFragments = mp4 && stream->nb_frames == 0;
+    if (!unindexedFragments && stream->duration > 0 && stream->time_base.num > 0 &&
+        stream->time_base.den > 0)
     {
         const int64_t frames =
             av_rescale_q(stream->duration, stream->time_base,

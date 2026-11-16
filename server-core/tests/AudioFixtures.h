@@ -58,6 +58,12 @@ std::vector<std::byte> encodeWav(const PcmFixture& fixture);
 // block is whatever is left.
 std::vector<std::byte> encodeFlac(const PcmFixture& fixture, uint32_t blockFrames = 4096);
 
+// The same FLAC frames in a fragmented MP4, as streaming services send FLAC:
+// an empty sample table in the moov, blocksPerFragment frames per moof/mdat,
+// no sidx and no mfra, and a duration of 0 in the headers.
+std::vector<std::byte> encodeFragmentedMp4Flac(const PcmFixture& fixture, uint32_t blockFrames,
+                                               uint32_t blocksPerFragment);
+
 // Reads decoded PCM back as right-aligned, sign-extended values, so a test
 // compares against PcmFixture::samples directly.
 std::vector<int32_t> readSamples(std::span<const std::byte> bytes,

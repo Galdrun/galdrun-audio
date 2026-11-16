@@ -15,6 +15,7 @@ ZoneManager::ZoneManager(AudioMemory& memory, const SharedPlanner& planner,
     timing_.minimumStartBufferNs = defaults_.start.minimumStartBufferNs;
     timing_.readyTimeoutNs = defaults_.start.readyTimeoutNs;
     timing_.startDelayNs = defaults_.start.startDelayNs;
+    timing_.pauseDelayNs = defaults_.start.pauseDelayNs;
     timing_.seekFlushLeadNs = defaults_.seekFlushLeadNs;
     timing_.seekFillLeadNs = defaults_.seekFillLeadNs;
 }
@@ -63,6 +64,7 @@ Result<std::shared_ptr<Zone>, ZoneError> ZoneManager::create(const ZoneId& id)
         settings.start.minimumStartBufferNs = timing_.minimumStartBufferNs;
         settings.start.readyTimeoutNs = timing_.readyTimeoutNs;
         settings.start.startDelayNs = timing_.startDelayNs;
+        settings.start.pauseDelayNs = timing_.pauseDelayNs;
         settings.seekFlushLeadNs = timing_.seekFlushLeadNs;
         settings.seekFillLeadNs = timing_.seekFillLeadNs;
     }

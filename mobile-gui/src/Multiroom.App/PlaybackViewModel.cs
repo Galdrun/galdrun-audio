@@ -22,6 +22,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
     private ItemStatus? _marks;
     private CancellationTokenSource? _markRead;
     private int _markVersion;
+    private readonly Dictionary<string, (DateTimeOffset End, long Sampled, int Seconds)> _sleepDeadlines = [];
     public string? PreferredZone { get; set; }
     public PlaybackViewModel(Func<Func<MultiroomClient, CancellationToken, Task>, Task> execute, TimeProvider? time = null)
     { _execute = execute; _time = time ?? TimeProvider.System; }
@@ -100,8 +101,15 @@ public sealed partial class PlaybackViewModel : ObservableObject
                 _positionSamples[zone.Zone] = _time.GetTimestamp();
         foreach (var removed in _positionSamples.Keys.Where(name => !snapshot.Zones.Any(zone => zone.Zone == name)).ToArray())
             _positionSamples.Remove(removed);
+        // Each running sleep timer's deadline on this device's clock, taken when its end is first seen.
+        foreach (var zone in snapshot.Zones)
+            if (zone.SleepTimer is { Active: true, EndsAt: { } end })
+            { if (_sleepDeadlines.GetValueOrDefault(zone.Zone).End != end) _sleepDeadlines[zone.Zone] = (end, _time.GetTimestamp(), zone.SleepTimer.RemainingSeconds); }
+            else _sleepDeadlines.Remove(zone.Zone);
+        foreach (var removed in _sleepDeadlines.Keys.Where(name => !snapshot.Zones.Any(zone => zone.Zone == name)).ToArray())
+            _sleepDeadlines.Remove(removed);
         _snapshot = snapshot;
-        var names = snapshot.Zones.Select(z => z.Zone).ToArray();
+        var names =snapshot.Zones.Select(z => z.Zone).ToArray();
         if (!Zones.SequenceEqual(names)) Zones = names;
         var choices = snapshot.Zones.Select(z => new ZoneChoice(z.Zone, z.DisplayName)).ToArray();
         if (!ZoneChoices.SequenceEqual(choices)) ZoneChoices = choices;
@@ -174,8 +182,61 @@ public sealed partial class PlaybackViewModel : ObservableObject
         RefreshProgress();
     }
 
+    // The selected zone's sleep timer: minutes left (0: off), counted down here from the seconds the server
+    // answered, so the clocks need not agree.
+    public int SleepMinutesLeft { get; private set; }
+    public bool IsSleepActive => SleepMinutesLeft > 0;
+    public string SleepLabel => IsSleepActive ? $"Sleep timer: stops in {SleepMinutesLeft} min (tap: 10 minutes less, hold: off)"
+        : "Sleep timer off (tap: 60 minutes)";
+    private void RefreshSleep()
+    {
+        var left = SelectedZone is { } zone && _sleepDeadlines.TryGetValue(zone, out var timer)
+            ? (int)Math.Max(0, Math.Ceiling((timer.Seconds - _time.GetElapsedTime(timer.Sampled).TotalSeconds) / 60)) : 0;
+        if (left == SleepMinutesLeft) return;
+        SleepMinutesLeft = left;
+        foreach (var property in new[] { nameof(SleepMinutesLeft), nameof(IsSleepActive), nameof(SleepLabel) }) OnPropertyChanged(property);
+    }
+    // A tap starts it at 60 minutes; each further tap takes 10 off what is left (57 -> 50), down to off.
+    [RelayCommand] private Task Sleep() => SetSleepAsync(IsSleepActive ? (SleepMinutesLeft + 9) / 10 * 10 - 10 : 60);
+    [RelayCommand] private Task SleepOff() => IsSleepActive ? SetSleepAsync(0) : Task.CompletedTask;
+    private Task SetSleepAsync(int minutes)
+    {
+        var zone = SelectedZone;
+        return _execute(async (api, ct) =>
+        {
+            if (zone is null) return;
+            var timer = await api.SetSleepTimerAsync(zone, minutes, ct);
+            ct.ThrowIfCancellationRequested();
+            Apply(_snapshot with { Zones = _snapshot.Zones.Select(z => z.Zone == zone ? z with { SleepTimer = timer } : z).ToArray() });
+        });
+    }
+
+    // The zone plays while none of its devices is connected and one sleeps with Wake-on-LAN: the core woke it on
+    // play and it rejoins on its own, but nothing is heard until then. Shown at most WakeTimeout, in case it
+    // never comes back.
+    public static readonly TimeSpan WakeTimeout = TimeSpan.FromSeconds(90);
+    private string? _wakingZone;
+    private long _wakingSince;
+    // The last text stays while the pill fades out.
+    public string? WakingText { get; private set; }
+    public bool IsWaking { get; private set; }
+    private void RefreshWaking()
+    {
+        var rooms = _snapshot.Rooms.Where(r => r.Desired.Zone == SelectedZone).ToArray();
+        var asleep = rooms.Where(r => r.Actual is { Connected: false, PowerState: "sleep" }).ToArray();
+        var waiting = SelectedZone is not null && IsPlaying && asleep.Length > 0 && !rooms.Any(r => r.Actual?.Connected == true);
+        if (!waiting) _wakingZone = null;
+        else if (_wakingZone != SelectedZone) { _wakingZone = SelectedZone; _wakingSince = _time.GetTimestamp(); }
+        var text = waiting && _time.GetElapsedTime(_wakingSince) < WakeTimeout
+            ? $"Waking up {string.Join(", ", asleep.Select(r => r.DisplayName))}…" : null;
+        if (text is not null && text != WakingText) { WakingText = text; OnPropertyChanged(nameof(WakingText)); }
+        if ((text is not null) == IsWaking) return;
+        IsWaking = text is not null; OnPropertyChanged(nameof(IsWaking));
+    }
+
     public void RefreshProgress()
     {
+        RefreshSleep(); RefreshWaking();
         if (_scrubbing) return;
         var seconds = HasPosition ? Queue!.PositionMs!.Value / 1000d : 0;
         if (HasPosition && Queue?.Transport == QueueTransport.Playing)
@@ -294,8 +355,9 @@ public sealed partial class PlaybackViewModel : ObservableObject
     [RelayCommand] private Task PlayPauseAsync()
     {
         var zone = SelectedZone; var action = IsPlaying ? "pause" : "play";
-        // The server accepts play with every device off; nothing would be heard, so say why instead.
-        var silent = action == "play" && !_snapshot.Rooms.Any(r => r.Desired.Zone == zone && r.Actual?.Connected == true);
+        // The server accepts play with every device off; nothing would be heard, so say why instead. A device in
+        // deep sleep is not off: the core wakes it.
+        var silent = action == "play" && !_snapshot.Rooms.Any(r => r.Desired.Zone == zone && r.Actual?.CanPlay == true);
         return _execute(async (api, ct) =>
         {
             if (zone is null) return;
@@ -332,10 +394,27 @@ public sealed partial class PlaybackViewModel : ObservableObject
     [ObservableProperty, NotifyPropertyChangedFor(nameof(IsPreviousPending)), NotifyPropertyChangedFor(nameof(IsNextPending))] private string? _pendingTransport;
     public bool IsPreviousPending => PendingTransport == "previous";
     public bool IsNextPending => PendingTransport == "next";
+    // Previous goes back to the start of the track once more than this of it has played, else to the one before.
+    public static readonly TimeSpan RestartAfter = TimeSpan.FromSeconds(5);
     [RelayCommand] private async Task TransportAsync(string action)
     {
         PendingTransport = action;
-        try { await _execute(async (api, ct) => { if (SelectedZone is { } zone) await api.TransportAsync(zone, action, null, ct); }); }
+        var restart = action == "previous" && CanSeekCurrent && ProgressSeconds > RestartAfter.TotalSeconds ? Current?.Id : null;
+        try
+        {
+            await _execute(async (api, ct) =>
+            {
+                if (SelectedZone is not { } zone) return;
+                if (restart is not { } item) { await api.TransportAsync(zone, action, null, ct); return; }
+                var response = await api.SeekAsync(zone, item, 0, ct);
+                ct.ThrowIfCancellationRequested();
+                // At once, not at the next event: the position jumps back as the button is pressed.
+                QueueState? queue = null;
+                try { queue = response?.Deserialize<QueueState>(MultiroomClient.Json); } catch (JsonException) { }
+                if (queue is not null && queue.Zone == zone && SelectedZone == zone)
+                    Apply(_snapshot with { Zones = _snapshot.Zones.Select(z => z.Zone == zone ? z with { Queue = queue } : z).ToArray() });
+            });
+        }
         finally { PendingTransport = null; }
     }
     [RelayCommand] private Task StartItemAsync() => _execute(async (api, ct) =>

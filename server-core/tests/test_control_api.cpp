@@ -1442,7 +1442,8 @@ MULTIROOM_TEST(control_api_reads_and_changes_the_live_audio_settings)
     json::Value settings = caller.request(R"({"command":"audio.settings"})");
     CHECK(isOk(settings));
     CHECK_EQ(settings.find("audio")->find("startDelayMs")->asInt(), int64_t(1000));
-    CHECK_EQ(settings.find("live")->size(), size_t(6));
+    CHECK_EQ(settings.find("live")->size(), size_t(7));
+    CHECK_EQ(settings.find("audio")->find("pauseDelayMs")->asInt(), int64_t(100));
     CHECK(settings.find("resamplers") != nullptr && settings.find("resamplers")->isArray());
 
     CHECK(isOk(caller.request(R"({"command":"zone.create","params":{"zone":"living"}})")));
@@ -1463,6 +1464,14 @@ MULTIROOM_TEST(control_api_reads_and_changes_the_live_audio_settings)
              std::string("invalidArgument"));
     CHECK_EQ(saves, 1);
     CHECK_EQ(rig.zones->timing().startDelayNs, uint64_t(500) * 1000000ULL);
+
+    // The pause delay is live on its own, and kept.
+    CHECK(isOk(caller.request(R"({"command":"audio.configure","params":{"pauseDelayMs":40}})")));
+    CHECK_EQ(saved.pauseDelayMs, uint32_t(40));
+    CHECK_EQ(rig.zones->timing().pauseDelayNs, uint64_t(40) * 1000000ULL);
+    CHECK_EQ(rig.zones->timing().startDelayNs, uint64_t(500) * 1000000ULL);
+    CHECK_EQ(errorOf(caller.request(R"({"command":"audio.configure","params":{"pauseDelayMs":9}})")),
+             std::string("invalidArgument"));
 }
 
 MULTIROOM_TEST(control_api_checks_and_changes_the_audio_memory_limit_while_zones_play)

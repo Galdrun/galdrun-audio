@@ -56,6 +56,8 @@ StartScheduler::StartScheduler(StartSchedulerSettings settings) : settings_(sett
     // settings; these are the floors that keep the arithmetic below honest.
     if (settings_.startDelayNs == 0)
         settings_.startDelayNs = 1;
+    if (settings_.pauseDelayNs == 0)
+        settings_.pauseDelayNs = 1;
     if (settings_.startAttempts == 0)
         settings_.startAttempts = 1;
 }
@@ -124,12 +126,13 @@ void StartScheduler::setLatency(const ClientId& client, uint64_t latencyNs)
 }
 
 void StartScheduler::setTiming(uint64_t minimumStartBufferNs, uint64_t readyTimeoutNs,
-                               uint64_t startDelayNs)
+                               uint64_t startDelayNs, uint64_t pauseDelayNs)
 {
     settings_.minimumStartBufferNs = minimumStartBufferNs;
     settings_.readyTimeoutNs = readyTimeoutNs;
-    // The constructor's floor, for the constructor's reason.
+    // The constructor's floors, for the constructor's reason.
     settings_.startDelayNs = std::max<uint64_t>(startDelayNs, 1);
+    settings_.pauseDelayNs = std::max<uint64_t>(pauseDelayNs, 1);
 }
 
 std::vector<ClientId> StartScheduler::takeRejoins()
@@ -565,11 +568,11 @@ std::vector<RoomCommand> StartScheduler::pause(uint64_t nowNs, TimelineNs& posit
     if (transport_ != TransportState::Playing)
         return commands;
 
-    // One position for the whole house (section 37), a start delay ahead of
-    // what is audible now for the same reason a START_AT is: the message has a
-    // LAN to cross and every room has to place it on its own frame axis before
-    // it comes round.
-    const uint64_t frozen = std::to_underlying(playheadAt(nowNs)) + settings_.startDelayNs;
+    // One position for the whole house (section 37), a pause delay ahead of
+    // what is audible now: the message has a LAN to cross and every room has
+    // to place it on its own frame axis before it comes round. Shorter than a
+    // start's lead, because a room it reaches late still pauses, at once.
+    const uint64_t frozen = std::to_underlying(playheadAt(nowNs)) + settings_.pauseDelayNs;
 
     for (auto& entry : rooms_)
     {
@@ -581,7 +584,7 @@ std::vector<RoomCommand> StartScheduler::pause(uint64_t nowNs, TimelineNs& posit
         command.kind = RoomCommandKind::Pause;
         command.client = entry.first;
         command.at.timelineNs = frozen;
-        command.at.serverTimeNs = nowNs + settings_.startDelayNs;
+        command.at.serverTimeNs = nowNs + settings_.pauseDelayNs;
         commands.push_back(command);
 
         room.state = RoomStartState::Paused;

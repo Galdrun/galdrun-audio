@@ -97,7 +97,8 @@ public sealed record CoreAudioPatch(
     uint? StartDelayMs = null,
     uint? SeekFlushLeadMs = null,
     uint? SeekFillLeadMs = null,
-    uint? MemoryLimitMb = null);
+    uint? MemoryLimitMb = null,
+    uint? PauseDelayMs = null);
 
 // The server core to use by its beacon id, or null for core.host/core.port.
 public sealed record CoreSelectionRequest(string? CoreId);

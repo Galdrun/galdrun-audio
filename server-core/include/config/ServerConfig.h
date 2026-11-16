@@ -70,6 +70,11 @@ struct AudioConfig
     uint32_t clientReadyTimeoutMs = 5000;
     uint32_t startDelayMs = 1000;
 
+    // How far ahead of now a PAUSE_AT is placed: what a pause costs before it
+    // is heard. It only has to reach every room; one that gets it late pauses
+    // at once (StartSchedulerSettings::pauseDelayNs).
+    uint32_t pauseDelayMs = 100;
+
     // Phase 26's seek, and the two leads it places its positions with. The cut
     // is `seekFlushLeadMs` past what is audible, which is the time a FLUSH has
     // to reach every room; the seeked audio is heard `seekFillLeadMs` after

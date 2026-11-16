@@ -134,7 +134,9 @@ public sealed record CoreAudioSettings(
     uint ConvergenceLimitPpm,
     string Resampler,
     string AudioControl,
-    string Dither);
+    string Dither,
+    // 0 from a core that predates it, which paused a start delay ahead.
+    uint PauseDelayMs = 0);
 
 // Changed is false when the room already reported this buffer size, and nothing
 // was relayed.

@@ -149,6 +149,77 @@ private:
     uint64_t position_ = 0;
 };
 
+// The bytes in memory, remembering the furthest one read: what an open costs
+// a source that has to fetch each byte it is asked for.
+class FurthestReadSource final : public IMediaSource
+{
+public:
+    explicit FurthestReadSource(std::vector<std::byte> bytes)
+        : bytes_(std::move(bytes)), name_("furthest")
+    {
+    }
+
+    const std::string& describe() const noexcept override { return name_; }
+    bool seekable() const noexcept override { return true; }
+    std::optional<uint64_t> sizeBytes() const noexcept override { return bytes_.size(); }
+    uint64_t position() const noexcept override { return position_; }
+    uint64_t furthest() const noexcept { return furthest_; }
+
+    Result<size_t, MediaSourceError> read(std::span<std::byte> buffer) override
+    {
+        const size_t count =
+            std::min(buffer.size(), static_cast<size_t>(bytes_.size() - position_));
+        std::memcpy(buffer.data(), bytes_.data() + position_, count);
+        position_ += count;
+        furthest_ = std::max(furthest_, position_);
+        return count;
+    }
+
+    Status<MediaSourceError> seek(uint64_t offset) override
+    {
+        if (offset > bytes_.size())
+            return fail(MediaSourceError::OutOfRange, name_);
+        position_ = offset;
+        return {};
+    }
+
+private:
+    std::vector<std::byte> bytes_;
+    std::string name_;
+    uint64_t position_ = 0;
+    uint64_t furthest_ = 0;
+};
+
+// `count` frames from where the decoder is, as samples.
+std::vector<int32_t> decodeFrames(FfmpegDecoder& decoder, uint64_t expectedFirst, uint32_t count)
+{
+    const AudioFormat format = decoder.info().format;
+    std::vector<std::byte> buffer(static_cast<size_t>(count) * format.bytesPerFrame());
+    std::vector<int32_t> samples;
+    bool first = true;
+    while (samples.size() < static_cast<size_t>(count) * format.channels)
+    {
+        auto span = decoder.decode(buffer);
+        CHECK_OK(span);
+        if (!span)
+            break;
+        if (first)
+            CHECK_EQ(static_cast<uint64_t>(span->firstFrame), expectedFirst);
+        first = false;
+        auto values = multiroomtest::readSamples(std::span<const std::byte>(buffer).first(span->byteCount),
+                                                 format.sampleType);
+        samples.insert(samples.end(), values.begin(), values.end());
+    }
+    samples.resize(std::min(samples.size(), static_cast<size_t>(count) * format.channels));
+    return samples;
+}
+
+std::vector<int32_t> fixtureFrames(const multiroomtest::PcmFixture& fixture, uint64_t from, uint32_t count)
+{
+    const auto begin = fixture.samples.begin() + static_cast<std::ptrdiff_t>(from * fixture.channels);
+    return {begin, begin + static_cast<std::ptrdiff_t>(static_cast<size_t>(count) * fixture.channels)};
+}
+
 } // namespace
 
 // --- the matrix the roadmap asks for ---------------------------------------
@@ -248,6 +319,77 @@ MULTIROOM_TEST(the_container_duration_is_reported_when_it_is_known)
     CHECK_OK(decoder.open(memorySource(multiroomtest::encodeFlac(fixture), "ramp.flac")));
     CHECK(decoder.info().totalFrames.has_value());
     CHECK_EQ(*decoder.info().totalFrames, 7777u);
+}
+
+// --- fragmented MP4, as streaming services send FLAC -------------------------
+//
+// 30 fragments of four 4096-frame blocks, with no index: FFmpeg's MP4
+// demuxer would read every fragment's header to build one before the first
+// sample, which over HTTP is most of the file fetched before playback.
+
+namespace {
+
+constexpr uint32_t kFragmentBlock = 4096;
+constexpr uint32_t kBlocksPerFragment = 4;
+constexpr uint32_t kFragments = 30;
+
+multiroomtest::PcmFixture fragmentedFixture()
+{
+    return multiroomtest::makeRamp(44100, 2, 16, kFragmentBlock * kBlocksPerFragment * kFragments);
+}
+
+std::vector<std::byte> fragmentedMp4(const multiroomtest::PcmFixture& fixture)
+{
+    return multiroomtest::encodeFragmentedMp4Flac(fixture, kFragmentBlock, kBlocksPerFragment);
+}
+
+} // namespace
+
+MULTIROOM_TEST(a_fragmented_mp4_decodes_to_the_samples_that_were_written)
+{
+    const auto fixture = fragmentedFixture();
+    const auto decoded = decodeAll(memorySource(fragmentedMp4(fixture), "ramp.mp4"), 1000);
+    checkAgainstFixture(decoded, fixture);
+    CHECK_EQ(decoded.info.containerName, std::string("mov,mp4,m4a,3gp,3g2,mj2"));
+    CHECK_EQ(decoded.info.codecName, std::string("flac"));
+}
+
+MULTIROOM_TEST(a_fragmented_mp4_opens_from_its_start_without_reading_every_fragment)
+{
+    const auto fixture = fragmentedFixture();
+    const auto bytes = fragmentedMp4(fixture);
+    const uint64_t size = bytes.size();
+    auto source = std::make_unique<FurthestReadSource>(bytes);
+    const FurthestReadSource& seen = *source;
+
+    FfmpegDecoder decoder;
+    CHECK_OK(decoder.open(std::move(source)));
+
+    // Read as far as the first fragments, not to the last moof.
+    CHECK(seen.furthest() < size / 4);
+    // Its length is unknown until played: the headers say 0, and the
+    // fragments read so far are not the track.
+    CHECK(!decoder.info().totalFrames.has_value());
+}
+
+MULTIROOM_TEST(a_fragmented_mp4_seeks_exactly_past_the_fragments_it_has_read_and_back)
+{
+    const auto fixture = fragmentedFixture();
+    FfmpegDecoder decoder;
+    CHECK_OK(decoder.open(memorySource(fragmentedMp4(fixture), "ramp.mp4")));
+
+    const uint64_t far = static_cast<uint64_t>(kFragmentBlock) * kBlocksPerFragment * 25 + 1234;
+    CHECK_OK(decoder.seekTo(far));
+    CHECK(decodeFrames(decoder, far, 3000) == fixtureFrames(fixture, far, 3000));
+
+    // Back into what has been read, and into the first fragment.
+    const uint64_t back = static_cast<uint64_t>(kFragmentBlock) * kBlocksPerFragment * 3 + 77;
+    CHECK_OK(decoder.seekTo(back));
+    CHECK(decodeFrames(decoder, back, 3000) == fixtureFrames(fixture, back, 3000));
+    CHECK_OK(decoder.seekTo(5));
+    CHECK(decodeFrames(decoder, 5, 100) == fixtureFrames(fixture, 5, 100));
+
+    CHECK_ERR(decoder.seekTo(fixture.frames + 10), DecodeError::OffsetOutOfRange);
 }
 
 // A decoded frame is routinely larger than one block, and a decoder that

@@ -187,27 +187,52 @@ public sealed partial class QueueEngineTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Next_is_one_stop_one_clear_of_the_staged_source_one_stage_and_one_play()
+    public async Task Next_plays_the_staged_source_with_one_stop_and_one_play()
     {
         await PlayingAsync("A", "B", "C");
         var queue = Queue();
+        var b = Staged()[^1];
+        Assert.Equal("B", b.Title);
         var before = _core.All.Count;
+
+        var next = Ok(await _engine.NextAsync(Zone, Ct));
+
+        Assert.Equal([("zone.stop", """{"zone":"living"}"""), ("zone.play", """{"zone":"living"}""")], Sent(before));
+        Assert.Equal(queue.Items[1].Id, next.Current);
+        Assert.Null(next.NowPlaying);
+        // B is served as staged; A is retired.
+        Assert.Equal([new Uri(b.MediaUri)], _media.Live);
+
+        // B opened: C is staged behind it.
+        await EmitAsync($$"""{"event":"zone.sourceNeeded","zone":"living","afterSourceId":"{{b.SourceId}}"}""");
+        await Until(() => Staged()[^1].Title == "C");
+    }
+
+    [Fact]
+    public async Task Next_stages_again_when_the_core_had_opened_the_staged_source_already()
+    {
+        await PlayingAsync("A", "B", "C");
+        var queue = Queue();
+        var old = Staged()[^1];
+        var before = _core.All.Count;
+        // Opened in the lookahead before the stop: nothing is staged to play.
+        _core.Refuse("zone.play", "unavailable", "zone living has no source to play", once: true);
 
         var next = Ok(await _engine.NextAsync(Zone, Ct));
 
         var b = Staged()[^1];
         Assert.Equal("B", b.Title);
+        Assert.NotEqual(old.SourceId, b.SourceId);
         Assert.Equal(
             [
                 ("zone.stop", """{"zone":"living"}"""),
+                ("zone.play", """{"zone":"living"}"""),
                 ("source.clearStaged", """{"zone":"living"}"""),
                 ("source.stage", $$"""{"zone":"living","sourceId":"{{b.SourceId}}","mediaUri":"{{b.MediaUri}}","trackId":"fake:t1","title":"B"}"""),
                 ("zone.play", """{"zone":"living"}"""),
             ],
             Sent(before));
         Assert.Equal(queue.Items[1].Id, next.Current);
-        Assert.Null(next.NowPlaying);
-        // Only the new B is served; the old A and B are retired.
         Assert.Equal([new Uri(b.MediaUri)], _media.Live);
     }
 
@@ -962,6 +987,16 @@ public sealed partial class QueueEngineTests : IAsyncDisposable
         public override long TimestampFrequency => TimeSpan.TicksPerSecond;
 
         public override long GetTimestamp() => Interlocked.Read(ref _ticks);
+
+        // Timers waiting to fire, so a test can wait for a loop to arm its next one.
+        public int Pending
+        {
+            get
+            {
+                lock (_lock)
+                    return _timers.Count;
+            }
+        }
 
         public void Advance(TimeSpan by)
         {

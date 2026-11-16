@@ -31,6 +31,7 @@ StartSchedulerSettings defaults()
     settings.minimumStartBufferNs = 1000 * kMs;
     settings.readyTimeoutNs = 5 * kSecond;
     settings.startDelayNs = 1 * kSecond;
+    settings.pauseDelayNs = 250 * kMs;
     settings.ackTimeoutNs = 1 * kSecond;
     settings.startAttempts = 3;
     settings.minClockExchanges = 4;
@@ -634,14 +635,16 @@ MULTIROOM_TEST(a_pause_names_one_position_for_the_house_and_freezes_the_playhead
     TimelineNs position{};
     const std::vector<RoomCommand> paused = scheduler.pause(pauseAt, position);
 
-    // Section 37: the same logical position in every room, a start delay
-    // ahead of what is audible, because the message has the same LAN to cross
-    // that a START_AT has.
+    // Section 37: the same logical position in every room, a pause delay
+    // ahead of what is audible -- the message has a LAN to cross -- and its
+    // own, shorter than a start's.
+    const uint64_t frozen = 3 * kSecond + 250 * kMs;
     CHECK_EQ(paused.size(), size_t{2});
     CHECK(paused.front().kind == RoomCommandKind::Pause);
-    CHECK_EQ(std::to_underlying(position), 4 * kSecond);
-    CHECK_EQ(paused.front().at.timelineNs, 4 * kSecond);
-    CHECK_EQ(paused.back().at.timelineNs, 4 * kSecond);
+    CHECK_EQ(std::to_underlying(position), frozen);
+    CHECK_EQ(paused.front().at.timelineNs, frozen);
+    CHECK_EQ(paused.back().at.timelineNs, frozen);
+    CHECK_EQ(paused.front().at.serverTimeNs, pauseAt + 250 * kMs);
     CHECK_EQ(paused.front().at.serverTimeNs, paused.back().at.serverTimeNs);
     CHECK_EQ(scheduler.pausesSent(), uint64_t{2});
 
@@ -650,7 +653,32 @@ MULTIROOM_TEST(a_pause_names_one_position_for_the_house_and_freezes_the_playhead
     CHECK(scheduler.transport() == TransportState::Paused);
     CHECK(scheduler.started());
     CHECK(scheduler.roomState(kitchen) == RoomStartState::Paused);
-    CHECK_EQ(std::to_underlying(scheduler.playheadAt(pauseAt + 10 * kSecond)), 4 * kSecond);
+    CHECK_EQ(std::to_underlying(scheduler.playheadAt(pauseAt + 10 * kSecond)), frozen);
+}
+
+MULTIROOM_TEST(the_pause_delay_changes_live_and_leaves_the_start_delay_alone)
+{
+    StartScheduler scheduler(defaults());
+    const ClientId kitchen("kitchen");
+    const ClientId living("living");
+    const uint64_t startedAt = startTwoRooms(scheduler, kitchen, living);
+
+    scheduler.setTiming(1000 * kMs, 5 * kSecond, 1 * kSecond, 40 * kMs);
+    const uint64_t pauseAt = startedAt + 2 * kSecond;
+    TimelineNs position{};
+    const std::vector<RoomCommand> paused = scheduler.pause(pauseAt, position);
+    CHECK_EQ(std::to_underlying(position), 2 * kSecond + 40 * kMs);
+    CHECK_EQ(paused.front().at.serverTimeNs, pauseAt + 40 * kMs);
+
+    // The resume is a start, a start delay ahead.
+    scheduler.resume();
+    const uint64_t held = std::to_underlying(position);
+    scheduler.onBufferStatus(kitchen, buffered(held, 1500 * kMs), 20);
+    scheduler.onBufferStatus(living, buffered(held, 1500 * kMs), 20);
+    const uint64_t resumeAt = pauseAt + 1 * kSecond;
+    const std::vector<RoomCommand> again = scheduler.evaluate(resumeAt);
+    CHECK_EQ(again.size(), size_t{2});
+    CHECK_EQ(again.front().start.serverTimeNs, resumeAt + 1 * kSecond);
 }
 
 MULTIROOM_TEST(a_resume_starts_at_exactly_the_position_the_pause_named)

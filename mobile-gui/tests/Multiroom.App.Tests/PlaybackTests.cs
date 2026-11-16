@@ -10,6 +10,32 @@ public sealed class PlaybackTests
         new("kitchen", Queue: new("kitchen", [new(3, new RadioStation("webradio", "station:1", "Radio"))], RepeatMode.Off, false, QueueTransport.Playing, Current: 3), StreamTitle: "Live artist")], []);
 
     [Fact]
+    public async Task Sleep_timer_starts_at_60_steps_down_by_10_and_switches_off()
+    {
+        var sent = new List<string>();
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (request, ct) =>
+        {
+            var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(ct);
+            sent.Add($"{request.Method} {request.RequestUri!.AbsolutePath} {body}".Trim());
+            var minutes = body.Length == 0 ? 0 : JsonDocument.Parse(body).RootElement.GetProperty("minutes").GetInt32();
+            return FakeHttp.Json(minutes == 0 ? "{\"active\":false,\"remainingSeconds\":0}"
+                : $"{{\"active\":true,\"endsAt\":\"{new DateTimeOffset(2026, 11, 16, 22, 0, 0, TimeSpan.Zero).AddMinutes(minutes):O}\",\"remainingSeconds\":{minutes * 60 - 180}}}");
+        }));
+        var model = new PlaybackViewModel(action => action(api, TestContext.Current.CancellationToken)); model.Apply(Snapshot());
+        Assert.False(model.IsSleepActive);
+        await model.SleepCommand.ExecuteAsync(null);
+        Assert.Equal(57, model.SleepMinutesLeft); // 60 asked, 57 left as the server answered
+        await model.SleepCommand.ExecuteAsync(null);
+        Assert.Equal(47, model.SleepMinutesLeft);
+        await model.SleepOffCommand.ExecuteAsync(null);
+        Assert.False(model.IsSleepActive);
+        Assert.Equal(["PUT /api/v1/zones/living/sleep-timer {\"minutes\":60}", "PUT /api/v1/zones/living/sleep-timer {\"minutes\":50}",
+            "DELETE /api/v1/zones/living/sleep-timer"], sent);
+        // The other zone has its own (none).
+        model.SelectedZone = "kitchen"; Assert.False(model.IsSleepActive);
+    }
+
+    [Fact]
     public void Zones_show_their_names_and_are_selected_by_id()
     {
         var vm = new PlaybackViewModel(_ => throw new InvalidOperationException("Unexpected network"));

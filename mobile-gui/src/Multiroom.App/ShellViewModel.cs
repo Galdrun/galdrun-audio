@@ -24,6 +24,9 @@ public partial class ShellViewModel : ObservableObject
     // history of its own.
     private string? _beforeBrowse;
     private HomeShelf? _beforeShelf;
+    // The pages left on the way here, oldest first, for back. Opening one of them again returns to it, so a page
+    // is in it once at most. Home is where it starts: back on Home leaves the app.
+    private readonly List<string> _history = [];
     public IReadOnlyList<string> Pages { get; } = ["Home", "Sources", "Search", "Browse", "Playlists", "Favourites", "Recommendations", "Queue", "Zones", "Rooms", "Diagnostics", "Now Playing", "Volume", "Servers", "Server"];
     // The menu's pages: Browse is reached from Sources, Home and Search.
     public IReadOnlyList<string> MenuPages { get; } = ["Home", "Sources", "Search", "Playlists", "Favourites", "Recommendations", "Queue", "Zones", "Rooms", "Diagnostics", "Now Playing", "Volume", "Servers", "Server"];
@@ -80,7 +83,7 @@ public partial class ShellViewModel : ObservableObject
     [ObservableProperty] private string _token = "";
     [ObservableProperty] private string _connection = "Not connected";
     [ObservableProperty] private string _error = "";
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(ShowTopProgress)), NotifyPropertyChangedFor(nameof(ShowArtworkProgress))] private bool _isBusy;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(ShowTopProgress))] private bool _isBusy;
     [ObservableProperty] private bool _isWide;
     [ObservableProperty] private bool _isCompact;
     [ObservableProperty] private bool _connected;
@@ -99,8 +102,8 @@ public partial class ShellViewModel : ObservableObject
     public bool IsNowPlaying => SelectedPage == "Now Playing";
     // An album page starts with its cover: no brand, connection, heading or refresh above it.
     public bool ShowContentHeader => !IsHome && !IsNowPlaying && !(IsBrowser && Browser.IsDetail);
+    // Not on Now Playing: its transport buttons and the waking pill show what it waits for.
     public bool ShowTopProgress => IsBusy && _busyShown && !IsNowPlaying;
-    public bool ShowArtworkProgress => IsBusy && IsNowPlaying;
     public bool IsVolume => SelectedPage == "Volume";
     // The chooser pages are pure pickers/forms: the bottom bar never shows
     // there, connected or not.
@@ -165,6 +168,13 @@ public partial class ShellViewModel : ObservableObject
     partial void OnSelectedProviderChanged(ProviderView? value) => OnPropertyChanged(nameof(CanBrowseProvider));
     partial void OnProvidersChanged(IReadOnlyList<ProviderView> value) => OnPropertyChanged(nameof(NoSources));
     partial void OnIsWideChanged(bool value) => OnPropertyChanged(nameof(ShowSideQueue));
+    partial void OnSelectedPageChanged(string? oldValue, string newValue)
+    {
+        var index = _history.LastIndexOf(newValue);
+        if (newValue == "Home") _history.Clear();
+        else if (index >= 0) _history.RemoveRange(index, _history.Count - index);
+        else if (oldValue is not null) _history.Add(oldValue);
+    }
     partial void OnSelectedPageChanged(string value)
     {
         if (value != "Browse") { _beforeBrowse = null; _beforeShelf = null; }
@@ -173,7 +183,7 @@ public partial class ShellViewModel : ObservableObject
         foreach (var property in new[] { nameof(Heading), nameof(IsHome), nameof(IsSettings), nameof(IsSources), nameof(IsQueue),
             nameof(IsZones), nameof(IsBrowser), nameof(IsSearch), nameof(IsNowPlaying), nameof(ShowSideQueue),
             nameof(IsCollections), nameof(IsRooms), nameof(IsDiagnostics), nameof(IsVolume), nameof(IsServers),
-            nameof(IsSetup), nameof(ShowZoneBar), nameof(ShowContentHeader), nameof(ShowTopProgress), nameof(ShowArtworkProgress) }) OnPropertyChanged(property);
+            nameof(IsSetup), nameof(ShowZoneBar), nameof(ShowContentHeader), nameof(ShowTopProgress) }) OnPropertyChanged(property);
         if (IsCollections) Collections.Page = value;
         if (!IsHome) { Home.OpenShelf = null; Home.CloseSheet(); }
         if (IsServers && !Servers.IsScanning && Servers.Servers.Count == 0) _ = Servers.ScanAsync();
@@ -198,6 +208,7 @@ public partial class ShellViewModel : ObservableObject
         if (IsBrowser && Browser.CanBack) { Browser.BackCommand.Execute(null); return true; }
         if (IsBrowser && _beforeBrowse is { } opener) { var shelf = _beforeShelf; SelectedPage = opener; Home.OpenShelf = shelf; return true; }
         if (IsHome && Home.IsShelfOpen) { Home.CloseShelfCommand.Execute(null); return true; }
+        if (_history.Count > 0) { SelectedPage = _history[^1]; return true; }
         return false;
     }
 

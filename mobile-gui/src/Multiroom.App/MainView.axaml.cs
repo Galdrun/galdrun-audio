@@ -35,7 +35,25 @@ public partial class MainView : UserControl
         AddHandler(PointerReleasedEvent, (_, e) =>
         { if (e.InitialPressMouseButton is MouseButton.Right or MouseButton.XButton1 && !contextTaken && _model.GoBack()) e.Handled = true; },
             RoutingStrategies.Bubble, handledEventsToo: true);
+        // A touch swipe rightwards from the left edge is back too (a mouse has the right click). From the edge
+        // only, so the cover's zone swipe and the queue rows' swipes keep theirs.
+        Point? swipeStart = null; IPointer? swipePointer = null;
+        AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            var at = e.GetPosition(this);
+            if (e.Pointer.Type != PointerType.Mouse && at.X <= BackEdge) { swipeStart = at; swipePointer = e.Pointer; }
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerReleasedEvent, (_, e) =>
+        {
+            if (swipeStart is not { } start || swipePointer != e.Pointer) return;
+            var delta = e.GetPosition(this) - start;
+            swipeStart = null; swipePointer = null;
+            if (delta.X < BackSwipe || delta.X < Math.Abs(delta.Y) * 1.5 || !_model.GoBack()) return;
+            e.Handled = true;
+            e.Pointer.Capture(null); // The swipe must not also activate what it started on.
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
     }
+    private const double BackEdge = 24, BackSwipe = 60;
     private void SystemBack(object? sender, RoutedEventArgs e) { if (_model.GoBack()) e.Handled = true; }
     // The menus show the page, never set it on their own: Browse is not among them (OneWay selection).
     private void PagePicked(object? sender, SelectionChangedEventArgs e)

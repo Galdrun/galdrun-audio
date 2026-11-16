@@ -117,6 +117,23 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
   tool does. Many MP3s end in a last frame cut short by padding and an
   ID3v1 tag; failing there marked a fully played track as failed, and a
   queue repeating that one track then had nothing left to play.
+- `ClientOutput` paces on BUFFER_STATUS only when the report lies on its
+  stream (playhead at or after the last join/move, end not past what was
+  sent). A room moved before it was started keeps the old line, and reports
+  it full, until the first moved packet arrives; counting that report held
+  the first packet back, and the zone hung (prev pressed rapidly).
+- A PAUSE_AT is placed `audio.pauseDelayMs` (default 100) ahead, not the
+  start's `startDelayMs`: a pause only has to reach every room, and a room
+  it reaches late pauses at its next callback (client `scheduleEnd`) instead
+  of refusing it; the resume's barrier realigns the rooms. Both are live
+  `audio.configure` keys.
+- `FfmpegDecoder` opens MP4 (and only MP4) with `AVFMT_FLAG_IGNIDX`. Without
+  it, FFmpeg's MP4 demuxer reads every `moof` of a seekable fragmented file
+  with no `sidx`/`mfra` before returning: for Tidal's FLAC in fragmented MP4
+  that was ~3 s of fetching most of the file per open. A seek past the
+  fragments read lands on the last known sample and `seekTo` decodes forward
+  (exact). Such a file reports no `totalFrames` (its `mdhd` duration is 0 and
+  FFmpeg ignores `mehd`). Matroska/AVI/FLV read the flag as "no index at all".
 - `FfmpegDecoder` sets `protocol_whitelist` to `none`: all media bytes come
   through the custom AVIO source, and a nested demuxer (concat, playlists)
   inherits the list, so media content cannot open local files or URLs.
