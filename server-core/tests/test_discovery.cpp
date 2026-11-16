@@ -6,6 +6,7 @@
 
 #include "ManualClock.h"
 #include "TestSupport.h"
+#include "discovery/ClientControl.h"
 #include "discovery/DiscoveredClients.h"
 #include "discovery/DiscoveryListener.h"
 #include "matp/CoreBeacon.h"
@@ -273,4 +274,54 @@ MULTIROOM_TEST(core_beacon_carries_what_the_high_end_server_needs)
     CHECK_EQ(text, std::string("0.1.0"));
     CHECK_EQ(root.find("controlPort")->asInt(), 4713);
     CHECK_EQ(root.find("protocolVersion")->asInt(), static_cast<int64_t>(matp::kProtocolVersion));
+}
+
+MULTIROOM_TEST(client_control_reaches_a_local_client_bound_to_one_interface_alone)
+{
+    // A client on this machine whose control API is bound to its LAN address
+    // does not answer on loopback; the address it advertises still reaches it.
+    net::Library library;
+    CHECK(library.isReady());
+    const std::string own = localAddressToward("192.0.2.1");
+    if (own.empty() || own.rfind("127.", 0) == 0)
+        return; // no interface but loopback to bind to
+
+    const net::Socket listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    CHECK(listener != net::kInvalidSocket);
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    CHECK(::inet_pton(AF_INET, own.c_str(), &address.sin_addr) == 1);
+    CHECK(::bind(listener, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0);
+    CHECK(::listen(listener, 1) == 0);
+    uint16_t port = 0;
+    CHECK(net::boundPort(listener, port));
+
+    std::thread client([listener] {
+        const net::Socket accepted = ::accept(listener, nullptr, nullptr);
+        if (accepted == net::kInvalidSocket)
+            return;
+        char buffer[512];
+        std::string request;
+        while (request.find('\n') == std::string::npos)
+        {
+            const int count = net::receive(accepted, buffer, sizeof(buffer));
+            if (count <= 0)
+                break;
+            request.append(buffer, static_cast<size_t>(count));
+        }
+        const std::string answer = "{\"ok\":true}\n";
+        net::transmit(accepted, answer.data(), static_cast<int>(answer.size()));
+        net::closeSocket(accepted);
+    });
+
+    std::string response;
+    std::string error;
+    const bool sent = sendClientControl(own, port, "ping", json::Value::makeObject(), 2000,
+                                        response, error);
+    net::shutdownSocket(listener); // wakes an accept nobody connected to
+    net::closeSocket(listener);
+    client.join();
+    CHECK_EQ(error, std::string());
+    CHECK(sent);
+    CHECK_EQ(response, std::string("{\"ok\":true}"));
 }

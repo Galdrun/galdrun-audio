@@ -3,6 +3,7 @@
 #include "net/Socket.h"
 #include "util/Json.h"
 
+#include <algorithm>
 #include <chrono>
 
 namespace multiroom {
@@ -57,6 +58,47 @@ bool isOwnAddress(const sockaddr_in& target)
     return own;
 }
 
+// A connected socket to `target`, or kInvalidSocket with `why` set.
+net::Socket connectTo(const sockaddr_in& target, std::chrono::steady_clock::time_point deadline,
+                      std::string& why)
+{
+    const net::Socket socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (socket == net::kInvalidSocket || !net::setNonBlocking(socket))
+    {
+        why = net::errorMessage(net::lastError());
+        net::closeSocket(socket);
+        return net::kInvalidSocket;
+    }
+    if (::connect(socket, reinterpret_cast<const sockaddr*>(&target), sizeof(target)) == 0)
+        return socket;
+
+    const int code = net::lastError();
+#if defined(_WIN32)
+    const bool pending = code == WSAEWOULDBLOCK;
+#else
+    const bool pending = code == EINPROGRESS;
+#endif
+    why = pending ? "no answer" : net::errorMessage(code);
+    if (pending && waitFor(socket, true, deadline))
+    {
+        // Writable is not connected on POSIX: a refusal is reported as
+        // writable with the error pending on the socket.
+        int failure = 0;
+#if defined(_WIN32)
+        int length = static_cast<int>(sizeof(failure));
+#else
+        socklen_t length = static_cast<socklen_t>(sizeof(failure));
+#endif
+        if (::getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&failure),
+                         &length) == 0 &&
+            failure == 0)
+            return socket;
+        why = net::errorMessage(failure);
+    }
+    net::closeSocket(socket);
+    return net::kInvalidSocket;
+}
+
 } // namespace
 
 bool sendClientControl(const std::string& address, uint16_t controlPort,
@@ -79,51 +121,29 @@ bool sendClientControl(const std::string& address, uint16_t controlPort,
 
     // A client on this machine beacons from one of its addresses (any
     // interface it broadcasts on, e.g. WSL's), where a control API bound to
-    // loopback does not answer; loopback reaches it however it is bound.
-    if (isOwnAddress(target))
-        target.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    // loopback does not answer: loopback first. One bound to that interface
+    // alone does not answer on loopback, so then the address itself.
     const std::string where = address + ":" + std::to_string(controlPort);
-    const net::Socket socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (socket == net::kInvalidSocket || !net::setNonBlocking(socket))
-    {
-        error = net::errorMessage(net::lastError());
-        net::closeSocket(socket);
-        return false;
-    }
-
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-    if (::connect(socket, reinterpret_cast<const sockaddr*>(&target), sizeof(target)) != 0)
+    std::string why;
+    net::Socket socket = net::kInvalidSocket;
+    if (isOwnAddress(target))
     {
-        const int code = net::lastError();
-#if defined(_WIN32)
-        const bool pending = code == WSAEWOULDBLOCK;
-#else
-        const bool pending = code == EINPROGRESS;
-#endif
-        std::string why = pending ? "no answer" : net::errorMessage(code);
-        if (pending && waitFor(socket, true, deadline))
-        {
-            // Writable is not connected on POSIX: a refusal is reported as
-            // writable with the error pending on the socket.
-            int failure = 0;
-#if defined(_WIN32)
-            int length = static_cast<int>(sizeof(failure));
-#else
-            socklen_t length = static_cast<socklen_t>(sizeof(failure));
-#endif
-            if (::getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&failure),
-                             &length) == 0 &&
-                failure == 0)
-                why.clear();
-            else
-                why = net::errorMessage(failure);
-        }
-        if (!why.empty())
-        {
-            error = "could not connect to " + where + ": " + why;
-            net::closeSocket(socket);
-            return false;
-        }
+        // A listener on loopback answers at once; Windows takes seconds to
+        // report one that is not there, which would leave the address no time.
+        sockaddr_in loopback = target;
+        loopback.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socket = connectTo(loopback,
+                           std::min(deadline, std::chrono::steady_clock::now() +
+                                                  std::chrono::milliseconds(250)),
+                           why);
+    }
+    if (socket == net::kInvalidSocket)
+        socket = connectTo(target, deadline, why);
+    if (socket == net::kInvalidSocket)
+    {
+        error = "could not connect to " + where + ": " + why;
+        return false;
     }
 
     json::Value request = json::Value::makeObject();

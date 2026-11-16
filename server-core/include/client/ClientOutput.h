@@ -719,6 +719,9 @@ private:
     // it, so what is left of it lives here.
     NativePcmStore::SharedBlock block_;
     uint32_t blockOffsetFrames_ = 0;
+    // A finished block whose bytes assemble() returned, held until produce()
+    // has encoded them.
+    NativePcmStore::SharedBlock payloadBlock_;
 
     // Source frames carried across a block boundary for a converter that
     // needs more than the tail of one block, and how many of them have been

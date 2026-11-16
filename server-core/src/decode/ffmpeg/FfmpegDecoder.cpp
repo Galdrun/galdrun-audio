@@ -233,6 +233,13 @@ Status<DecodeError> FfmpegDecoder::open(std::unique_ptr<IMediaSource> source)
     format_->pb = avio_;
     format_->flags |= AVFMT_FLAG_CUSTOM_IO;
 
+    // Every byte comes through the source above. A demuxer that opens more
+    // (concat, HLS, a playlist) inherits this list and is refused, rather than
+    // reading local files or URLs the media origin never allowed.
+    format_->protocol_whitelist = av_strdup("none");
+    if (format_->protocol_whitelist == nullptr)
+        return abandon(DecodeError::DecodeFailed, name + ": av_strdup");
+
     int code = avformat_open_input(&format_, nullptr, nullptr, nullptr);
     if (code < 0)
     {

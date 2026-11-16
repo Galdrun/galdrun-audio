@@ -933,6 +933,11 @@ private:
         TimelineNs transitionAt{};
         uint64_t renegotiatedAtNs = 0;
 
+        // Parked because its reopened device's format could not be served:
+        // the next STREAM_READY that can be served moves it, rather than the
+        // next play() as for a room a stop parked.
+        bool refusedReopen = false;
+
         // replanAlone(): waiting for a track boundary, and the boundary the
         // switch was made at once there was one (zero: none).
         bool alonePending = false;

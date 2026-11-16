@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -350,6 +351,39 @@ MULTIROOM_TEST(a_file_on_disk_decodes_the_same_as_the_bytes_in_memory)
 
     const auto decoded = decodeAll(std::move(*source), 1024);
     checkAgainstFixture(decoded, fixture);
+}
+
+MULTIROOM_TEST(a_concat_list_in_the_media_cannot_open_a_local_file)
+{
+    // Every byte is the source's: a playlist inside it naming a file next to
+    // the process must not be read from disk.
+    const auto fixture = multiroomtest::makeRamp(44100, 2, 16, 4410);
+    const auto wav = multiroomtest::encodeWav(fixture);
+    const std::string name = "galdrun-concat-probe.wav";
+    const std::filesystem::path local = std::filesystem::current_path() / name;
+    {
+        std::ofstream stream(local, std::ios::binary);
+        stream.write(reinterpret_cast<const char*>(wav.data()),
+                     static_cast<std::streamsize>(wav.size()));
+    }
+
+    const std::string list = "ffconcat version 1.0\nfile '" + name + "'\n";
+    std::vector<std::byte> bytes(list.size());
+    std::memcpy(bytes.data(), list.data(), list.size());
+
+    uint64_t frames = 0;
+    {
+        FfmpegDecoder decoder;
+        if (decoder.open(memorySource(std::move(bytes), "list")))
+        {
+            std::vector<std::byte> buffer(4096);
+            while (auto span = decoder.decode(buffer))
+                frames += span->frameCount;
+        }
+    }
+    std::error_code ignored;
+    std::filesystem::remove(local, ignored);
+    CHECK_EQ(frames, uint64_t{0});
 }
 
 #endif // MULTIROOM_WITH_FFMPEG

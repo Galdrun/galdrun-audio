@@ -389,7 +389,10 @@ void Zone::restartParkedMembers(TimelineNs position)
         std::lock_guard<std::mutex> lock(mutex_);
         for (const auto& entry : members_)
         {
-            if (entry.second.output->state() == OutputState::Parked)
+            // Not one whose device's format it could not serve: the old
+            // converter would send that device the wrong format.
+            if (entry.second.output->state() == OutputState::Parked &&
+                !entry.second.refusedReopen)
                 parked.emplace_back(entry.first, entry.second.output);
         }
     }
@@ -1388,6 +1391,7 @@ TimelineNs Zone::ceilingLocked(uint64_t latencyNs, uint64_t nowNs) const
 void Zone::publishEndLocked()
 {
     const TimelineNs end = state_ == ZoneState::Ended ? frontierNs() : TimelineNs{};
+    scheduler_.setEnd(end);
     for (const auto& entry : members_)
         entry.second.output->setEnd(end);
 }
@@ -2417,6 +2421,8 @@ Status<ZoneError> Zone::moveRoom(const ClientId& client, RejoinTrigger trigger,
     std::lock_guard<std::mutex> moving(rejoinMutex_);
 
     std::shared_ptr<ClientOutput> output;
+    bool refused = false;
+    bool zonePlaying = false;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         const auto found = members_.find(client);
@@ -2434,6 +2440,9 @@ Status<ZoneError> Zone::moveRoom(const ClientId& client, RejoinTrigger trigger,
                             " ns");
         }
         output = found->second.output;
+        // Only its device's answer can tell it is served again.
+        refused = found->second.refusedReopen && trigger == RejoinTrigger::DeviceRecovery;
+        zonePlaying = state_ == ZoneState::Playing || state_ == ZoneState::Ended;
     }
 
     // A room a stop parked is waiting for a source rather than for a position
@@ -2442,10 +2451,15 @@ Status<ZoneError> Zone::moveRoom(const ClientId& client, RejoinTrigger trigger,
     // stream has nothing to move at all.
     const OutputState was = output->state();
 
+    // A room parked because its reopened device could not be served is moved
+    // like a streaming one by the answer that can be, unless the zone was
+    // stopped since.
+    const bool waitsForPlay = was == OutputState::Parked && !(refused && zonePlaying);
+
     // A room a stop parked still takes the converter for its reopened device,
     // so that the play() which moves it sends what that device was opened in.
     // Planned against the newest source, which is where play() starts it.
-    if (replan && was == OutputState::Parked)
+    if (replan && waitsForPlay)
     {
         AudioFormat source;
         {
@@ -2459,8 +2473,15 @@ Status<ZoneError> Zone::moveRoom(const ClientId& client, RejoinTrigger trigger,
             return fail(ZoneError::OutputFailed, describe(reformatted.error()));
     }
 
-    if (was == OutputState::Failed || was == OutputState::Stopped ||
-        was == OutputState::Parked)
+    // Served now, so the next play() restarts it like any room a stop parked.
+    if (refused && waitsForPlay)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (const auto found = members_.find(client); found != members_.end())
+            found->second.refusedReopen = false;
+    }
+
+    if (was == OutputState::Failed || was == OutputState::Stopped || waitsForPlay)
     {
         std::string detail = client.str() + "'s stream is " + outputStateName(was);
         if (const std::string why = output->lastError(); !why.empty())
@@ -2542,6 +2563,7 @@ Status<ZoneError> Zone::moveRoom(const ClientId& client, RejoinTrigger trigger,
         const auto found = members_.find(client);
         if (found != members_.end())
         {
+            found->second.refusedReopen = false;
             count = ++found->second.rejoins;
             logged = found->second.moveLog.allow(clock_.monotonicNowNs(), unlogged);
             if (found->second.sync != nullptr)
@@ -3308,6 +3330,8 @@ void Zone::onStreamReady(const ClientId& client, bool ready, const AudioFormat& 
         std::lock_guard<std::mutex> lock(mutex_);
         scheduler_.onStreamReady(client, false);
         scheduler_.explain(client, detail);
+        if (const auto found = members_.find(client); found != members_.end())
+            found->second.refusedReopen = true;
     }
     ZoneEvent event = eventOf(ZoneEventKind::RoomNotReady);
     event.client = client;
@@ -3523,15 +3547,12 @@ std::string Zone::roomStartDetail(const ClientId& client) const
 
 ClientSyncStatus Zone::syncStatus(const ClientId& client) const
 {
-    std::shared_ptr<ClientSyncController> sync;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        const auto found = members_.find(client);
-        if (found == members_.end())
-            return {};
-        sync = found->second.sync;
-    }
-    return sync == nullptr ? ClientSyncStatus{} : sync->status();
+    // Read under the lock its updates are made under: the controller has none.
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto found = members_.find(client);
+    if (found == members_.end() || found->second.sync == nullptr)
+        return {};
+    return found->second.sync->status();
 }
 
 uint64_t Zone::startsSent() const

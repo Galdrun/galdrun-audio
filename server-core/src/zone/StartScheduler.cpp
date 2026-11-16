@@ -232,7 +232,18 @@ bool StartScheduler::schedulable(const Room& room) const
     // rather than here.
     if (!room.buffer.hasContent)
         return false;
-    return room.buffer.bufferedDurationNs >= settings_.minimumStartBufferNs;
+    return holdsEnough(room);
+}
+
+bool StartScheduler::holdsEnough(const Room& room) const
+{
+    if (room.buffer.bufferedDurationNs >= settings_.minimumStartBufferNs)
+        return true;
+    // A converted room's last frame can end a fraction of a frame short of
+    // the source's end; a millisecond covers that at any supported rate.
+    constexpr uint64_t kEndSlackNs = 1000000ULL;
+    return endNs_ != 0 && room.buffer.hasContent &&
+           room.buffer.bufferedUntilTimelineNs + kEndSlackNs >= endNs_;
 }
 
 TimelineNs StartScheduler::playheadAt(uint64_t nowNs) const
@@ -444,8 +455,7 @@ void StartScheduler::rejoinShortRooms(uint64_t nowNs)
         if (room.state != RoomStartState::Waiting || nowNs < room.deadlineNs)
             continue;
         if (!room.member || !room.streamReady || !room.buffer.hasContent ||
-            room.clockExchanges < settings_.minClockExchanges ||
-            room.buffer.bufferedDurationNs >= settings_.minimumStartBufferNs)
+            room.clockExchanges < settings_.minClockExchanges || holdsEnough(room))
         {
             continue;
         }

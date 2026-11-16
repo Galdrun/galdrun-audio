@@ -1001,6 +1001,7 @@ bool ClientOutput::produce()
 
     Result<std::string, PacketizerError> packet =
         packetizer_.encode(TimelineNs{startNs}, durationNs, wanted, payload);
+    payloadBlock_.reset();
     if (!packet)
     {
         failRoom(OutputError::PacketFailed, describe(packet.error()));
@@ -1042,7 +1043,9 @@ std::span<const std::byte> ClientOutput::assemble(uint32_t wanted)
             blockOffsetFrames_ += wanted;
             if (blockOffsetFrames_ >= block_->frameCount())
             {
-                block_.reset();
+                // The span still points into it, and the store may already
+                // have let go of it: held until produce() has encoded it.
+                payloadBlock_ = std::move(block_);
                 blockOffsetFrames_ = 0;
             }
             return payload;

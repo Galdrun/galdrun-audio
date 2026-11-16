@@ -215,6 +215,11 @@ public:
     // now on. A room already waiting keeps the deadline it was given.
     void setTiming(uint64_t minimumStartBufferNs, uint64_t readyTimeoutNs, uint64_t startDelayNs);
 
+    // Where the zone's audio ends once its decode has: a room holding all of
+    // it up to there is schedulable with less than the start minimum, which a
+    // shorter final source could never reach. Zero while the decode goes on.
+    void setEnd(TimelineNs end) noexcept { endNs_ = std::to_underlying(end); }
+
     // --- what the control connection reports --------------------------------
 
     // Section 12, both answers. `ready` false is not a fault and does not end
@@ -409,6 +414,9 @@ private:
     // Section 20's conditions, all three of them, for one room.
     [[nodiscard]] bool schedulable(const Room& room) const;
 
+    // The start minimum, or all that is left before the end of the audio.
+    [[nodiscard]] bool holdsEnough(const Room& room) const;
+
     // The first position on the running line that this room could still be
     // started at: far enough ahead to be in the future, and inside the audio
     // this room says it holds. False when there is none, which is a room the
@@ -453,6 +461,8 @@ private:
     // The second is meaningless while the transport is not playing.
     TimelineNs startTimelineNs_{};
     uint64_t startServerTimeNs_ = 0;
+
+    uint64_t endNs_ = 0;
 
     uint64_t startsSent_ = 0;
     uint64_t pausesSent_ = 0;

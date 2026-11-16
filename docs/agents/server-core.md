@@ -58,6 +58,10 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
 - Decode once per zone; rooms share immutable source-native PCM, with their
   own cursors, formats, processors and sockets. Slow readers are evicted and
   rejoined, never allowed to stall another room or grow buffers without bound.
+- Once the zone's decode has ended, `Zone::publishEndLocked` gives the
+  scheduler the end of the audio (`StartScheduler::setEnd`); a room holding
+  everything up to it starts below `minimumStartBufferNs`, else a final clip
+  shorter than the minimum never starts or ends.
 - Decode demand follows the furthest-ahead streaming room plus lookahead.
   Output pacing follows `bufferedDurationNs` plus frames produced since its
   report; wall-clock-paced sending breaks pause/backpressure.
@@ -70,6 +74,9 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
   policy: older header/design tables omit later EQ/hardware-clock cases.
   A reopened device whose granted format cannot be served is parked and left
   unscheduled (`Zone::onStreamReady`), so the old format is never sent to it.
+  It is marked `refusedReopen`: its next servable STREAM_READY moves it while
+  the zone plays, and `restartParkedMembers` (play after stop) skips it, as
+  its old converter may not match the device.
 - Admission (`ControlApi` `onStreamReady` hook) re-reads the room's desired
   zone after `ZoneManager::assign` records it and releases a room that
   `zone.setClients` removed or moved meanwhile: that command only releases
@@ -110,6 +117,9 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
   tool does. Many MP3s end in a last frame cut short by padding and an
   ID3v1 tag; failing there marked a fully played track as failed, and a
   queue repeating that one track then had nothing left to play.
+- `FfmpegDecoder` sets `protocol_whitelist` to `none`: all media bytes come
+  through the custom AVIO source, and a nested demuxer (concat, playlists)
+  inherits the list, so media content cannot open local files or URLs.
 
 ## Thread boundaries and the .NET contract
 

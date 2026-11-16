@@ -220,6 +220,27 @@ MULTIROOM_TEST(an_empty_buffer_status_is_not_a_position)
     CHECK(scheduler.evaluate(kT0 + 10 * kSecond).empty());
 }
 
+MULTIROOM_TEST(a_room_holding_all_of_a_final_source_shorter_than_the_minimum_is_started)
+{
+    StartScheduler scheduler(defaults());
+
+    const ClientId room("room");
+    becomeReady(scheduler, room, TimelineNs{0}, kT0, 500 * kMs);
+
+    // Short of the minimum while the decode may still send more.
+    CHECK(scheduler.evaluate(kT0).empty());
+
+    // Not while the end lies past what it holds.
+    scheduler.setEnd(TimelineNs{800 * kMs});
+    CHECK(scheduler.evaluate(kT0).empty());
+
+    // All that is left: nothing more can arrive to reach the minimum.
+    scheduler.setEnd(TimelineNs{500 * kMs});
+    const std::vector<RoomCommand> commands = scheduler.evaluate(kT0);
+    CHECK_EQ(commands.size(), size_t{1});
+    CHECK(commandFor(commands, "room") != nullptr);
+}
+
 MULTIROOM_TEST(the_start_position_is_the_earliest_one_every_room_holds)
 {
     StartScheduler scheduler(defaults());
