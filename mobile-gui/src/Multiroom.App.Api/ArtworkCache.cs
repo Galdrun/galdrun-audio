@@ -162,17 +162,26 @@ public sealed class ArtworkCache(MultiroomClient client, string? folder = null) 
 
     private IEnumerable<FileInfo> Files() => new DirectoryInfo(folder!).EnumerateFiles();
 
+    public Task<byte[]?> RoomImageAsync(string room, CancellationToken ct) => client.RoomImageAsync(room, ct);
+
     public void Dispose() => _stop.Cancel();
 }
 
 public sealed partial class MultiroomClient
 {
     // An item's picture by its artworkId, from the server's artwork store.
-    public async Task<byte[]> ArtworkAsync(string id, CancellationToken ct)
+    public Task<byte[]> ArtworkAsync(string id, CancellationToken ct) => PictureAsync($"artwork/{Escape(id)}", ct);
+    // A room's own picture (null: it has none; the room's art stands in, as in the web interface).
+    public async Task<byte[]?> RoomImageAsync(string client, CancellationToken ct)
+    {
+        try { return await PictureAsync($"rooms/{Escape(client)}/image", ct).ConfigureAwait(false); }
+        catch (ApiException e) when (e.Status == System.Net.HttpStatusCode.NotFound) { return null; }
+    }
+    private async Task<byte[]> PictureAsync(string path, CancellationToken ct)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
-        using var request = Request(HttpMethod.Get, $"artwork/{Escape(id)}");
+        using var request = Request(HttpMethod.Get, path);
         using var response = await OpenAsync(request, timeout.Token).ConfigureAwait(false);
         using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
         using var buffer = new MemoryStream();

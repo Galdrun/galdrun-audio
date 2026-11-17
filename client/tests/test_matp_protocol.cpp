@@ -1012,6 +1012,32 @@ MULTIROOM_TEST(matp_protocol_flush_round_trips_and_its_number_is_pinned)
     CHECK(parsedType == matp::MessageType::Flush);
 }
 
+MULTIROOM_TEST(matp_protocol_discard_stream_round_trips_and_its_number_is_pinned)
+{
+    matp::TransportAt at;
+    at.sessionId = "s-moved";
+    at.serverTimeNs = 145000000000ULL;
+    at.timelineNs = 260000000000ULL;
+
+    const json::Value payload = matp::makeDiscardStream(at);
+    std::string type;
+    CHECK(json::getString(payload, "type", type));
+    CHECK_EQ(type, std::string("discardStream"));
+
+    matp::TransportAt parsed;
+    std::string error;
+    CHECK(matp::parseTransportAt(payload, parsed, error));
+    CHECK_EQ(parsed.sessionId, std::string("s-moved"));
+    CHECK_EQ(parsed.serverTimeNs, at.serverTimeNs);
+    CHECK_EQ(parsed.timelineNs, at.timelineNs);
+
+    // After driftFeedback; a client that predates it ignores the type.
+    CHECK_EQ(static_cast<uint16_t>(matp::MessageType::DiscardStream), static_cast<uint16_t>(38));
+    matp::MessageType parsedType = matp::MessageType::Unknown;
+    CHECK(matp::parseMessageType("discardStream", parsedType));
+    CHECK(parsedType == matp::MessageType::DiscardStream);
+}
+
 MULTIROOM_TEST(matp_protocol_version_is_two)
 {
     // Version 1 expressed every position as a frame of a canonical timeline at

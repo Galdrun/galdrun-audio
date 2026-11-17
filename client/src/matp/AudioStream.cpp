@@ -44,6 +44,7 @@ void AudioStream::attach(const std::string& sessionId, const Identity& identity,
         return;
 
     reader_.reset();
+    abandoned_ = false;
     hasSessionId_ = false;
     hasSequence_ = false;
     hasTimelineAnchor_ = false;
@@ -73,6 +74,11 @@ void AudioStream::attach(const std::string& sessionId, const Identity& identity,
         resyncPending_ = false;
         resyncTimelineNs_ = 0;
         resyncAfterFlush_ = false;
+        discarding_ = false;
+        discardEndsAtNext_ = false;
+        hasStreamStart_ = false;
+        streamStartTimelineNs_ = 0;
+        discards_ = 0;
         connectionChanged_ = false;
         lastError_.clear();
 
@@ -133,6 +139,8 @@ void AudioStream::detach()
     // next owner poll answer a rejoin that belongs to a stream that is gone.
     resyncPending_ = false;
     resyncAfterFlush_ = false;
+    discarding_ = false;
+    discardEndsAtNext_ = false;
     connectionChanged_ = false;
     // lastError_ is kept: it is why the stream stopped, and the status command
     // would otherwise report a torn-down stream as if nothing had happened.
@@ -231,6 +239,10 @@ void AudioStream::onData(const void* data, size_t size)
             abandoned = abandonedGeneration_;
             changed = connectionChanged_;
             connectionChanged_ = false;
+            // A new connection is where the server resumes the stream it has
+            // now, so its first packet ends a discard (section 62).
+            if (changed && discarding_)
+                discardEndsAtNext_ = true;
         }
 
         if (changed)
@@ -355,7 +367,23 @@ bool AudioStream::accept(const AudioPacket& packet)
     // parks even as the first packet of a stream: a FLUSH that has already cut
     // waits for it, and with no line to keep the owner turns it into a rejoin.
     const bool afterFlush = (packet.header.flags & kAudioFlagAfterFlush) != 0;
-    if (afterFlush ||
+    const bool startsRun = afterFlush || !hasTimelineAnchor_ ||
+                           packet.header.timelineStartNs != expectedTimelineNs_;
+
+    // Section 62: the audio of a stream the server has moved this room off is
+    // dropped up to the first packet of the one it was moved to, which parks
+    // like any jump so that it lands in a buffer the owner has emptied.
+    const DiscardVerdict verdict = filterDiscarded(packet, afterFlush, startsRun);
+    if (verdict == DiscardVerdict::Failed)
+        return false;
+    if (verdict == DiscardVerdict::Drop)
+    {
+        skip(packet);
+        return true;
+    }
+    const bool reached = verdict == DiscardVerdict::Reached;
+
+    if (reached || afterFlush ||
         (hasTimelineAnchor_ && packet.header.timelineStartNs != expectedTimelineNs_))
     {
         // A jump on the media timeline: a rejoin after a gap, or a hard resync
@@ -375,6 +403,24 @@ bool AudioStream::accept(const AudioPacket& packet)
         // control connection and may not have arrived yet.
         if (!awaitResync(packet.header.timelineStartNs, afterFlush))
             return false;
+
+        // A DISCARD_STREAM that arrived while this packet was parked names
+        // where the stream goes on, and this packet may not be it.
+        const DiscardVerdict again = filterDiscarded(packet, afterFlush, startsRun);
+        if (again == DiscardVerdict::Failed)
+            return false;
+        if (again == DiscardVerdict::Drop)
+        {
+            skip(packet);
+            return true;
+        }
+    }
+
+    if (startsRun)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        streamStartTimelineNs_ = packet.header.timelineStartNs;
+        hasStreamStart_ = true;
     }
 
     if (!hasTimelineAnchor_)
@@ -390,7 +436,7 @@ bool AudioStream::accept(const AudioPacket& packet)
     hasTimelineAnchor_ = true;
 
     if (!awaitTimelineRoom())
-        return false;
+        return abandon(packet);
 
     {
         // The segment goes in before the frames do. It describes what this
@@ -408,7 +454,7 @@ bool AudioStream::accept(const AudioPacket& packet)
     }
 
     if (!push(packet, bytesPerFrame))
-        return false;
+        return abandon(packet);
 
     expectedSequence_ = packet.header.sequenceNumber + 1;
     expectedTimelineNs_ =
@@ -451,6 +497,14 @@ bool AudioStream::push(const AudioPacket& packet, uint32_t bytesPerFrame)
             // between the two would otherwise count frames it has no position
             // for. The wait below is deliberately outside this.
             std::lock_guard<std::mutex> lock(mutex_);
+            // Checked under the lock DISCARD_STREAM is set under, so nothing of
+            // a dropped stream lands after the owner has been told to empty
+            // the buffer of it.
+            if (discarding_)
+            {
+                abandoned_ = true;
+                return false;
+            }
             pushed = buffer_.push(frames + static_cast<size_t>(written) * bytesPerFrame,
                                   frameCount - written);
             written += pushed;
@@ -498,6 +552,11 @@ bool AudioStream::awaitTimelineRoom()
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            if (discarding_)
+            {
+                abandoned_ = true;
+                return false;
+            }
             const uint64_t head = streamPushed_ - buffer_.readableFrames();
             if (!map_.full() || map_.oldestStreamEnd() <= head)
                 return true;
@@ -556,6 +615,100 @@ bool AudioStream::awaitResync(uint64_t timelineNs, bool afterFlush)
     return false;
 }
 
+bool AudioStream::discard(uint64_t timelineNs)
+{
+    if (!accepting_.load())
+        return false;
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (hasStreamStart_ && streamStartTimelineNs_ == timelineNs)
+    {
+        // The first packet of the stream it names came before the message, as
+        // it may: the two travel on different connections.
+        if (!discarding_)
+            return false; // and was kept: this room already holds the new stream
+        // It came while an earlier discard was dropping, and was dropped with
+        // the stream that discard was about. What follows it is kept.
+        discardEndsAtNext_ = true;
+        return true;
+    }
+
+    discarding_ = true;
+    discardEndsAtNext_ = false;
+    discardTimelineNs_ = timelineNs;
+    discardSince_ = std::chrono::steady_clock::now();
+
+    // The owner empties the buffer the way it does for a jump (pollRejoin()),
+    // whether or not the device is running. Not counted as a rejoin: the
+    // packet that ends the discard parks as one and is counted then.
+    resyncPending_ = true;
+    resyncTimelineNs_ = timelineNs;
+    resyncAfterFlush_ = false;
+    ++discards_;
+    return true;
+}
+
+AudioStream::DiscardVerdict AudioStream::filterDiscarded(const AudioPacket& packet,
+                                                         bool afterFlush, bool startsRun)
+{
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!discarding_)
+            return DiscardVerdict::None;
+
+        if (packet.header.timelineStartNs == discardTimelineNs_ || afterFlush ||
+            discardEndsAtNext_)
+        {
+            discarding_ = false;
+            discardEndsAtNext_ = false;
+            return DiscardVerdict::Reached;
+        }
+
+        // Each run of dropped packets is a stream too: a later DISCARD_STREAM
+        // that names the one being dropped finds its start here.
+        if (startsRun)
+        {
+            streamStartTimelineNs_ = packet.header.timelineStartNs;
+            hasStreamStart_ = true;
+        }
+
+        if (std::chrono::steady_clock::now() - discardSince_ <
+            std::chrono::milliseconds(kResyncTimeoutMs))
+            return DiscardVerdict::Drop;
+    }
+
+    // Never a server that keeps sending the stream it moved this room off: a
+    // new connection is the one place it resumes from where it is now.
+    fail("the stream discarded for timeline " + std::to_string(packet.header.timelineStartNs) +
+         " ns did not end within " + std::to_string(kResyncTimeoutMs) + " ms");
+    return DiscardVerdict::Failed;
+}
+
+void AudioStream::skip(const AudioPacket& packet)
+{
+    expectedSequence_ = packet.header.sequenceNumber + 1;
+    expectedTimelineNs_ = packet.header.timelineStartNs + packet.header.timelineDurationNs;
+    hasTimelineAnchor_ = true;
+}
+
+bool AudioStream::abandon(const AudioPacket& packet)
+{
+    if (!abandoned_)
+        return false; // detached or failed: decoding stops
+    abandoned_ = false;
+    // What of it already landed goes with the rest of the dropped stream; the
+    // owner clears its segment with the map. The packets after it are judged
+    // against its end, as they would have been.
+    skip(packet);
+    return true;
+}
+
+uint32_t AudioStream::discards() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return discards_;
+}
+
 void AudioStream::fail(const std::string& reason)
 {
     {
@@ -571,6 +724,8 @@ void AudioStream::fail(const std::string& reason)
         // stream whose connection is already gone.
         resyncPending_ = false;
         resyncAfterFlush_ = false;
+        discarding_ = false;
+        discardEndsAtNext_ = false;
     }
 
     MULTIROOM_ERROR("audio stream failed: %s", reason.c_str());

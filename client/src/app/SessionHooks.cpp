@@ -119,6 +119,9 @@ void connectStreamHooks(matp::Session& session, StreamPlayback& playback)
     hooks.flush = [&playback](const matp::TransportAt& request, std::string& error) {
         return playback.flush(request, error);
     };
+    hooks.discard = [&playback](const matp::TransportAt& request, std::string& error) {
+        return playback.discardStream(request, error);
+    };
     hooks.volume = [&playback](const matp::SetVolume& request, std::string& error) {
         return playback.volume(request, error);
     };

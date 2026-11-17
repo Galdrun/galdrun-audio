@@ -38,6 +38,7 @@
 #include "net/ServerConnection.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -101,6 +102,16 @@ public:
     // on stays true for the new audio.
     void resumeAfterFlush(uint64_t streamFrame);
 
+    // Owner thread. DISCARD_STREAM (section 62): the server has moved this
+    // room, before it was started, onto a stream that begins at `timelineNs`.
+    // What the buffer holds is dropped through the same owner path as a jump
+    // (resyncPending()), and the audio still arriving for the stream it was
+    // moved off is dropped up to the first packet of the new one -- even while
+    // the connection thread is waiting for space in a buffer nothing drains,
+    // which is the case this exists for. False when there is nothing to do:
+    // detached, or already on that stream.
+    bool discard(uint64_t timelineNs);
+
     // Connection thread.
     void onData(const void* data, size_t size);
 
@@ -154,6 +165,9 @@ public:
     // room's end (section 54).
     uint32_t flushes() const;
 
+    // DISCARD_STREAM messages that dropped what this stream held.
+    uint32_t discards() const;
+
     // Why the stream stopped accepting audio; empty while it is healthy.
     std::string lastError() const;
 
@@ -175,6 +189,27 @@ private:
     // detached or failed while waiting, and the caller then stops decoding.
     bool awaitResync(uint64_t timelineNs, bool afterFlush);
     void fail(const std::string& reason);
+
+    // Connection thread. Section 62 applied to one packet: None when nothing
+    // is being discarded, Drop for audio of the stream the room was moved
+    // off, Reached for the first packet of the new one (the discard is over
+    // and the packet parks like a jump), Failed when the discard has run past
+    // its timeout and the connection is dropped instead.
+    enum class DiscardVerdict
+    {
+        None,
+        Drop,
+        Reached,
+        Failed
+    };
+    DiscardVerdict filterDiscarded(const AudioPacket& packet, bool afterFlush, bool startsRun);
+    // Connection thread. Moves the sequence and timeline expectations past a
+    // packet that was dropped, so the next one is judged against it.
+    void skip(const AudioPacket& packet);
+    // Connection thread. After push() or awaitTimelineRoom() returned false:
+    // true when a discard made it give the packet up (decoding goes on), false
+    // when the stream was detached or failed (decoding stops).
+    bool abandon(const AudioPacket& packet);
 
     ServerConnection& connection_;
     AudioRingBuffer& buffer_;
@@ -234,6 +269,22 @@ private:
     uint64_t resyncTimelineNs_ = 0;
     bool resyncAfterFlush_ = false;
 
+    // Section 62. Set by discard(), cleared by the connection thread on the
+    // first packet of the new stream: the position it begins at, whether the
+    // next packet ends it whatever it is (the stream it names was already
+    // being dropped, or a new connection began), and since when, for the
+    // timeout.
+    bool discarding_ = false;
+    bool discardEndsAtNext_ = false;
+    uint64_t discardTimelineNs_ = 0;
+    std::chrono::steady_clock::time_point discardSince_{};
+    uint32_t discards_ = 0;
+    // Where the run of packets the connection thread is in began -- a
+    // stream's first packet, a jump, or a flush -- whether it kept them or
+    // dropped them. A DISCARD_STREAM for a stream already arriving is not one.
+    bool hasStreamStart_ = false;
+    uint64_t streamStartTimelineNs_ = 0;
+
     // Set by poll() when it binds a connection that replaces the one the
     // stream was on, cleared by the connection thread when it has thrown away
     // what the old socket left in the packet reader. It is safe as a plain
@@ -252,6 +303,8 @@ private:
 
     // Connection thread only, from attach() until detach().
     AudioPacketReader reader_;
+    // push() or awaitTimelineRoom() gave its packet up for a discard.
+    bool abandoned_ = false;
     // The session id and the sequence are anchored per connection: the id
     // must not change on one, and a new one starts the numbering wherever the
     // server left it. The timeline position is anchored per *stream* and

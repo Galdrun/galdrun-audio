@@ -267,6 +267,7 @@ struct StreamStub
     uint32_t pauses = 0;
     uint32_t stops = 0;
     uint32_t flushes = 0;
+    uint32_t discards = 0;
     matp::TransportAt lastTransport;
 
     bool volumeAccepted = true;
@@ -351,6 +352,16 @@ struct StreamStub
                 return false;
             }
             ++flushes;
+            return true;
+        };
+        result.discard = [this](const matp::TransportAt& request, std::string& error) {
+            lastTransport = request;
+            if (!transportAccepted)
+            {
+                error = transportRefusal;
+                return false;
+            }
+            ++discards;
             return true;
         };
         result.volume = [this](const matp::SetVolume& request, std::string& error) {
@@ -1846,6 +1857,37 @@ MULTIROOM_TEST(matp_session_hands_a_flush_to_the_playback_layer)
         },
         3000));
     CHECK_EQ(stub.flushes, static_cast<uint32_t>(1));
+}
+
+MULTIROOM_TEST(matp_session_hands_a_discard_to_the_playback_layer)
+{
+    TestListener listener;
+    CHECK(listener.ready());
+
+    Fixture fixture(testIdentity());
+    StreamStub stub;
+    fixture.session.setStreamHooks(stub.hooks());
+    CHECK(fixture.start(listener));
+    CHECK(listener.acceptOne(2000));
+
+    Peer peer(fixture.session, listener);
+    establishAndPrepare(fixture, peer, "s-moved");
+
+    // Section 62: on arrival, the timeline position being where the stream
+    // the room was moved to begins.
+    CHECK(peer.send(matp::MessageType::DiscardStream,
+                    transportAt("discardStream", "s-moved", 150000000000ULL, 260000000000ULL)));
+    CHECK(waitUntil(
+        [&] {
+            peer.pump(20);
+            return stub.discards != 0;
+        },
+        3000));
+    CHECK_EQ(stub.lastTransport.timelineNs, static_cast<uint64_t>(260000000000ULL));
+    CHECK_EQ(fixture.session.discardedStreams(), static_cast<uint32_t>(1));
+    CHECK_EQ(stub.flushes, static_cast<uint32_t>(0));
+    CHECK_EQ(stub.stops, static_cast<uint32_t>(0));
+    CHECK(fixture.session.state() != matp::SessionState::Failed);
 }
 
 MULTIROOM_TEST(matp_session_drops_a_flush_when_no_stream_is_prepared)

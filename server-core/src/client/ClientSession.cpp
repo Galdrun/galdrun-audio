@@ -41,6 +41,7 @@ bool isServerToClient(matp::MessageType type)
     case matp::MessageType::SetRoomName:
     case matp::MessageType::SetDriftCorrection:
     case matp::MessageType::DriftFeedback:
+    case matp::MessageType::DiscardStream:
         return true;
     default:
         return false;
@@ -1048,6 +1049,23 @@ Status<SessionError> ClientSession::flushPlayback(const matp::TransportAt& at)
     MULTIROOM_INFO("session {}: flush at timeline {} ns", sessionId_.toHex(), request.timelineNs);
 
     return send(matp::MessageType::Flush, matp::makeFlush(request));
+}
+
+Status<SessionError> ClientSession::discardStream(const matp::TransportAt& at)
+{
+    // Not tied to a granted device: a room whose device is closed still holds
+    // what its audio connection delivered, and that is what this drops.
+    if (const Status<SessionError> allowed = streamMessageAllowed("discardStream", false); !allowed)
+        return allowed;
+
+    matp::TransportAt request = at;
+    request.sessionId = sessionId_.toHex();
+    ++discardsSent_;
+
+    MULTIROOM_INFO("session {}: discard the stream before timeline {} ns", sessionId_.toHex(),
+             request.timelineNs);
+
+    return send(matp::MessageType::DiscardStream, matp::makeDiscardStream(request));
 }
 
 Status<SessionError> ClientSession::setVolume(const matp::SetVolume& request)

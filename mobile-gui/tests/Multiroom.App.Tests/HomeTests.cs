@@ -321,6 +321,19 @@ public sealed class HomeTests
         Assert.False(home.CanAddToPlaylist);
     }
 
+    [Fact]
+    public void Back_from_a_page_opened_on_see_all_returns_to_see_all()
+    {
+        var model = new ShellViewModel { SelectedPage = "Home" }; model.Playback.Apply(PlaybackTests.Snapshot());
+        model.Home.OpenShelf = model.Home.Favourites;
+        model.NavigateCommand.Execute("Zone Setup"); Assert.Null(model.Home.OpenShelf);
+        model.OpenVolumeCommand.Execute(null);
+        Assert.True(model.GoBack()); Assert.Equal("Zone Setup", model.SelectedPage);
+        Assert.True(model.GoBack()); Assert.Equal("Home", model.SelectedPage); Assert.Same(model.Home.Favourites, model.Home.OpenShelf);
+        model.Home.CloseShelfCommand.Execute(null); model.NavigateCommand.Execute("Queue");
+        Assert.True(model.GoBack()); Assert.Null(model.Home.OpenShelf);
+    }
+
     [AvaloniaFact]
     public void Covers_open_the_item_sheet_and_albums_in_browse()
     {

@@ -918,3 +918,158 @@ MULTIROOM_TEST(matp_audio_stream_waits_rather_than_forget_buffered_positions)
     CHECK(waitForFrames(fixture, static_cast<uint64_t>(count) * perPacket));
     CHECK(fixture.stream.status().hasContent);
 }
+
+// --- DISCARD_STREAM (section 62) ---------------------------------------------
+
+namespace {
+
+// What the owner thread does for a pending jump or discard (pollRejoin()):
+// empty the buffer, then say so. Repeated, because the packet that ends a
+// discard parks again if the first resume came before it.
+bool ownerDrainsUntil(Fixture& fixture, uint32_t readable)
+{
+    return waitUntil(
+        [&] {
+            if (fixture.stream.resyncPending())
+            {
+                fixture.buffer.discard(fixture.buffer.readableFrames());
+                fixture.stream.resume();
+            }
+            return fixture.buffer.readableFrames() >= readable;
+        },
+        3000);
+}
+
+} // namespace
+
+MULTIROOM_TEST(matp_audio_stream_discard_frees_a_producer_waiting_on_a_full_buffer)
+{
+    // The room this exists for: prebuffered, never started, so nothing drains;
+    // the connection thread waits for space, and the server's move to another
+    // stream sits unread behind the audio it is waiting to push.
+    TestListener listener;
+    CHECK(listener.ready());
+
+    Fixture fixture(16);
+    CHECK(fixture.start(listener));
+    CHECK(listener.acceptOne(2000));
+    CHECK(fixture.attach(listener));
+
+    std::string old;
+    for (uint32_t i = 0; i < 7; ++i)
+        old += packet(i, i * 4, 4);
+    CHECK(listener.send(old));
+    CHECK(waitUntil([&] { return fixture.stream.waits() != 0; }, 2000));
+    CHECK_EQ(fixture.buffer.readableFrames(), static_cast<uint32_t>(16));
+
+    // The moved stream, behind the old one on the same connection.
+    const uint64_t movedNs = kBaseNs + 50000000ULL;
+    const uint64_t span = nsAt(0, 4, 48000);
+    CHECK(listener.send(packetRaw(7, movedNs, span, 100, 4) +
+                        packetRaw(8, movedNs + span, span, 104, 4)));
+
+    CHECK(fixture.stream.discard(movedNs));
+    CHECK_EQ(fixture.stream.discards(), static_cast<uint32_t>(1));
+    CHECK(fixture.stream.resyncPending());
+    CHECK_EQ(fixture.stream.resyncTimelineNs(), movedNs);
+
+    // Nothing of the old stream is left, and the moved one lands whole.
+    CHECK(ownerDrainsUntil(fixture, 8));
+    CHECK(fixture.bufferHolds(100, 8));
+    CHECK(fixture.stream.lastError().empty());
+    CHECK_EQ(fixture.stream.rejoins(), static_cast<uint32_t>(1));
+    const matp::BufferStatus status = fixture.stream.status();
+    CHECK(status.hasContent);
+    CHECK_EQ(status.bufferedUntilTimelineNs, movedNs + 2 * span);
+}
+
+MULTIROOM_TEST(matp_audio_stream_discard_does_nothing_on_the_stream_it_already_holds)
+{
+    // The first packet of the moved stream may arrive before the message: the
+    // two travel on different connections. Then there is nothing to drop.
+    TestListener listener;
+    CHECK(listener.ready());
+
+    Fixture fixture;
+    CHECK(fixture.start(listener));
+    CHECK(listener.acceptOne(2000));
+    CHECK(fixture.attach(listener));
+
+    CHECK(listener.send(packet(0, 0, 4) + packet(1, 4, 4)));
+    CHECK(waitForFrames(fixture, 8));
+
+    CHECK(!fixture.stream.discard(kBaseNs));
+    CHECK_EQ(fixture.stream.discards(), static_cast<uint32_t>(0));
+    CHECK(!fixture.stream.resyncPending());
+
+    CHECK(listener.send(packet(2, 8, 4)));
+    CHECK(waitForFrames(fixture, 12));
+    CHECK(fixture.bufferHolds(0, 12));
+}
+
+MULTIROOM_TEST(matp_audio_stream_discard_naming_a_stream_being_dropped_keeps_what_follows)
+{
+    // Two moves in quick succession: the second stream's first packet arrives
+    // while the first discard is still dropping, and its own message after it.
+    TestListener listener;
+    CHECK(listener.ready());
+
+    Fixture fixture;
+    CHECK(fixture.start(listener));
+    CHECK(listener.acceptOne(2000));
+    CHECK(fixture.attach(listener));
+
+    CHECK(listener.send(packet(0, 0, 4)));
+    CHECK(waitForFrames(fixture, 4));
+
+    const uint64_t span = nsAt(0, 4, 48000);
+    const uint64_t firstMoveNs = kBaseNs + 50000000ULL;
+    const uint64_t secondMoveNs = kBaseNs + 90000000ULL;
+    CHECK(fixture.stream.discard(firstMoveNs));
+    CHECK(listener.send(packetRaw(1, secondMoveNs, span, 200, 4)));
+    // Dropped: it is not the stream the discard named.
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    CHECK_EQ(fixture.stream.packets(), static_cast<uint64_t>(1));
+    CHECK(fixture.stream.discard(secondMoveNs));
+
+    CHECK(listener.send(packetRaw(2, secondMoveNs + span, span, 204, 4)));
+    CHECK(ownerDrainsUntil(fixture, 4));
+    CHECK(fixture.bufferHolds(204, 4));
+    CHECK(fixture.stream.lastError().empty());
+}
+
+MULTIROOM_TEST(matp_audio_stream_discard_that_never_ends_drops_the_connection)
+{
+    // A server that keeps sending the stream it moved this room off: after the
+    // resync timeout the connection goes, and the server resumes on a new one
+    // from where it is now.
+    TestListener listener;
+    CHECK(listener.ready());
+
+    Fixture fixture;
+    CHECK(fixture.start(listener));
+    CHECK(listener.acceptOne(2000));
+    CHECK(fixture.attach(listener));
+
+    CHECK(listener.send(packet(0, 0, 4)));
+    CHECK(waitForFrames(fixture, 4));
+    CHECK(fixture.stream.discard(kBaseNs + 50000000ULL));
+    fixture.buffer.discard(fixture.buffer.readableFrames());
+    fixture.stream.resume();
+
+    // Old audio for longer than the timeout, every packet dropped.
+    uint32_t sequence = 1;
+    CHECK(waitUntil(
+        [&] {
+            listener.send(packet(sequence, sequence * 4, 4));
+            ++sequence;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            return !fixture.stream.lastError().empty();
+        },
+        8000));
+    CHECK_EQ(fixture.buffer.readableFrames(), static_cast<uint32_t>(0));
+    CHECK(!fixture.stream.resyncPending());
+    CHECK(fixture.stream.isAttached());
+    CHECK(listener.acceptOne(5000));
+    CHECK(fixture.rebind(listener));
+}

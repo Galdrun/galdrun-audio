@@ -274,6 +274,8 @@ const char* messageTypeName(MessageType type)
         return "setDriftCorrection";
     case MessageType::DriftFeedback:
         return "driftFeedback";
+    case MessageType::DiscardStream:
+        return "discardStream";
     }
     return "unknown";
 }
@@ -406,7 +408,8 @@ bool parseMessageType(const std::string& name, MessageType& out)
                                  MessageType::SetRoomName,
                                  MessageType::RoomName,
                                  MessageType::SetDriftCorrection,
-                                 MessageType::DriftFeedback};
+                                 MessageType::DriftFeedback,
+                                 MessageType::DiscardStream};
     for (size_t i = 0; i < sizeof(known) / sizeof(known[0]); ++i)
     {
         if (name == messageTypeName(known[i]))
@@ -1243,7 +1246,8 @@ bool parseTransportAt(const json::Value& payload, TransportAt& out, std::string&
 
 namespace {
 
-// PAUSE_AT, STOP_AT and FLUSH say the same thing; only the type string differs.
+// PAUSE_AT, STOP_AT, FLUSH and DISCARD_STREAM say the same thing; only the type
+// string differs.
 json::Value makeTransportAt(MessageType type, const TransportAt& at)
 {
     json::Value root = json::Value::makeObject();
@@ -1270,6 +1274,11 @@ json::Value makeStopAt(const TransportAt& at)
 json::Value makeFlush(const TransportAt& at)
 {
     return makeTransportAt(MessageType::Flush, at);
+}
+
+json::Value makeDiscardStream(const TransportAt& at)
+{
+    return makeTransportAt(MessageType::DiscardStream, at);
 }
 
 bool parseSetVolume(const json::Value& payload, SetVolume& out, std::string& error)

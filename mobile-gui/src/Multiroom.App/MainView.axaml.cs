@@ -24,7 +24,13 @@ public partial class MainView : UserControl
             _model.SetWidth(Bounds.Width);
         };
         DetachedFromVisualTree += async (_, _) => await _model.DisconnectAsync();
-        _model.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ShellViewModel.HasInfo) && !_model.HasInfo) InfoButton.Flyout?.Hide(); };
+        _model.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ShellViewModel.HasInfo) && !_model.HasInfo) InfoButton.Flyout?.Hide();
+            // The queue opens on the playing track, once it is laid out.
+            if (e.PropertyName == nameof(ShellViewModel.IsQueue) && _model.IsQueue)
+                Avalonia.Threading.Dispatcher.UIThread.Post(QueuePage.ScrollToCurrent, Avalonia.Threading.DispatcherPriority.Loaded);
+        };
         AttachedToVisualTree += (_, _) => { if (TopLevel.GetTopLevel(this) is { } top) top.BackRequested += SystemBack; };
         DetachedFromVisualTree += (_, _) => { if (TopLevel.GetTopLevel(this) is { } top) top.BackRequested -= SystemBack; };
         // A right click (or the mouse's back button) is the desktop's system back, wherever it lands, unless it

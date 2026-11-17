@@ -2579,6 +2579,7 @@ START_AT              server -> client
 PAUSE_AT              server -> client
 STOP_AT               server -> client
 FLUSH                 server -> client
+DISCARD_STREAM        server -> client
 
 TRACK_INFO            server -> client
 TRACK_BOUNDARY        server -> client
@@ -3652,7 +3653,69 @@ peer ignores a message type it does not know (section 55).
 
 ---
 
-# 62. Wire reference
+# 62. DISCARD_STREAM: a room moved before it was started
+
+`DISCARD_STREAM` tells a room that has not been started to drop what it holds,
+because the server has moved it onto another stream. Wire type number 38.
+
+```json
+{
+  "type": "discardStream",
+  "sessionId": "s-1",
+  "serverTimeNs": 145000000000,
+  "timelineNs": 260000000000
+}
+```
+
+The fields are the ones `FLUSH` carries (section 54). `timelineNs` is where the
+stream the room was moved to begins: the first audio packet of that stream
+starts exactly there. `serverTimeNs` is the instant the server sent it, for
+the log; the room acts on arrival.
+
+## Why it exists
+
+A move is normally seen in the audio itself: the first packet of the new
+position jumps, and the room rejoins (section 43). That needs the room to
+read on. A room that has been prebuffered and not started does not drain, so
+once its buffer is full its connection thread waits for space and stops
+reading its audio connection. The packet that would announce the move waits
+behind audio nobody will play, the room keeps reporting the stream it was
+moved off, the server rightly does not start it on those reports, and neither
+side can move. The control connection still reaches the room.
+
+## When the server sends it
+
+When it moves a room that is not playing or paused on the line -- a play after
+a stop, a seek, a rejoin or a hard resync -- after the move and before the
+moved stream produces anything. A room playing or paused drains, or will, and
+sees the move in its audio as before; it is never sent this message.
+
+## What a room does
+
+1. It drops everything it holds at once, the way it empties its buffer for a
+   rejoin. That works whether or not its device is running.
+2. A connection thread waiting for buffer space gives the packet it was
+   pushing up and reads on.
+3. It drops arriving audio until the first packet of the new stream: one that
+   begins at `timelineNs`, carries `afterFlush`, or is the first on a new
+   audio connection. That packet is handled as a rejoin, so it lands in the
+   emptied buffer.
+4. A room that already holds the stream it names -- its first packet arrived
+   before the message, as it may, because the two travel on different
+   connections -- does nothing.
+5. If the new stream has not begun within the rejoin timeout (5 s) while old
+   audio keeps arriving, the room drops its audio connection; the server
+   resumes on the next one from where it is now.
+
+## The version stays at 2
+
+For section 55's reason: a peer ignores a message type it does not know. A
+room that predates this section stays where it was before it: it recovers
+from a move like this only when its client restarts.
+
+---
+
+# 63. Wire reference
 
 The sections above name messages and fields; the numbers and encodings below
 are what the reference implementation assigns. They live in one copy shared by
@@ -3710,7 +3773,7 @@ receiver knows it, and an unknown number with an unknown `type` is ignored.
 | 9 | `streamReady` | 22 | `flush` | 35 | `roomName` |
 | 10 | `bufferStatus` | 23 | `systemReport` | 36 | `setDriftCorrection` |
 | 11 | `streamAttach` | 24 | `audioDevices` | 37 | `driftFeedback` |
-| 12 | `startAt` | 25 | `setAudioDevice` | | |
+| 12 | `startAt` | 25 | `setAudioDevice` | 38 | `discardStream` |
 | 13 | `playbackReport` | 26 | `rescanAudio` | | |
 
 Numbers are never reused or renumbered. `AUDIO_PCM` and `AUDIO_FLAC` in

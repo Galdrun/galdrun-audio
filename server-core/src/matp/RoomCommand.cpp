@@ -20,6 +20,8 @@ const char* roomCommandKindName(RoomCommandKind kind)
         return "trackBoundary";
     case RoomCommandKind::Flush:
         return "flush";
+    case RoomCommandKind::DiscardStream:
+        return "discardStream";
     case RoomCommandKind::Renegotiate:
         return "sessionConfig";
     case RoomCommandKind::WakeStream:

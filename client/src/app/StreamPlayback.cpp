@@ -578,6 +578,22 @@ bool StreamPlayback::flush(const matp::TransportAt& request, std::string& error)
     return true;
 }
 
+bool StreamPlayback::discardStream(const matp::TransportAt& request, std::string& /*error*/)
+{
+    // Not an error when there is nothing to do: a stream not attached holds
+    // nothing, and one already on the new stream has nothing of the old left.
+    if (!stream_.discard(request.timelineNs))
+    {
+        MULTIROOM_DEBUG("discard for timeline %llu ns: nothing held for another stream",
+                  static_cast<unsigned long long>(request.timelineNs));
+        return true;
+    }
+    MULTIROOM_INFO("discarding what this room holds: the server moved it to timeline %llu ns "
+             "before it was started",
+             static_cast<unsigned long long>(request.timelineNs));
+    return true;
+}
+
 void StreamPlayback::logTransport(const char* what, uint64_t timelineNs)
 {
     if (source_.isScheduled())

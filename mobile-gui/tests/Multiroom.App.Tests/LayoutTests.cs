@@ -97,7 +97,8 @@ public sealed class LayoutTests
                 if (page == "Rooms") Assert.Contains(content.OfType<TextBlock>(), t => t.Text?.Contains("core reason EXACT", StringComparison.Ordinal) == true);
             }
             // The shell has no padding; every page keeps 16 px from the window's sides itself (16 from the navigation when shown).
-            // Now Playing does inside, so its cover can run edge to edge (NowPlayingTests).
+            // Now Playing does inside, so its cover can run edge to edge (NowPlayingTests). The queue runs to the right
+            // edge, where its scrollbar is, its rows keeping their own space there.
             var pages = view.FindControl<Grid>("Pages")!;
             var left = width < 700 ? 16 : view.FindControl<ListBox>("Navigation")!.TranslatePoint(new Point(view.FindControl<ListBox>("Navigation")!.Bounds.Width + 4 + 16, 0), window)!.Value.X;
             foreach (var page in new[] { "Home", "Queue", "Zones", "Sources", "Playlists", "Rooms", "Diagnostics" })
@@ -106,7 +107,7 @@ public sealed class LayoutTests
                 var shown = pages.Children.Single(c => c.IsVisible);
                 Assert.Equal(left, shown.TranslatePoint(new Point(), window)!.Value.X, 0.5);
                 var side = view.FindControl<Border>("SideQueue")!;
-                var right = side.IsVisible ? side.TranslatePoint(new Point(), window)!.Value.X - 20 : window.Bounds.Width - 16;
+                var right = side.IsVisible ? side.TranslatePoint(new Point(), window)!.Value.X - 20 : window.Bounds.Width - (page == "Queue" ? 0 : 16);
                 Assert.Equal(right, shown.TranslatePoint(new Point(shown.Bounds.Width, 0), window)!.Value.X, 0.5);
             }
         }

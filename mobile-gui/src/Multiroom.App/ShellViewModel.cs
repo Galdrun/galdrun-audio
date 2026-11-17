@@ -20,14 +20,14 @@ public partial class ShellViewModel : ObservableObject
     private readonly Func<TimeSpan, CancellationToken, IAsyncEnumerable<DiscoveredServer>> _discovery;
     private readonly Func<string, string?, MultiroomClient> _newClient;
     private string _beforeVolume = "Sources";
-    // The page an album was opened from (Home, and its "See all" shelf if open), for back once Browse has no
-    // history of its own.
+    // The page an album was opened from, for back once Browse has no history of its own.
     private string? _beforeBrowse;
-    private HomeShelf? _beforeShelf;
+    // Home's "See all" shelf as it was when Home was last left, opened again when back returns to Home.
+    private HomeShelf? _homeShelf;
     // The pages left on the way here, oldest first, for back. Opening one of them again returns to it, so a page
     // is in it once at most. Home is where it starts: back on Home leaves the app.
     private readonly List<string> _history = [];
-    public IReadOnlyList<string> Pages { get; } = ["Home", "Sources", "Search", "Browse", "Playlists", "Favourites", "Recommendations", "Queue", "Zones", "Rooms", "Diagnostics", "Now Playing", "Volume", "Servers", "Server"];
+    public IReadOnlyList<string> Pages { get; } = ["Home", "Sources", "Search", "Browse", "Playlists", "Favourites", "Recommendations", "Queue", "Zones", "Rooms", "Diagnostics", "Now Playing", "Volume", "Zone Setup", "Servers", "Server"];
     // The menu's pages: Browse is reached from Sources, Home and Search.
     public IReadOnlyList<string> MenuPages { get; } = ["Home", "Sources", "Search", "Playlists", "Favourites", "Recommendations", "Queue", "Zones", "Rooms", "Diagnostics", "Now Playing", "Volume", "Servers", "Server"];
     [ObservableProperty] private bool _isMenuOpen;
@@ -54,8 +54,7 @@ public partial class ShellViewModel : ObservableObject
         Home.PlayedIn += zone => Playback.SelectedZone = zone;
         Home.OpenRequested += (node, title) =>
         {
-            var shelf = Home.OpenShelf;
-            _beforeBrowse = SelectedPage; SelectedPage = "Browse"; _beforeShelf = shelf;
+            _beforeBrowse = SelectedPage; SelectedPage = "Browse";
             _ = Browser.OpenNodeAsync(node, title);
         };
         Collections.QueueChanged += () => _session?.Refresh();
@@ -100,14 +99,16 @@ public partial class ShellViewModel : ObservableObject
     public bool IsQueue => SelectedPage == "Queue";
     public bool IsZones => SelectedPage == "Zones";
     public bool IsNowPlaying => SelectedPage == "Now Playing";
-    // An album page starts with its cover: no brand, connection, heading or refresh above it.
-    public bool ShowContentHeader => !IsHome && !IsNowPlaying && !(IsBrowser && Browser.IsDetail);
+    // An album page starts with its cover, the volume page with its rooms: no brand, connection, heading or refresh above it.
+    public bool ShowContentHeader => !IsHome && !IsNowPlaying && !IsVolume && !IsZoneSetup && !IsQueue && !(IsBrowser && Browser.IsDetail);
     // Not on Now Playing: its transport buttons and the waking pill show what it waits for.
     public bool ShowTopProgress => IsBusy && _busyShown && !IsNowPlaying;
     public bool IsVolume => SelectedPage == "Volume";
+    // The selected zone's rooms, opened from the zone's name on the zone bar.
+    public bool IsZoneSetup => SelectedPage == "Zone Setup";
     // The chooser pages are pure pickers/forms: the bottom bar never shows
     // there, connected or not.
-    public bool ShowZoneBar => Playback.HasZone && !IsZones && !IsVolume && !IsSetup;
+    public bool ShowZoneBar => Playback.HasZone && !IsZones && !IsVolume && !IsZoneSetup && !IsSetup;
     public bool IsSearch => SelectedPage == "Search";
     public bool IsBrowser => SelectedPage is "Browse" or "Search";
     public bool IsCollections => SelectedPage is "Playlists" or "Favourites" or "Recommendations";
@@ -168,6 +169,7 @@ public partial class ShellViewModel : ObservableObject
     partial void OnSelectedProviderChanged(ProviderView? value) => OnPropertyChanged(nameof(CanBrowseProvider));
     partial void OnProvidersChanged(IReadOnlyList<ProviderView> value) => OnPropertyChanged(nameof(NoSources));
     partial void OnIsWideChanged(bool value) => OnPropertyChanged(nameof(ShowSideQueue));
+    partial void OnSelectedPageChanging(string? oldValue, string newValue) { if (oldValue == "Home") _homeShelf = Home.OpenShelf; }
     partial void OnSelectedPageChanged(string? oldValue, string newValue)
     {
         var index = _history.LastIndexOf(newValue);
@@ -177,12 +179,12 @@ public partial class ShellViewModel : ObservableObject
     }
     partial void OnSelectedPageChanged(string value)
     {
-        if (value != "Browse") { _beforeBrowse = null; _beforeShelf = null; }
+        if (value != "Browse") _beforeBrowse = null;
         IsMenuOpen = false;
         _page.Cancel(); _page.Dispose(); _page = new(); Browser.Cancel(); Browser.SetSearchVisible(IsSearch); Playback.CancelMarks();
         foreach (var property in new[] { nameof(Heading), nameof(IsHome), nameof(IsSettings), nameof(IsSources), nameof(IsQueue),
             nameof(IsZones), nameof(IsBrowser), nameof(IsSearch), nameof(IsNowPlaying), nameof(ShowSideQueue),
-            nameof(IsCollections), nameof(IsRooms), nameof(IsDiagnostics), nameof(IsVolume), nameof(IsServers),
+            nameof(IsCollections), nameof(IsRooms), nameof(IsDiagnostics), nameof(IsVolume), nameof(IsZoneSetup), nameof(IsServers),
             nameof(IsSetup), nameof(ShowZoneBar), nameof(ShowContentHeader), nameof(ShowTopProgress) }) OnPropertyChanged(property);
         if (IsCollections) Collections.Page = value;
         if (!IsHome) { Home.OpenShelf = null; Home.CloseSheet(); }
@@ -206,10 +208,16 @@ public partial class ShellViewModel : ObservableObject
         if (Home.IsSheetOpen) { if (Home.IsActionsStep) Home.CloseSheet(); else Home.SheetBackCommand.Execute(null); return true; }
         if (IsVolume) { CloseVolume(); return true; }
         if (IsBrowser && Browser.CanBack) { Browser.BackCommand.Execute(null); return true; }
-        if (IsBrowser && _beforeBrowse is { } opener) { var shelf = _beforeShelf; SelectedPage = opener; Home.OpenShelf = shelf; return true; }
+        if (IsBrowser && _beforeBrowse is { } opener) { BackTo(opener); return true; }
         if (IsHome && Home.IsShelfOpen) { Home.CloseShelfCommand.Execute(null); return true; }
-        if (_history.Count > 0) { SelectedPage = _history[^1]; return true; }
+        if (_history.Count > 0) { BackTo(_history[^1]); return true; }
         return false;
+    }
+    private void BackTo(string page)
+    {
+        var shelf = _homeShelf;
+        SelectedPage = page;
+        if (page == "Home") Home.OpenShelf = shelf;
     }
 
     [RelayCommand]

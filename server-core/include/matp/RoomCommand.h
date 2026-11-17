@@ -32,6 +32,7 @@ enum class RoomCommandKind
     TrackInfo,     // sections 17 and 44: what is playing now
     TrackBoundary, // section 23: where the next track begins
     Flush,         // section 54: drop what the room holds from a position on (phase 26)
+    DiscardStream, // section 62: drop what a room not yet started holds, now
 
     // Section 12, from this end: choose the room's format again (phase 17).
     // It carries no payload -- the new format is asked of the room's zone
@@ -78,7 +79,7 @@ struct RoomCommand
     // every one of these messages that neither the zone nor the scheduler
     // owns, and it is filled where the session is known.
     matp::StartAt start;          // Start
-    matp::TransportAt at;         // Pause, Stop, Flush
+    matp::TransportAt at;         // Pause, Stop, Flush, DiscardStream
     matp::SetVolume volume;       // Volume
     matp::TrackInfo info;         // TrackInfo
     matp::TrackBoundary boundary; // TrackBoundary

@@ -17,6 +17,8 @@ public partial class QueueView : UserControl
     private Point _pressPoint;
     private bool _dragging;
     private int _swipeApplied;
+    // The press moved: its release is a swipe or a drag, not a tap.
+    private bool _moved;
 
     public QueueView()
     {
@@ -25,6 +27,7 @@ public partial class QueueView : UserControl
         QueueList.AddHandler(PointerMovedEvent, Moved, RoutingStrategies.Tunnel);
         QueueList.AddHandler(PointerReleasedEvent, Released, RoutingStrategies.Tunnel);
         QueueList.PointerCaptureLost += (_, _) => ResetDrag();
+        QueueList.Tapped += RowTapped;
         DetachedFromVisualTree += (_, _) => ResetDrag();
     }
 
@@ -35,12 +38,32 @@ public partial class QueueView : UserControl
     private static bool OnDeleteButton(object? source) =>
         source is Visual visual && visual.GetSelfAndVisualAncestors().OfType<Button>().Any(button => button.Classes.Contains("rowdelete"));
 
+    // The playing row in the middle of the list, or as near as the list's ends allow.
+    public void ScrollToCurrent()
+    {
+        if (DataContext is not PlaybackViewModel model || model.Items.FirstOrDefault(r => r.IsCurrent) is not { } row) return;
+        var index = model.Items.IndexOf(row);
+        QueueList.ScrollIntoView(index); QueueList.UpdateLayout();
+        if (QueueList.ContainerFromIndex(index) is not Control item || QueueList.Scroll is not ScrollViewer scroll ||
+            item.TranslatePoint(default, scroll) is not { } at) return;
+        var top = at.Y + scroll.Offset.Y;
+        scroll.Offset = new Vector(scroll.Offset.X, Math.Max(0, top - (scroll.Viewport.Height - item.Bounds.Height) / 2));
+    }
+
+    // A tap plays its row; not one on the row's grip or buttons.
+    private void RowTapped(object? sender, TappedEventArgs e)
+    {
+        if (_moved || OnGrip(e.Source) || e.Source is Visual visual && visual.GetSelfAndVisualAncestors().OfType<Button>().Any()) return;
+        if (ContainerOf(e.Source)?.Content is not QueueRow row || DataContext is not PlaybackViewModel model) return;
+        model.SelectedItem = row; model.StartItemCommand.Execute(null);
+    }
+
     private void Pressed(object? sender, PointerPressedEventArgs e)
     {
         _pressItem = OnDeleteButton(e.Source) ? null : ContainerOf(e.Source);
         _pointer = e.Pointer;
         _pressPoint = e.GetPosition(QueueList);
-        _swipeApplied = 0;
+        _swipeApplied = 0; _moved = false;
         _dragItem = OnGrip(e.Source) ? _pressItem : null;
         if (_dragItem is not null) e.Handled = true; // Grabbing the grip starts a drag, never a selection.
     }
@@ -49,6 +72,7 @@ public partial class QueueView : UserControl
     {
         if (_pointer != e.Pointer || _pressItem is null && _dragItem is null) return;
         var delta = e.GetPosition(QueueList) - _pressPoint;
+        if (Math.Abs(delta.X) >= DragThreshold || Math.Abs(delta.Y) >= DragThreshold) _moved = true;
         if (!_dragging)
         {
             if (_dragItem is null)

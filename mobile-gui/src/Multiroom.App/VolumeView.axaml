@@ -1,0 +1,90 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Multiroom.App" x:Class="Multiroom.App.VolumeView" x:DataType="vm:PlaybackViewModel">
+ <!-- The zone's rooms, each with its own slider and mute, above the zone's dial and mute. -->
+ <UserControl.Resources>
+  <SolidColorBrush x:Key="SliderTrackValueFill" Color="#CBEC97" />
+  <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#D6F2AC" />
+  <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="#D6F2AC" />
+  <SolidColorBrush x:Key="SliderTrackFill" Color="#2E3638" />
+  <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="#353E40" />
+  <SolidColorBrush x:Key="SliderTrackFillPressed" Color="#353E40" />
+  <SolidColorBrush x:Key="SliderThumbBackground" Color="#EEF1ED" />
+  <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="#FFFFFF" />
+  <x:Double x:Key="SliderTrackThemeHeight">4</x:Double>
+ </UserControl.Resources>
+ <UserControl.Styles>
+  <Style Selector="Button.mute">
+   <Setter Property="Background" Value="Transparent" /><Setter Property="CornerRadius" Value="22" /><Setter Property="Padding" Value="0" />
+   <Setter Property="Width" Value="44" /><Setter Property="Height" Value="44" />
+   <Setter Property="HorizontalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Path.speaker">
+   <Setter Property="Stroke" Value="#A0A8AB" /><Setter Property="StrokeThickness" Value="1.5" /><Setter Property="StrokeLineCap" Value="Round" />
+   <Setter Property="StrokeJoin" Value="Round" /><Setter Property="Width" Value="20" /><Setter Property="Height" Value="20" />
+  </Style>
+  <Style Selector="Path.speaker.off"><Setter Property="Stroke" Value="#F4BA9D" /></Style>
+  <Style Selector="Button.mute.square"><Setter Property="CornerRadius" Value="10" /><Setter Property="BorderBrush" Value="#2E3638" /><Setter Property="BorderThickness" Value="1" /></Style>
+  <Style Selector="Border.room"><Setter Property="Padding" Value="0,6" /></Style>
+  <Style Selector="Border.room.muted Slider"><Setter Property="Opacity" Value="0.4" /></Style>
+ </UserControl.Styles>
+ <Grid RowDefinitions="*,Auto" MaxWidth="650">
+  <ScrollViewer VerticalScrollBarVisibility="Hidden">
+   <StackPanel Spacing="8">
+    <TextBlock Text="No rooms in this zone." Classes="muted" IsVisible="{Binding !RoomVolumes.Count}" />
+    <ItemsControl x:Name="RoomVolumeList" ItemsSource="{Binding RoomVolumes}">
+     <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+     <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:RoomVolume">
+      <!-- The room's picture, its name and volume above its slider, its mute at the right. -->
+      <Border Classes="room" Classes.muted="{Binding Muted}">
+       <Grid ColumnDefinitions="48,*,Auto" RowDefinitions="Auto,Auto">
+        <Border Grid.RowSpan="2" Width="48" Height="48" CornerRadius="10" ClipToBounds="True" VerticalAlignment="Center">
+         <Image Source="{Binding Picture}" Stretch="UniformToFill" />
+        </Border>
+        <Grid Grid.Column="1" ColumnDefinitions="*,Auto" Margin="14,0,4,0">
+         <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+          <TextBlock Text="offline" Classes="muted" FontSize="12" IsVisible="{Binding !Connected}" VerticalAlignment="Center" />
+         </StackPanel>
+         <TextBlock Grid.Column="1" Text="{Binding VolumeText}" Classes="muted" FontSize="13" VerticalAlignment="Center" />
+        </Grid>
+        <Slider Grid.Column="1" Grid.Row="1" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" SmallChange="1" LargeChange="10"
+         Value="{Binding Volume, Mode=TwoWay}" Margin="14,-8,4,-8" AutomationProperties.Name="{Binding Name, StringFormat='{}{0} volume'}" />
+        <Button Grid.Column="2" Grid.RowSpan="2" Classes="mute square" Command="{Binding ToggleMuteCommand}" VerticalAlignment="Center" Margin="10,0,0,0"
+         AutomationProperties.Name="{Binding MuteLabel}" ToolTip.Tip="{Binding MuteLabel}">
+         <Grid>
+          <Path Classes="speaker" IsVisible="{Binding !Muted}" Data="M 1.5,7.5 L 5,7.5 L 9,3 L 9,17 L 5,12.5 L 1.5,12.5 Z M 12,6.5 Q 16,10 12,13.5 M 15,3 Q 22,10 15,17" />
+          <Path Classes="speaker off" IsVisible="{Binding Muted}" Data="M 1.5,7.5 L 5,7.5 L 9,3 L 9,17 L 5,12.5 L 1.5,12.5 Z M 13,7 L 19,13 M 19,7 L 13,13" />
+         </Grid>
+        </Button>
+       </Grid>
+      </Border>
+     </DataTemplate></ItemsControl.ItemTemplate>
+    </ItemsControl>
+   </StackPanel>
+  </ScrollViewer>
+  <StackPanel Grid.Row="1" Spacing="4" Margin="0,16,0,0">
+   <Grid Width="280" Height="280" HorizontalAlignment="Center">
+    <vm:VolumeDial x:Name="ZoneDial" Value="{Binding ZoneVolume, Mode=TwoWay}" IsMuted="{Binding ZoneMuted}" IsEnabled="{Binding CanSetZoneVolume}"
+     Cursor="SizeAll" AutomationProperties.Name="Zone volume: swipe up or right for louder, down or left for quieter"
+     ToolTip.Tip="Swipe up or right for louder, down or left for quieter" />
+    <StackPanel IsHitTestVisible="False" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="2">
+     <Grid HorizontalAlignment="Center" Width="26" Height="26">
+      <Path Classes="speaker" Width="26" Height="26" Stretch="Uniform" IsVisible="{Binding !ZoneMuted}" Data="M 1.5,7.5 L 5,7.5 L 9,3 L 9,17 L 5,12.5 L 1.5,12.5 Z M 12,6.5 Q 16,10 12,13.5 M 15,3 Q 22,10 15,17" />
+      <Path Classes="speaker off" Width="26" Height="26" Stretch="Uniform" IsVisible="{Binding ZoneMuted}" Data="M 1.5,7.5 L 5,7.5 L 9,3 L 9,17 L 5,12.5 L 1.5,12.5 Z M 13,7 L 19,13 M 19,7 L 13,13" />
+     </Grid>
+     <TextBlock x:Name="ZoneVolumeText" Text="{Binding ZoneVolume, StringFormat='{}{0:0}%'}" FontSize="48" FontWeight="Bold" HorizontalAlignment="Center" />
+     <TextBlock Text="{Binding ZoneName}" Classes="muted" FontSize="12" LetterSpacing="3" HorizontalAlignment="Center"
+      MaxWidth="150" TextTrimming="CharacterEllipsis" />
+    </StackPanel>
+   </Grid>
+   <Button x:Name="ZoneMuteButton" Classes="mute" Width="56" Height="56" CornerRadius="28" Background="#1B2123" HorizontalAlignment="Center"
+    Command="{Binding MuteZoneCommand}" IsEnabled="{Binding CanMuteZone}" AutomationProperties.Name="{Binding ZoneMuteLabel}" ToolTip.Tip="{Binding ZoneMuteLabel}">
+    <Grid>
+     <Path Classes="speaker" IsVisible="{Binding !ZoneMuted}" Data="M 1.5,7.5 L 5,7.5 L 9,3 L 9,17 L 5,12.5 L 1.5,12.5 Z M 12,6.5 Q 16,10 12,13.5 M 15,3 Q 22,10 15,17" />
+     <Path Classes="speaker off" IsVisible="{Binding ZoneMuted}" Data="M 1.5,7.5 L 5,7.5 L 9,3 L 9,17 L 5,12.5 L 1.5,12.5 Z M 13,7 L 19,13 M 19,7 L 13,13" />
+    </Grid>
+   </Button>
+  </StackPanel>
+ </Grid>
+</UserControl>

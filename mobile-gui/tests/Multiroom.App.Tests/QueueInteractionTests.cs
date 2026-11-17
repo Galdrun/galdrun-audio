@@ -22,6 +22,50 @@ public sealed class QueueInteractionTests
     }
 
     [AvaloniaFact]
+    public void Opening_the_queue_puts_the_playing_track_in_the_middle()
+    {
+        var view = new MainView(loadPreferences: false); var model = (ShellViewModel)view.DataContext!;
+        var items = Enumerable.Range(1, 40).Select(i => new QueueItem(i, new Track("local", $"track:{i}", $"T{i}"))).ToArray();
+        model.Playback.Apply(new([new("living", Queue: new("living", items, RepeatMode.Off, false, QueueTransport.Paused, Current: 25))], []));
+        var window = new Window { Width = 390, Height = 700, Content = view };
+        try
+        {
+            window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            model.SelectedPage = "Queue"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var list = view.FindControl<QueueView>("QueuePage")!.FindControl<ListBox>("QueueList")!;
+            var row = (Control)list.ContainerFromIndex(24)!;
+            var scroll = (ScrollViewer)list.Scroll!;
+            var middle = row.TranslatePoint(new Point(0, row.Bounds.Height / 2), scroll)!.Value.Y;
+            Assert.Equal(scroll.Viewport.Height / 2, middle, 1.0);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Rows_show_number_or_bars_light_the_playing_one_and_a_tap_plays_a_row()
+    {
+        var (model, paths, bodies) = Model();
+        var view = new QueueView { DataContext = model };
+        var window = new Window { Width = 500, Height = 400, Content = view };
+        try
+        {
+            window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            Assert.Equal("2 tracks", view.FindControl<TextBlock>("QueueCount")!.Text);
+            Assert.Equal([(true, "First"), (false, "Second")], model.Items.Select(r => (r.IsCurrent, r.Title)));
+            Assert.Equal(2, model.Items[1].Number);
+            var rows = view.FindControl<ListBox>("QueueList")!.GetVisualDescendants().OfType<ListBoxItem>().ToArray();
+            var lit = rows.Select(r => r.GetVisualDescendants().OfType<Border>().First(b => b.Classes.Contains("queuerow")).Classes.Contains("current"));
+            Assert.Equal([true, false], lit);
+            var title = rows[1].GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "Second");
+            var at = title.TranslatePoint(new Point(4, title.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(at, MouseButton.Left); window.MouseUp(at, MouseButton.Left); Dispatcher.UIThread.RunJobs();
+            Assert.Equal(["POST /api/v1/zones/living/play"], paths);
+            Assert.Equal("{\"item\":2}", Assert.Single(bodies));
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public void Dragging_the_handle_reorders_the_queue_with_a_visible_drop_line()
     {
         var (model, paths, bodies) = Model();

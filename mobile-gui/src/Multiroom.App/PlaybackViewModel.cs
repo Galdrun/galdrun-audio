@@ -11,7 +11,9 @@ public sealed partial class PlaybackViewModel : ObservableObject
     private readonly Func<Func<MultiroomClient, CancellationToken, Task>, Task> _execute;
     private PlaybackSnapshot _snapshot = new([], []);
     private string? _selectWhenAvailable;
-    private bool _zoneVolumeDirty;
+    private readonly LatestValue _zoneVolumeSend;
+    private string? _zoneVolumeTarget;
+    private bool _applyingZoneVolume;
     private readonly TimeProvider _time;
     private long _positionAt;
     private readonly Dictionary<string, long> _positionSamples = [];
@@ -25,7 +27,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
     private readonly Dictionary<string, (DateTimeOffset End, long Sampled, int Seconds)> _sleepDeadlines = [];
     public string? PreferredZone { get; set; }
     public PlaybackViewModel(Func<Func<MultiroomClient, CancellationToken, Task>, Task> execute, TimeProvider? time = null)
-    { _execute = execute; _time = time ?? TimeProvider.System; }
+    { _execute = execute; _time = time ?? TimeProvider.System; _zoneVolumeSend = new(execute, () => { if (_zoneVolumeTarget == SelectedZone) Update(); }); }
     public ObservableCollection<QueueRow> Items { get; } = [];
     [ObservableProperty] private IReadOnlyList<string> _zones = [];
     [ObservableProperty] private string? _selectedZone;
@@ -43,9 +45,9 @@ public sealed partial class PlaybackViewModel : ObservableObject
     [ObservableProperty] private string _duration = "";
     [ObservableProperty] private IReadOnlyList<RoomView> _rooms = [];
     [ObservableProperty] private ArtworkCache? _artwork;
-    [ObservableProperty] private RoomView? _selectedRoom;
-    [ObservableProperty] private decimal _requestedVolume = 100;
-    [ObservableProperty] private decimal? _requestedZoneVolume;
+    // The volume page: the selected zone's volume in percent, and each of its rooms'.
+    [ObservableProperty] private double _zoneVolume;
+    public ObservableCollection<RoomVolume> RoomVolumes { get; } = [];
     [ObservableProperty, NotifyPropertyChangedFor(nameof(PositionText))] private double _progressSeconds;
     public double TrackLengthSeconds => Math.Max(0, Current?.Track?.Duration?.TotalSeconds ?? 0);
     public double ProgressMaximum => Math.Max(1, TrackLengthSeconds);
@@ -54,6 +56,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
     public bool IsScrubbing => _scrubbing;
     public string PositionText => _scrubbing || HasPosition ? FormatPosition(ProgressSeconds) : "—:—";
     public string LengthText => Current?.Station is not null ? "LIVE" : TrackLengthSeconds > 0 ? FormatPosition(TrackLengthSeconds) : "—:—";
+    public string QueueCount => Items.Count == 1 ? "1 track" : $"{Items.Count} tracks";
     public string QueuePosition => Queue?.Current is { } id && Queue.Items.ToList().FindIndex(item => item.Id == id) is var index && index >= 0
         ? $"{index + 1} / {Queue.Items.Count}" : "";
     private static string FormatPosition(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
@@ -64,9 +67,9 @@ public sealed partial class PlaybackViewModel : ObservableObject
     public string ZonePosition => $"Zone {Zones.ToList().IndexOf(SelectedZone ?? "") + 1} of {Zones.Count}: {ZoneName}";
     public IReadOnlyList<bool> ZoneIndicators => Zones.Select(zone => zone == SelectedZone).ToArray();
     public ZoneDesired? ZoneSettings => _snapshot.Zones.FirstOrDefault(z => z.Zone == SelectedZone)?.Desired;
-    public string ZoneVolumeStatus => ZoneSettings?.Volume is { } volume ? $"Zone volume: {volume:P0}" : "Zone volume: unknown";
-    public string ZoneMuteLabel => ZoneSettings?.Muted == true ? "Unmute zone" : "Mute zone";
-    public bool CanSetZoneVolume => HasZone && RequestedZoneVolume is >= 0 and <= 100;
+    public bool ZoneMuted => ZoneSettings?.Muted == true;
+    public string ZoneMuteLabel => ZoneMuted ? "Unmute zone" : "Mute zone";
+    public bool CanSetZoneVolume => HasZone && ZoneSettings?.Volume is not null;
     public bool CanMuteZone => HasZone && ZoneSettings?.Muted is not null;
     public ObservableCollection<RoomChoice> Membership { get; } = [];
     public string? CurrentArtwork => Current?.Item.ArtworkId;
@@ -86,8 +89,6 @@ public sealed partial class PlaybackViewModel : ObservableObject
     public string LikeLabel => Liked ? "Unlike" : "I like it";
     public bool IsRepeatEnabled => Queue?.Repeat is RepeatMode.All or RepeatMode.One;
     public bool IsRepeatOne => Queue?.Repeat == RepeatMode.One;
-    public string ActualVolume => SelectedRoom?.Actual?.Settings is { } settings && settings.TryGetProperty("volume", out var v)
-        ? $"Reported volume: {v.GetDouble():P0}" : "Reported volume: unknown";
     public bool HasZone => SelectedZone is not null;
     public bool IsEmpty => Items.Count == 0;
     public QueueState? Queue => _snapshot.Zones.FirstOrDefault(z => z.Zone == SelectedZone)?.Queue;
@@ -121,11 +122,15 @@ public sealed partial class PlaybackViewModel : ObservableObject
     }
 
     partial void OnSelectedZoneChanged(string? value)
-    { _zoneVolumeDirty = false; SelectedItem = null; Membership.Clear(); Update(); OnPropertyChanged(nameof(HasZone)); }
-    partial void OnRequestedZoneVolumeChanged(decimal? value)
-    { _zoneVolumeDirty = true; OnPropertyChanged(nameof(CanSetZoneVolume)); }
+    { SelectedItem = null; Membership.Clear(); Update(); OnPropertyChanged(nameof(HasZone)); }
+    // Moved by hand: sent as it moves, the newest value once the one before is answered.
+    partial void OnZoneVolumeChanged(double value)
+    {
+        if (_applyingZoneVolume || SelectedZone is null) return;
+        _zoneVolumeTarget = SelectedZone;
+        _ = SetZoneVolumeAsync();
+    }
     partial void OnSelectedItemChanged(QueueRow? value) => CanSeek = IsSeekCandidate(value?.Item ?? Current);
-    partial void OnSelectedRoomChanged(RoomView? value) => OnPropertyChanged(nameof(ActualVolume));
 
     private void Update()
     {
@@ -144,14 +149,16 @@ public sealed partial class PlaybackViewModel : ObservableObject
         Transport = queue?.Transport.ToString() ?? "Stopped";
         Repeat = queue?.Repeat.ToString() ?? "Off";
         Shuffle = queue?.Shuffle ?? false;
-        if (!_zoneVolumeDirty)
+        // Not while a moved volume is still being sent: the dial would jump back to the value before.
+        if (!_zoneVolumeSend.Running)
         {
-            RequestedZoneVolume = zone?.Desired?.Volume is { } volume ? (decimal)volume * 100 : null;
-            _zoneVolumeDirty = false;
+            _applyingZoneVolume = true;
+            ZoneVolume = Math.Round((zone?.Desired?.Volume ?? 0) * 100);
+            _applyingZoneVolume = false;
         }
         Duration = item?.Track?.Duration is { } length ? length.ToString(@"h\:mm\:ss") : item?.Station is not null ? "LIVE" : "";
         var selectedId = SelectedItem?.Item.Id;
-        var desired = (queue?.Items ?? []).Select(q => new QueueRow(q, q.Id == queue?.Current)).ToArray();
+        var desired = (queue?.Items ?? []).Select((q, i) => new QueueRow(q, q.Id == queue?.Current, i + 1)).ToArray();
         // Only replace rows which actually changed, preserving scrolling and selection on unrelated events.
         for (var i = 0; i < desired.Length; i++)
         {
@@ -162,11 +169,13 @@ public sealed partial class PlaybackViewModel : ObservableObject
         SelectedItem = Items.FirstOrDefault(r => r.Item.Id == selectedId);
         CanSeek = IsSeekCandidate(SelectedItem?.Item ?? Current);
         Rooms = _snapshot.Rooms.Where(r => r.Desired.Zone == SelectedZone || r.Actual?.Zone == SelectedZone).ToArray();
-        SelectedRoom = Rooms.FirstOrDefault(r => r.Client == SelectedRoom?.Client) ?? Rooms.FirstOrDefault();
+        var volumes = Rooms.Select(r => RoomVolumes.FirstOrDefault(v => v.Client == r.Client) ?? NewRoomVolume(r.Client)).ToArray();
+        for (var i = 0; i < volumes.Length; i++) volumes[i].Apply(Rooms[i]);
+        if (!RoomVolumes.SequenceEqual(volumes)) { RoomVolumes.Clear(); foreach (var row in volumes) RoomVolumes.Add(row); }
         foreach (var room in _snapshot.Rooms)
         {
             var choice = Membership.FirstOrDefault(c => c.Client == room.Client);
-            if (choice is null) Membership.Add(new RoomChoice(room.Client, room.Desired.Zone == SelectedZone) { Name = room.DisplayName });
+            if (choice is null) Membership.Add(NewRoomChoice(room));
             else if (choice.Name != room.DisplayName) choice.Name = room.DisplayName;
             else if (!choice.Dirty) choice.Reset(room.Desired.Zone == SelectedZone);
         }
@@ -174,12 +183,25 @@ public sealed partial class PlaybackViewModel : ObservableObject
             if (!_snapshot.Rooms.Any(r => r.Client == Membership[i].Client)) Membership.RemoveAt(i);
         OnPropertyChanged(nameof(IsEmpty)); OnPropertyChanged(nameof(HasZone));
         OnPropertyChanged(nameof(CurrentArtwork));
-        OnPropertyChanged(nameof(CanSeekCurrent)); OnPropertyChanged(nameof(ActualVolume));
+        OnPropertyChanged(nameof(CanSeekCurrent));
         foreach (var property in new[] { nameof(IsPlaying), nameof(PlayPauseLabel), nameof(ZoneName), nameof(ZonePosition), nameof(ZoneIndicators),
-            nameof(ZoneVolumeStatus), nameof(ZoneMuteLabel), nameof(CanSetZoneVolume), nameof(CanMuteZone),
+            nameof(ZoneMuted), nameof(ZoneMuteLabel), nameof(CanSetZoneVolume), nameof(CanMuteZone),
             nameof(TrackLengthSeconds), nameof(ProgressMaximum), nameof(CanScrub), nameof(HasPosition),
-            nameof(PositionText), nameof(LengthText), nameof(QueuePosition), nameof(IsRepeatEnabled), nameof(IsRepeatOne) }) OnPropertyChanged(property);
+            nameof(PositionText), nameof(LengthText), nameof(QueuePosition), nameof(QueueCount), nameof(IsRepeatEnabled), nameof(IsRepeatOne) }) OnPropertyChanged(property);
         RefreshProgress();
+    }
+
+    private RoomChoice NewRoomChoice(RoomView room)
+    {
+        var choice = new RoomChoice(room.Client, room.Desired.Zone == SelectedZone) { Name = room.DisplayName };
+        if (Artwork is { } pictures) _ = choice.LoadPictureAsync(pictures);
+        return choice;
+    }
+    private RoomVolume NewRoomVolume(string client)
+    {
+        var row = new RoomVolume(client, _execute);
+        if (Artwork is { } pictures) _ = row.LoadPictureAsync(pictures);
+        return row;
     }
 
     // The selected zone's sleep timer: minutes left (0: off), counted down here from the seconds the server
@@ -366,18 +388,13 @@ public sealed partial class PlaybackViewModel : ObservableObject
             await api.TransportAsync(zone, action, null, ct);
         });
     }
-    [RelayCommand] private Task SetZoneVolumeAsync()
+    public Task SetZoneVolumeAsync() => _zoneVolumeSend.SendAsync(() => ZoneVolume, async (volume, api, ct) =>
     {
-        var zone = SelectedZone; var volume = RequestedZoneVolume;
-        return _execute(async (api, ct) =>
-        {
-            if (zone is null || volume is not (>= 0 and <= 100)) return;
-            var result = await api.SetZoneVolumeAsync(zone, (double)(volume.Value / 100), null, ct);
-            ct.ThrowIfCancellationRequested();
-            if (SelectedZone == zone && RequestedZoneVolume == volume) _zoneVolumeDirty = false;
-            Apply(_snapshot with { Zones = _snapshot.Zones.Select(z => z.Zone == zone ? result : z).ToArray() });
-        });
-    }
+        if (_zoneVolumeTarget is not { } zone) return;
+        var result = await api.SetZoneVolumeAsync(zone, Math.Clamp(volume, 0, 100) / 100, null, ct);
+        ct.ThrowIfCancellationRequested();
+        Apply(_snapshot with { Zones = _snapshot.Zones.Select(z => z.Zone == zone ? result : z).ToArray() });
+    });
     [RelayCommand] private Task MuteZoneAsync()
     {
         var zone = SelectedZone; var muted = ZoneSettings?.Muted;
@@ -466,8 +483,93 @@ public sealed partial class PlaybackViewModel : ObservableObject
         await api.SetClientsAsync(zone, Membership.Where(r => r.Assigned).Select(r => r.Client).ToArray(), ct);
         foreach (var row in Membership) row.Dirty = false;
     });
-    [RelayCommand] private Task SetVolumeAsync() => _execute(async (api, ct) =>
-    { if (SelectedRoom is { } room) await api.SetRoomVolumeAsync(room.Client, (double)(RequestedVolume / 100), ct); });
+}
+
+// A room's own volume and mute on the volume page.
+public sealed partial class RoomVolume : ObservableObject
+{
+    private readonly Func<Func<MultiroomClient, CancellationToken, Task>, Task> _execute;
+    private readonly LatestValue _volumeSend;
+    private RoomView? _room;
+    private bool _applying;
+    private int _muteSends;
+    public RoomVolume(string client, Func<Func<MultiroomClient, CancellationToken, Task>, Task> execute)
+    {
+        Client = client; _name = client; _execute = execute;
+        _volumeSend = new(execute, () => { if (_room is { } room) Apply(room); });
+    }
+    public string Client { get; }
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(MuteLabel))] private string _name;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(VolumeText))] private double _volume;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(MuteLabel))] private bool _muted;
+    [ObservableProperty] private bool _connected;
+    public string VolumeText => $"{Volume:0}%";
+    public string MuteLabel => Muted ? $"Unmute {Name}" : $"Mute {Name}";
+    // The room's own picture, else its art as the web interface shows it.
+    private Avalonia.Media.Imaging.Bitmap? _picture;
+    public Avalonia.Media.IImage Picture => _picture ?? RoomArt.For(Client);
+    public async Task LoadPictureAsync(ArtworkCache pictures)
+    {
+        if (await RoomArt.PictureAsync(pictures, Client) is not { } picture) return;
+        _picture = picture; OnPropertyChanged(nameof(Picture));
+    }
+    // The server's state, except what is still being sent from here.
+    internal void Apply(RoomView room)
+    {
+        _room = room; _applying = true;
+        Name = room.DisplayName; Connected = room.Actual?.Connected == true;
+        if (!_volumeSend.Running) Volume = Math.Round((room.Desired.Volume ?? 0) * 100);
+        if (_muteSends == 0) Muted = room.Desired.Muted == true;
+        _applying = false;
+    }
+    partial void OnVolumeChanged(double value) { if (!_applying) _ = SetVolumeAsync(); }
+    // What the server accepted counts as its state until its next snapshot, so nothing jumps back meanwhile; a
+    // refused change returns to the state before.
+    public Task SetVolumeAsync() => _volumeSend.SendAsync(() => Volume, async (volume, api, ct) =>
+    {
+        volume = Math.Clamp(volume, 0, 100) / 100;
+        await api.SetRoomVolumeAsync(Client, volume, ct);
+        if (_room is { } room) _room = room with { Desired = room.Desired with { Volume = volume } };
+    });
+    [RelayCommand] private async Task ToggleMuteAsync()
+    {
+        var muted = !Muted;
+        _applying = true; Muted = muted; _applying = false;
+        _muteSends++;
+        try
+        {
+            await _execute(async (api, ct) =>
+            {
+                await api.PatchRoomAsync(Client, new(Muted: muted), ct);
+                if (_room is { } room) _room = room with { Desired = room.Desired with { Muted = muted } };
+            });
+        }
+        finally { if (--_muteSends == 0 && _room is { } room) Apply(room); }
+    }
+}
+
+// Sends a value being dragged: one request at a time, and once it is answered the newest value if it moved on
+// meanwhile, so a slider neither floods the server nor ends on a value it has left. done runs after the last one.
+internal sealed class LatestValue(Func<Func<MultiroomClient, CancellationToken, Task>, Task> execute, Action done)
+{
+    private bool _pending;
+    public bool Running { get; private set; }
+    public async Task SendAsync(Func<double> current, Func<double, MultiroomClient, CancellationToken, Task> send)
+    {
+        _pending = true;
+        if (Running) return;
+        Running = true;
+        try
+        {
+            while (_pending)
+            {
+                _pending = false;
+                var value = current();
+                await execute((api, ct) => send(value, api, ct));
+            }
+        }
+        finally { Running = false; done(); }
+    }
 }
 
 public sealed partial class RoomChoice(string client, bool assigned) : ObservableObject
@@ -478,12 +580,25 @@ public sealed partial class RoomChoice(string client, bool assigned) : Observabl
     [ObservableProperty] private bool _assigned = assigned;
     partial void OnAssignedChanged(bool value) => Dirty = true;
     public void Reset(bool assigned) { Assigned = assigned; Dirty = false; }
+    private Avalonia.Media.Imaging.Bitmap? _picture;
+    public Avalonia.Media.IImage Picture => _picture ?? RoomArt.For(Client);
+    public async Task LoadPictureAsync(ArtworkCache pictures)
+    {
+        if (await RoomArt.PictureAsync(pictures, Client) is not { } picture) return;
+        _picture = picture; OnPropertyChanged(nameof(Picture));
+    }
 }
 
-public sealed record QueueRow(QueueItem Item, bool IsCurrent)
+// A queue row as the web interface shows it: its number (bars while it plays), artwork, two lines and its length.
+public sealed record QueueRow(QueueItem Item, bool IsCurrent, int Number)
 {
-    public string Title => (IsCurrent ? "▶  " : "") + (Item.Track?.Title ?? Item.Station?.Name);
-    public string Subtitle => Item.Track?.Artist ?? Item.Station?.Genre ?? "";
+    public string Title => Item.Track?.Title ?? Item.Station?.Name ?? (Item.Item as MediaGroup)?.Title ?? "";
+    public string? Artwork => Item.Item.ArtworkId;
+    public string Length => Item.Station is not null ? "LIVE" : Item.Track?.Duration is { } length
+        ? length.ToString(length.TotalHours >= 1 ? @"h\:mm\:ss" : @"m\:ss") : "";
+    public string Subtitle => Item.Track is { } track ? string.Join(" · ", new[] { track.Artist, track.Album }.Where(t => !string.IsNullOrEmpty(t)))
+        : Item.Station is { } station ? string.Join(" · ", new[] { station.Genre, "Radio" }.Where(t => !string.IsNullOrEmpty(t)))
+        : (Item.Item as MediaGroup)?.Artist ?? "";
     public bool HasFailure => Item.Failure is not null;
 }
 

@@ -805,6 +805,10 @@ void Session::handleMessage(const Message& message, uint64_t arrivalNs)
         handleTransportAt(message, stream_.flush, scheduledFlushes_);
         break;
 
+    case MessageType::DiscardStream:
+        handleTransportAt(message, stream_.discard, discardedStreams_);
+        break;
+
     case MessageType::SetVolume:
         handleSetVolume(message);
         break;

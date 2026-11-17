@@ -312,6 +312,8 @@ public:
     // its start mapping, so the audio that follows plays on the same line
     // without a START_AT. Refused before a granted stream, like the other two.
     Status<SessionError> flushPlayback(const matp::TransportAt& at);
+    // Section 62: a room moved before it was started drops what it holds.
+    Status<SessionError> discardStream(const matp::TransportAt& at);
 
     // Section 39, forwarded and never applied: the gain belongs to the
     // client's own render path, and a server that scaled a sample would end
@@ -505,6 +507,7 @@ public:
     [[nodiscard]] uint64_t pausesSent() const noexcept { return pausesSent_; }
     [[nodiscard]] uint64_t stopsSent() const noexcept { return stopsSent_; }
     [[nodiscard]] uint64_t flushesSent() const noexcept { return flushesSent_; }
+    [[nodiscard]] uint64_t discardsSent() const noexcept { return discardsSent_; }
     [[nodiscard]] uint64_t volumeChangesSent() const noexcept { return volumeChangesSent_; }
     [[nodiscard]] uint64_t trackBoundariesSent() const noexcept
     {
@@ -625,6 +628,7 @@ private:
     uint64_t pausesSent_ = 0;
     uint64_t stopsSent_ = 0;
     uint64_t flushesSent_ = 0;
+    uint64_t discardsSent_ = 0;
     uint64_t volumeChangesSent_ = 0;
     uint64_t trackBoundariesSent_ = 0;
     uint64_t trackInfosSent_ = 0;

@@ -2162,6 +2162,14 @@ MULTIROOM_TEST(a_stop_drops_what_a_room_holds_and_leaves_a_zone_play_can_restart
     CHECK(output->state() == OutputState::Streaming);
     CHECK_EQ(std::to_underlying(output->producedThroughNs()), base);
 
+    // And is told on its control connection (section 62): a stop leaves no
+    // room on the line, and one with a full buffer would otherwise never read
+    // far enough to see the move.
+    const std::vector<RoomCommand> discards = rig.starts->of(RoomCommandKind::DiscardStream);
+    CHECK_EQ(discards.size(), size_t{1});
+    CHECK_EQ(discards.front().at.timelineNs, base);
+    CHECK_EQ(discards.front().at.sessionId, session.toHex());
+
     CHECK(waitFor([&] { zone->pump(); return output->packets() > packetsBefore; }));
 
     std::string payloads;
@@ -3694,6 +3702,8 @@ MULTIROOM_TEST(a_seek_flushes_every_room_on_the_line_and_moves_it_without_a_star
     CHECK(zone->roomStart(exact) == RoomStartState::Playing);
     CHECK(zone->roomStart(converted) == RoomStartState::Playing);
     CHECK(zone->transport() == TransportState::Playing);
+    // Rooms on the line keep it, so they are flushed and never discarded.
+    CHECK_EQ(rig.starts->count(RoomCommandKind::DiscardStream), size_t{0});
 
     // The seeked source is a new segment heard from the resume position, and
     // keeps its id.
@@ -3760,6 +3770,48 @@ MULTIROOM_TEST(a_rooms_reports_between_the_cut_and_the_seeked_audio_feed_nothing
     // Once the seeked audio is heard, the room is on the line it never left.
     report(heardAt + 10 * kMs, std::to_underlying(placed->resumeAt) + 10 * kMs);
     CHECK_EQ(zone->syncStatus(room).reports, before + 1);
+}
+
+MULTIROOM_TEST(a_room_moved_before_it_was_started_is_told_to_discard_what_it_holds)
+{
+    // Section 62. A room that holds a prebuffer and has not been started does
+    // not drain, so it cannot read on to the moved stream's first packet; the
+    // control connection tells it instead, once per move, at the position the
+    // moved stream begins.
+    ZoneRig rig;
+    rig.clock.setNs(50ULL * kNanosecondsPerSecond);
+    ZoneSettings settings = rig.settings();
+    settings.lateJoinLeadNs = 2ULL * kNanosecondsPerSecond;
+    auto zone = rig.zone(settings);
+    CHECK_OK(zone->stage(segmentOf("one", "ramp")));
+    CHECK_OK(zone->play());
+
+    const ClientId room("livingroom");
+    CHECK_OK(zone->admit(sessionOf(1), room, offering({formatOf()}), formatOf()));
+    auto sink = connect(*zone, sessionOf(1), room);
+    zone->pump();
+    CHECK(waitFor([&] { return zone->member(room)->packets() > 0; }));
+    CHECK(!zone->started());
+    CHECK(zone->roomStart(room) != RoomStartState::Playing);
+
+    const Result<TimelineNs, ZoneError> moved = zone->rejoin(room, RejoinTrigger::HardResync);
+    CHECK_OK(moved);
+    const std::vector<RoomCommand> discards = rig.starts->of(RoomCommandKind::DiscardStream, "livingroom");
+    CHECK_EQ(discards.size(), size_t{1});
+    CHECK_EQ(discards.front().at.timelineNs, std::to_underlying(*moved));
+    CHECK_EQ(discards.front().at.sessionId, sessionOf(1).toHex());
+    CHECK_EQ(rig.starts->count(RoomCommandKind::Flush), size_t{0});
+
+    // The moved stream begins exactly where the message says, which is how
+    // the room knows the end of the audio it is dropping.
+    zone->pump();
+    CHECK(waitFor([&] {
+        std::string payloads;
+        for (const matp::AudioPacketHeader& header : decodeHeaders(*sink, payloads))
+            if (header.timelineStartNs == std::to_underlying(*moved))
+                return true;
+        return false;
+    }));
 }
 
 MULTIROOM_TEST(a_seek_that_cannot_be_made_is_answered_and_the_line_plays_on)
@@ -3963,6 +4015,8 @@ MULTIROOM_TEST(a_change_of_output_latency_on_a_playing_room_is_one_rejoin)
     CHECK_EQ(zone->rejoins(moved), 1ULL);
     CHECK_EQ(zone->rejoins(still), 0ULL);
     CHECK(zone->roomStart(moved) == RoomStartState::Waiting);
+    // It was playing: it drains, and sees the move in its audio as always.
+    CHECK_EQ(rig.starts->count(RoomCommandKind::DiscardStream), size_t{0});
     CHECK_EQ(zone->syncStatus(moved).targetOffsetNs, static_cast<int64_t>(kLatencyNs));
 
     // The same figure again is no change and no move.

@@ -62,6 +62,14 @@ ClientOutput -> processor -> OutputClock/OutputPacketizer -> bounded queue -> IP
   scheduler the end of the audio (`StartScheduler::setEnd`); a room holding
   everything up to it starts below `minimumStartBufferNs`, else a final clip
   shorter than the minimum never starts or ends.
+- A room moved while not playing or paused on the line (play after stop,
+  seek, rejoin, hard resync) is sent MATP section 62's `DISCARD_STREAM`
+  after the move and before the moved output produces (`Zone::discardBeforeMove`).
+  Such a room does not drain: with a full buffer it cannot read on to the
+  moved stream's first packet, and its reports about the old stream are
+  correctly ignored by the barrier, so without it neither side moves (seen on
+  Connector 3, 2026-11-16). Rooms on the line never get it; they keep the
+  flush/rejoin handling.
 - Decode demand follows the furthest-ahead streaming room plus lookahead.
   Output pacing follows `bufferedDurationNs` plus frames produced since its
   report; wall-clock-paced sending breaks pause/backpressure.

@@ -153,6 +153,7 @@ private:
         case RoomCommandKind::Pause:
         case RoomCommandKind::Stop:
         case RoomCommandKind::Flush:
+        case RoomCommandKind::DiscardStream:
         case RoomCommandKind::TrackBoundary:
         case RoomCommandKind::Renegotiate:
         case RoomCommandKind::WakeStream:
@@ -204,6 +205,8 @@ private:
             return session.stopPlayback(command.at);
         case RoomCommandKind::Flush:
             return session.flushPlayback(command.at);
+        case RoomCommandKind::DiscardStream:
+            return session.discardStream(command.at);
         case RoomCommandKind::Volume:
             return session.setVolume(command.volume);
         case RoomCommandKind::TrackInfo:
@@ -246,6 +249,7 @@ private:
         case RoomCommandKind::Pause:
         case RoomCommandKind::Stop:
         case RoomCommandKind::Flush:
+        case RoomCommandKind::DiscardStream:
             return command.at.sessionId;
         case RoomCommandKind::Volume:
             return command.volume.sessionId;

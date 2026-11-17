@@ -5,7 +5,7 @@
   <!-- Reserves the track's 3 px; the slider overlays it so the dot is drawn over the artwork. -->
   <Border x:Name="SeekTrackSpace" Height="3" IsVisible="{Binding !IsNowPlaying}" />
   <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
-   <Button x:Name="NowPlayingZoneSelector" Grid.ColumnSpan="2" IsVisible="{Binding IsNowPlaying}" Background="Transparent" BorderThickness="0" CornerRadius="0" Padding="12,8" MinHeight="64" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" AutomationProperties.Name="{Binding Playback.ZonePosition}" ToolTip.Tip="Swipe left or right to change zone">
+   <Button x:Name="NowPlayingZoneSelector" Grid.ColumnSpan="2" IsVisible="{Binding IsNowPlaying}" Command="{Binding NavigateCommand}" CommandParameter="Zone Setup" Background="Transparent" BorderThickness="0" CornerRadius="0" Padding="12,8" MinHeight="64" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" AutomationProperties.Name="{Binding Playback.ZonePosition}" ToolTip.Tip="Tap to choose the zone's rooms; swipe left or right to change zone">
     <Button.KeyBindings>
      <KeyBinding Gesture="Left" Command="{Binding Playback.ChangeZoneCommand}" CommandParameter="previous" />
      <KeyBinding Gesture="Right" Command="{Binding Playback.ChangeZoneCommand}" CommandParameter="next" />
@@ -81,7 +81,7 @@
     <!-- Zone strip: zone name and volume share one darker row beneath the media. -->
     <Border x:Name="ZoneStrip" Grid.Row="1" Background="#000000">
      <Grid ColumnDefinitions="*,Auto" Margin="12,0,20,0">
-      <Button x:Name="ZoneButton" Command="{Binding NavigateCommand}" CommandParameter="Now Playing" Background="Transparent" CornerRadius="0" Padding="0" Height="32" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" VerticalContentAlignment="Center" AutomationProperties.Name="{Binding Playback.ZonePosition}" ToolTip.Tip="Swipe left or right to change zone">
+      <Button x:Name="ZoneButton" Command="{Binding NavigateCommand}" CommandParameter="Zone Setup" Background="Transparent" CornerRadius="0" Padding="0" Height="32" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" VerticalContentAlignment="Center" AutomationProperties.Name="{Binding Playback.ZonePosition}" ToolTip.Tip="Tap to choose the zone's rooms; swipe left or right to change zone">
        <Button.KeyBindings>
         <KeyBinding Gesture="Left" Command="{Binding Playback.ChangeZoneCommand}" CommandParameter="previous" />
         <KeyBinding Gesture="Right" Command="{Binding Playback.ChangeZoneCommand}" CommandParameter="next" />

@@ -1164,6 +1164,11 @@ private:
     // because one slow or broken room has never been a reason for a zone to
     // stay silent.
     void restartParkedMembers(TimelineNs position);
+    // Section 54's line test: the room is playing or paused on the line.
+    bool startedLocked(const ClientId& client) const;
+    // Section 62: tell a room moved before it was started to drop what it
+    // holds. Never called with mutex_ held.
+    void discardBeforeMove(const ClientId& client, TimelineNs position);
 
     // Fills in each message's one remaining field -- the session of the room
     // it is for -- and hands it to the sender. Always called with the lock

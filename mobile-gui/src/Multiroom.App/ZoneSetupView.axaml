@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Multiroom.App" x:Class="Multiroom.App.ZoneSetupView" x:DataType="vm:PlaybackViewModel">
+ <!-- The selected zone's rooms: every room as a row to tick, saved together. -->
+ <UserControl.Styles>
+  <Style Selector="ToggleButton.room">
+   <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Stretch" />
+   <Setter Property="Padding" Value="10,8" /><Setter Property="CornerRadius" Value="12" /><Setter Property="MinHeight" Value="56" />
+   <Setter Property="Background" Value="#1B2123" /><Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="ToggleButton.room:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#232A2D" /></Style>
+  <Style Selector="ToggleButton.room:checked /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#26302A" /></Style>
+  <Style Selector="ToggleButton.room:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#2C372F" /></Style>
+  <Style Selector="ToggleButton.room /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Foreground" Value="#EEF1ED" /></Style>
+  <Style Selector="Border.check"><Setter Property="BorderBrush" Value="#50575A" /><Setter Property="Background" Value="Transparent" /></Style>
+  <Style Selector="ToggleButton.room:checked Border.check"><Setter Property="BorderBrush" Value="#CBEC97" /><Setter Property="Background" Value="#CBEC97" /></Style>
+  <Style Selector="Button#UpdateZoneButton:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#D6F2AC" /><Setter Property="Foreground" Value="#101315" /></Style>
+  <Style Selector="Button#UpdateZoneButton:pressed /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#B8D886" /><Setter Property="Foreground" Value="#101315" /></Style>
+ </UserControl.Styles>
+ <Grid RowDefinitions="*,Auto" MaxWidth="650">
+  <ScrollViewer VerticalScrollBarVisibility="Hidden">
+   <StackPanel Spacing="8">
+    <TextBlock x:Name="ZoneSetupName" Text="{Binding ZoneName}" FontSize="22" FontWeight="Bold" TextTrimming="CharacterEllipsis" Margin="0,0,0,12" />
+    <TextBlock Text="No rooms yet." Classes="muted" IsVisible="{Binding !Membership.Count}" />
+    <ItemsControl x:Name="AllRooms" ItemsSource="{Binding Membership}">
+     <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+     <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:RoomChoice">
+      <ToggleButton Classes="room" IsChecked="{Binding Assigned}" AutomationProperties.Name="{Binding Name}">
+       <Grid ColumnDefinitions="40,*,Auto">
+        <Border Width="40" Height="40" CornerRadius="8" ClipToBounds="True">
+         <Image Source="{Binding Picture}" Stretch="UniformToFill" />
+        </Border>
+        <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="15" Margin="14,0,8,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <Border Grid.Column="2" Classes="check" Width="22" Height="22" CornerRadius="6" BorderThickness="1.5" VerticalAlignment="Center">
+         <Path Data="M 5,11 L 9,15 L 17,7" Stroke="#101315" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round"
+          IsVisible="{Binding Assigned}" Width="22" Height="22" />
+        </Border>
+       </Grid>
+      </ToggleButton>
+     </DataTemplate></ItemsControl.ItemTemplate>
+    </ItemsControl>
+   </StackPanel>
+  </ScrollViewer>
+  <Button x:Name="UpdateZoneButton" Grid.Row="1" Command="{Binding SaveMembershipCommand}" IsEnabled="{Binding HasZone}"
+   Background="#CBEC97" Foreground="#101315" CornerRadius="24" Height="48" Margin="0,16,0,0" HorizontalAlignment="Stretch"
+   HorizontalContentAlignment="Center" VerticalContentAlignment="Center" FontSize="16" FontWeight="SemiBold" Content="Update zone" />
+ </Grid>
+</UserControl>

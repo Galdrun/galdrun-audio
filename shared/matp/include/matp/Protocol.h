@@ -137,7 +137,10 @@ enum class MessageType : uint16_t
     // hardware-clock command back to the client. See makeSetDriftCorrection
     // and makeDriftFeedback.
     SetDriftCorrection = 36,
-    DriftFeedback = 37
+    DriftFeedback = 37,
+    // Drop everything held for a stream the server has moved this room off,
+    // before the room was started on it. See makeDiscardStream below.
+    DiscardStream = 38
 };
 
 // Section 59's two settings. Audio Control is the server's: whether the room
@@ -775,6 +778,17 @@ json::Value makeStopAt(const TransportAt& at);
 // the ones carrying kAudioFlagAfterFlush -- play on the same line without a
 // new START_AT.
 json::Value makeFlush(const TransportAt& at);
+
+// DISCARD_STREAM (section 62) carries the same three fields as well. The
+// server sends it on the control connection when it moves a room that is not
+// playing or paused onto a stream beginning at `timelineNs`. The room drops
+// what it holds at once, and drops the audio still arriving for the stream it
+// was moved off, up to the first packet of the new one: that packet begins at
+// `timelineNs` or jumps away from the old stream. The control connection is
+// the point -- a room whose buffer is full waits on its audio connection and
+// cannot see the move there. `serverTimeNs` is the instant the server sent it,
+// for the log; the room acts on arrival.
+json::Value makeDiscardStream(const TransportAt& at);
 
 // SET_VOLUME (section 39), which is also where mute lives.
 //

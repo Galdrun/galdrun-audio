@@ -74,28 +74,10 @@
      <Grid IsVisible="{Binding IsHome}" Margin="16,16,16,12"><vm:HomeView /></Grid>
      <Grid IsVisible="{Binding IsCollections}"><vm:CollectionsView DataContext="{Binding Collections}" /></Grid>
      <Grid IsVisible="{Binding IsRooms}"><vm:RoomsView DataContext="{Binding Rooms}" /></Grid>
-     <ScrollViewer IsVisible="{Binding IsVolume}">
-      <StackPanel Spacing="14" MaxWidth="650" HorizontalAlignment="Stretch">
-       <TextBlock Text="{Binding Playback.ZoneName}" Classes="section" />
-       <ComboBox ItemsSource="{Binding Playback.ZoneChoices}" DisplayMemberBinding="{Binding Name, x:DataType=vm:ZoneChoice}" SelectedValueBinding="{Binding Zone, x:DataType=vm:ZoneChoice}" SelectedValue="{Binding Playback.SelectedZone}" HorizontalAlignment="Stretch" AutomationProperties.Name="Volume zone" />
-       <TextBlock Text="{Binding Playback.ZoneVolumeStatus}" Classes="muted" />
-       <TextBlock Text="Zone volume (%)" />
-       <NumericUpDown Value="{Binding Playback.RequestedZoneVolume}" Minimum="0" Maximum="100" AutomationProperties.Name="Zone volume percent" IsEnabled="{Binding Playback.HasZone}" />
-       <WrapPanel>
-        <Button Content="Apply zone volume" Command="{Binding Playback.SetZoneVolumeCommand}" IsEnabled="{Binding Playback.CanSetZoneVolume}" Margin="0,0,8,8" />
-        <Button Content="{Binding Playback.ZoneMuteLabel}" Command="{Binding Playback.MuteZoneCommand}" IsEnabled="{Binding Playback.CanMuteZone}" Margin="0,0,8,8" />
-       </WrapPanel>
-       <TextBlock Text="Individual rooms" Classes="section" />
-       <ComboBox ItemsSource="{Binding Playback.Rooms}" SelectedItem="{Binding Playback.SelectedRoom}" HorizontalAlignment="Stretch" AutomationProperties.Name="Room volume target">
-        <ComboBox.ItemTemplate><DataTemplate x:DataType="api:RoomView"><TextBlock Text="{Binding DisplayName}" /></DataTemplate></ComboBox.ItemTemplate>
-       </ComboBox>
-       <TextBlock Text="{Binding Playback.ActualVolume}" Classes="muted" />
-       <NumericUpDown Value="{Binding Playback.RequestedVolume}" Minimum="0" Maximum="100" AutomationProperties.Name="Room volume percent" />
-       <Button Content="Apply room volume" Command="{Binding Playback.SetVolumeCommand}" HorizontalAlignment="Left" />
-      </StackPanel>
-     </ScrollViewer>
+     <Grid IsVisible="{Binding IsVolume}" Margin="16,16,16,12"><vm:VolumeView DataContext="{Binding Playback}" /></Grid>
+     <Grid IsVisible="{Binding IsZoneSetup}" Margin="16,16,16,12"><vm:ZoneSetupView DataContext="{Binding Playback}" /></Grid>
      <ScrollViewer IsVisible="{Binding IsDiagnostics}"><TextBlock Text="{Binding Rooms.Diagnostics}" TextWrapping="Wrap" /></ScrollViewer>
-     <Grid IsVisible="{Binding IsQueue}"><vm:QueueView DataContext="{Binding Playback}" /></Grid>
+     <Grid IsVisible="{Binding IsQueue}" Margin="16,16,0,12"><vm:QueueView x:Name="QueuePage" DataContext="{Binding Playback}" /></Grid>
      <Grid IsVisible="{Binding IsBrowser}" RowDefinitions="Auto,*" Margin="0,0,0,12">
       <Grid IsVisible="{Binding IsSearch}" ColumnDefinitions="*,Auto" Margin="16,0,16,12">
        <TextBox Text="{Binding Browser.Query}" PlaceholderText="Artists, albums, tracks, stations" AutomationProperties.Name="Search all sources">

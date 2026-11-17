@@ -110,6 +110,10 @@ public:
         // line it is playing on for the audio after it.
         std::function<bool(const TransportAt& request, std::string& error)> flush;
 
+        // DISCARD_STREAM (section 62): drop what the room holds for a stream
+        // the server moved it off before it was started. Acts on arrival.
+        std::function<bool(const TransportAt& request, std::string& error)> discard;
+
         // SET_VOLUME (section 39), scheduled or not. The gain belongs to the
         // render path, which is as far from this class as the device is.
         std::function<bool(const SetVolume& request, std::string& error)> volume;
@@ -354,6 +358,7 @@ public:
     uint32_t scheduledPauses() const { return scheduledPauses_; }
     uint32_t scheduledStops() const { return scheduledStops_; }
     uint32_t scheduledFlushes() const { return scheduledFlushes_; }
+    uint32_t discardedStreams() const { return discardedStreams_; }
     uint32_t volumeChanges() const { return volumeChanges_; }
     uint32_t trackBoundaries() const { return trackBoundaries_; }
     uint32_t trackInfos() const { return trackInfos_; }
@@ -509,6 +514,7 @@ private:
     uint32_t scheduledPauses_ = 0;
     uint32_t scheduledStops_ = 0;
     uint32_t scheduledFlushes_ = 0;
+    uint32_t discardedStreams_ = 0;
     uint32_t volumeChanges_ = 0;
     uint32_t trackBoundaries_ = 0;
     uint32_t trackInfos_ = 0;

@@ -121,8 +121,8 @@ public sealed class ZoneBarTests
     }
 
     [AvaloniaTheory]
-    [InlineData("MediaButton")] [InlineData("ZoneName")]
-    public void Media_and_nested_zone_info_swipe_between_zones_and_tap_opens_selected_now_playing(string row)
+    [InlineData("MediaButton", "Now Playing")] [InlineData("ZoneName", "Zone Setup")]
+    public void Media_and_nested_zone_info_swipe_between_zones_and_tap_opens_their_page_for_the_selected_zone(string row, string page)
     {
         var model = new ShellViewModel { SelectedPage = "Home" }; model.Playback.Apply(PlaybackTests.Snapshot());
         var bar = new ZoneBar { DataContext = model };
@@ -156,11 +156,11 @@ public sealed class ZoneBarTests
             Swipe(-55);
             using (var tap = window.TouchBegin(center)) window.TouchEnd(tap, center + new Vector(3, 0));
             Dispatcher.UIThread.RunJobs();
-            Assert.Equal("Now Playing", model.SelectedPage); Assert.Equal("kitchen", model.Playback.SelectedZone);
+            Assert.Equal(page, model.SelectedPage); Assert.Equal("kitchen", model.Playback.SelectedZone);
             Assert.Equal("Radio", model.Playback.Title);
             model.SelectedPage = "Home";
             window.MouseDown(center, MouseButton.Left); window.MouseUp(center, MouseButton.Left);
-            Dispatcher.UIThread.RunJobs(); Assert.Equal("Now Playing", model.SelectedPage);
+            Dispatcher.UIThread.RunJobs(); Assert.Equal(page, model.SelectedPage);
         }
         finally { window.Close(); }
     }
@@ -232,9 +232,10 @@ public sealed class ZoneBarTests
     }
 
     [Fact]
-    public async Task Zone_volume_uses_zone_endpoint_preserves_drafts_and_obeys_cancellation()
+    public async Task Zone_volume_sends_the_dials_newest_value_one_request_at_a_time_and_mutes()
     {
         var bodies = new List<string>();
+        var first = new TaskCompletionSource();
         var snapshot = PlaybackTests.Snapshot();
         var desired = new ZoneDesired([], 0.6, false);
         snapshot = snapshot with { Zones = snapshot.Zones.Select(z => z with { Desired = desired }).ToArray() };
@@ -243,18 +244,145 @@ public sealed class ZoneBarTests
             ct.ThrowIfCancellationRequested(); Assert.Equal(HttpMethod.Patch, r.Method);
             Assert.Equal("/api/v1/zones/living", r.RequestUri!.AbsolutePath);
             var body = await r.Content!.ReadAsStringAsync(ct); bodies.Add(body);
-            return BrowserTests.Reply(snapshot.Zones[0] with { Desired = body.Contains("volume", StringComparison.Ordinal) ? desired with { Volume = 0.35 } : desired with { Muted = true } });
+            if (bodies.Count == 1) await first.Task;
+            using var json = System.Text.Json.JsonDocument.Parse(body);
+            return BrowserTests.Reply(snapshot.Zones[0] with { Desired = json.RootElement.TryGetProperty("volume", out var v)
+                ? desired with { Volume = v.GetDouble() } : desired with { Muted = true } });
         }));
         var vm = new PlaybackViewModel(a => a(api, TestContext.Current.CancellationToken)); vm.Apply(snapshot);
-        Assert.Equal(60, vm.RequestedZoneVolume); vm.RequestedZoneVolume = 35;
-        vm.Apply(snapshot); Assert.Equal(35, vm.RequestedZoneVolume);
-        await vm.SetZoneVolumeCommand.ExecuteAsync(null); Assert.Equal(0.35, vm.ZoneSettings!.Volume);
-        await vm.MuteZoneCommand.ExecuteAsync(null); Assert.Equal("Unmute zone", vm.ZoneMuteLabel);
-        Assert.Equal(new[] { "{\"volume\":0.35}", "{\"muted\":true}" }, bodies);
-        vm.ChangeZoneCommand.Execute("next"); Assert.Equal(60, vm.RequestedZoneVolume);
-        using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => api.SetZoneVolumeAsync("living", 0.1, null, cancelled.Token));
-        Assert.Equal(2, bodies.Count);
+        Assert.Equal(60, vm.ZoneVolume);
+        // Turned on while the first value is still on its way: only the newest follows, and no snapshot moves it back.
+        vm.ZoneVolume = 35; vm.ZoneVolume = 40; vm.ZoneVolume = 45;
+        vm.Apply(snapshot); Assert.Equal(45, vm.ZoneVolume);
+        first.SetResult();
+        for (var i = 0; i < 200 && vm.ZoneSettings!.Volume != 0.45; i++) await Task.Delay(10, TestContext.Current.CancellationToken);
+        Assert.Equal(new[] { "{\"volume\":0.35}", "{\"volume\":0.45}" }, bodies);
+        Assert.Equal(45, vm.ZoneVolume);
+        await vm.MuteZoneCommand.ExecuteAsync(null); Assert.True(vm.ZoneMuted); Assert.Equal("Unmute zone", vm.ZoneMuteLabel);
+        Assert.Equal("{\"muted\":true}", bodies[^1]);
+        vm.ChangeZoneCommand.Execute("next"); Assert.Equal(60, vm.ZoneVolume); Assert.Equal(3, bodies.Count);
+    }
+
+    [AvaloniaFact]
+    public void Volume_page_puts_rooms_above_the_dial_which_swipes_up_or_right_louder()
+    {
+        // The server takes what is sent.
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (r, ct) =>
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(await r.Content!.ReadAsStringAsync(ct));
+            return BrowserTests.Reply(new ZoneView("living", Desired: new ZoneDesired([], json.RootElement.GetProperty("volume").GetDouble(), false)));
+        }));
+        var vm = new PlaybackViewModel(a => a(api, CancellationToken.None));
+        var snapshot = PlaybackTests.Snapshot();
+        vm.Apply(snapshot with { Zones = snapshot.Zones.Select(z => z with { Desired = new ZoneDesired([], 0.5, false) }).ToArray(),
+            Rooms = [new("a", new(Zone: "living", Volume: 0.8)), new("b", new(Zone: "living", Volume: 0.4))] });
+        var view = new VolumeView { DataContext = vm };
+        var window = new Window { Width = 390, Height = 800, Content = view };
+        try
+        {
+            window.Show(); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+            var dial = view.FindControl<VolumeDial>("ZoneDial")!;
+            var list = view.FindControl<ItemsControl>("RoomVolumeList")!;
+            Assert.Equal(2, list.GetVisualDescendants().OfType<Slider>().Count());
+            Assert.True(list.TranslatePoint(new Point(), view)!.Value.Y < dial.TranslatePoint(new Point(), view)!.Value.Y);
+            Assert.Equal("50%", view.FindControl<TextBlock>("ZoneVolumeText")!.Text);
+            var center = dial.TranslatePoint(new Point(dial.Bounds.Width / 2, dial.Bounds.Height / 2), window)!.Value;
+            var span = Math.Max(240, dial.Bounds.Width);
+            window.MouseDown(center, MouseButton.Left);
+            window.MouseMove(center + new Point(0, -span / 10)); // up: louder
+            Assert.Equal(60, vm.ZoneVolume);
+            window.MouseMove(center + new Point(-span / 5, -span / 10)); // then left: quieter
+            Assert.Equal(40, vm.ZoneVolume);
+            window.MouseUp(center, MouseButton.Left); Dispatcher.UIThread.RunJobs();
+            dial.Focus(); window.KeyPress(Key.Up, RawInputModifiers.None, PhysicalKey.ArrowUp, null);
+            Assert.Equal(41, vm.ZoneVolume);
+            // The knob turns around the ring: straight up is the middle, right is five sixths, the bottom gap holds the end.
+            var radius = Math.Min(dial.Bounds.Width, dial.Bounds.Height) / 2 - 16;
+            var knobAngle = (135 + 270 * 0.41) * Math.PI / 180;
+            window.MouseDown(center + new Point(radius * Math.Cos(knobAngle), radius * Math.Sin(knobAngle)), MouseButton.Left);
+            window.MouseMove(center + new Point(0, -radius));
+            Assert.Equal(50, vm.ZoneVolume);
+            window.MouseMove(center + new Point(radius, 0));
+            Assert.Equal(83, vm.ZoneVolume);
+            window.MouseMove(center + new Point(0, radius));
+            Assert.Equal(100, vm.ZoneVolume);
+            window.MouseUp(center, MouseButton.Left);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Zone_setup_opens_from_the_zone_name_and_sends_the_ticked_rooms()
+    {
+        var sent = new List<string>();
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (r, ct) =>
+        { sent.Add($"{r.Method} {r.RequestUri!.AbsolutePath} {await r.Content!.ReadAsStringAsync(ct)}"); return FakeHttp.Json("{}"); }));
+        var snapshot = PlaybackTests.Snapshot() with { Rooms = [
+            new("a", new(Zone: "living"), Name: "Sofa"), new("b", new(Zone: "kitchen"), Name: "Stove"), new("c", new(), Name: "Desk")] };
+        var model = new ShellViewModel { SelectedPage = "Now Playing" }; model.Playback.Apply(snapshot);
+        var bar = new ZoneBar { DataContext = model };
+        var window = new Window { Width = 390, Height = 140, Content = bar };
+        try
+        {
+            window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var selector = bar.FindControl<Button>("NowPlayingZoneSelector")!;
+            var at = selector.TranslatePoint(new Point(selector.Bounds.Width / 2, selector.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(at, MouseButton.Left); window.MouseUp(at, MouseButton.Left); Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Zone Setup", model.SelectedPage); Assert.False(model.ShowZoneBar);
+            Assert.True(model.GoBack()); Assert.Equal("Now Playing", model.SelectedPage);
+        }
+        finally { window.Close(); }
+
+        var vm = new PlaybackViewModel(a => a(api, CancellationToken.None)); vm.Apply(snapshot);
+        var view = new ZoneSetupView { DataContext = vm };
+        window = new Window { Width = 390, Height = 800, Content = view };
+        try
+        {
+            window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            Assert.Equal("living", view.FindControl<TextBlock>("ZoneSetupName")!.Text);
+            var rows = view.FindControl<ItemsControl>("AllRooms")!.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ToggleButton>().ToArray();
+            Assert.Equal([true, false, false], rows.Select(r => r.IsChecked == true));
+            Click(rows[2]); Click(rows[0]); // Desk in, Sofa out
+            Assert.Equal([false, false, true], rows.Select(r => r.IsChecked == true));
+            Click(view.FindControl<Button>("UpdateZoneButton")!);
+            for (var i = 0; i < 200 && sent.Count == 0; i++) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
+            Assert.Equal(["PUT /api/v1/zones/living/clients {\"clients\":[\"c\"]}"], sent);
+        }
+        finally { window.Close(); }
+
+        void Click(Control control)
+        {
+            window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var p = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(p, MouseButton.Left); window.MouseUp(p, MouseButton.Left); Dispatcher.UIThread.RunJobs();
+        }
+    }
+
+    [Fact]
+    public async Task Room_volumes_list_the_zones_rooms_and_set_volume_and_mute_per_room()
+    {
+        var sent = new List<string>();
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (r, ct) =>
+        {
+            sent.Add($"{r.Method} {r.RequestUri!.AbsolutePath} {await r.Content!.ReadAsStringAsync(ct)}");
+            return FakeHttp.Json("{}");
+        }));
+        var snapshot = PlaybackTests.Snapshot() with { Rooms = [
+            new("a", new(Zone: "living", Volume: 0.8, Muted: false), Name: "Sofa"),
+            new("b", new(Zone: "living", Volume: 0.5, Muted: true)),
+            new("c", new(Zone: "kitchen", Volume: 0.2))] };
+        var vm = new PlaybackViewModel(a => a(api, TestContext.Current.CancellationToken)); vm.Apply(snapshot);
+        Assert.Equal(["a", "b"], vm.RoomVolumes.Select(r => r.Client));
+        var sofa = vm.RoomVolumes[0];
+        Assert.Equal(80, sofa.Volume); Assert.False(sofa.Muted); Assert.True(vm.RoomVolumes[1].Muted);
+        sofa.Volume = 30;
+        for (var i = 0; i < 200 && sent.Count == 0; i++) await Task.Delay(10, TestContext.Current.CancellationToken);
+        await sofa.ToggleMuteCommand.ExecuteAsync(null);
+        // Accepted values stay until the server's next snapshot says otherwise.
+        Assert.Equal(30, sofa.Volume); Assert.True(sofa.Muted);
+        Assert.Equal(["PATCH /api/v1/rooms/a {\"volume\":0.3}", "PATCH /api/v1/rooms/a {\"muted\":true}"], sent);
+        vm.ChangeZoneCommand.Execute("next");
+        Assert.Equal(["c"], vm.RoomVolumes.Select(r => r.Client)); Assert.Equal(20, vm.RoomVolumes[0].Volume);
     }
 
 }

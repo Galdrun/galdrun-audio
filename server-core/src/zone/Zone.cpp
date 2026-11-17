@@ -405,8 +405,10 @@ void Zone::restartParkedMembers(TimelineNs position)
         // Before the move, not after: the room goes on reporting the line the
         // stop abandoned until the STOP_AT comes round, and the barrier of this
         // play must not form on one of those reports.
+        bool started = false;
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            started = startedLocked(entry.first);
             scheduler_.rejoin(entry.first, position);
         }
         if (const auto moved = entry.second->rejoinAt(position); !moved)
@@ -418,12 +420,40 @@ void Zone::restartParkedMembers(TimelineNs position)
                      entry.first.str(), std::to_underlying(position), describe(moved.error()));
             continue;
         }
+        if (!started)
+            discardBeforeMove(entry.first, position);
         if (const auto running = entry.second->run(); !running)
         {
             MULTIROOM_WARN("zone {}: {} could not be restarted: {}", id_.str(), entry.first.str(),
                      describe(running.error()));
         }
     }
+}
+
+bool Zone::startedLocked(const ClientId& client) const
+{
+    // Section 54's test for a room with a line to keep: a room playing or
+    // paused on it holds a start mapping, drains or will drain, and sees a
+    // move in its audio as it always has.
+    const RoomStartState state = scheduler_.roomState(client);
+    return state == RoomStartState::Playing || state == RoomStartState::Paused;
+}
+
+void Zone::discardBeforeMove(const ClientId& client, TimelineNs position)
+{
+    // Section 62. A room that has not been started does not drain: once its
+    // buffer is full it stops reading its audio connection, and the first
+    // packet of the stream it has just been moved to -- the only thing that
+    // would tell it -- waits behind audio nobody will play. Its reports name
+    // the stream it was moved off, which the barrier rightly ignores, so it
+    // would never be started either. The control connection still reaches it.
+    // Sent after the move and before the moved stream produces anything.
+    RoomCommand command;
+    command.kind = RoomCommandKind::DiscardStream;
+    command.client = client;
+    command.at.timelineNs = std::to_underlying(position);
+    command.at.serverTimeNs = clock_.monotonicNowNs();
+    dispatch({std::move(command)});
 }
 
 Status<ZoneError> Zone::run()
@@ -498,6 +528,7 @@ void Zone::dispatch(std::vector<RoomCommand> commands)
             case RoomCommandKind::Pause:
             case RoomCommandKind::Stop:
             case RoomCommandKind::Flush:
+            case RoomCommandKind::DiscardStream:
                 command.at.sessionId = session;
                 break;
             case RoomCommandKind::Volume:
@@ -935,6 +966,8 @@ Result<SeekPlacement, ZoneError> Zone::seek(uint64_t positionNs)
                      describe(moved.error()));
             continue;
         }
+        if (!room.onLine)
+            discardBeforeMove(room.client, placement.resumeAt);
         if (const auto running = room.output->run(); !running)
         {
             MULTIROOM_WARN("zone {}: {} could not be restarted after the seek: {}", id_.str(),
@@ -2539,6 +2572,11 @@ Status<ZoneError> Zone::moveRoom(const ClientId& client, RejoinTrigger trigger,
     // has already stopped producing and park() only joins its thread; a room
     // that is still streaming is stopped here, and in both cases what it had
     // built for the position it is leaving goes.
+    bool started = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        started = startedLocked(client);
+    }
     output->park(trigger == RejoinTrigger::DeviceRecovery);
     if (processor != nullptr)
     {
@@ -2554,6 +2592,9 @@ Status<ZoneError> Zone::moveRoom(const ClientId& client, RejoinTrigger trigger,
     // before the room produces anything that could reach it.
     if (replan)
         holdAtBoundaryAhead(client, *position, landsIn);
+
+    if (!started)
+        discardBeforeMove(client, *position);
 
     if (const auto running = output->run(); !running)
         return fail(ZoneError::OutputFailed, describe(running.error()));

@@ -95,6 +95,9 @@ public:
     // finishes the flush once the first packet after it has arrived. See
     // pollFlush().
     bool flush(const matp::TransportAt& request, std::string& error);
+    // DISCARD_STREAM (section 62). Needs no running device: the buffer is
+    // emptied through pollRejoin(), which handles both.
+    bool discardStream(const matp::TransportAt& request, std::string& error);
 
     // The SET_VOLUME hook (MATP section 39). A change the server scheduled
     // against a timeline position this room cannot place -- it has no start

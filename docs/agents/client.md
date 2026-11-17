@@ -60,6 +60,14 @@ come from root `shared/matp/include/`, not a second client definition.
   Clock-sync receive timestamps still come from the actual socket receive.
 - The audio connection thread parses packets and is the ring's sole producer.
   A full ring backpressures TCP; it does not discard arbitrary PCM.
+  Invariant: the only exit from that wait other than draining is MATP
+  section 62's `DISCARD_STREAM`, which arrives on the control connection
+  (`AudioStream::discard`). A room prebuffered and not started never drains,
+  so a move the server makes then is invisible on the audio connection; the
+  discard drops the buffer through `pollRejoin()` (device running or not) and
+  the old stream's packets up to the new stream's first one. Its pushes are
+  checked under the lock the discard is set under, so nothing of the dropped
+  stream lands after it.
 - The backend render thread is the ring's sole consumer. No allocation, I/O,
   synchronous logging or unbounded lock/wait in the render callback.
   Reconfigure the ring only after producer and consumer have been quiesced.
