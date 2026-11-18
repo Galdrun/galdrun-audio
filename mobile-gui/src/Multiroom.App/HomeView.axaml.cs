@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 
 namespace Multiroom.App;
 
@@ -33,6 +34,20 @@ public partial class HomeView : UserControl
             if (item.Items.Node is not null) home.OpenCommand.Execute(item);
             else home.OpenSheetCommand.Execute(item);
         }
+    }
+
+    // The shade is drawn first and the shelf opened after that frame, so it shows while the covers lay out.
+    private void SeeAll(object? sender, RoutedEventArgs e)
+    {
+        if (Home is not { } home || sender is not Button { Tag: HomeShelf shelf }) return;
+        ShelfLoading.IsVisible = true;
+        void Open()
+        {
+            home.SeeAllCommand.Execute(shelf);
+            Dispatcher.UIThread.Post(() => ShelfLoading.IsVisible = false, DispatcherPriority.Background);
+        }
+        if (TopLevel.GetTopLevel(this) is { } top) top.RequestAnimationFrame(_ => Dispatcher.UIThread.Post(Open, DispatcherPriority.Background));
+        else Open();
     }
 
     private void RequestActions(object? sender, ContextRequestedEventArgs e)

@@ -76,7 +76,11 @@ public sealed partial class BrowserViewModel : ObservableObject
     [ObservableProperty] private IReadOnlyList<DetailSection> _artistSections = [];
     public bool IsArtist => ArtistSections.Count > 0;
     public bool IsDetail => IsAlbum || IsArtist;
-    public bool IsBrowsing => !IsDetail;
+    // A node opened from Home shows nothing of Browse until it has loaded: an album or artist page would
+    // otherwise first show a list page's title, and the shell its header (ShellViewModel.ShowContentHeader).
+    [ObservableProperty] private bool _isOpening;
+    partial void OnIsOpeningChanged(bool value) => OnPropertyChanged(nameof(IsBrowsing));
+    public bool IsBrowsing => !IsDetail && !IsOpening;
     public int Columns => _columns;
     public string AlbumSummary
     {
@@ -169,11 +173,11 @@ public sealed partial class BrowserViewModel : ObservableObject
     public Task OpenNodeAsync(NodeReference node, string title)
     {
         _history.Clear(); _provider = node.Provider; _node = node.Id; Title = title;
-        _search = false; ResetOptions(); UpdateBreadcrumb(); ClearPage();
+        _search = false; ResetOptions(); UpdateBreadcrumb(); ClearPage(); IsOpening = true;
         return LoadAsync(false);
     }
     private void CancelRequest() => _request?.Cancel();
-    public void Cancel() { CancelRequest(); _debounce?.Cancel(); IsLoading = false; }
+    public void Cancel() { CancelRequest(); _debounce?.Cancel(); IsLoading = false; IsOpening = false; }
     public void Reset()
     {
         Cancel(); _provider = null; _node = null; _history.Clear(); _offset = 0; ClearPage();
@@ -278,7 +282,7 @@ public sealed partial class BrowserViewModel : ObservableObject
             }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
-            finally { if (!requestToken.IsCancellationRequested) IsLoading = false; }
+            finally { if (!requestToken.IsCancellationRequested) { IsLoading = false; IsOpening = false; } }
         });
     }
 

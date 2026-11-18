@@ -66,7 +66,7 @@ public sealed class QueueInteractionTests
     }
 
     [AvaloniaFact]
-    public void Dragging_the_handle_reorders_the_queue_with_a_visible_drop_line()
+    public void Dragging_the_handle_moves_the_row_and_reorders_the_queue()
     {
         var (model, paths, bodies) = Model();
         var view = new QueueView { DataContext = model };
@@ -75,7 +75,6 @@ public sealed class QueueInteractionTests
         {
             window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             var list = view.FindControl<ListBox>("QueueList")!;
-            var line = view.FindControl<Border>("DropLine")!;
             var rows = list.GetVisualDescendants().OfType<ListBoxItem>().ToArray();
             Assert.Equal(2, rows.Length);
             var grip = rows[0].GetVisualDescendants().OfType<Border>().First(border => border.Classes.Contains("grip"));
@@ -84,18 +83,41 @@ public sealed class QueueInteractionTests
             window.MouseDown(start, MouseButton.Left);
             window.MouseMove(start + new Vector(0, 20)); Dispatcher.UIThread.RunJobs();
             Assert.Contains("dragging", rows[0].Classes);
+            Assert.Contains("reordering", list.Classes);
+            Assert.Equal(20, rows[0].RenderTransform!.Value.M32, 1); // The dragged row follows the pointer.
             window.MouseMove(over); Dispatcher.UIThread.RunJobs();
-            var row1Top = rows[1].TranslatePoint(new Point(0, 0), list)!.Value.Y;
-            Assert.True(line.IsVisible); // Dropping over the lower half points at the end of row 1.
-            Assert.Equal(row1Top + rows[1].Bounds.Height, line.Margin.Top, 1);
             window.MouseUp(over, MouseButton.Left); Dispatcher.UIThread.RunJobs();
-            Assert.False(line.IsVisible);
             Assert.Null(model.SelectedItem);
             Assert.DoesNotContain("dragging", rows[0].Classes);
+            Assert.DoesNotContain("reordering", list.Classes);
+            Assert.All(rows, row => Assert.Null(row.RenderTransform));
             Assert.Equal(["PATCH /api/v1/zones/living/queue/items/1"], paths);
             Assert.Equal("{\"index\":1}", Assert.Single(bodies, body => body is not null));
+            Assert.Equal(1, model.Items[1].Item.Id); // Shown where it was dropped before the server answers.
             model.MoveToCommand.Execute(new QueueRowMove(model.Items[0], 0)); // Same position never writes.
             Dispatcher.UIThread.RunJobs(); Assert.Single(paths);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Dropping_a_row_on_itself_leaves_the_queue_unchanged()
+    {
+        var (model, paths, _) = Model();
+        var view = new QueueView { DataContext = model };
+        var window = new Window { Width = 500, Height = 400, Content = view };
+        try
+        {
+            window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var rows = view.FindControl<ListBox>("QueueList")!.GetVisualDescendants().OfType<ListBoxItem>().ToArray();
+            var grip = rows[0].GetVisualDescendants().OfType<Border>().First(border => border.Classes.Contains("grip"));
+            var start = grip.TranslatePoint(new Point(grip.Bounds.Width / 2, grip.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(start, MouseButton.Left);
+            window.MouseMove(start + new Vector(0, 10)); Dispatcher.UIThread.RunJobs();
+            Assert.Contains("dragging", rows[0].Classes);
+            window.MouseUp(start + new Vector(0, 10), MouseButton.Left); Dispatcher.UIThread.RunJobs();
+            Assert.Empty(paths);
+            Assert.Equal(1, model.Items[0].Item.Id);
         }
         finally { window.Close(); }
     }
@@ -130,6 +152,11 @@ public sealed class QueueInteractionTests
             window.MouseUp(press + new Vector(90, 0), MouseButton.Left); Dispatcher.UIThread.RunJobs();
             Assert.True(delete.IsVisible);
             var tap = delete.TranslatePoint(new Point(delete.Bounds.Width / 2, delete.Bounds.Height / 2), window)!.Value;
+            // The row content slides off the button over 0.18 s; tap once it has.
+            var content = rows[0].GetVisualDescendants().OfType<Grid>().First(grid => grid.Classes.Contains("rowcontent"));
+            var until = DateTime.UtcNow.AddSeconds(2);
+            while (content.Margin.Left < 52 && DateTime.UtcNow < until) { AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Dispatcher.UIThread.RunJobs(); }
+            Assert.Equal(52, content.Margin.Left);
             window.MouseDown(tap, MouseButton.Left); window.MouseUp(tap, MouseButton.Left); Dispatcher.UIThread.RunJobs();
             Assert.Equal(["DELETE /api/v1/zones/living/queue/items/1"], paths);
         }

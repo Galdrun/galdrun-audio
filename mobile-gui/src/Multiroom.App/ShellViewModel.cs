@@ -67,7 +67,7 @@ public partial class ShellViewModel : ObservableObject
             if (page == "Recommendations") _ = Collections.MoreLikeCommand.ExecuteAsync("pending");
         };
         Browser.QueueChanged += () => _session?.Refresh();
-        Browser.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(Browser.IsDetail)) OnPropertyChanged(nameof(ShowContentHeader)); };
+        Browser.PropertyChanged += (_, args) => { if (args.PropertyName is nameof(Browser.IsDetail) or nameof(Browser.IsBrowsing)) OnPropertyChanged(nameof(ShowContentHeader)); };
         Browser.SheetRequested += item => Home.OpenSheetCommand.Execute(item);
         Browser.MarksChanged += () => _ = Home.RefreshAsync();
         Playback.PropertyChanged += (_, args) =>
@@ -100,7 +100,7 @@ public partial class ShellViewModel : ObservableObject
     public bool IsZones => SelectedPage == "Zones";
     public bool IsNowPlaying => SelectedPage == "Now Playing";
     // An album page starts with its cover, the volume page with its rooms: no brand, connection, heading or refresh above it.
-    public bool ShowContentHeader => !IsHome && !IsNowPlaying && !IsVolume && !IsZoneSetup && !IsQueue && !(IsBrowser && Browser.IsDetail);
+    public bool ShowContentHeader => !IsHome && !IsNowPlaying && !IsVolume && !IsZoneSetup && !IsQueue && !(IsBrowser && !Browser.IsBrowsing);
     // Not on Now Playing: its transport buttons and the waking pill show what it waits for.
     public bool ShowTopProgress => IsBusy && _busyShown && !IsNowPlaying;
     public bool IsVolume => SelectedPage == "Volume";

@@ -466,7 +466,11 @@ public sealed partial class PlaybackViewModel : ObservableObject
         if (SelectedZone is not { } zone || move is not { Row: { } row }) return;
         var to = Math.Clamp(move.Index, 0, Math.Max(0, Items.Count - 1));
         var from = Items.IndexOf(row);
-        if (from >= 0 && from != to) await api.MoveQueueAsync(zone, row.Item.Id, to, ct);
+        if (from < 0 || from == to) return;
+        // Shown where it was dropped at once; the queue event that follows renumbers the rows.
+        Items.Move(from, to);
+        try { await api.MoveQueueAsync(zone, row.Item.Id, to, ct); }
+        catch { if (Items.IndexOf(row) is var at && at >= 0) Items.Move(at, from); throw; }
     });
     [RelayCommand] private Task CreateZoneAsync() => _execute(async (api, ct) =>
     {

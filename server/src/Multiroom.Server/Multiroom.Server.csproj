@@ -55,6 +55,13 @@
         Overwrite="true" WriteOnlyWhenDifferent="true" />
   </Target>
 
+  <!-- SkiaSharp's Windows package brings its native symbols (84 MB); a release does not need them. -->
+  <Target Name="DropNativeSymbols" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'libSkiaSharp.pdb'" />
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
     <ProjectReference Include="..\Multiroom.Server.Abstractions\Multiroom.Server.Abstractions.csproj" />
     <ProjectReference Include="..\Multiroom.Server.Ai\Multiroom.Server.Ai.csproj" />

@@ -54,9 +54,18 @@ public sealed partial class ApiEndpoint
 
     private async Task<IResult> PictureAsync(string id, HttpContext context)
     {
-        if (UnknownQuery(context.Request) is { } unknown)
+        if (UnknownQuery(context.Request, "size") is { } unknown)
             return Error(unknown);
-        var found = await pictures.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+        // ?size=tiny|small|medium|large: at most that many pixels on its longest side (ArtworkThumbnails).
+        int? size = null;
+        if (context.Request.Query.ContainsKey("size"))
+        {
+            if (!ArtworkThumbnails.Sizes.TryGetValue(context.Request.Query["size"].ToString(), out var pixels))
+                return Error(Result.Fail(ApiRequestError.InvalidRequest,
+                    $"size must be one of {string.Join(", ", ArtworkThumbnails.Sizes.Keys)}"));
+            size = pixels;
+        }
+        var found = await pictures.GetAsync(id, size, context.RequestAborted).ConfigureAwait(false);
         return found.IsSuccess ? Results.Bytes(found.Value.Bytes, found.Value.ContentType) : Error(found.Failure);
     }
 

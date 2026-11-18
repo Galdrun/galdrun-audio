@@ -56,8 +56,24 @@ public sealed class StateAndArtworkTests
         using var cache = new ArtworkCache(api); var ct = TestContext.Current.CancellationToken;
         var cover = "album:1";
         await Task.WhenAll(cache.GetAsync(cover, ct), cache.GetAsync(cover, ct)); Assert.Equal(1, requests);
-        for (var i = 2; i <= 129; i++) await cache.GetAsync($"album:{i}", ct);
-        await cache.GetAsync(cover, ct); Assert.Equal(130, requests);
+        for (var i = 2; i <= ArtworkCache.MaxEntries + 1; i++) await cache.GetAsync($"album:{i}", ct);
+        await cache.GetAsync(cover, ct); Assert.Equal(ArtworkCache.MaxEntries + 2, requests);
+    }
+
+    // A size is asked of the server and kept apart from the picture itself; an announcement drops every size.
+    [Fact]
+    public async Task Artwork_is_fetched_at_the_size_asked_for_and_each_size_kept_apart()
+    {
+        var asked = new List<string>();
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp((r, _) =>
+        { asked.Add(r.RequestUri!.PathAndQuery); return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([1]) }); }));
+        using var cache = new ArtworkCache(api); var ct = TestContext.Current.CancellationToken;
+        Assert.Equal(("tiny", "small", "large", (string?)null),
+            (ArtworkCache.SizeFor(96), ArtworkCache.SizeFor(115), ArtworkCache.SizeFor(768), ArtworkCache.SizeFor(769)));
+        await cache.GetAsync("album:1", "small", ct); await cache.GetAsync("album:1", "small", ct); await cache.GetAsync("album:1", ct);
+        await cache.AnnounceAsync("album:1");
+        await cache.GetAsync("album:1", "small", ct);
+        Assert.Equal(["/api/v1/artwork/album%3A1?size=small", "/api/v1/artwork/album%3A1", "/api/v1/artwork/album%3A1?size=small"], asked);
     }
 
     [Fact]

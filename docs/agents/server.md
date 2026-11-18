@@ -176,6 +176,14 @@ Keep ownership straight when changing settings:
   `ApiRequests.cs`, `ApiJson.cs`; SSE in `ApiEvents.cs` and `ApiEndpoint.cs`.
   Start with the suffix matching the feature. Add shared house operations
   where REST and MCP need the same behavior.
+- `GET /api/v1/artwork/{id}?size=tiny|small|medium|large` answers the picture
+  at most 96/192/384/768 px on its longest side
+  (`Providers/Covers/ArtworkThumbnails.cs`, SkiaSharp; the only image library,
+  with the Linux assets that need no fontconfig). Made on demand, kept in
+  memory (32 MB, least recently used out), and forgotten where `ArtworkService`
+  raises `Changed`. No size, a picture no larger, or one SkiaSharp cannot
+  decode answers the original. Clients ask for the size they draw, so a list
+  row never decodes a 1200 px cover.
 - The browser source is root `server-gui/www/`. `Multiroom.Server.csproj`
   copies it to output/publish `gui/`. After GUI or shared web asset changes,
   run `powershell -ExecutionPolicy Bypass -File scripts/copy-server-gui.ps1`

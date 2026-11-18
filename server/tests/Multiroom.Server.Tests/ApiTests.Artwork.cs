@@ -64,6 +64,10 @@ public sealed partial class ApiTests
             Assert.Equal(FakeProvider.ArtworkBytes, await picture.Content.ReadAsByteArrayAsync(Ct));
         }
         Assert.True(File.Exists(Path.Combine(_dir.Path, "data", "local", "art", "songs", id.Split(':')[1] + ".png")));
+        // A size it cannot make (these bytes are no picture) answers the picture itself; an unknown size is refused.
+        using (var small = await SendBytes(HttpMethod.Get, $"artwork/{id}?size=tiny", null))
+            Assert.Equal(FakeProvider.ArtworkBytes, await small.Content.ReadAsByteArrayAsync(Ct));
+        await Refused(HttpMethod.Get, $"artwork/{id}?size=huge", HttpStatusCode.BadRequest, "invalidRequest");
 
         // A queue item and a favourite are their item, with its kind.
         var queued = await Ok(HttpMethod.Post, "zones/living/queue/items", $$"""{"tracks":[{{Json(track)}}]}""");

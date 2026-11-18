@@ -47,7 +47,11 @@ public sealed class ArtworkView : Border
     {
         if (id == Reference) Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (id == Reference) Load(); });
     }
-    private static Control Placeholder()
+    // One per view, reused: a list recycling its rows shows it on every scroll, and building it each time stuttered.
+    // A crossfade lays a new one over the picture shown, so it builds its own.
+    private Control? _placeholder;
+    private Control Placeholder() => Crossfade ? CreatePlaceholder() : _placeholder ??= CreatePlaceholder();
+    private static Control CreatePlaceholder()
     {
         var record = new Grid { Width = 160, Height = 160 };
         record.Children.Add(new Avalonia.Controls.Shapes.Ellipse { Fill = Brush.Parse("#202C27"), Stroke = Brush.Parse("#617568"), StrokeThickness = 2 });
@@ -91,8 +95,10 @@ public sealed class ArtworkView : Border
         _load = new(); var token = _load.Token;
         try
         {
-            var bytes = await cache.GetAsync(reference, token);
-            var decodeWidth = Math.Clamp(double.IsFinite(Width) ? (int)Width : 256, 64, 1024);
+            // Fetched at the size it is drawn (in device pixels), so a list row never decodes a 1200 px cover.
+            var pixels = (double.IsFinite(Width) ? Width : 256) * (TopLevel.GetTopLevel(this)?.RenderScaling ?? 1);
+            var bytes = await cache.GetAsync(reference, ArtworkCache.SizeFor(pixels), token);
+            var decodeWidth = Math.Clamp((int)Math.Ceiling(pixels), 64, 1024);
             var bitmap = await Task.Run(() => { using var stream = new MemoryStream(bytes); return Bitmap.DecodeToWidth(stream, decodeWidth); }, token);
             if (token.IsCancellationRequested) { bitmap.Dispose(); return; }
             Show(new Image { Source = bitmap, Stretch = Stretch.UniformToFill });

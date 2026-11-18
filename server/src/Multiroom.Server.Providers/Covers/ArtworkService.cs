@@ -85,6 +85,8 @@ public sealed partial class ArtworkService(ArtStore store, ArtworkLookup lookup,
         Channel.CreateUnbounded<(string, ArtworkHint)>(new UnboundedChannelOptions { SingleReader = true });
 
     // Asked for once each, until the settings change.
+    // Its pictures at the sizes asked for; an album's made of its artist's stand-in go when its own is found.
+    private readonly ArtworkThumbnails _thumbnails = new();
     private readonly ConcurrentDictionary<string, byte> _asked = new(StringComparer.Ordinal);
 
     // Looked for and not found, until the settings change.
@@ -103,6 +105,17 @@ public sealed partial class ArtworkService(ArtStore store, ArtworkLookup lookup,
             var (images, bytes) = store.Held();
             return new ArtworkStoreStats(images, bytes, Volatile.Read(ref _pending), _missing.Count);
         }
+    }
+
+    // At most size pixels on its longest side (ArtworkThumbnails.Sizes); the picture itself for no size.
+    public async Task<Result<Artwork, ProviderError>> GetAsync(string id, int? size, CancellationToken cancellationToken)
+    {
+        if (size is not { } pixels)
+            return await GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (_thumbnails.TryGet(id, pixels, out var made))
+            return made;
+        var original = await GetAsync(id, cancellationToken).ConfigureAwait(false);
+        return original.IsSuccess ? _thumbnails.Make(id, pixels, original.Value) : original;
     }
 
     public async Task<Result<Artwork, ProviderError>> GetAsync(string id, CancellationToken cancellationToken)
@@ -173,6 +186,7 @@ public sealed partial class ArtworkService(ArtStore store, ArtworkLookup lookup,
             {
                 _missing.TryRemove(id, out _);
                 LogFound(log, id);
+                _thumbnails.Forget(id);
                 Changed?.Invoke(this, id);
             }
             else
@@ -281,7 +295,10 @@ public sealed partial class ArtworkService(ArtStore store, ArtworkLookup lookup,
             {
                 // The artist's own id has it too.
                 if (Artworks.ArtistId(artist) is { } artistId && artistId != id)
+                {
+                    _thumbnails.Forget(artistId);
                     Changed?.Invoke(this, artistId);
+                }
                 return true;
             }
         }

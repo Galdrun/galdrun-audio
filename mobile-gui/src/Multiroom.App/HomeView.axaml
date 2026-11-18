@@ -54,8 +54,7 @@
          <Path Data="{Binding Icon}" Stroke="#CBEC97" StrokeThickness="1.8" StrokeJoin="Round" StrokeLineCap="Round" Width="24" Height="24" VerticalAlignment="Center" />
          <TextBlock Text="{Binding Title}" Classes="section" VerticalAlignment="Center" />
         </StackPanel>
-        <Button Grid.Column="1" Content="See all" IsVisible="{Binding !IsEmpty}" CommandParameter="{Binding}"
-         Command="{Binding $parent[vm:HomeView].((vm:ShellViewModel)DataContext).Home.SeeAllCommand}"
+        <Button Grid.Column="1" Content="See all" IsVisible="{Binding !IsEmpty}" Tag="{Binding}" Click="SeeAll"
          Background="Transparent" AutomationProperties.Name="{Binding Title, StringFormat='See all {0}'}" />
        </Grid>
        <Border IsVisible="{Binding IsEmpty}" Classes="panel">
@@ -64,7 +63,9 @@
        <ListBox ItemsSource="{Binding Items}" ItemTemplate="{StaticResource Cover}" Background="Transparent"
         IsVisible="{Binding !IsEmpty}" ScrollViewer.HorizontalScrollBarVisibility="Hidden" ScrollViewer.VerticalScrollBarVisibility="Disabled"
         AutomationProperties.Name="{Binding Title}">
-        <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
+        <!-- Not virtualized: a shelf holds at most HomeShelf.Size covers, and recycling them while scrolling
+             reloaded their artwork, which made the scroll and its glide stutter. -->
+        <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
         <ListBox.Styles><Style Selector="ListBoxItem">
          <Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,0,14,0" />
          <Setter Property="Focusable" Value="False" /><Setter Property="VerticalContentAlignment" Value="Top" />
@@ -94,5 +95,10 @@
     </ItemsControl>
    </ScrollViewer>
   </Grid>
+  <!-- Shown while "See all" lays out its covers, which takes a moment on a phone. -->
+  <Border x:Name="ShelfLoading" IsVisible="False" Background="#B0101315" AutomationProperties.Name="Loading">
+   <!-- Its own visibility follows the shade's, so it only spins while shown (Arc.busy, App.axaml). -->
+   <Arc Classes="busy" Width="48" Height="48" StrokeThickness="4" IsVisible="{Binding #ShelfLoading.IsVisible}" />
+  </Border>
  </Grid>
 </UserControl>

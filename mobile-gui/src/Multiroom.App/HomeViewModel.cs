@@ -58,7 +58,7 @@ public sealed record HomeItem(string Title, string Subtitle, string? Artwork, Ad
 // while it has none.
 public sealed partial class HomeShelf : ObservableObject
 {
-    public const int Size = 14;
+    public const int Size = 24;
     public HomeShelf(string title, string icon, string empty)
     {
         Title = title; Icon = Geometry.Parse(icon); _empty = empty;

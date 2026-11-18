@@ -6,6 +6,13 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <!-- Artwork thumbnails (ArtworkThumbnails). The Linux assets without dependencies need no fontconfig on
+       the device; Windows' come with SkiaSharp. Same version as the app's Avalonia. -->
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.4" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Multiroom.Server.Abstractions\Multiroom.Server.Abstractions.csproj" />
     <ProjectReference Include="..\Multiroom.Server.Library\Multiroom.Server.Library.csproj" />

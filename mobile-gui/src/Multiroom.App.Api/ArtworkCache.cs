@@ -27,41 +27,57 @@ public sealed class ArtworkCache(MultiroomClient client, string? folder = null) 
     private long _diskBytes = -1; // Unknown until a write counts the folder.
     public const long Capacity = 32 * 1024 * 1024;
     public const long DiskCapacity = 256 * 1024 * 1024;
+    // Thumbnails are a few KB each: a long queue fits whole.
+    public const int MaxEntries = 512;
 
     // An id whose picture the server found or changed (artwork.changed): what
     // was kept for it, perhaps its artist standing in, goes, and views ask again.
     public event Action<string>? Found;
 
+    // The sizes the server makes (GET artwork/{id}?size=), longest side in pixels.
+    public static readonly IReadOnlyList<(string Name, int Pixels)> Sizes = [("tiny", 96), ("small", 192), ("medium", 384), ("large", 768)];
+    // The smallest size at least that many pixels; null (the picture itself) above the largest.
+    public static string? SizeFor(double pixels) => Sizes.FirstOrDefault(s => s.Pixels >= pixels).Name;
+    private static string Key(string id, string? size) => size is null ? id : $"{id}?size={size}";
+
     public async Task AnnounceAsync(string id)
     {
+        string[] keys = [id, .. Sizes.Select(size => Key(id, size.Name))];
         lock (_lock)
         {
-            if (_cache.Remove(id, out var old)) { _bytes -= old.Bytes.Length; _order.Remove(old.Node); }
-            _pending.Remove(id); // A download in flight may bring the old picture; it is not kept.
+            foreach (var key in keys)
+            {
+                if (_cache.Remove(key, out var old)) { _bytes -= old.Bytes.Length; _order.Remove(old.Node); }
+                _pending.Remove(key); // A download in flight may bring the old picture; it is not kept.
+            }
         }
-        if (FileOf(id) is { } path)
+        if (folder is not null)
         {
             try { await _disk.WaitAsync(_stop.Token).ConfigureAwait(false); }
             catch (OperationCanceledException) { return; }
-            try { File.Delete(path); _diskBytes = -1; }
+            try { foreach (var key in keys) if (FileOf(key) is { } path) File.Delete(path); _diskBytes = -1; }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
             finally { _disk.Release(); }
         }
         Found?.Invoke(id);
     }
 
-    public async Task<byte[]> GetAsync(string id, CancellationToken ct)
+    public Task<byte[]> GetAsync(string id, CancellationToken ct) => GetAsync(id, null, ct);
+
+    // At a named size (Sizes), or the picture itself for null.
+    public async Task<byte[]> GetAsync(string id, string? size, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested(); _stop.Token.ThrowIfCancellationRequested();
+        var key = Key(id, size);
         Pending pending;
         lock (_lock)
         {
-            if (_cache.TryGetValue(id, out var found))
+            if (_cache.TryGetValue(key, out var found))
             { _order.Remove(found.Node); _order.AddLast(found.Node); return found.Bytes; }
-            if (!_pending.TryGetValue(id, out pending!))
+            if (!_pending.TryGetValue(key, out pending!))
             {
-                var started = pending = new(_stop.Token); _pending[id] = started;
-                started.Task = Task.Run(() => LoadAsync(id, started));
+                var started = pending = new(_stop.Token); _pending[key] = started;
+                started.Task = Task.Run(() => LoadAsync(id, size, key, started));
             }
             pending.Waiters++;
         }
@@ -72,34 +88,42 @@ public sealed class ArtworkCache(MultiroomClient client, string? folder = null) 
             {
                 if (--pending.Waiters == 0 && !pending.Task.IsCompleted)
                 {
-                    if (_pending.TryGetValue(id, out var current) && current == pending) _pending.Remove(id);
+                    if (_pending.TryGetValue(key, out var current) && current == pending) _pending.Remove(key);
                     try { pending.Cancel.Cancel(); } catch (ObjectDisposedException) { }
                 }
             }
         }
     }
 
-    private async Task<byte[]> LoadAsync(string id, Pending pending)
+    // Pictures a list will show soon, fetched in the background so scrolling finds them here (at most
+    // as many as memory keeps); a failure is left for the view that asks.
+    public void Prefetch(IEnumerable<string?> ids, string? size)
+    {
+        foreach (var id in ids.OfType<string>().Distinct().Take(MaxEntries))
+            _ = GetAsync(id, size, _stop.Token).ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+    }
+
+    private async Task<byte[]> LoadAsync(string id, string? size, string key, Pending pending)
     {
         var ct = pending.Cancel.Token;
         try
         {
-            var bytes = await ReadDiskAsync(id, ct).ConfigureAwait(false);
+            var bytes = await ReadDiskAsync(key, ct).ConfigureAwait(false);
             if (bytes is null)
             {
                 await _downloads.WaitAsync(ct).ConfigureAwait(false);
-                try { bytes = await client.ArtworkAsync(id, ct).ConfigureAwait(false); }
+                try { bytes = await client.ArtworkAsync(id, size, ct).ConfigureAwait(false); }
                 finally { _downloads.Release(); }
-                if (IsCurrent(id, pending)) await WriteDiskAsync(id, bytes).ConfigureAwait(false);
+                if (IsCurrent(key, pending)) await WriteDiskAsync(key, bytes).ConfigureAwait(false);
             }
-            lock (_lock) if (IsCurrent(id, pending)) Remember(id, bytes);
+            lock (_lock) if (IsCurrent(key, pending)) Remember(key, bytes);
             return bytes;
         }
         finally
         {
             lock (_lock)
             {
-                if (IsCurrent(id, pending)) _pending.Remove(id);
+                if (IsCurrent(key, pending)) _pending.Remove(key);
                 pending.Cancel.Dispose();
             }
         }
@@ -112,7 +136,7 @@ public sealed class ArtworkCache(MultiroomClient client, string? folder = null) 
 
     private void Remember(string id, byte[] bytes)
     {
-        while ((_bytes + bytes.Length > Capacity || _cache.Count >= 128) && _order.First is { } oldest)
+        while ((_bytes + bytes.Length > Capacity || _cache.Count >= MaxEntries) && _order.First is { } oldest)
         { _bytes -= _cache[oldest.Value].Bytes.Length; _cache.Remove(oldest.Value); _order.RemoveFirst(); }
         _cache[id] = (bytes, _order.AddLast(id)); _bytes += bytes.Length;
     }
@@ -170,7 +194,10 @@ public sealed class ArtworkCache(MultiroomClient client, string? folder = null) 
 public sealed partial class MultiroomClient
 {
     // An item's picture by its artworkId, from the server's artwork store.
-    public Task<byte[]> ArtworkAsync(string id, CancellationToken ct) => PictureAsync($"artwork/{Escape(id)}", ct);
+    public Task<byte[]> ArtworkAsync(string id, CancellationToken ct) => ArtworkAsync(id, null, ct);
+    // At a named size (ArtworkCache.Sizes); the picture itself for null.
+    public Task<byte[]> ArtworkAsync(string id, string? size, CancellationToken ct) =>
+        PictureAsync(size is null ? $"artwork/{Escape(id)}" : $"artwork/{Escape(id)}?size={Escape(size)}", ct);
     // A room's own picture (null: it has none; the room's art stands in, as in the web interface).
     public async Task<byte[]?> RoomImageAsync(string client, CancellationToken ct)
     {

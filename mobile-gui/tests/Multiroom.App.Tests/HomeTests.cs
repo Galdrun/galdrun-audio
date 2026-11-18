@@ -210,7 +210,8 @@ public sealed class HomeTests
             double Middle(Visual v) => v.TranslatePoint(new Point(0, v.Bounds.Height / 2), home)!.Value.Y;
             Assert.Equal(Middle(home.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "Favourites")),
                 Middle(more.GetVisualDescendants().OfType<TextBlock>().Single()), 1);
-            more.Command!.Execute(more.CommandParameter);
+            more.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Dispatcher.UIThread.RunJobs();
             window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             // "See all" shows the shelf's covers as a grid on Home under a fixed header with back on its right.
             Assert.Same(model.Home.Favourites, model.Home.OpenShelf);
