@@ -13,8 +13,12 @@
   <Style Selector="ToggleButton.room /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Foreground" Value="#EEF1ED" /></Style>
   <Style Selector="Border.check"><Setter Property="BorderBrush" Value="#50575A" /><Setter Property="Background" Value="Transparent" /></Style>
   <Style Selector="ToggleButton.room:checked Border.check"><Setter Property="BorderBrush" Value="#CBEC97" /><Setter Property="Background" Value="#CBEC97" /></Style>
-  <Style Selector="Button#UpdateZoneButton:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#D6F2AC" /><Setter Property="Foreground" Value="#101315" /></Style>
-  <Style Selector="Button#UpdateZoneButton:pressed /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#B8D886" /><Setter Property="Foreground" Value="#101315" /></Style>
+  <!-- Flat, as the "See all" tabs' picked one: square, its own background, the accent text; no hover or press change. -->
+  <Style Selector="Button#UpdateZoneButton:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button#UpdateZoneButton:pressed /template/ ContentPresenter#PART_ContentPresenter">
+   <Setter Property="Background" Value="#2C372F" /><Setter Property="Foreground" Value="#CBEC97" /></Style>
+  <Style Selector="Button#UpdateZoneButton:pressed"><Setter Property="RenderTransform" Value="{x:Null}" /></Style>
+  <Style Selector="Button#UpdateZoneButton:disabled /template/ ContentPresenter#PART_ContentPresenter">
+   <Setter Property="Background" Value="#1B2123" /><Setter Property="Foreground" Value="#5A6462" /></Style>
  </UserControl.Styles>
  <Grid RowDefinitions="*,Auto" MaxWidth="650">
   <ScrollViewer VerticalScrollBarVisibility="Hidden">
@@ -41,7 +45,7 @@
    </StackPanel>
   </ScrollViewer>
   <Button x:Name="UpdateZoneButton" Grid.Row="1" Command="{Binding SaveMembershipCommand}" IsEnabled="{Binding HasZone}"
-   Background="#CBEC97" Foreground="#101315" CornerRadius="24" Height="48" Margin="0,16,0,0" HorizontalAlignment="Stretch"
+   Background="#2C372F" Foreground="#CBEC97" BorderThickness="0" CornerRadius="0" Height="48" Margin="0,16,0,0" HorizontalAlignment="Stretch"
    HorizontalContentAlignment="Center" VerticalContentAlignment="Center" FontSize="16" FontWeight="SemiBold" Content="Update zone" />
  </Grid>
 </UserControl>

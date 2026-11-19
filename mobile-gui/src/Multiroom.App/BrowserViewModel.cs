@@ -325,16 +325,18 @@ public sealed partial class BrowserViewModel : ObservableObject
         if (SelectedItem is not { Playable: true } row) return;
         var request = new AddItems(Tracks: row.Track is { } track ? [track] : null, Station: row.Station,
             Node: row.Node is { } node ? new(node.ProviderId, node.NodeId) : null,
-            Next: placement == "next", Replace: placement == "now");
-        var answer = await api.QueueAsync(zone, request, ct);
+            Next: placement == "next");
+        var answer = placement == "now" ? await PlayNow.PlayAsync(api, zone, request, KeepQueueOnPlayNow(), null, ct)
+            : await api.QueueAsync(zone, request, ct);
         Notice = "Added to " + _zoneName(zone);
         if (answer is { } json && json.TryGetProperty("refused", out var refused) && refused.GetArrayLength() > 0)
             Notice += $" · {refused.GetArrayLength()} items refused by the server";
         if (answer is { } response && response.TryGetProperty("truncated", out var truncated) && truncated.GetBoolean())
             Notice += " · container exceeded the server's limit";
-        if (placement == "now") await api.TransportAsync(zone, "play", null, ct);
         QueueChanged?.Invoke();
     });
+    // "Play now" keeps the queue (PlayNow), as the app's settings say.
+    public Func<bool> KeepQueueOnPlayNow { get; set; } = () => false;
 }
 
 public sealed record MediaRow(string Title, string Subtitle, BrowseNode? Node = null, Track? Track = null,

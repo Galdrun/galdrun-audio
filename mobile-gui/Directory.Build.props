@@ -6,5 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Every Avalonia package at one version. A nightly of Avalonia 12.2 (feed in NuGet.config) for EGL partial
+         presentation on Android (AvaloniaUI/Avalonia#22501, enabled in Multiroom.App.Android/PartialPresentation.cs);
+         back to a release once 12.2 ships it with an Android option (docs/android-rendering.md). -->
+    <AvaloniaVersion>12.2.999-cibuild0101468-alpha</AvaloniaVersion>
   </PropertyGroup>
 </Project>

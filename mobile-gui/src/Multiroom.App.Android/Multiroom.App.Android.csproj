@@ -8,7 +8,7 @@
     <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia.Android" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Android" Version="$(AvaloniaVersion)" />
     <ProjectReference Include="../Multiroom.App/Multiroom.App.csproj" />
   </ItemGroup>
 </Project>

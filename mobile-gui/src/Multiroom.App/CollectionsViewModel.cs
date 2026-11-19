@@ -157,10 +157,12 @@ public sealed partial class CollectionsViewModel(
             IsRecommendations && SelectedRecommendation is { } r ? new(Tracks: [r.Track]) : null;
         if (items is null) return;
         if (zone() is not { } target) throw new ArgumentException("Choose or create a zone before adding music.");
-        var answer = await api.QueueAsync(target, items with { Next = placement == "next", Replace = placement == "now" }, ct);
+        var answer = placement == "now" ? await PlayNow.PlayAsync(api, target, items, KeepQueueOnPlayNow(), null, ct)
+            : await api.QueueAsync(target, items with { Next = placement == "next" }, ct);
         if (answer is { } json && json.TryGetProperty("refused", out var refused) && refused.GetArrayLength() is var count and > 0)
             Warned?.Invoke($"{count} items refused by {zoneName?.Invoke(target) ?? target}");
-        if (placement == "now") await api.TransportAsync(target, "play", null, ct);
         QueueChanged?.Invoke();
     });
+    // "Play now" keeps the queue (PlayNow), as the app's settings say.
+    public Func<bool> KeepQueueOnPlayNow { get; set; } = () => false;
 }

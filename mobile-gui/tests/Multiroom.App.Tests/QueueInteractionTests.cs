@@ -21,6 +21,10 @@ public sealed class QueueInteractionTests
         return (model, paths, bodies);
     }
 
+    // The rows shown, in queue order.
+    private static Control[] Rows(QueueView view) =>
+        view.FindControl<RecyclingRowPanel>("QueueList")!.Rows.Where(r => r.Row.IsVisible).Select(r => r.Row).ToArray();
+
     [AvaloniaFact]
     public void Opening_the_queue_puts_the_playing_track_in_the_middle()
     {
@@ -32,11 +36,84 @@ public sealed class QueueInteractionTests
         {
             window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             model.SelectedPage = "Queue"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-            var list = view.FindControl<QueueView>("QueuePage")!.FindControl<ListBox>("QueueList")!;
-            var row = (Control)list.ContainerFromIndex(24)!;
-            var scroll = (ScrollViewer)list.Scroll!;
+            var queue = view.FindControl<QueueView>("QueuePage")!;
+            var row = queue.FindControl<RecyclingRowPanel>("QueueList")!.RowAt(24)!;
+            var scroll = queue.FindControl<ScrollViewer>("QueueScroll")!;
             var middle = row.TranslatePoint(new Point(0, row.Bounds.Height / 2), scroll)!.Value.Y;
             Assert.Equal(scroll.Viewport.Height / 2, middle, 1.0);
+            // Scrolled away, the queue button brings it back to the middle.
+            var centred = scroll.Offset; scroll.Offset = new Vector(0, 0); window.UpdateLayout();
+            var button = view.FindControl<Button>("QueueButton")!;
+            var at = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window)!.Value;
+            using (var tap = window.TouchBegin(at)) window.TouchEnd(tap, at);
+            Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+            Assert.Equal("Queue", model.SelectedPage); Assert.Equal(centred, scroll.Offset);
+        }
+        finally { window.Close(); }
+    }
+
+    // A long queue keeps the few rows the screen shows and gives them item after item while it scrolls:
+    // the same controls, never added again, each showing its own item at its own place.
+    [AvaloniaFact]
+    public void A_long_queue_scrolls_through_the_same_few_rows()
+    {
+        var (model, _, _) = Model();
+        var items = Enumerable.Range(1, 200).Select(i => new QueueItem(i, new Track("local", $"track:{i}", $"T{i}"))).ToArray();
+        model.Apply(new([new("living", Queue: new("living", items, RepeatMode.Off, false, QueueTransport.Paused, Current: 1))], []));
+        var view = new QueueView { DataContext = model };
+        var window = new Window { Width = 390, Height = 700, Content = view };
+        try
+        {
+            window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var list = view.FindControl<RecyclingRowPanel>("QueueList")!;
+            var scroll = view.FindControl<ScrollViewer>("QueueScroll")!;
+            var made = list.Children.ToArray();
+            Assert.InRange(made.Length, 2, 20);
+            Assert.Equal(200 * list.RowHeight, scroll.Extent.Height, 1);
+            foreach (var offset in new[] { 3000.0, 7777, 200 * list.RowHeight, 0 })
+            {
+                scroll.Offset = new Vector(0, offset); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+                Assert.Equal(made, list.Children);
+                var shown = list.Rows.ToArray();
+                Assert.All(shown, r =>
+                {
+                    Assert.Equal(model.Items[r.Index], r.Row.DataContext);
+                    Assert.Equal(r.Index * list.RowHeight, r.Row.Bounds.Top - r.Row.Margin.Top, 1);
+                });
+                var top = Math.Min(scroll.Offset.Y, scroll.Extent.Height - scroll.Viewport.Height);
+                Assert.Contains(shown, r => r.Index == (int)(top / list.RowHeight));
+                // Only rows in the viewport count as in view (the playing bars move only there).
+                Assert.All(shown, r => Assert.Equal(
+                    r.Index * list.RowHeight < scroll.Offset.Y + scroll.Viewport.Height && (r.Index + 1) * list.RowHeight > scroll.Offset.Y,
+                    RecyclingRowPanel.GetIsInView(r.Row)));
+                Assert.Contains(shown, r => !RecyclingRowPanel.GetIsInView(r.Row)); // The spare rows beyond the ends.
+            }
+        }
+        finally { window.Close(); }
+    }
+
+    // A playing row's bars move only while its queue shows: an animation on a hidden queue (another page on top)
+    // kept the frame timer running and the UI thread busy.
+    [AvaloniaFact]
+    public void The_playing_bars_move_only_while_the_queue_is_shown()
+    {
+        var (model, _, _) = Model();
+        var view = new QueueView { DataContext = model };
+        var page = new Grid { Children = { view } };
+        var window = new Window { Width = 500, Height = 400, Content = page };
+        try
+        {
+            window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            Assert.True(model.IsPlaying);
+            var rows = Rows(view).Cast<QueueRowView>().ToArray();
+            Assert.True(rows[0].AreBarsMoving);
+            Assert.False(rows[1].AreBarsMoving); // Only the playing row shows its bars.
+            page.IsVisible = false; Dispatcher.UIThread.RunJobs();
+            Assert.False(rows[0].AreBarsMoving);
+            page.IsVisible = true; Dispatcher.UIThread.RunJobs();
+            Assert.True(rows[0].AreBarsMoving);
+            rows[0].SetValue(RecyclingRowPanel.IsInViewProperty, false); // Scrolled out of the viewport.
+            Assert.False(rows[0].AreBarsMoving);
         }
         finally { window.Close(); }
     }
@@ -53,7 +130,7 @@ public sealed class QueueInteractionTests
             Assert.Equal("2 tracks", view.FindControl<TextBlock>("QueueCount")!.Text);
             Assert.Equal([(true, "First"), (false, "Second")], model.Items.Select(r => (r.IsCurrent, r.Title)));
             Assert.Equal(2, model.Items[1].Number);
-            var rows = view.FindControl<ListBox>("QueueList")!.GetVisualDescendants().OfType<ListBoxItem>().ToArray();
+            var rows = Rows(view);
             var lit = rows.Select(r => r.GetVisualDescendants().OfType<Border>().First(b => b.Classes.Contains("queuerow")).Classes.Contains("current"));
             Assert.Equal([true, false], lit);
             var title = rows[1].GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "Second");
@@ -74,8 +151,8 @@ public sealed class QueueInteractionTests
         try
         {
             window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-            var list = view.FindControl<ListBox>("QueueList")!;
-            var rows = list.GetVisualDescendants().OfType<ListBoxItem>().ToArray();
+            var list = view.FindControl<RecyclingRowPanel>("QueueList")!;
+            var rows = Rows(view);
             Assert.Equal(2, rows.Length);
             var grip = rows[0].GetVisualDescendants().OfType<Border>().First(border => border.Classes.Contains("grip"));
             var start = grip.TranslatePoint(new Point(grip.Bounds.Width / 2, grip.Bounds.Height / 2), window)!.Value;
@@ -109,7 +186,7 @@ public sealed class QueueInteractionTests
         try
         {
             window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-            var rows = view.FindControl<ListBox>("QueueList")!.GetVisualDescendants().OfType<ListBoxItem>().ToArray();
+            var rows = Rows(view);
             var grip = rows[0].GetVisualDescendants().OfType<Border>().First(border => border.Classes.Contains("grip"));
             var start = grip.TranslatePoint(new Point(grip.Bounds.Width / 2, grip.Bounds.Height / 2), window)!.Value;
             window.MouseDown(start, MouseButton.Left);
@@ -131,7 +208,7 @@ public sealed class QueueInteractionTests
         try
         {
             window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-            var rows = view.FindControl<ListBox>("QueueList")!.GetVisualDescendants().OfType<ListBoxItem>().ToArray();
+            var rows = Rows(view);
             var delete = rows[0].GetVisualDescendants().OfType<Button>().First(button => button.Classes.Contains("rowdelete"));
             var grip = rows[0].GetVisualDescendants().OfType<Border>().First(border => border.Classes.Contains("grip"));
             Assert.False(delete.IsVisible); Assert.True(grip.IsVisible);

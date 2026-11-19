@@ -23,8 +23,8 @@
      <Ellipse x:Name="BusyDot" Width="8" Height="8" Fill="#CBEC97" VerticalAlignment="Center" IsVisible="{Binding ShowTopProgress}"
       IsHitTestVisible="False" AutomationProperties.Name="Loading">
       <Ellipse.Styles>
-       <Style Selector="Ellipse#BusyDot"><Setter Property="Opacity" Value="0" /></Style>
-       <Style Selector="Ellipse#BusyDot[IsVisible=True]">
+       <Style Selector="Ellipse#BusyDot"><Setter Property="Opacity" Value="0" /><Setter Property="vm:VisibilityWatch.TrackShown" Value="True" /></Style>
+       <Style Selector="Ellipse#BusyDot.shown">
         <Style.Animations>
          <Animation Duration="0:0:1.1" IterationCount="INFINITE" Easing="SineEaseInOut">
           <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0.25" /></KeyFrame>
@@ -50,7 +50,7 @@
      <Button x:Name="SearchButton" Command="{Binding NavigateCommand}" CommandParameter="Search" Background="Transparent" CornerRadius="0" Padding="0" Width="48" Height="48" AutomationProperties.Name="Search" ToolTip.Tip="Search">
       <Path Data="M 10.5,10.5 m -5.5,0 a 5.5,5.5 0 1,0 11,0 a 5.5,5.5 0 1,0 -11,0 M 14.6,14.6 L 20.5,20.5" Stroke="#EEF1ED" StrokeThickness="1.7" Width="24" Height="24" />
      </Button>
-     <Button Command="{Binding NavigateCommand}" CommandParameter="Queue" Background="Transparent" CornerRadius="0" Padding="0" Width="48" Height="48" AutomationProperties.Name="Queue" ToolTip.Tip="Queue">
+     <Button x:Name="QueueButton" Click="QueueTapped" Command="{Binding NavigateCommand}" CommandParameter="Queue" Background="Transparent" CornerRadius="0" Padding="0" Width="48" Height="48" AutomationProperties.Name="Queue" ToolTip.Tip="Queue">
       <Path Data="M 4,7 L 20,7 M 4,12 L 20,12 M 4,17 L 14,17" Stroke="#EEF1ED" StrokeThickness="1.7" Width="24" Height="24" />
      </Button>
     </StackPanel>
@@ -59,24 +59,43 @@
      FontSize="18" FontWeight="Bold" LetterSpacing="5" TextAlignment="Center" />
     </Grid>
    </Border>
-   <Grid Grid.Row="1" RowDefinitions="Auto,*" IsVisible="{Binding !IsSetup}">
-  <Grid ColumnDefinitions="*,Auto" Margin="16,16,16,20" IsVisible="{Binding ShowContentHeader}">
-   <StackPanel><TextBlock Text="GALDRUN" FontSize="24" FontWeight="Bold" LetterSpacing="5" />
-    <TextBlock Text="Your music. Every room." Classes="muted" /></StackPanel>
-   <TextBlock Grid.Column="1" Text="{Binding Connection}" MaxWidth="180" TextWrapping="Wrap" VerticalAlignment="Center" Classes="muted" />
-  </Grid>
-  <Grid Grid.Row="1" ColumnDefinitions="190,*,Auto" x:Name="Body" Classes.top="{Binding !ShowContentHeader}">
+   <Grid Grid.Row="1" IsVisible="{Binding !IsSetup}">
+  <Grid ColumnDefinitions="190,*,Auto" x:Name="Body" Classes="top">
    <ListBox x:Name="Navigation" ItemsSource="{Binding MenuPages}" SelectedItem="{Binding SelectedPage, Mode=OneWay}" SelectionChanged="PagePicked" Background="Transparent" />
    <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*" x:Name="ContentArea">
-    <Grid ColumnDefinitions="*,Auto" Margin="16,0,16,10" IsVisible="{Binding ShowContentHeader}"><TextBlock Text="{Binding Heading}" Classes="title" />
-     <Button Grid.Column="1" Content="Refresh" Command="{Binding RefreshCommand}" /></Grid>
+    <TextBlock Text="{Binding Heading}" Classes="title" Margin="16,16,16,10" IsVisible="{Binding ShowContentHeader}" />
     <Grid Grid.Row="2" x:Name="Pages">
      <Grid IsVisible="{Binding IsHome}" Margin="16,16,16,12"><vm:HomeView /></Grid>
      <Grid IsVisible="{Binding IsCollections}"><vm:CollectionsView DataContext="{Binding Collections}" /></Grid>
      <Grid IsVisible="{Binding IsRooms}"><vm:RoomsView DataContext="{Binding Rooms}" /></Grid>
      <Grid IsVisible="{Binding IsVolume}" Margin="16,16,16,12"><vm:VolumeView DataContext="{Binding Playback}" /></Grid>
-     <Grid IsVisible="{Binding IsZoneSetup}" Margin="16,16,16,12"><vm:ZoneSetupView DataContext="{Binding Playback}" /></Grid>
      <ScrollViewer IsVisible="{Binding IsDiagnostics}"><TextBlock Text="{Binding Rooms.Diagnostics}" TextWrapping="Wrap" /></ScrollViewer>
+     <ScrollViewer IsVisible="{Binding IsAppSettings}">
+      <StackPanel Spacing="12" MaxWidth="650" HorizontalAlignment="Stretch">
+       <TextBlock Text="Playback" Classes="section" />
+       <Border Classes="panel">
+        <Grid ColumnDefinitions="*,Auto">
+         <StackPanel Spacing="4" VerticalAlignment="Center">
+          <TextBlock Text="Play now keeps the queue" FontWeight="SemiBold" />
+          <TextBlock Text="Off: Play now and Play in room replace the zone's queue. On: the music goes in after the playing track and starts at once; the rest of the queue stays." Classes="muted" TextWrapping="Wrap" />
+         </StackPanel>
+         <ToggleSwitch x:Name="PlayNowKeepsQueueSwitch" Grid.Column="1" IsChecked="{Binding PlayNowKeepsQueue}" OnContent="" OffContent=""
+          VerticalAlignment="Center" Margin="12,0,0,0" AutomationProperties.Name="Play now keeps the queue" />
+        </Grid>
+       </Border>
+       <TextBlock Text="Developer" Classes="section" Margin="0,12,0,0" />
+       <Border Classes="panel">
+        <Grid ColumnDefinitions="*,Auto">
+         <StackPanel Spacing="4" VerticalAlignment="Center">
+          <TextBlock Text="Show performance" FontWeight="SemiBold" />
+          <TextBlock Text="The app's CPU use, updated once a second: the whole app in % of all cores, the UI and render threads in % of one core at its current clock. A low clock makes light work look busy." Classes="muted" TextWrapping="Wrap" />
+         </StackPanel>
+         <ToggleSwitch x:Name="ShowPerformanceSwitch" Grid.Column="1" IsChecked="{Binding ShowPerformance}" OnContent="" OffContent=""
+          VerticalAlignment="Center" Margin="12,0,0,0" AutomationProperties.Name="Show performance" />
+        </Grid>
+       </Border>
+      </StackPanel>
+     </ScrollViewer>
      <Grid IsVisible="{Binding IsQueue}" Margin="16,16,0,12"><vm:QueueView x:Name="QueuePage" DataContext="{Binding Playback}" /></Grid>
      <Grid IsVisible="{Binding IsBrowser}" RowDefinitions="Auto,*" Margin="0,0,0,12">
       <Grid IsVisible="{Binding IsSearch}" ColumnDefinitions="*,Auto" Margin="16,0,16,12">
@@ -101,7 +120,8 @@
        <Button Content="Apply full room membership" Command="{Binding Playback.SaveMembershipCommand}" IsEnabled="{Binding Playback.HasZone}" />
       </StackPanel>
      </ScrollViewer>
-     <Grid IsVisible="{Binding IsNowPlaying}" Margin="0,16,0,12"><vm:NowPlayingView /></Grid>
+     <!-- Shown and hidden in MainView.axaml.cs: it slides down over the next page when it closes. -->
+     <Grid x:Name="NowPlayingPage" ZIndex="1" Margin="0,16,0,12" Background="Transparent"><vm:NowPlayingView /></Grid>
       <Grid IsVisible="{Binding IsSources}" RowDefinitions="Auto,*,Auto">
       <TextBlock Text="Choose where the music begins." Classes="muted" Margin="0,0,0,20" />
       <ListBox Grid.Row="1" ItemsSource="{Binding Providers}" Background="Transparent" SelectedItem="{Binding SelectedProvider}">
@@ -151,7 +171,9 @@
       </DataTemplate></ListBox.ItemTemplate>
      </ListBox>
      <StackPanel Grid.Row="3" Spacing="12" Margin="0,16,0,0">
-      <ProgressBar IsIndeterminate="True" IsVisible="{Binding Servers.IsScanning}" Height="3" />
+      <!-- Indeterminate only while scanning: its animation ran even hidden, kept Avalonia's frame timer going and
+           cost the UI thread nearly a whole core on a phone (measured). -->
+      <ProgressBar IsIndeterminate="{Binding Servers.IsScanning}" IsVisible="{Binding Servers.IsScanning}" Height="3" />
       <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
        <Button Content="Scan" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
         Command="{Binding Servers.ScanCommand}" AutomationProperties.Name="Scan for servers" />
@@ -179,6 +201,11 @@
       </Border>
      </Grid>
     <vm:ZoneBar Grid.Row="2" x:Name="BottomZoneBar" IsVisible="{Binding ShowZoneBar}" />
+    <!-- Zone Setup: shown and hidden in MainView.axaml.cs, as Now Playing. It rises over the pages and the zone bar
+         together (with the page's background), so nothing beneath it is laid out anew while it moves. -->
+    <Grid x:Name="ZoneSetupPage" Grid.Row="1" Grid.RowSpan="2" Background="#101315">
+     <vm:ZoneSetupView DataContext="{Binding Playback}" Margin="16,16,16,12" />
+    </Grid>
     <!-- The menu: a drawer sliding in from the left over the whole page; the dimmed rest (or back) closes it.
          Closed, it is hidden, not only moved away, so its pages are never seen (or read out) twice. -->
     <Grid x:Name="MenuDrawer" Grid.RowSpan="3" ColumnDefinitions="Auto,*" Classes.open="{Binding IsMenuOpen}">
@@ -262,14 +289,14 @@
        </Grid>
        <Border Height="1" Background="#2E3638" />
        <StackPanel x:Name="SheetActions" Spacing="8" IsVisible="{Binding Home.IsActionsStep}">
+        <Button Classes="sheet" Content="Add at end" Command="{Binding Home.QueueCommand}" CommandParameter="{Binding Home.SheetItem}" />
+        <Button Classes="sheet" Content="Add as next" Command="{Binding Home.PlayNextCommand}" CommandParameter="{Binding Home.SheetItem}" />
         <Button Classes="sheet" Content="Play now" Command="{Binding Home.PlayNowCommand}" />
-        <Button Classes="sheet" Content="Play in a room" Command="{Binding Home.ChooseZoneCommand}" />
-        <Button Classes="sheet" Content="Play next" Command="{Binding Home.PlayNextCommand}" CommandParameter="{Binding Home.SheetItem}" />
-        <Button Classes="sheet" Content="Add to queue" Command="{Binding Home.QueueCommand}" CommandParameter="{Binding Home.SheetItem}" />
+        <Button Classes="sheet" Content="Play in room" Command="{Binding Home.ChooseZoneCommand}" />
         <Button Classes="sheet" Content="Add to playlist" Command="{Binding Home.ChoosePlaylistCommand}" IsVisible="{Binding Home.CanAddToPlaylist}" />
        </StackPanel>
        <StackPanel x:Name="SheetZones" Spacing="8" IsVisible="{Binding Home.IsZonesStep}">
-        <TextBlock Text="Play in a room" Classes="section" FontSize="16" />
+        <TextBlock Text="Play in room" Classes="section" FontSize="16" />
         <TextBlock Text="No zones yet. Create one under Zones." Classes="muted" IsVisible="{Binding !Playback.ZoneChoices.Count}" />
         <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Hidden">
          <ItemsControl ItemsSource="{Binding Playback.ZoneChoices}">
@@ -324,5 +351,9 @@
      <Border.Transitions><Transitions><DoubleTransition Property="Opacity" Duration="0:0:0.3" /></Transitions></Border.Transitions>
      <TextBlock x:Name="ErrorText" Text="{Binding Error}" Foreground="#F4BA9D" FontSize="13" TextWrapping="Wrap" TextAlignment="Center" />
     </Border>
+    <!-- Settings → Show performance: the app's CPU use over every page, top right, never taking a tap. -->
+    <vm:PerformanceView x:Name="Performance" Grid.Row="1" IsVisible="{Binding ShowPerformance}"
+     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,8,0" Padding="8,3" FontSize="12"
+     Foreground="#CBEC97" Background="#E6101315" />
  </Grid>
 </UserControl>

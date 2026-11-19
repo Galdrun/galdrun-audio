@@ -37,6 +37,8 @@ public sealed partial class MultiroomClient
     public Task<JsonElement?> RemoveFavoriteAsync(long id, CancellationToken ct) => SendAsync(HttpMethod.Delete, $"favorites/{id}", null, ct);
     public Task<IReadOnlyList<LikedItem>> LikesAsync(CancellationToken ct) => GetAsync<IReadOnlyList<LikedItem>>("likes", ct);
     public Task<ProposalsView> ProposalsAsync(CancellationToken ct) => GetAsync<ProposalsView>("ai/proposals", ct);
+    // Asks the AI for new proposals (202, the run); proposals.running and .changed bring the outcome.
+    public Task<JsonElement?> RefreshProposalsAsync(CancellationToken ct) => SendAsync(HttpMethod.Post, "ai/proposals/refresh", null, ct);
     public Task<HistoryPage> HistoryAsync(int limit, CancellationToken ct) => GetAsync<HistoryPage>($"history?limit={limit}", ct);
     public Task<IReadOnlyList<ItemStatus>> ItemStatusesAsync(IReadOnlyList<ItemRef> items, CancellationToken ct) =>
         SendTypedAsync<IReadOnlyList<ItemStatus>>(HttpMethod.Post, "items/status", new { items }, ct);

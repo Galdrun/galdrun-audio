@@ -18,6 +18,38 @@ public sealed class HomeTests
         new RadioStation("radio", "station:1", "Favourite radio", "Jazz"));
 
     [Fact]
+    public async Task Play_now_keeping_the_queue_adds_after_the_playing_track_and_plays_what_was_added()
+    {
+        Track[] album = [new("local", "track:1", "One"), new("local", "track:2", "Two")];
+        var playing = new Track("local", "track:9", "Playing");
+        var requests = new List<string>();
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (r, ct) =>
+        {
+            if (r.RequestUri!.AbsolutePath == "/api/v1/items/status") return FakeHttp.Json("[]");
+            requests.Add($"{r.Method} {r.RequestUri.AbsolutePath} {(r.Content is null ? "" : await r.Content.ReadAsStringAsync(ct))}");
+            // The server put them after the current item (5), before the rest (6).
+            return r.RequestUri.AbsolutePath.EndsWith("/queue/items", StringComparison.Ordinal)
+                ? BrowserTests.Reply(new QueueState("living", [new(5, playing), new(31, album[0]), new(32, album[1]), new(6, playing)],
+                    RepeatMode.Off, false, QueueTransport.Playing, Current: 5))
+                : FakeHttp.Json("{}");
+        }));
+        var home = new HomeViewModel(action => action(api, TestContext.Current.CancellationToken), () => "living") { KeepQueueOnPlayNow = () => true };
+        await home.OpenSheetCommand.ExecuteAsync(HomeItem.Of(new Album("local", "album:1", "Record")));
+        await home.PlayNowCommand.ExecuteAsync(null);
+        using (var body = JsonDocument.Parse(requests[0][(requests[0].IndexOf('{'))..]))
+        {
+            Assert.False(body.RootElement.TryGetProperty("replace", out var replace) && replace.GetBoolean());
+            Assert.True(body.RootElement.GetProperty("next").GetBoolean());
+        }
+        Assert.Equal("POST /api/v1/zones/living/play {\"item\":31}", requests[1]);
+        // A track picked from a list starts there.
+        requests.Clear();
+        await home.OpenSheetCommand.ExecuteAsync(HomeItem.InList(album[1], album));
+        await home.PlayNowCommand.ExecuteAsync(null);
+        Assert.Equal("POST /api/v1/zones/living/play {\"item\":32}", requests[1]);
+    }
+
+    [Fact]
     public async Task Play_now_queues_the_whole_list_in_the_selected_zone_and_starts_at_the_picked_track()
     {
         Track[] album = [new("local", "track:1", "One"), new("local", "track:2", "Two"), new("local", "track:3", "Three")];
@@ -89,6 +121,78 @@ public sealed class HomeTests
         await home.RefreshAsync();
         Assert.Equal(3, Assert.Single(home.Favourites.Items).Items.Favorite);
         home.Reset(); Assert.True(home.Favourites.IsEmpty);
+    }
+
+    [Theory]
+    [InlineData("end")] [InlineData("next")] [InlineData("replace")] [InlineData("keep")] [InlineData("playlist")]
+    public async Task A_whole_tab_queues_its_albums_in_order_and_its_tracks_at_once(string action)
+    {
+        var requests = new List<string>();
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (request, ct) =>
+        {
+            var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(ct);
+            using var json = body.Length > 0 ? JsonDocument.Parse(body) : null;
+            var root = json?.RootElement;
+            string Flag(string name) => root is { } r && r.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True ? " " + name : "";
+            var what = root is { } x && x.TryGetProperty("node", out var node) && node.ValueKind == JsonValueKind.Object ? node.GetProperty("id").GetString()
+                : root is { } y && y.TryGetProperty("tracks", out var tracks) && tracks.ValueKind == JsonValueKind.Array ? $"{tracks.GetArrayLength()} tracks" : "";
+            requests.Add($"{request.Method} {request.RequestUri!.AbsolutePath} {what}{Flag("next")}{Flag("replace")}".Trim());
+            return FakeHttp.Json("{}");
+        }));
+        var home = new HomeViewModel(action => action(api, TestContext.Current.CancellationToken), () => "living") { KeepQueueOnPlayNow = () => action == "keep" };
+        home.ForYou.Set([HomeItem.Of(new Album("local", "a1", "One")), HomeItem.Of(new Track("local", "t1", "Song")), HomeItem.Of(new Album("local", "a2", "Two")),
+            HomeItem.Of(new Album("local", "a3", "Three")), HomeItem.Of(new Track("local", "t2", "Other"))]);
+        Assert.Null(home.ForYou.WholeKind(null)); Assert.Null(home.ForYou.WholeKind("Artist"));
+        var albums = home.ForYou.WholeKind("Album")!;
+        Assert.Equal("All albums", albums.Title); Assert.Equal("Albums", albums.Kind);
+        await home.OpenSheetCommand.ExecuteAsync(albums);
+        Assert.False(home.CanLike); Assert.False(home.CanFavorite); Assert.Empty(requests); // No like or favourite for a whole list.
+        var playlist = new Playlist(4, "Mix", 0, DateTimeOffset.UnixEpoch, 0);
+        switch (action)
+        {
+            case "end": await home.QueueCommand.ExecuteAsync(albums); break;
+            case "next": await home.PlayNextCommand.ExecuteAsync(albums); break;
+            case "playlist": await home.AddToPlaylistCommand.ExecuteAsync(playlist); break;
+            default: await home.PlayNowCommand.ExecuteAsync(null); break;
+        }
+        string Q(string id, string flags = "") => $"POST /api/v1/zones/living/queue/items {id}{flags}";
+        string[] expected = action switch
+        {
+            "end" => [Q("a1"), Q("a2"), Q("a3")],
+            "next" => [Q("a3", " next"), Q("a2", " next"), Q("a1", " next")],
+            "replace" => [Q("a1", " replace"), "POST /api/v1/zones/living/play", Q("a2"), Q("a3")],
+            "keep" => [Q("a3", " next"), Q("a2", " next"), Q("a1", " next"), "POST /api/v1/zones/living/play"],
+            _ => ["POST /api/v1/playlists/4/entries a1", "POST /api/v1/playlists/4/entries a2", "POST /api/v1/playlists/4/entries a3"]
+        };
+        Assert.Equal(expected, requests);
+        // Tracks go in one request.
+        requests.Clear();
+        await home.QueueCommand.ExecuteAsync(home.ForYou.WholeKind("Track"));
+        Assert.Equal([Q("2 tracks")], requests);
+    }
+
+    [Fact]
+    public async Task Asking_for_new_proposals_starts_a_run_and_turns_until_it_ends()
+    {
+        var running = false; var refreshes = 0;
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp((request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/ai/proposals/refresh" when request.Method == HttpMethod.Post => Run(++refreshes),
+            "/api/v1/ai/proposals" => BrowserTests.Reply(new ProposalsView(true, [], [], [], [], Run: running ? new(1, ProposalRunState.Running) : null)),
+            "/api/v1/favorites" => FakeHttp.Json("[]"),
+            _ => FakeHttp.Json("[]")
+        })));
+        HttpResponseMessage Run(int _) { running = true; return FakeHttp.Json("""{"id":1,"state":"running"}"""); }
+        var home = new HomeViewModel(action => action(api, TestContext.Current.CancellationToken), () => "living");
+        Assert.False(home.RefreshProposalsCommand.CanExecute(null)); // No AI known yet.
+        await home.RefreshAsync();
+        Assert.True(home.CanPropose); Assert.False(home.IsProposing); Assert.True(home.RefreshProposalsCommand.CanExecute(null));
+        await home.RefreshProposalsCommand.ExecuteAsync(null);
+        Assert.Equal(1, refreshes); Assert.True(home.IsProposing); Assert.False(home.RefreshProposalsCommand.CanExecute(null));
+        running = false; await home.RefreshAsync(); // proposals.changed
+        Assert.False(home.IsProposing);
+        home.OpenShelf = home.ForYou; Assert.True(home.IsForYouOpen);
+        home.OpenShelf = home.Favourites; Assert.False(home.IsForYouOpen);
     }
 
     [Fact]
@@ -221,16 +325,16 @@ public sealed class HomeTests
             var divider = home.FindControl<Border>("ShelfDivider")!;
             Assert.True(divider.IsEffectivelyVisible); Assert.Equal(1, divider.Bounds.Height);
             Assert.True(divider.TranslatePoint(new Point(), home)!.Value.Y < grid.TranslatePoint(new Point(), home)!.Value.Y);
-            Assert.Equal(2, grid.GetVisualDescendants().OfType<ArtworkView>().Count());
+            Assert.Equal(2, grid.GetVisualDescendants().OfType<ArtworkView>().Count(a => a.IsEffectivelyVisible));
             // The columns fill the width: each cover scales up to its column, never below its shelf size.
             var columns = home.GridColumns;
-            var cells = home.FindControl<ItemsControl>("ShelfItems")!.GetRealizedContainers().Select(c => c.GetVisualDescendants().OfType<Viewbox>().First()).ToArray();
+            var cells = home.FindControl<RecyclingRowPanel>("ShelfItems")!.GetVisualDescendants().OfType<Viewbox>().Where(v => v.IsEffectivelyVisible && v.GetVisualDescendants().OfType<ArtworkView>().Any()).ToArray();
             Assert.Equal(2, cells.Length);
             Assert.All(cells, cell => Assert.Equal((grid.Bounds.Width + 14) / columns - 14, cell.Bounds.Width, tolerance: 1.0));
             Assert.All(cells, cell => Assert.True(cell.Bounds.Width >= 100));
             if (width == 390) Assert.Equal(3, columns);
             // A few covers keep their own height: rows are not spread over the page.
-            var items = home.FindControl<ItemsControl>("ShelfItems")!;
+            var items = home.FindControl<RecyclingRowPanel>("ShelfItems")!;
             Assert.Equal(items.DesiredSize.Height - items.Margin.Bottom, items.Bounds.Height, tolerance: 1.0);
             // No back button: the system back closes the shelf.
             Assert.DoesNotContain(home.GetVisualDescendants().OfType<Button>(), b => b.IsEffectivelyVisible && Equals(b.Content, "Back"));
@@ -256,7 +360,7 @@ public sealed class HomeTests
             model.SelectedPage = "Favourites";
             window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             Assert.False(home.IsEffectivelyVisible);
-            Assert.Contains(view.GetVisualDescendants().OfType<Button>(), button => button.IsEffectivelyVisible && Equals(button.Content, "Refresh"));
+            Assert.DoesNotContain(view.GetVisualDescendants().OfType<Button>(), button => Equals(button.Content, "Refresh"));
         }
         finally { window.Close(); }
     }
@@ -363,7 +467,7 @@ public sealed class HomeTests
             Assert.True(model.Home.IsSheetOpen); Assert.Same(model.Home.Favourites.Items[1], model.Home.SheetItem);
             Assert.Equal("Home", model.SelectedPage); Assert.True(sheet.IsHitTestVisible);
             Assert.Equal("Night", view.FindControl<TextBlock>("SheetTitle")!.Text);
-            Assert.Equal(["Play now", "Play in a room", "Play next", "Add to queue", "Add to playlist"], view.FindControl<StackPanel>("SheetActions")!.Children
+            Assert.Equal(["Add at end", "Add as next", "Play now", "Play in room", "Add to playlist"], view.FindControl<StackPanel>("SheetActions")!.Children
                 .OfType<Button>().Where(b => b.IsVisible).Select(b => b.Content));
             var scrim = view.FindControl<Border>("SheetScrim")!;
             var top = scrim.TranslatePoint(new Point(scrim.Bounds.Width / 2, 40), window)!.Value;

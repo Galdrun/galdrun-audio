@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher icon's background: the app's page colour, with a faint lighter band behind the wordmark. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+  <path android:fillColor="#101315" android:pathData="M0 0H108V108H0Z" />
+  <path android:fillColor="#1B2123" android:pathData="M0 40H108V68H0Z" />
+</vector>

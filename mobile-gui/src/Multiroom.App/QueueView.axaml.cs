@@ -13,8 +13,8 @@ namespace Multiroom.App;
 public partial class QueueView : UserControl
 {
     private const double DragThreshold = 6, SwipeThreshold = 48;
-    private ListBoxItem? _pressItem;
-    private ListBoxItem? _dragItem;
+    private Control? _pressItem;
+    private Control? _dragItem;
     // While dragging: the dragged row's index, and the index it lands at when released.
     private int _dragFrom, _dragTo;
     private IPointer? _pointer;
@@ -33,9 +33,15 @@ public partial class QueueView : UserControl
         QueueList.AddHandler(PointerMovedEvent, Moved, RoutingStrategies.Tunnel);
         QueueList.AddHandler(PointerReleasedEvent, Released, RoutingStrategies.Tunnel);
         QueueList.PointerCaptureLost += (_, _) => ResetDrag();
-        // A row the list recycles keeps no drag shift: ResetDrag only reaches the rows shown, and a shifted
-        // row reused further down lay over its neighbour.
-        QueueList.ContainerClearing += (_, e) => e.Container.ClearValue(RenderTransformProperty);
+        QueueList.CreateRow = () => new QueueRowView(_model!);
+        // A row given another item shows nothing of the last one: no delete slid in, no drag shift, and it is lit
+        // as selected only for its own item.
+        QueueList.RowRebound += row =>
+        {
+            row.Classes.Remove("revealed");
+            if (!_dragging) row.ClearValue(RenderTransformProperty);
+            MarkSelected(row);
+        };
         QueueList.Tapped += RowTapped;
         DetachedFromVisualTree += (_, _) => ResetDrag();
         AttachedToVisualTree += (_, _) => PrefetchArtwork();
@@ -55,7 +61,12 @@ public partial class QueueView : UserControl
     private bool _prefetchQueued;
     private void ItemsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => PrefetchArtwork();
     private void ModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    { if (e.PropertyName == nameof(PlaybackViewModel.Artwork)) PrefetchArtwork(); }
+    {
+        if (e.PropertyName == nameof(PlaybackViewModel.Artwork)) PrefetchArtwork();
+        if (e.PropertyName == nameof(PlaybackViewModel.SelectedItem)) foreach (var row in QueueList.Children) MarkSelected(row);
+    }
+    private void MarkSelected(Control row) =>
+        row.Classes.Set("selected", row.DataContext is QueueRow item && ReferenceEquals(item, _model?.SelectedItem));
     private void PrefetchArtwork()
     {
         if (_prefetchQueued) return;
@@ -68,11 +79,11 @@ public partial class QueueView : UserControl
             var current = Math.Max(0, rows.ToList().FindIndex(row => row.IsCurrent));
             cache.Prefetch(rows.Skip(current).Concat(rows.Take(current)).Select(row => row.Artwork),
                 ArtworkCache.SizeFor(RowArtwork * top.RenderScaling));
-        }, DispatcherPriority.Background);
+        }, DispatcherPriority.Input);
     }
 
-    private static ListBoxItem? ContainerOf(object? source) =>
-        source is Visual visual ? visual.GetSelfAndVisualAncestors().OfType<ListBoxItem>().FirstOrDefault() : null;
+    private static QueueRowView? ContainerOf(object? source) =>
+        source is Visual visual ? visual.GetSelfAndVisualAncestors().OfType<QueueRowView>().FirstOrDefault() : null;
     private static bool OnGrip(object? source) =>
         source is Visual visual && visual.GetSelfAndVisualAncestors().OfType<Border>().Any(border => border.Classes.Contains("grip"));
     private static bool OnDeleteButton(object? source) =>
@@ -83,18 +94,19 @@ public partial class QueueView : UserControl
     {
         if (DataContext is not PlaybackViewModel model || model.Items.FirstOrDefault(r => r.IsCurrent) is not { } row) return;
         var index = model.Items.IndexOf(row);
-        QueueList.ScrollIntoView(index); QueueList.UpdateLayout();
-        if (QueueList.ContainerFromIndex(index) is not Control item || QueueList.Scroll is not ScrollViewer scroll ||
-            item.TranslatePoint(default, scroll) is not { } at) return;
-        var top = at.Y + scroll.Offset.Y;
-        scroll.Offset = new Vector(scroll.Offset.X, Math.Max(0, top - (scroll.Viewport.Height - item.Bounds.Height) / 2));
+        QueueScroll.UpdateLayout();
+        var height = QueueList.RowHeight;
+        if (height <= 0) return;
+        var top = Math.Max(0, index * height - (QueueScroll.Viewport.Height - height) / 2);
+        QueueScroll.Offset = new Vector(QueueScroll.Offset.X, Math.Min(top, Math.Max(0, QueueScroll.Extent.Height - QueueScroll.Viewport.Height)));
+        QueueScroll.UpdateLayout();
     }
 
     // A tap plays its row; not one on the row's grip or buttons.
     private void RowTapped(object? sender, TappedEventArgs e)
     {
         if (_moved || OnGrip(e.Source) || e.Source is Visual visual && visual.GetSelfAndVisualAncestors().OfType<Button>().Any()) return;
-        if (ContainerOf(e.Source)?.Content is not QueueRow row || DataContext is not PlaybackViewModel model) return;
+        if (ContainerOf(e.Source)?.DataContext is not QueueRow row || DataContext is not PlaybackViewModel model) return;
         model.SelectedItem = row; model.StartItemCommand.Execute(null);
     }
 
@@ -134,14 +146,14 @@ public partial class QueueView : UserControl
             e.Pointer.Capture(QueueList);
             _dragItem.Classes.Add("dragging");
             QueueList.Classes.Add("reordering");
-            _dragFrom = _dragTo = QueueList.IndexFromContainer(_dragItem);
+            _dragFrom = _dragTo = QueueList.IndexOf(_dragItem);
         }
         UpdateDropTarget(e, delta.Y);
     }
 
     private void Released(object? sender, PointerReleasedEventArgs e)
     {
-        if (_dragging && _dragItem is { } item && item.Content is QueueRow row && DataContext is PlaybackViewModel model)
+        if (_dragging && _dragItem is { } item && item.DataContext is QueueRow row && DataContext is PlaybackViewModel model)
         {
             var (from, to) = (_dragFrom, _dragTo);
             ResetDrag();
@@ -158,10 +170,9 @@ public partial class QueueView : UserControl
     // (after the last whose middle is above it), and the rows between slide by its height to make room.
     private void UpdateDropTarget(PointerEventArgs e, double offset)
     {
-        if (_dragItem is null || _dragFrom < 0 || QueueList.ItemsPanelRoot is not { } panel) return;
-        var y = e.GetPosition(panel).Y;
-        var rows = QueueList.GetRealizedContainers().OfType<ListBoxItem>()
-            .Select(row => (row, index: QueueList.IndexFromContainer(row))).Where(r => r.index >= 0).ToArray();
+        if (_dragItem is null || _dragFrom < 0) return;
+        var y = e.GetPosition(QueueList).Y;
+        var rows = QueueList.Rows.ToArray();
         var to = _dragFrom;
         foreach (var (row, index) in rows)
         {
@@ -175,7 +186,7 @@ public partial class QueueView : UserControl
         else _dragItem.RenderTransform = new TranslateTransform(0, offset);
         if (to == _dragTo && _shiftsShown) return;
         _dragTo = to; _shiftsShown = true;
-        var step = _dragItem.Bounds.Height + _dragItem.Margin.Top + _dragItem.Margin.Bottom;
+        var step = QueueList.RowHeight;
         foreach (var (row, index) in rows)
         {
             if (ReferenceEquals(row, _dragItem)) continue;
@@ -185,18 +196,18 @@ public partial class QueueView : UserControl
         }
     }
 
-    private void Reveal(ListBoxItem? item)
+    private void Reveal(Control? item)
     {
-        foreach (var row in QueueList.GetVisualDescendants().OfType<ListBoxItem>()) row.Classes.Remove("revealed");
+        foreach (var row in QueueList.Children) row.Classes.Remove("revealed");
         if (item is not null) item.Classes.Add("revealed");
     }
-    private void Hide(ListBoxItem? item) => item?.Classes.Remove("revealed");
+    private void Hide(Control? item) => item?.Classes.Remove("revealed");
 
     private void ResetDrag()
     {
         // Without the slide, so the rows do not animate back from where they were shown.
         QueueList.Classes.Remove("reordering");
-        if (_dragging) foreach (var row in QueueList.GetRealizedContainers()) row.ClearValue(RenderTransformProperty);
+        if (_dragging) foreach (var row in QueueList.Children) row.ClearValue(RenderTransformProperty);
         _dragItem?.Classes.Remove("dragging");
         _dragItem = null;
         _dragging = false; _shiftsShown = false;

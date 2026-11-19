@@ -144,8 +144,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
             _markItem = CurrentMarkItem; _likeItem = CurrentLikeItem; CancelMarks();
             OnPropertyChanged(nameof(CurrentMarkItem));
         }
-        Title = item?.Track?.Title ?? item?.Station?.Name ?? "Nothing playing";
-        Subtitle = zone?.StreamTitle ?? (item?.Track is { } track ? string.Join(" · ", new[] { track.Artist, track.Album }.Where(s => !string.IsNullOrEmpty(s))) : "Choose music to fill the room");
+        (Title, Subtitle) = Describe(zone, item);
         Transport = queue?.Transport.ToString() ?? "Stopped";
         Repeat = queue?.Repeat.ToString() ?? "Off";
         Shuffle = queue?.Shuffle ?? false;
@@ -367,12 +366,25 @@ public sealed partial class PlaybackViewModel : ObservableObject
         });
     }
 
-    [RelayCommand] private void ChangeZone(string direction)
+    private static (string Title, string Subtitle) Describe(ZoneView? zone, QueueItem? item) =>
+        (item?.Track?.Title ?? item?.Station?.Name ?? "Nothing playing",
+         zone?.StreamTitle ?? (item?.Track is { } track ? string.Join(" · ", new[] { track.Artist, track.Album }.Where(s => !string.IsNullOrEmpty(s))) : "Choose music to fill the room"));
+    private string? NeighbourZone(string direction)
     {
         var index = Zones.ToList().IndexOf(SelectedZone ?? "");
-        if (index < 0) return;
-        var next = (index + (direction == "next" ? 1 : -1) + Zones.Count) % Zones.Count;
-        SelectedZone = Zones[next];
+        return index < 0 ? null : Zones[(index + (direction == "next" ? 1 : -1) + Zones.Count) % Zones.Count];
+    }
+    /// <summary>The track and zone name the bottom bar's carousel shows for the zone a swipe would change to.</summary>
+    public (string Title, string Subtitle, string ZoneName)? PeekZone(string direction)
+    {
+        if (NeighbourZone(direction) is not { } name) return null;
+        var zone = _snapshot.Zones.FirstOrDefault(z => z.Zone == name);
+        var (title, subtitle) = Describe(zone, zone?.Queue?.Items.FirstOrDefault(i => i.Id == zone.Queue.Current));
+        return (title, subtitle, ZoneNameOf(name));
+    }
+    [RelayCommand] private void ChangeZone(string direction)
+    {
+        if (NeighbourZone(direction) is { } next) SelectedZone = next;
     }
     [RelayCommand] private Task PlayPauseAsync()
     {
@@ -486,7 +498,10 @@ public sealed partial class PlaybackViewModel : ObservableObject
         if (SelectedZone is not { } zone) return;
         await api.SetClientsAsync(zone, Membership.Where(r => r.Assigned).Select(r => r.Client).ToArray(), ct);
         foreach (var row in Membership) row.Dirty = false;
+        MembershipSaved?.Invoke();
     });
+    // The zone's rooms were saved (the shell closes Zone Setup).
+    public event Action? MembershipSaved;
 }
 
 // A room's own volume and mute on the volume page.

@@ -10,6 +10,7 @@ public partial class NowPlayingView : UserControl
     {
         InitializeComponent();
         ZoneSwipe.Attach(CoverButton, direction => Model?.ChangeZoneCommand.Execute(direction));
+        ZoneSwipe.Attach(TrackInfo, direction => Model?.ChangeZoneCommand.Execute(direction));
         SeekSlider.Attach(PositionSlider, () => Model);
     }
 }

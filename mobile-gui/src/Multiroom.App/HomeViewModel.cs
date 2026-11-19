@@ -11,11 +11,18 @@ namespace Multiroom.App;
 // (its badge), why it is proposed, and what queues it. Start is the track of
 // Items' tracks to play first (a track picked from an album's or artist's list).
 public sealed record HomeItem(string Title, string Subtitle, string? Artwork, AddItems Items, MediaItem Media, string? Reason = null,
-    Track? Start = null)
+    Track? Start = null, IReadOnlyList<HomeItem>? Parts = null)
 {
+    // A whole list of one kind (a "See all" tab's tracks or albums), queued as its parts: tracks in one go,
+    // anything else one part after another. It is never liked or saved itself.
+    public static HomeItem? Whole(string title, string subtitle, IReadOnlyList<HomeItem> parts) => parts.Count == 0 ? null
+        : new(title, subtitle, parts[0].Artwork, parts.All(p => p.Media is Track) ? new(Tracks: parts.Select(p => (Track)p.Media).ToArray()) : parts[0].Items,
+            parts[0].Media, Parts: parts);
+    // What one queue request each adds, in order.
+    public IReadOnlyList<AddItems> Batches => Parts is null || Items.Tracks is not null ? [Items] : Parts.Select(p => p.Items).ToArray();
     // A track of a list: the whole list queued, the track played first.
     public static HomeItem InList(Track track, IReadOnlyList<Track> list) => Of(track)! with { Items = new(Tracks: list), Start = track };
-    public string Kind => Media switch
+    public string Kind => Parts is not null ? Media switch { Track => "Tracks", Album => "Albums", _ => "" } : Media switch
     {
         Track => "Track", RadioStation => "Radio", Album => "Album", Artist => "Artist", MediaGroup or Audiobook => "Book", _ => ""
     };
@@ -53,21 +60,61 @@ public sealed record HomeItem(string Title, string Subtitle, string? Artwork, Ad
     };
 }
 
+// A tab over a shelf's "See all": one kind (null: all of them), with how many it holds. Picking another
+// tab only moves IsSelected, so the tab buttons stay as they are.
+public sealed partial class ShelfTab(string? kind, string label, string count, bool isSelected) : ObservableObject
+{
+    public string? Kind { get; } = kind;
+    public string Label { get; } = label;
+    public string Count { get; } = count;
+    [ObservableProperty] private bool _isSelected = isSelected;
+}
+
 // One shelf: its first covers, and All of them for its "See all" grid.
 // Icon is drawn as an outline before its title; Empty says how it fills
 // while it has none.
 public sealed partial class HomeShelf : ObservableObject
 {
     public const int Size = 24;
-    public HomeShelf(string title, string icon, string empty)
+    public HomeShelf(string title, string icon, string empty, bool tabs = false)
     {
-        Title = title; Icon = Geometry.Parse(icon); _empty = empty;
+        Title = title; Icon = Geometry.Parse(icon); _empty = empty; _tabbed = tabs;
         Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsEmpty));
     }
     public string Title { get; }
     public Geometry Icon { get; }
     public ObservableCollection<HomeItem> Items { get; } = [];
     [ObservableProperty] private IReadOnlyList<HomeItem> _all = [];
+    partial void OnAllChanged(IReadOnlyList<HomeItem> value) => UpdateShown();
+
+    // "See all" of a tabbed shelf (For you) shows one kind, picked by its tabs (Tracks first), or all of it,
+    // as the server GUI's For you; tabs only when it holds two kinds or more.
+    private static readonly (string Kind, string Label)[] TabKinds = [("Track", "Tracks"), ("Album", "Albums"), ("Artist", "Artists"), ("Book", "Books")];
+    private readonly bool _tabbed;
+    private string? _pick = "Track";
+    public IReadOnlyList<HomeItem> Shown { get; private set; } = [];
+    public IReadOnlyList<ShelfTab> Tabs { get; private set; } = [];
+    public bool HasTabs => Tabs.Count > 0;
+    [RelayCommand] private void ShowKind(string? kind) { _pick = kind; UpdateShown(); }
+    // Every item of a tab's kind, for the sheet a long press on the tab opens (tracks and albums only).
+    public HomeItem? WholeKind(string? kind) => kind is "Track" or "Album"
+        ? HomeItem.Whole(kind == "Track" ? "All tracks" : "All albums", $"{Title} · {All.Count(i => i.Kind == kind)}", All.Where(i => i.Kind == kind).ToArray())
+        : null;
+    private void UpdateShown()
+    {
+        var kinds = _tabbed ? TabKinds.Select(k => (k.Kind, k.Label, Count: All.Count(i => i.Kind == k.Kind))).Where(k => k.Count > 0).ToArray() : [];
+        if (kinds.Length < 2) { if (Tabs.Count > 0) { Tabs = []; OnPropertyChanged(nameof(Tabs)); } Shown = All; }
+        else
+        {
+            var pick = _pick is null || kinds.Any(k => k.Kind == _pick) ? _pick : kinds[0].Kind;
+            ShelfTab[] tabs = [new(null, "All", "", pick is null), .. kinds.Select(k => new ShelfTab(k.Kind, k.Label, k.Count.ToString(), k.Kind == pick))];
+            if (tabs.Select(t => (t.Kind, t.Count)).SequenceEqual(Tabs.Select(t => (t.Kind, t.Count))))
+                foreach (var tab in Tabs) tab.IsSelected = tab.Kind == pick;
+            else { Tabs = tabs; OnPropertyChanged(nameof(Tabs)); }
+            Shown = pick is null ? All : All.Where(i => i.Kind == pick).ToArray();
+        }
+        OnPropertyChanged(nameof(HasTabs)); OnPropertyChanged(nameof(Shown));
+    }
     public bool IsEmpty => Items.Count == 0;
     [ObservableProperty] private string _empty;
     // A refresh keeps every cover that still shows the same, in place: the shelf never blanks and its covers
@@ -100,7 +147,7 @@ public sealed partial class HomeViewModel : ObservableObject
         Func<string, string>? zoneName = null)
     { this.execute = execute; this.zone = zone; this.zoneName = zoneName ?? (z => z); Shelves = [ForYou, Favourites, Liked, Recent]; }
     public HomeShelf ForYou { get; } = new("For you", "M 12,2 L 14.5,9.5 L 22,12 L 14.5,14.5 L 12,22 L 9.5,14.5 L 2,12 L 9.5,9.5 Z",
-        "No proposals yet.");
+        "No proposals yet.", tabs: true);
     public HomeShelf Favourites { get; } = new("Favourites", "M 12,2 L 15,8.6 L 22,9.3 L 16.8,14 L 18.2,21 L 12,17.4 L 5.8,21 L 7.2,14 L 2,9.3 L 9,8.6 Z",
         "Save a track or station from Browse or Search to keep it close.");
     public HomeShelf Liked { get; } = new("Liked", "M 12,21 C 12,21 2,14.5 2,8.5 A 5,5 0 0 1 12,6 A 5,5 0 0 1 22,8.5 C 22,14.5 12,21 12,21 Z",
@@ -115,8 +162,22 @@ public sealed partial class HomeViewModel : ObservableObject
     public event Action<string>? PlayedIn;
     [ObservableProperty] private bool _isLoading;
     // The shelf whose "See all" grid shows in place of the shelves.
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsShelfOpen))] private HomeShelf? _openShelf;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsShelfOpen), nameof(IsForYouOpen))] private HomeShelf? _openShelf;
     public bool IsShelfOpen => OpenShelf is not null;
+    public bool IsForYouOpen => OpenShelf == ForYou;
+    // For you's "See all" asks the AI for new proposals; its icon turns while a run is under way.
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(RefreshProposalsCommand))] private bool _isProposing;
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(RefreshProposalsCommand))] private bool _canPropose;
+    private bool CanRefreshProposals() => CanPropose && !IsProposing;
+    [RelayCommand(CanExecute = nameof(CanRefreshProposals))]
+    private async Task RefreshProposalsAsync()
+    {
+        IsProposing = true;
+        var asked = false;
+        await execute(async (api, ct) => { await api.RefreshProposalsAsync(ct); asked = true; });
+        // Reading the proposals again shows the run (or stops the icon when it was refused).
+        if (asked) await RefreshAsync(); else IsProposing = false;
+    }
 
     // The item sheet: one item's actions, sliding up over the page. Step is "actions",
     // "zones" (Play in a room) or "playlists" (Add to playlist). The item stays while
@@ -136,7 +197,7 @@ public sealed partial class HomeViewModel : ObservableObject
     public bool CanFavorite => Marks is not null && SheetItem?.Media is Track or RadioStation;
     public bool IsLiked => Marks?.Liked == true;
     public bool FavoriteSaved => Marks?.Favorite == true;
-    private static ItemRef? MarkItem(HomeItem? item) => item?.Media switch
+    private static ItemRef? MarkItem(HomeItem? item) => item?.Parts is not null ? null : item?.Media switch
     {
         Track t => new(LikeKind.Track, t.ProviderId, t.ProviderItemId),
         RadioStation s => new(LikeKind.Station, s.ProviderId, s.ProviderItemId),
@@ -181,6 +242,8 @@ public sealed partial class HomeViewModel : ObservableObject
     // Tracks, albums, artists and books in turn, as the server GUI's "All".
     private void ShowProposals(ProposalsView? view)
     {
+        IsProposing = view?.Run?.State == ProposalRunState.Running;
+        CanPropose = view?.AiAvailable == true;
         ForYou.Empty = view?.Run?.State == ProposalRunState.Running ? "The AI is choosing proposals for you…"
             : view?.AiAvailable == true ? "No proposals yet." : "No proposals: connect an AI provider first.";
         IReadOnlyList<ProposalItem>[] lists = view is null ? [] : [view.Tracks, view.Albums, view.Artists, view.Audiobooks];
@@ -249,7 +312,7 @@ public sealed partial class HomeViewModel : ObservableObject
         return execute(async (api, ct) =>
         {
             if (item is null || target is null) return;
-            await ReplaceAndPlayAsync(api, target, item, ct);
+            await StartAsync(api, target, item, ct);
             PlayedIn?.Invoke(target);
             QueueChanged?.Invoke();
         });
@@ -259,20 +322,17 @@ public sealed partial class HomeViewModel : ObservableObject
     private Task PlayNowAsync() => zone() is { } target ? PlayInAsync(target)
         : execute((_, _) => throw new ArgumentException("Choose or create a zone before playing music."));
 
-    // The item replaces the zone's queue and plays: from its Start track when it has one, found in the new queue.
-    private static async Task ReplaceAndPlayAsync(MultiroomClient api, string target, HomeItem item, CancellationToken ct)
+    // "Play now" (PlayNow): replacing the zone's queue, or put in after what plays when the setting keeps the queue.
+    public Func<bool> KeepQueueOnPlayNow { get; set; } = () => false;
+    private async Task StartAsync(MultiroomClient api, string target, HomeItem item, CancellationToken ct)
     {
-        var answer = await api.QueueAsync(target, item.Items with { Replace = true }, ct);
-        long? first = null;
-        if (item.Start is { } start && answer is { } json)
-        {
-            QueueState? queue;
-            try { queue = json.Deserialize<QueueState>(MultiroomClient.Json); }
-            catch (JsonException) { queue = null; }
-            if (queue is { Items: { } items })
-                first = items.FirstOrDefault(q => q.Track is { } t && t.ProviderId == start.ProviderId && t.ProviderItemId == start.ProviderItemId)?.Id;
-        }
-        await api.TransportAsync(target, "play", first, ct);
+        var batches = item.Batches;
+        var keep = KeepQueueOnPlayNow();
+        // Several parts: the rest go in first (each right after what plays, so last first), then the first part
+        // before them plays; or the first replaces the queue and plays, and the rest follow at the end.
+        if (keep) foreach (var rest in batches.Skip(1).Reverse()) await api.QueueAsync(target, rest with { Next = true }, ct);
+        await PlayNow.PlayAsync(api, target, batches[0], keep, item.Start, ct);
+        if (!keep) foreach (var rest in batches.Skip(1)) await api.QueueAsync(target, rest, ct);
     }
 
     [RelayCommand]
@@ -283,7 +343,13 @@ public sealed partial class HomeViewModel : ObservableObject
         return execute(async (api, ct) =>
         {
             if (playlist is null) return;
-            if (item?.Media is Track track) await api.AddEntriesAsync(playlist.Id, [track], ct);
+            if (item?.Parts is { } parts)
+            {
+                if (item.Items.Tracks is { } tracks) await api.AddEntriesAsync(playlist.Id, tracks, ct);
+                else foreach (var part in parts)
+                    if (part.Items.Node is { } partNode) await api.AddEntriesAsync(playlist.Id, partNode, ct);
+            }
+            else if (item?.Media is Track track) await api.AddEntriesAsync(playlist.Id, [track], ct);
             else if (item?.Media is RadioStation station) await api.AddEntriesAsync(playlist.Id, station, ct);
             else if (item is { Media: Album, Items.Node: { } node }) await api.AddEntriesAsync(playlist.Id, node, ct);
         });
@@ -294,7 +360,7 @@ public sealed partial class HomeViewModel : ObservableObject
     {
         if (item is null) return;
         if (zone() is not { } target) throw new ArgumentException("Choose or create a zone before playing music.");
-        await ReplaceAndPlayAsync(api, target, item, ct);
+        await StartAsync(api, target, item, ct);
         QueueChanged?.Invoke();
     });
 
@@ -310,9 +376,9 @@ public sealed partial class HomeViewModel : ObservableObject
         {
             if (item is null) return;
             if (zone() is not { } target) throw new ArgumentException("Choose or create a zone before adding music.");
-            // A track picked from a list is added alone.
-            var items = item.Start is { } start ? new AddItems(Tracks: [start]) : item.Items;
-            await api.QueueAsync(target, items with { Next = next }, ct);
+            // A track picked from a list is added alone; a whole list part after part (last first when each goes next).
+            IEnumerable<AddItems> batches = item.Start is { } start ? [new AddItems(Tracks: [start])] : item.Batches;
+            foreach (var items in next ? batches.Reverse() : batches) await api.QueueAsync(target, items with { Next = next }, ct);
             QueueChanged?.Invoke();
         });
     }

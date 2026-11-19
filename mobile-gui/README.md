@@ -20,7 +20,9 @@ What already works, more or less:
   favourites, recommendations.
 
 Built with [Avalonia](https://avaloniaui.net/) 12 on .NET, one shared UI for
-desktop, Android and iOS.
+desktop, Android and iOS. It pins an Avalonia 12.2 nightly (`Directory.Build.props`,
+`NuGet.config`) for partial presentation on Android; read
+[docs/android-rendering.md](docs/android-rendering.md) before changing the Avalonia version.
 
 ## Build
 
@@ -45,6 +47,9 @@ Targets: `all` (default), `windows` (`windows-x64`, `windows-armv8`), `linux`
 Android and iOS have their projects (`src/Multiroom.App.Android`,
 `src/Multiroom.App.iOS`) but are not built by the scripts: Android needs the .NET
 `android` workload (`dotnet workload install android`), iOS a Mac with Xcode.
+How to build and install the Android app, and the rules that keep it fast and
+light on battery (nothing hidden animates or ticks, few frames for decoration,
+long lists keep their rows): [docs/agents/mobile-gui.md](../docs/agents/mobile-gui.md).
 
 ## Development
 

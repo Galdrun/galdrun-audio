@@ -15,6 +15,7 @@ and commands are listed in [docs/agents/development.md](docs/agents/development.
 | Client playback, device backends, settings, buttons, ESP32, or the client self update | [docs/agents/client.md](docs/agents/client.md) |
 | Core decoding, zones, scheduling, streaming, resampling, or synchronization | [docs/agents/server-core.md](docs/agents/server-core.md) |
 | .NET server, queues, library, providers, REST, MCP, AI, or server GUI integration | [docs/agents/server.md](docs/agents/server.md) |
+| Mobile app (`mobile-gui/`, Avalonia): pages, queue, artwork, Android build and performance rules | [docs/agents/mobile-gui.md](docs/agents/mobile-gui.md) |
 | Building, testing, running locally, or a locked executable/DLL | [docs/agents/development.md](docs/agents/development.md) |
 | The wire protocol between core and clients (`shared/matp/`, `client/src/matp/`, `server-core/src/matp/`, `server-core/src/client/`) | [docs/protocol/MATP-AudioTransferProtocol.md](docs/protocol/MATP-AudioTransferProtocol.md) |
 | Porting the client firmware to a Raumfeld device (`hardware/buildroot/`) | [docs/hardware/raumfeld/connector2.md](docs/hardware/raumfeld/connector2.md) |

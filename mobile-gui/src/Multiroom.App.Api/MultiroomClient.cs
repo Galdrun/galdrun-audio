@@ -61,7 +61,11 @@ public sealed partial class MultiroomClient : IDisposable
 
     internal async Task<HttpResponseMessage> OpenAsync(HttpRequestMessage request, CancellationToken ct)
     {
-        var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        HttpResponseMessage response;
+        // Android's handler reports a dropped connection as a WebException, not the HttpRequestException every
+        // caller handles: uncaught, it closed the app.
+        try { response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false); }
+        catch (WebException e) { throw new HttpRequestException(e.Message, e); }
         if (response.IsSuccessStatusCode) return response;
         using (response)
         {

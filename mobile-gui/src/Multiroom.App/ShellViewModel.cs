@@ -17,6 +17,8 @@ public partial class ShellViewModel : ObservableObject
     private string? _connectedServerId;
     private readonly SemaphoreSlim _settings = new(1);
     private readonly string _preferencesPath;
+    // The preferences as last read or written.
+    private Preferences? _stored;
     private readonly Func<TimeSpan, CancellationToken, IAsyncEnumerable<DiscoveredServer>> _discovery;
     private readonly Func<string, string?, MultiroomClient> _newClient;
     private string _beforeVolume = "Sources";
@@ -27,9 +29,9 @@ public partial class ShellViewModel : ObservableObject
     // The pages left on the way here, oldest first, for back. Opening one of them again returns to it, so a page
     // is in it once at most. Home is where it starts: back on Home leaves the app.
     private readonly List<string> _history = [];
-    public IReadOnlyList<string> Pages { get; } = ["Home", "Sources", "Search", "Browse", "Playlists", "Favourites", "Recommendations", "Queue", "Zones", "Rooms", "Diagnostics", "Now Playing", "Volume", "Zone Setup", "Servers", "Server"];
+    public IReadOnlyList<string> Pages { get; } = ["Home", "Sources", "Search", "Browse", "Playlists", "Favourites", "Recommendations", "Queue", "Zones", "Rooms", "Diagnostics", "Now Playing", "Volume", "Zone Setup", "Settings", "Servers", "Server"];
     // The menu's pages: Browse is reached from Sources, Home and Search.
-    public IReadOnlyList<string> MenuPages { get; } = ["Home", "Sources", "Search", "Playlists", "Favourites", "Recommendations", "Queue", "Zones", "Rooms", "Diagnostics", "Now Playing", "Volume", "Servers", "Server"];
+    public IReadOnlyList<string> MenuPages { get; } = ["Home", "Sources", "Search", "Playlists", "Favourites", "Recommendations", "Queue", "Zones", "Rooms", "Diagnostics", "Now Playing", "Volume", "Settings", "Servers", "Server"];
     [ObservableProperty] private bool _isMenuOpen;
     [RelayCommand] private void ToggleMenu() => IsMenuOpen = !IsMenuOpen;
     public PlaybackViewModel Playback { get; }
@@ -50,6 +52,7 @@ public partial class ShellViewModel : ObservableObject
         Rooms = new(WriteAsync);
         Servers = new(ConnectDiscoveredAsync, _discovery);
         Home = new(ReadAsync, () => Playback.SelectedZone, Playback.ZoneNameOf);
+        Home.KeepQueueOnPlayNow = Browser.KeepQueueOnPlayNow = Collections.KeepQueueOnPlayNow = () => PlayNowKeepsQueue;
         Home.QueueChanged += () => _session?.Refresh();
         Home.PlayedIn += zone => Playback.SelectedZone = zone;
         Home.OpenRequested += (node, title) =>
@@ -70,6 +73,8 @@ public partial class ShellViewModel : ObservableObject
         Browser.PropertyChanged += (_, args) => { if (args.PropertyName is nameof(Browser.IsDetail) or nameof(Browser.IsBrowsing)) OnPropertyChanged(nameof(ShowContentHeader)); };
         Browser.SheetRequested += item => Home.OpenSheetCommand.Execute(item);
         Browser.MarksChanged += () => _ = Home.RefreshAsync();
+        // Update zone closes Zone Setup.
+        Playback.MembershipSaved += () => { if (IsZoneSetup && !GoBack()) SelectedPage = "Home"; };
         Playback.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(Playback.SelectedZone) && _connectedAddress is not null) _ = SavePreferencesAsync();
@@ -108,12 +113,21 @@ public partial class ShellViewModel : ObservableObject
     public bool IsZoneSetup => SelectedPage == "Zone Setup";
     // The chooser pages are pure pickers/forms: the bottom bar never shows
     // there, connected or not.
-    public bool ShowZoneBar => Playback.HasZone && !IsZones && !IsVolume && !IsZoneSetup && !IsSetup;
+    // Zone Setup covers it (MainView), rather than hiding it, so Now Playing beneath keeps its place while Zone Setup rises.
+    public bool ShowZoneBar => Playback.HasZone && !IsZones && !IsVolume && !IsSetup;
     public bool IsSearch => SelectedPage == "Search";
     public bool IsBrowser => SelectedPage is "Browse" or "Search";
     public bool IsCollections => SelectedPage is "Playlists" or "Favourites" or "Recommendations";
     public bool IsRooms => SelectedPage == "Rooms";
     public bool IsDiagnostics => SelectedPage == "Diagnostics";
+    // The app's own settings ("Server" is the manual connection form).
+    public bool IsAppSettings => SelectedPage == "Settings";
+    // The app's CPU use over the page (PerformanceView), saved with the preferences.
+    [ObservableProperty] private bool _showPerformance;
+    partial void OnShowPerformanceChanged(bool value) { if (value != (_stored?.ShowPerformance ?? false)) _ = SavePreferencesAsync(); }
+    // What "Play now" does (PlayNow): off replaces the zone's queue, on puts the music after what plays and plays it.
+    [ObservableProperty] private bool _playNowKeepsQueue;
+    partial void OnPlayNowKeepsQueueChanged(bool value) { if (value != (_stored?.PlayNowKeepsQueue ?? false)) _ = SavePreferencesAsync(); }
     public bool ShowSideQueue => IsWide && !IsQueue;
     public bool HasError => Error.Length != 0;
     public bool CanBrowseProvider => SelectedProvider is { State: ProviderState.Ready, Capabilities: { } caps } && caps.Contains("browse");
@@ -184,7 +198,7 @@ public partial class ShellViewModel : ObservableObject
         _page.Cancel(); _page.Dispose(); _page = new(); Browser.Cancel(); Browser.SetSearchVisible(IsSearch); Playback.CancelMarks();
         foreach (var property in new[] { nameof(Heading), nameof(IsHome), nameof(IsSettings), nameof(IsSources), nameof(IsQueue),
             nameof(IsZones), nameof(IsBrowser), nameof(IsSearch), nameof(IsNowPlaying), nameof(ShowSideQueue),
-            nameof(IsCollections), nameof(IsRooms), nameof(IsDiagnostics), nameof(IsVolume), nameof(IsZoneSetup), nameof(IsServers),
+            nameof(IsCollections), nameof(IsRooms), nameof(IsDiagnostics), nameof(IsAppSettings), nameof(IsVolume), nameof(IsZoneSetup), nameof(IsServers),
             nameof(IsSetup), nameof(ShowZoneBar), nameof(ShowContentHeader), nameof(ShowTopProgress) }) OnPropertyChanged(property);
         if (IsCollections) Collections.Page = value;
         if (!IsHome) { Home.OpenShelf = null; Home.CloseSheet(); }
@@ -345,8 +359,11 @@ public partial class ShellViewModel : ObservableObject
             preferences = await Preferences.LoadAsync(_preferencesPath, CancellationToken.None);
             if (preferences is not null)
             {
+                _stored = preferences;
                 Address = MultiroomClient.NormalizeAddress(preferences.Address).AbsoluteUri;
                 Playback.PreferredZone = preferences.ActiveZone;
+                ShowPerformance = preferences.ShowPerformance;
+                PlayNowKeepsQueue = preferences.PlayNowKeepsQueue;
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException)
@@ -374,12 +391,14 @@ public partial class ShellViewModel : ObservableObject
     }
     private async Task SavePreferencesAsync()
     {
-        if (_connectedAddress is not { } address) return;
-        var settings = new Preferences(address, Playback.SelectedZone ?? Playback.PreferredZone, _connectedServerId);
+        // Not connected, a setting changes alone: the server remembered stays.
+        var settings = _connectedAddress is { } address
+            ? new Preferences(address, Playback.SelectedZone ?? Playback.PreferredZone, _connectedServerId, ShowPerformance, PlayNowKeepsQueue)
+            : (_stored ?? new Preferences(Address)) with { ShowPerformance = ShowPerformance, PlayNowKeepsQueue = PlayNowKeepsQueue };
         await _settings.WaitAsync();
-        try { await settings.SaveAsync(_preferencesPath, CancellationToken.None); }
+        try { await settings.SaveAsync(_preferencesPath, CancellationToken.None); _stored = settings; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        { Error = "Connected, but server preferences could not be saved."; }
+        { Error = _connectedAddress is null ? "Settings could not be saved." : "Connected, but server preferences could not be saved."; }
         finally { _settings.Release(); }
     }
 }

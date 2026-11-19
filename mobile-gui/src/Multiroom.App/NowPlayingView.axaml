@@ -19,8 +19,10 @@
     <vm:ArtworkView x:Name="CoverArtwork" Reference="{Binding Playback.CurrentArtwork}" Cache="{Binding Playback.Artwork}" Width="640" Height="640" Crossfade="True" />
    </Button>
   </Viewbox>
-   <StackPanel Grid.Row="1" Spacing="6" MaxWidth="650" Margin="16,0,16,12">
-    <Grid ColumnDefinitions="48,*,48">
+   <!-- Swiped left or right it changes zone, as the cover does. -->
+   <StackPanel x:Name="TrackInfo" Grid.Row="1" Spacing="6" MaxWidth="650" Margin="16,0,16,12" Background="Transparent">
+    <!-- Keeps the buttons' height when they are hidden (nothing playing), so the page does not shift. -->
+    <Grid ColumnDefinitions="48,*,48" MinHeight="48">
      <Button x:Name="FavoriteButton" IsVisible="{Binding Playback.CanFavoriteCurrent}" Command="{Binding Playback.FavoriteCurrentCommand}" Background="Transparent" CornerRadius="24" Padding="12" Width="48" Height="48" AutomationProperties.Name="{Binding Playback.FavoriteLabel}" ToolTip.Tip="{Binding Playback.FavoriteLabel}">
       <Grid Width="24" Height="24">
        <Path Data="M 12,2 L 15,8.5 L 22,9.5 L 17,14.5 L 18,22 L 12,18.5 L 6,22 L 7,14.5 L 2,9.5 L 9,8.5 Z" Stroke="#EEF1ED" StrokeThickness="1.7" IsVisible="{Binding !Playback.FavoriteSaved}" />
@@ -35,7 +37,7 @@
       </Grid>
      </Button>
     </Grid>
-    <TextBlock Text="{Binding Playback.Subtitle}" Classes="muted" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+    <TextBlock x:Name="TrackSubtitle" Text="{Binding Playback.Subtitle}" Classes="muted" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
     <TextBlock Text="{Binding Playback.QueuePosition}" Classes="muted" TextAlignment="Center" FontSize="12" />
    </StackPanel>
    <StackPanel Grid.Row="2" Spacing="4" MaxWidth="650" Margin="16,0,16,12">

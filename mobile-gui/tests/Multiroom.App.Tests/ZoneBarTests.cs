@@ -56,11 +56,11 @@ public sealed class ZoneBarTests
             var seek = bar.FindControl<Slider>("ZonePositionSlider")!;
             Assert.True(seek.IsEffectivelyVisible); Assert.Equal(model.Playback.CanScrub, seek.IsEnabled);
             Assert.Equal(model.Playback.ProgressMaximum, seek.Maximum); Assert.Equal(model.Playback.ProgressSeconds, seek.Value);
-            Assert.Equal(new Size(bar.Bounds.Width, 10), seek.Bounds.Size);
+            Assert.Equal(new Size(bar.Bounds.Width, 14), seek.Bounds.Size);
             var track = seek.GetVisualDescendants().OfType<Border>().First(border => border.Name == "TrackBackground");
             Assert.Equal(0, track.TranslatePoint(new Point(), bar)!.Value.Y, 1); Assert.Equal(3, track.Bounds.Height);
             var thumb = Assert.Single(seek.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Thumb>());
-            Assert.Equal(new Size(10, 10), thumb.Bounds.Size);
+            Assert.Equal(new Size(14, 14), thumb.Bounds.Size);
             Assert.True(thumb.TranslatePoint(new Point(0, thumb.Bounds.Height), bar)!.Value.Y > art.TranslatePoint(new Point(), bar)!.Value.Y);
             var cardGrid = (Grid)card.Child!; Assert.Same(seek, cardGrid.Children[^1]); // Drawn over the artwork.
             var bubbles = bar.FindControl<Grid>("ScrubBubbles")!; Assert.False(bubbles.IsVisible);
@@ -79,13 +79,15 @@ public sealed class ZoneBarTests
             Assert.Equal(width < 520 ? 16 : 18, bar.FindControl<TextBlock>("MediaTitle")!.FontSize);
             Assert.Equal(media.Command, artButton.Command); Assert.Equal(media.CommandParameter, artButton.CommandParameter);
             Assert.Equal(new CornerRadius(0), art.CornerRadius);
-            Assert.Equal(new CornerRadius(20), play.CornerRadius);
+            Assert.Equal(new CornerRadius(17), play.CornerRadius);
             Assert.All(new[] { bar.FindControl<TextBlock>("MediaTitle")!, bar.FindControl<TextBlock>("MediaSubtitle")! }, text => Assert.Equal(Avalonia.Media.TextAlignment.Left, text.TextAlignment));
-            Assert.Equal(new Size(40, 40), play.Bounds.Size);
+            Assert.Equal(new Size(34, 34), play.Bounds.Size);
+            var playIcon = play.GetVisualDescendants().OfType<Viewbox>().Single();
+            Assert.Equal(play.TranslatePoint(new Point(17, 17), bar)!.Value, playIcon.TranslatePoint(new Point(playIcon.Bounds.Width / 2, playIcon.Bounds.Height / 2), bar)!.Value);
             var mediaGrid = bar.FindControl<Grid>("MediaGrid")!;
             Assert.Same(mediaGrid, media.Parent); Assert.DoesNotContain(selector, media.GetVisualDescendants());
             var playLeft = play.TranslatePoint(new Point(), bar)!.Value.X;
-            Assert.Equal(16, bar.Bounds.Width - playLeft - play.Bounds.Width);
+            Assert.Equal(19, bar.Bounds.Width - playLeft - play.Bounds.Width); // Centred over the volume button.
             foreach (var name in new[] { "MediaTitle", "MediaSubtitle" })
             {
                 var text = bar.FindControl<TextBlock>(name)!;
@@ -137,7 +139,7 @@ public sealed class ZoneBarTests
                 using var touch = window.TouchBegin(center);
                 window.TouchMove(touch, center + new Vector(x, y));
                 window.TouchEnd(touch, center + new Vector(x, y));
-                Dispatcher.UIThread.RunJobs();
+                Settle(bar);
             }
             Swipe(-55); Assert.Equal("kitchen", model.Playback.SelectedZone); Assert.Equal("Live artist", model.Playback.Subtitle);
             Assert.Equal("Home", model.SelectedPage);
@@ -149,7 +151,8 @@ public sealed class ZoneBarTests
             Swipe(55, 45); Assert.Equal("living", model.Playback.SelectedZone); Assert.Equal("Home", model.SelectedPage);
             window.MouseDown(center, MouseButton.Left);
             window.MouseMove(center + new Vector(-55, 0)); window.MouseUp(center + new Vector(-55, 0), MouseButton.Left);
-            Dispatcher.UIThread.RunJobs(); Assert.Equal("kitchen", model.Playback.SelectedZone); Assert.Equal("Home", model.SelectedPage);
+            window.MouseMove(new Point(5, 135)); // Off the bar, so no tooltip opens over it while the slide finishes.
+            Settle(bar); Assert.Equal("kitchen", model.Playback.SelectedZone); Assert.Equal("Home", model.SelectedPage);
             bar.FindControl<Button>("MediaButton")!.Focus(); window.KeyPress(Key.Left, RawInputModifiers.None, PhysicalKey.ArrowLeft, null);
             window.KeyRelease(Key.Left, RawInputModifiers.None, PhysicalKey.ArrowLeft, null);
             Assert.Equal("living", model.Playback.SelectedZone);
@@ -163,6 +166,221 @@ public sealed class ZoneBarTests
             Dispatcher.UIThread.RunJobs(); Assert.Equal(page, model.SelectedPage);
         }
         finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Dragging_the_media_shows_the_neighbouring_zone_beside_it_and_a_swipe_slides_it_in()
+    {
+        var model = new ShellViewModel { SelectedPage = "Home" }; model.Playback.Apply(PlaybackTests.Snapshot());
+        var bar = new ZoneBar { DataContext = model };
+        var window = new Window { Width = 390, Height = 140, Content = bar };
+        try
+        {
+            window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var media = bar.FindControl<Button>("MediaButton")!;
+            var text = (Avalonia.Media.TranslateTransform)bar.FindControl<StackPanel>("MediaText")!.RenderTransform!;
+            var peek = bar.FindControl<StackPanel>("MediaPeek")!;
+            var living = model.Playback.Title;
+            var center = media.TranslatePoint(new Point(media.Bounds.Width / 2, media.Bounds.Height / 2), window)!.Value;
+            using (var touch = window.TouchBegin(center))
+            {
+                window.TouchMove(touch, center + new Vector(-30, 0));
+                Assert.True(peek.IsVisible); Assert.Equal(-30, text.X);
+                Assert.Equal("Radio", bar.FindControl<TextBlock>("PeekTitle")!.Text);
+                Assert.Equal("kitchen", bar.FindControl<TextBlock>("PeekZoneName")!.Text);
+                window.TouchEnd(touch, center + new Vector(-30, 0)); // Too short: stays.
+            }
+            Dispatcher.UIThread.RunJobs(); Assert.Equal("living", model.Playback.SelectedZone); Assert.Equal("Home", model.SelectedPage);
+            using (var touch = window.TouchBegin(center))
+            {
+                window.TouchMove(touch, center + new Vector(-55, 0));
+                window.TouchEnd(touch, center + new Vector(-55, 0));
+            }
+            Dispatcher.UIThread.RunJobs();
+            // The zone changes only once the neighbour has slid in, so the change cannot stall the slide.
+            Assert.Equal("living", model.Playback.SelectedZone); Assert.True(peek.IsVisible);
+            Settle(bar);
+            Assert.Equal("kitchen", model.Playback.SelectedZone); Assert.Equal("Radio", bar.FindControl<TextBlock>("MediaTitle")!.Text);
+            Assert.False(peek.IsVisible); Assert.Equal(0, text.X); Assert.NotEqual(living, model.Playback.Title);
+            Assert.Equal("Home", model.SelectedPage);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaTheory]
+    [InlineData("ArtworkButton")] [InlineData("MediaButton")] [InlineData("ZoneButton")]
+    public void Swiping_the_bar_up_opens_now_playing_rising_from_the_bottom(string part)
+    {
+        var view = new MainView(loadPreferences: false);
+        var model = (ShellViewModel)view.DataContext!; model.Playback.Apply(PlaybackTests.Snapshot());
+        var window = new Window { Width = 390, Height = 844, Content = view };
+        try
+        {
+            window.Show(); model.SelectedPage = "Home"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var bar = view.FindControl<ZoneBar>("BottomZoneBar")!;
+            var start = bar.FindControl<Button>(part)!;
+            var at = start.TranslatePoint(new Point(start.Bounds.Width / 2, start.Bounds.Height / 2), window)!.Value;
+            using (var touch = window.TouchBegin(at))
+            {
+                window.TouchMove(touch, at + new Vector(5, -60));
+                window.TouchEnd(touch, at + new Vector(5, -60));
+            }
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Now Playing", model.SelectedPage); Assert.Equal("living", model.Playback.SelectedZone);
+            var page = view.FindControl<Grid>("NowPlayingPage")!;
+            var rise = Assert.IsType<Avalonia.Media.TranslateTransform>(page.RenderTransform);
+            Assert.True(rise.Y > 0); // Starts below and rises to its place.
+            for (var i = 0; i < 100 && rise.Y != 0; i++) { Thread.Sleep(10); Dispatcher.UIThread.RunJobs(); }
+            Assert.Equal(0, rise.Y);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Swiping_now_playing_down_closes_it_sliding_down_and_any_close_slides()
+    {
+        var view = new MainView(loadPreferences: false);
+        var model = (ShellViewModel)view.DataContext!; model.Playback.Apply(PlaybackTests.Snapshot());
+        var window = new Window { Width = 390, Height = 844, Content = view };
+        try
+        {
+            window.Show(); model.SelectedPage = "Home"; model.SelectedPage = "Now Playing";
+            window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var page = view.FindControl<Grid>("NowPlayingPage")!;
+            Assert.True(page.IsVisible);
+            var cover = page.GetVisualDescendants().OfType<Button>().First(b => b.Name == "CoverButton");
+            var at = cover.TranslatePoint(new Point(cover.Bounds.Width / 2, cover.Bounds.Height / 2), window)!.Value;
+            using (var touch = window.TouchBegin(at))
+            {
+                window.TouchMove(touch, at + new Vector(-5, 80));
+                window.TouchEnd(touch, at + new Vector(-5, 80));
+            }
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Home", model.SelectedPage); Assert.Equal("living", model.Playback.SelectedZone);
+            // Still shown while it slides down over Home, then hidden.
+            Assert.True(page.IsVisible); Assert.False(page.IsHitTestVisible);
+            Assert.True(((Avalonia.Media.TranslateTransform)page.RenderTransform!).Y < view.Bounds.Height);
+            for (var i = 0; i < 100 && page.IsVisible; i++) { Thread.Sleep(10); Dispatcher.UIThread.RunJobs(); }
+            Assert.False(page.IsVisible);
+            // Leaving it any other way slides it down too.
+            model.SelectedPage = "Now Playing"; Dispatcher.UIThread.RunJobs(); Assert.True(page.IsVisible);
+            Assert.True(model.GoBack()); Dispatcher.UIThread.RunJobs();
+            Assert.True(page.IsVisible); Assert.IsType<Avalonia.Media.TranslateTransform>(page.RenderTransform);
+            // A short or sideways drag does not close it.
+            model.SelectedPage = "Now Playing"; Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+            using (var touch = window.TouchBegin(at)) { window.TouchMove(touch, at + new Vector(0, 30)); window.TouchEnd(touch, at + new Vector(0, 30)); }
+            Dispatcher.UIThread.RunJobs(); Assert.Equal("Now Playing", model.SelectedPage);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaTheory]
+    [InlineData("TrackTitle", 80)] [InlineData("TrackSubtitle", 80)] [InlineData("TrackSubtitle", 250)] [InlineData("PositionLabel", 120)]
+    public void Swiping_down_over_the_track_info_closes_now_playing(string part, int distance)
+    {
+        var view = new MainView(loadPreferences: false);
+        var model = (ShellViewModel)view.DataContext!; model.Playback.Apply(PlaybackTests.Snapshot());
+        var window = new Window { Width = 390, Height = 844, Content = view };
+        try
+        {
+            window.Show(); model.SelectedPage = "Home"; model.SelectedPage = "Now Playing";
+            window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var start = view.GetVisualDescendants().OfType<Control>().First(c => c.Name == part);
+            // Its left edge: beside a centred text there is only the page itself.
+            var at = start.TranslatePoint(new Point(4, start.Bounds.Height / 2), window)!.Value;
+            using (var touch = window.TouchBegin(at))
+            {
+                window.TouchMove(touch, at + new Vector(0, distance)); // May end past the page, on the zone bar.
+                window.TouchEnd(touch, at + new Vector(0, distance));
+            }
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Home", model.SelectedPage);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaTheory]
+    [InlineData("TrackTitle")] [InlineData("TrackSubtitle")]
+    public void Swiping_the_track_info_on_now_playing_changes_zone_as_the_cover_does(string part)
+    {
+        var view = new MainView(loadPreferences: false);
+        var model = (ShellViewModel)view.DataContext!; model.Playback.Apply(PlaybackTests.Snapshot());
+        var window = new Window { Width = 390, Height = 844, Content = view };
+        try
+        {
+            window.Show(); model.SelectedPage = "Now Playing"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var text = view.GetVisualDescendants().OfType<Control>().First(c => c.Name == part);
+            var at = text.TranslatePoint(new Point(text.Bounds.Width / 2, text.Bounds.Height / 2), window)!.Value;
+            void Swipe(double x)
+            {
+                using var touch = window.TouchBegin(at);
+                window.TouchMove(touch, at + new Vector(x, 4)); window.TouchEnd(touch, at + new Vector(x, 4));
+                Dispatcher.UIThread.RunJobs();
+            }
+            Swipe(-150); Assert.Equal("kitchen", model.Playback.SelectedZone); // Ends past the text: still a swipe.
+            Swipe(60); Assert.Equal("living", model.Playback.SelectedZone);
+            Assert.Equal("Now Playing", model.SelectedPage);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void For_you_see_all_has_flat_kind_tabs_over_its_covers()
+    {
+        var shelf = new ShellViewModel().Home.ForYou;
+        Track T(int i) => new("local", $"t{i}", $"Song {i}");
+        shelf.Set([HomeItem.Of(T(1)), HomeItem.Of(new Album("local", "a1", "Record")), HomeItem.Of(T(2)), HomeItem.Of(new Artist("local", "r1", "Singer"))]);
+        Assert.Equal(["All", "Tracks", "Albums", "Artists"], shelf.Tabs.Select(t => t.Label));
+        Assert.Equal(["", "2", "1", "1"], shelf.Tabs.Select(t => t.Count));
+        Assert.True(shelf.Tabs[1].IsSelected); Assert.Equal(["Song 1", "Song 2"], shelf.Shown.Select(i => i.Title)); // Tracks first.
+        shelf.ShowKindCommand.Execute("Album"); Assert.Equal(["Record"], shelf.Shown.Select(i => i.Title));
+        shelf.ShowKindCommand.Execute(null); Assert.Equal(4, shelf.Shown.Count); Assert.True(shelf.Tabs[0].IsSelected);
+        shelf.Set([HomeItem.Of(T(1))]); Assert.False(shelf.HasTabs); Assert.Single(shelf.Shown); // One kind: no tabs.
+        var favourites = new ShellViewModel().Home.Favourites;
+        favourites.Set([HomeItem.Of(T(1)), HomeItem.Of(new Album("local", "a1", "Record"))]); Assert.False(favourites.HasTabs); Assert.Equal(2, favourites.Shown.Count);
+
+        var view = new MainView(loadPreferences: false); var model = (ShellViewModel)view.DataContext!;
+        model.Home.ForYou.Set([HomeItem.Of(T(1)), HomeItem.Of(new Album("local", "a1", "Record")), HomeItem.Of(T(2))]);
+        var window = new Window { Width = 390, Height = 844, Content = view };
+        try
+        {
+            window.Show(); model.SelectedPage = "Home"; model.Home.OpenShelf = model.Home.ForYou; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var tabs = view.GetVisualDescendants().OfType<ItemsControl>().First(c => c.Name == "ShelfTabs");
+            var grid = view.GetVisualDescendants().OfType<RecyclingRowPanel>().First(c => c.Name == "ShelfItems");
+            Assert.True(tabs.IsEffectivelyVisible);
+            int Covers() { window.UpdateLayout(); return grid.GetVisualDescendants().OfType<ArtworkView>().Count(a => a.IsEffectivelyVisible); }
+            Assert.True(tabs.TranslatePoint(new Point(0, tabs.Bounds.Height), view)!.Value.Y <= grid.TranslatePoint(new Point(), view)!.Value.Y);
+            var buttons = tabs.GetVisualDescendants().OfType<Button>().ToArray();
+            Assert.Equal(3, buttons.Length); Assert.All(buttons, b => Assert.Equal(new CornerRadius(0), b.CornerRadius));
+            // Full width, equal tabs, divided by vertical lines (none before the first); the picked one is filled, not underlined.
+            Assert.Equal(grid.Bounds.Width - 14, tabs.Bounds.Width, 1.0); Assert.Equal(buttons[0].Bounds.Width, buttons[2].Bounds.Width, 1.0);
+            Assert.Equal(new Thickness(0), buttons[0].BorderThickness); Assert.Equal(new Thickness(1, 0, 0, 0), buttons[1].BorderThickness);
+            Assert.Contains("selected", buttons[1].Classes);
+            Assert.Equal(Avalonia.Media.Color.Parse("#2C372F"), ((Avalonia.Media.ISolidColorBrush)buttons[1].Background!).Color);
+            Assert.Equal(Avalonia.Media.Colors.Transparent, ((Avalonia.Media.ISolidColorBrush)buttons[0].Background!).Color);
+            Assert.Equal(2, Covers());
+            var albums = buttons[2]; var at = albums.TranslatePoint(new Point(albums.Bounds.Width / 2, albums.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(at, MouseButton.Left); window.MouseUp(at, MouseButton.Left); Dispatcher.UIThread.RunJobs();
+            Assert.Equal(1, Covers());
+            // Virtualized by rows: a long shelf builds only the covers on screen.
+            model.Home.ForYou.Set(Enumerable.Range(1, 90).Select(i => HomeItem.Of(T(i))).Append(HomeItem.Of(new Album("local", "a1", "Record"))));
+            model.Home.ForYou.ShowKindCommand.Execute("Track");
+            Assert.InRange(Covers(), 3, 45);
+            // Rows are a cover high once the columns are known (not the one-column height measured first), with no gaps.
+            var rows = grid.Children.Where(r => r.IsVisible).OrderBy(r => r.Bounds.Y).Take(3).ToArray();
+            Assert.InRange(rows[1].Bounds.Y - rows[0].Bounds.Y, 100, 170); Assert.Equal(rows[1].Bounds.Y - rows[0].Bounds.Y, rows[2].Bounds.Y - rows[1].Bounds.Y, 1.0);
+            // The refresh sits on the title's line, at the right edge.
+            var refresh = view.GetVisualDescendants().OfType<Button>().First(b => b.Name == "RefreshProposals");
+            Assert.True(refresh.IsEffectivelyVisible);
+            Assert.True(refresh.TranslatePoint(new Point(refresh.Bounds.Width, 0), view)!.Value.X > 390 - 30);
+        }
+        finally { window.Close(); }
+    }
+
+    private static void Settle(ZoneBar bar)
+    {
+        Dispatcher.UIThread.RunJobs();
+        for (var i = 0; i < 100 && bar.FindControl<StackPanel>("MediaPeek")!.IsVisible; i++) { Thread.Sleep(10); Dispatcher.UIThread.RunJobs(); }
     }
 
     [AvaloniaTheory]
@@ -312,6 +530,68 @@ public sealed class ZoneBarTests
     }
 
     [AvaloniaFact]
+    public async Task Zone_setup_rises_on_a_swipe_up_over_now_playing_and_closes_on_a_swipe_down_or_an_update()
+    {
+        using var events = new FixtureEventStream();
+        var saved = 0;
+        var model = new ShellViewModel(preferencesPath: Path.Combine(Path.GetTempPath(), "galdrun-zone-" + Guid.NewGuid().ToString("N") + ".json"),
+            clientFactory: (address, token) => new MultiroomClient(address, token, new FakeHttp((request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+            {
+                "/api/v1/status" => FakeHttp.Json("""{"version":"0.1","core":{"connected":true,"connections":1,"zones":0,"rooms":0,"queuedEvents":0,"droppedEvents":0},"media":{},"library":{},"providers":[],"addIns":{},"events":{"subscribers":0,"held":0,"dropped":0}}"""),
+                "/api/v1/events" => new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StreamContent(events) { Headers = { ContentType = new("text/event-stream") } } },
+                "/api/v1/zones/living/clients" => Saved(),
+                _ => FakeHttp.Json("[]"),
+            }))));
+        HttpResponseMessage Saved() { saved++; return FakeHttp.Json("{}"); }
+        var view = new MainView(model, loadPreferences: false);
+        var window = new Window { Width = 390, Height = 844, Content = view };
+        try
+        {
+            await model.ConnectCommand.ExecuteAsync(null);
+            for (var i = 0; i < 20; i++) { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); } // The session's first reads.
+            model.Playback.Apply(PlaybackTests.Snapshot());
+            window.Show(); model.SelectedPage = "Now Playing"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            Assert.True(model.ShowZoneBar);
+            var nowPlaying = view.FindControl<Grid>("NowPlayingPage")!; var setup = view.FindControl<Grid>("ZoneSetupPage")!;
+            Assert.False(setup.IsVisible);
+            double Rise() => (setup.RenderTransform as Avalonia.Media.TranslateTransform)?.Y ?? 0;
+            void Settle(Func<bool> done) { for (var i = 0; i < 200 && !done(); i++) { Thread.Sleep(10); Avalonia.Headless.AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Dispatcher.UIThread.RunJobs(); } window.UpdateLayout(); }
+            void Swipe(Control on, double dy)
+            {
+                var at = on.TranslatePoint(new Point(on.Bounds.Width / 2, Math.Min(on.Bounds.Height / 2, 200)), window)!.Value;
+                using var touch = window.TouchBegin(at);
+                window.TouchMove(touch, at + new Vector(4, dy)); window.TouchEnd(touch, at + new Vector(4, dy));
+                Dispatcher.UIThread.RunJobs();
+            }
+            // A swipe up on Now Playing's zone selector: Zone Setup rises over Now Playing, which stays until it has.
+            var cover = view.GetVisualDescendants().OfType<Control>().First(c => c.Name == "CoverSpace");
+            var coverAt = cover.TranslatePoint(new Point(), view)!.Value;
+            Swipe(view.GetVisualDescendants().OfType<Button>().First(b => b.Name == "NowPlayingZoneSelector"), -80);
+            Assert.Equal("Zone Setup", model.SelectedPage);
+            Assert.True(setup.IsVisible); Assert.True(nowPlaying.IsVisible); Assert.True(Rise() > 0);
+            // Now Playing keeps its place beneath, and Zone Setup is as wide as the window, over the zone bar too.
+            window.UpdateLayout();
+            Assert.Equal(coverAt, cover.TranslatePoint(new Point(), view)!.Value);
+            Assert.Equal(window.Bounds.Width, setup.Bounds.Width); Assert.Equal(0, setup.Bounds.X);
+            var bar = view.FindControl<ZoneBar>("BottomZoneBar")!;
+            Assert.Equal(bar.Bounds.Bottom, setup.Bounds.Bottom, 0.5);
+            Settle(() => Rise() == 0 && !nowPlaying.IsVisible);
+            Assert.Equal(0, Rise()); Assert.False(nowPlaying.IsVisible);
+            // A swipe down closes it back to Now Playing, which shows beneath at once while Zone Setup slides away.
+            Swipe(setup, 120);
+            Assert.Equal("Now Playing", model.SelectedPage); Assert.True(nowPlaying.IsVisible); Assert.True(setup.IsVisible);
+            Settle(() => !setup.IsVisible); Assert.False(setup.IsVisible);
+            // Update zone saves and closes it.
+            model.NavigateCommand.Execute("Zone Setup"); Settle(() => Rise() == 0);
+            var update = view.GetVisualDescendants().OfType<Button>().First(b => b.Name == "UpdateZoneButton");
+            Assert.Equal(new CornerRadius(0), update.CornerRadius);
+            await model.Playback.SaveMembershipCommand.ExecuteAsync(null);
+            Assert.Equal(1, saved); Assert.Equal("Now Playing", model.SelectedPage);
+        }
+        finally { window.Close(); await model.DisconnectAsync(); }
+    }
+
+    [AvaloniaFact]
     public void Zone_setup_opens_from_the_zone_name_and_sends_the_ticked_rooms()
     {
         var sent = new List<string>();
@@ -328,7 +608,7 @@ public sealed class ZoneBarTests
             var selector = bar.FindControl<Button>("NowPlayingZoneSelector")!;
             var at = selector.TranslatePoint(new Point(selector.Bounds.Width / 2, selector.Bounds.Height / 2), window)!.Value;
             window.MouseDown(at, MouseButton.Left); window.MouseUp(at, MouseButton.Left); Dispatcher.UIThread.RunJobs();
-            Assert.Equal("Zone Setup", model.SelectedPage); Assert.False(model.ShowZoneBar);
+            Assert.Equal("Zone Setup", model.SelectedPage); Assert.True(model.ShowZoneBar); // Covered by Zone Setup (MainView).
             Assert.True(model.GoBack()); Assert.Equal("Now Playing", model.SelectedPage);
         }
         finally { window.Close(); }

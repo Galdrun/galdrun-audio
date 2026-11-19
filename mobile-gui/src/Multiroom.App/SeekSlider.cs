@@ -10,10 +10,18 @@ internal static class SeekSlider
 {
     public static void Attach(Slider slider, Func<PlaybackViewModel?> model)
     {
-        var progress = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        var progress = new UiTimer(() => model()?.RefreshProgress());
         IPointer? pointer = null;
-        progress.Tick += (_, _) => { if (slider.IsEffectivelyVisible) model()?.RefreshProgress(); };
-        slider.AttachedToVisualTree += (_, _) => { model()?.RefreshProgress(); progress.Start(); };
+        // Once a second and only while the slider is shown: the time shown changes once a second, the bar moves a few
+        // pixels, and each tick costs a layout pass, a frame and calls into Java on Android (measured: 4 ticks a
+        // second cost a phone's UI thread about a tenth of a core).
+        void Shown()
+        {
+            if (!slider.IsEffectivelyVisible) { progress.Stop(); return; }
+            if (!progress.IsRunning) progress.Start(TimeSpan.FromSeconds(1));
+            model()?.RefreshProgress();
+        }
+        VisibilityWatch.Attach(slider, Shown);
         slider.DetachedFromVisualTree += (_, _) => { progress.Stop(); pointer = null; model()?.CancelScrub(); };
         slider.AddHandler(InputElement.PointerPressedEvent, (_, e) =>
         {

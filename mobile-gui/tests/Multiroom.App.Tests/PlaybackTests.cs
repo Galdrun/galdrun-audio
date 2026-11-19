@@ -130,7 +130,7 @@ public sealed class PlaybackTests
             await preferences.SaveAsync(path, TestContext.Current.CancellationToken);
             Assert.Equal(preferences, await Preferences.LoadAsync(path, TestContext.Current.CancellationToken));
             using var json = JsonDocument.Parse(await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
-            Assert.Equal(["Address", "ActiveZone", "ServerId"], json.RootElement.EnumerateObject().Select(p => p.Name));
+            Assert.Equal(["Address", "ActiveZone", "ServerId", "ShowPerformance", "PlayNowKeepsQueue"], json.RootElement.EnumerateObject().Select(p => p.Name));
             Assert.Null(json.RootElement.GetProperty("ServerId").GetString()); // a manual address has no id
         }
         finally { if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true); }

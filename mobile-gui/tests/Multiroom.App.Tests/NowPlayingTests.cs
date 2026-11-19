@@ -198,6 +198,31 @@ public sealed class NowPlayingTests
     }
 
     [AvaloniaTheory]
+    [InlineData(390, 844)] [InlineData(900, 850)]
+    public async Task Now_playing_keeps_its_layout_when_nothing_plays(int width, int height)
+    {
+        var view = new MainView(loadPreferences: false);
+        var model = (ShellViewModel)view.DataContext!; var snapshot = Snapshot(); model.Playback.Apply(snapshot);
+        var window = new Window { Width = width, Height = height, Content = view };
+        try
+        {
+            window.Show(); model.SelectedPage = "Now Playing"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            using var api = new MultiroomClient("http://fake", handler: new FakeHttp((_, _) => Task.FromResult(Marks(favorite: true, liked: true))));
+            await model.Playback.RefreshMarksAsync(api, TestContext.Current.CancellationToken); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var page = Assert.Single(view.GetVisualDescendants().OfType<NowPlayingView>());
+            string Layout() => string.Join("; ", new Control[] { page.FindControl<Button>("CoverButton")!, page.FindControl<TextBlock>("TrackTitle")!,
+                page.FindControl<Slider>("PositionSlider")!, page.GetVisualDescendants().OfType<TransportView>().Single() }
+                .Select(c => $"{c.Name ?? c.GetType().Name} {c.TranslatePoint(new Point(), page)!.Value} {c.TranslatePoint(new Point(c.Bounds.Width, c.Bounds.Height), page)!.Value}"));
+            var playing = Layout();
+            model.Playback.Apply(snapshot with { Zones = [snapshot.Zones[0] with { Queue = snapshot.Zones[0].Queue! with { Items = [], Current = null } }, .. snapshot.Zones.Skip(1)] });
+            window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Nothing playing", model.Playback.Title);
+            Assert.Equal(playing, Layout());
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaTheory]
     [InlineData(390, 844)] [InlineData(900, 850)] [InlineData(1440, 950)]
     [InlineData(900, 500)] [InlineData(320, 480)]
     public async Task Now_playing_has_transport_buttons_and_a_zone_name_and_dots_pane(int width, int height)

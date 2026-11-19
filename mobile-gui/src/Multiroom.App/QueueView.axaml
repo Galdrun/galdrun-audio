@@ -2,48 +2,27 @@
  xmlns:vm="using:Multiroom.App" x:Class="Multiroom.App.QueueView" x:DataType="vm:PlaybackViewModel">
  <UserControl.Styles>
   <Style Selector="Button.rowdelete"><Setter Property="IsVisible" Value="False" /></Style>
-  <Style Selector="ListBoxItem.revealed Button.rowdelete"><Setter Property="IsVisible" Value="True" /></Style>
+  <Style Selector="vm|QueueRowView.revealed Button.rowdelete"><Setter Property="IsVisible" Value="True" /></Style>
   <Style Selector="Grid.rowcontent">
    <Setter Property="Transitions"><Transitions><ThicknessTransition Property="Margin" Duration="0:0:0.18" /></Transitions></Setter>
   </Style>
-  <Style Selector="ListBoxItem.revealed Grid.rowcontent"><Setter Property="Margin" Value="52,0,0,0" /></Style>
+  <Style Selector="vm|QueueRowView.revealed Grid.rowcontent"><Setter Property="Margin" Value="52,0,0,0" /></Style>
   <!-- The playing row is lit, not the selected one: a tap plays a row at once. -->
-  <Style Selector="ListBox#QueueList ListBoxItem"><Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,1" /><Setter Property="CornerRadius" Value="10" /></Style>
-  <Style Selector="ListBox#QueueList ListBoxItem /template/ ContentPresenter"><Setter Property="Background" Value="Transparent" /></Style>
+  <Style Selector="vm|QueueRowView"><Setter Property="MinHeight" Value="64" /><Setter Property="Margin" Value="0,1" /></Style>
   <Style Selector="Border.queuerow"><Setter Property="Padding" Value="4,6" /><Setter Property="CornerRadius" Value="10" /><Setter Property="Background" Value="Transparent" /></Style>
-  <Style Selector="ListBoxItem:pointerover Border.queuerow"><Setter Property="Background" Value="#1B2123" /></Style>
+  <Style Selector="vm|QueueRowView:pointerover Border.queuerow"><Setter Property="Background" Value="#1B2123" /></Style>
+  <Style Selector="vm|QueueRowView.selected Border.queuerow"><Setter Property="Background" Value="{DynamicResource SystemControlHighlightListAccentLowBrush}" /></Style>
   <Style Selector="Border.queuerow.current"><Setter Property="Background" Value="#1F2A26" /></Style>
   <Style Selector="Border.current TextBlock.rowtitle"><Setter Property="Foreground" Value="#CBEC97" /></Style>
-  <!-- The playing row's bars rise and fall while the zone plays and rest while it is paused. Resized, not scaled:
-       animating a ScaleTransform instead stopped the list's scroll glide on Android (measured). -->
+  <!-- The playing row's bars: 14 high and scaled from their bottom by the compositor (QueueRowView). -->
   <Style Selector="StackPanel.bars Rectangle">
-   <Setter Property="Width" Value="2.5" /><Setter Property="Fill" Value="#CBEC97" /><Setter Property="RadiusX" Value="1" /><Setter Property="RadiusY" Value="1" />
-   <Setter Property="VerticalAlignment" Value="Bottom" />
-  </Style>
-  <Style Selector="StackPanel.bars.playing Rectangle.b1">
-   <Style.Animations><Animation Duration="0:0:0.9" IterationCount="INFINITE" PlaybackDirection="Alternate" Easing="SineEaseInOut">
-    <KeyFrame Cue="0%"><Setter Property="Height" Value="4" /></KeyFrame><KeyFrame Cue="100%"><Setter Property="Height" Value="13" /></KeyFrame>
-   </Animation></Style.Animations>
-  </Style>
-  <Style Selector="StackPanel.bars.playing Rectangle.b2">
-   <Style.Animations><Animation Duration="0:0:0.6" IterationCount="INFINITE" PlaybackDirection="Alternate" Easing="SineEaseInOut">
-    <KeyFrame Cue="0%"><Setter Property="Height" Value="14" /></KeyFrame><KeyFrame Cue="100%"><Setter Property="Height" Value="5" /></KeyFrame>
-   </Animation></Style.Animations>
-  </Style>
-  <Style Selector="StackPanel.bars.playing Rectangle.b3">
-   <Style.Animations><Animation Duration="0:0:0.75" IterationCount="INFINITE" PlaybackDirection="Alternate" Easing="SineEaseInOut">
-    <KeyFrame Cue="0%"><Setter Property="Height" Value="6" /></KeyFrame><KeyFrame Cue="100%"><Setter Property="Height" Value="14" /></KeyFrame>
-   </Animation></Style.Animations>
-  </Style>
-  <Style Selector="StackPanel.bars.playing Rectangle.b4">
-   <Style.Animations><Animation Duration="0:0:1.05" IterationCount="INFINITE" PlaybackDirection="Alternate" Easing="SineEaseInOut">
-    <KeyFrame Cue="0%"><Setter Property="Height" Value="11" /></KeyFrame><KeyFrame Cue="100%"><Setter Property="Height" Value="3" /></KeyFrame>
-   </Animation></Style.Animations>
+   <Setter Property="Width" Value="2.5" /><Setter Property="Height" Value="14" /><Setter Property="Fill" Value="#CBEC97" />
+   <Setter Property="RadiusX" Value="1" /><Setter Property="RadiusY" Value="1" /><Setter Property="VerticalAlignment" Value="Bottom" />
   </Style>
   <!-- As the web interface's queue: while a row is dragged it follows the finger, faded, and the rows it
        passes slide aside to show where it lands. -->
-  <Style Selector="ListBoxItem.dragging"><Setter Property="Opacity" Value="0.45" /><Setter Property="ZIndex" Value="1" /></Style>
-  <Style Selector="ListBox#QueueList.reordering ListBoxItem:not(.dragging)">
+  <Style Selector="vm|QueueRowView.dragging"><Setter Property="Opacity" Value="0.45" /><Setter Property="ZIndex" Value="1" /></Style>
+  <Style Selector="vm|RecyclingRowPanel.reordering > vm|QueueRowView:not(.dragging)">
    <Setter Property="Transitions"><Transitions><TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15" Easing="CubicEaseOut" /></Transitions></Setter>
   </Style>
  </UserControl.Styles>
@@ -54,40 +33,10 @@
    <Path Data="M 4,7 L 20,7 M 4,12 L 20,12 M 4,17 L 14,17" Stroke="#9BA6A3" StrokeThickness="1.7" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center" />
    <TextBlock x:Name="QueueCount" Text="{Binding QueueCount}" Classes="muted" FontSize="13" VerticalAlignment="Center" />
   </StackPanel>
-  <ListBox Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}" Background="Transparent" x:Name="QueueList">
-   <ListBox.ItemTemplate><DataTemplate x:DataType="vm:QueueRow">
-    <Border Classes="queuerow" Classes.current="{Binding IsCurrent}">
-    <Grid ColumnDefinitions="*,Auto,Auto,Auto">
-     <Button Classes="rowdelete" Command="{Binding $parent[vm:QueueView].((vm:PlaybackViewModel)DataContext).RemoveItemCommand}" CommandParameter="{Binding}" Background="Transparent" CornerRadius="0" Padding="0" Width="44" Height="44" HorizontalAlignment="Left" VerticalAlignment="Center" AutomationProperties.Name="Remove from queue" ToolTip.Tip="Remove from queue">
-      <Path Data="M 5,7 L 19,7 M 9,7 L 9,5 L 15,5 L 15,7 M 7,7 L 8,19 L 16,19 L 17,7 M 10,11 L 10,16 M 14,11 L 14,16" Stroke="#F4BA9D" StrokeThickness="1.7" Width="24" Height="24" />
-     </Button>
-     <Grid Grid.Column="0" Classes="rowcontent" ColumnDefinitions="28,Auto,*">
-      <TextBlock Text="{Binding Number}" Classes="muted" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding !IsCurrent}" />
-      <StackPanel Classes="bars" Classes.playing="{Binding $parent[vm:QueueView].((vm:PlaybackViewModel)DataContext).IsPlaying}"
-       Orientation="Horizontal" Spacing="2" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding IsCurrent}">
-       <Rectangle Classes="b1" Height="7" /><Rectangle Classes="b2" Height="14" /><Rectangle Classes="b3" Height="10" /><Rectangle Classes="b4" Height="5" />
-      </StackPanel>
-      <vm:ArtworkView Grid.Column="1" Reference="{Binding Artwork}" Cache="{Binding $parent[vm:QueueView].((vm:PlaybackViewModel)DataContext).Artwork}"
-       Width="44" Height="44" CornerRadius="6" Margin="6,0,12,0" VerticalAlignment="Center" />
-      <StackPanel Grid.Column="2" Spacing="3" VerticalAlignment="Center">
-       <TextBlock Classes="rowtitle" Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-       <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="13" TextTrimming="CharacterEllipsis" />
-      </StackPanel>
-     </Grid>
-     <Button Grid.Column="1" IsVisible="{Binding HasFailure}" Background="Transparent" Padding="0" Width="36" Height="36" VerticalAlignment="Center" AutomationProperties.Name="Playback failed, show error" ToolTip.Tip="Playback failed">
-      <Path Data="M 12,3 L 22,21 L 2,21 Z M 12,10 L 12,15 M 12,18 L 12,18.01" Stroke="#F4BA9D" StrokeThickness="1.7" Width="24" Height="24" />
-      <Button.Flyout><Flyout Placement="Bottom">
-       <TextBlock Text="{Binding Item.Failure}" Foreground="#F4BA9D" TextWrapping="Wrap" MaxWidth="320" />
-      </Flyout></Button.Flyout>
-     </Button>
-     <TextBlock Grid.Column="2" Text="{Binding Length}" Classes="muted" FontSize="13" VerticalAlignment="Center" Margin="8,0,0,0" />
-     <Border Grid.Column="3" Classes="grip" Background="Transparent" Width="52" Height="44" VerticalAlignment="Center" Margin="0,0,10,0">
-      <Path Data="M 6,6 L 18,6 M 6,12 L 18,12 M 6,18 L 18,18" Stroke="#9BA6A3" StrokeThickness="1.7" Width="24" Height="24" />
-     </Border>
-    </Grid>
-    </Border>
-   </DataTemplate></ListBox.ItemTemplate>
-  </ListBox>
+  <!-- Rows of one height, made once and given item after item while scrolling (RecyclingRowPanel). -->
+  <ScrollViewer Grid.Row="1" x:Name="QueueScroll" HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Queue">
+   <vm:RecyclingRowPanel x:Name="QueueList" ItemsSource="{Binding Items}" />
+  </ScrollViewer>
   <TextBlock Grid.Row="1" Text="Your queue is empty. Choose music from a source." IsVisible="{Binding IsEmpty}" Classes="muted" TextWrapping="Wrap" Margin="8" />
  </Grid>
 </UserControl>

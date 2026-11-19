@@ -23,11 +23,17 @@ public sealed class ArtworkView : Border
     // What is shown, newest last: during a crossfade, the pictures fading out beneath the new one.
     private readonly Grid _layers = new();
     private bool _attached;
-    // A default, not a local value, so a style can square the corners (NowPlayingView's phone layout).
-    static ArtworkView() => CornerRadiusProperty.OverrideDefaultValue<ArtworkView>(new CornerRadius(8));
+    // Defaults, not local values: a style can square the corners (NowPlayingView's phone layout), and a size
+    // set in a control template (the queue's rows) wins over them.
+    static ArtworkView()
+    {
+        CornerRadiusProperty.OverrideDefaultValue<ArtworkView>(new CornerRadius(8));
+        WidthProperty.OverrideDefaultValue<ArtworkView>(64);
+        HeightProperty.OverrideDefaultValue<ArtworkView>(64);
+    }
     public ArtworkView()
     {
-        Width = Height = 64; ClipToBounds = true;
+        ClipToBounds = true;
         Background = Empty; Child = _layers; Show(Placeholder());
         AttachedToVisualTree += (_, _) => { _attached = true; if (Cache is { } cache) cache.Found += OnFound; Load(); };
         DetachedFromVisualTree += (_, _) => { _attached = false; if (Cache is { } cache) cache.Found -= OnFound; Cancel(); Show(Placeholder()); };

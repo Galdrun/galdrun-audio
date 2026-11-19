@@ -2,5 +2,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.INTERNET" />
   <!-- The existing outward API is HTTP, including explicitly configured LAN hosts. -->
-  <application android:label="Galdrun" android:usesCleartextTraffic="true" android:allowBackup="false" />
+  <application android:label="Galdrun" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:usesCleartextTraffic="true" android:allowBackup="false" />
 </manifest>
