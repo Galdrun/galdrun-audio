@@ -18,6 +18,17 @@ like any client ([server.md](server.md)).
   app builder options; enables EGL partial presentation
   (`PartialPresentation.cs`).
 
+## Buttons
+
+The app's own button is the **Galdrun button**: class `galdrun` (style in
+`src/Multiroom.App/App.axaml`). Flat and square (no corner radius, no
+border), background `#2C372F`, text `#CBEC97` SemiBold 16, height 48; no
+hover or press change (on touch it would stick); disabled: `#1B2123` with
+`#5A6462` text. Use it for a page's actions (Zone Setup's "Update zone", the
+Manual page's Connect and Back, the connecting page's Manual); stretch side
+by side ones in equal columns. Icon buttons (transport, header, marks) are
+transparent with a coloured icon instead.
+
 ## Android build and device test
 
 Not built by the scripts. Needs the `android` workload of the SDK in

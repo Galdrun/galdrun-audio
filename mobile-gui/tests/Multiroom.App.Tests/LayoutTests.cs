@@ -104,7 +104,10 @@ public sealed class LayoutTests
             foreach (var page in new[] { "Home", "Queue", "Zones", "Sources", "Playlists", "Rooms", "Diagnostics" })
             {
                 model.SelectedPage = page; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-                var shown = pages.Children.Single(c => c.IsVisible);
+                // The queue's sheet fills its clipping host and keeps the page's space inside (16 px at the left); it
+                // stays shown while it slides back up.
+                var queue = view.FindControl<QueueView>("QueuePage")!;
+                Control shown = page == "Queue" ? queue : pages.Children.Single(c => c.IsVisible && c.Name != "QueueHost");
                 Assert.Equal(left, shown.TranslatePoint(new Point(), window)!.Value.X, 0.5);
                 var side = view.FindControl<Border>("SideQueue")!;
                 var right = side.IsVisible ? side.TranslatePoint(new Point(), window)!.Value.X - 20 : window.Bounds.Width - (page == "Queue" ? 0 : 16);

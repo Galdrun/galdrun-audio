@@ -85,4 +85,39 @@ public sealed partial class QueueEngineTests
         await Until(() => _time.Pending == 0);
         Assert.Equal(1, Wakes());
     }
+
+    [Fact]
+    public async Task A_zone_whose_rooms_all_went_to_deep_sleep_as_it_played_pauses()
+    {
+        await PlayingAsync("A", "B");
+        await EmitAsync("""{"event":"room.connected","client":"roomA","deviceName":"d","reconnect":false,"zone":"living"}""");
+        // Long after the play: its wake retries have ended.
+        _time.Advance(QueueEngine.WakeRetryWindow);
+        await Task.Delay(200, Ct);
+        var before = _core.All.Count;
+
+        await EmitAsync("""{"event":"room.powerState","client":"roomA","powerState":"sleep","wakeOnLan":"02:00:00:00:00:01"}""",
+            """{"event":"room.disconnected","client":"roomA","reason":"test"}""");
+        await Until(() => Queue().Transport == QueueTransport.Paused);
+
+        // Paused once, with no wake: the next play wakes it.
+        Assert.Equal(["zone.pause"], Sent(before).Select(c => c.Command));
+    }
+
+    [Fact]
+    public async Task A_room_that_only_dropped_off_leaves_its_zone_playing()
+    {
+        await PlayingAsync("A", "B");
+        await EmitAsync("""{"event":"room.connected","client":"roomA","deviceName":"d","reconnect":false,"zone":"living"}""");
+        _time.Advance(QueueEngine.WakeRetryWindow);
+        await Task.Delay(200, Ct);
+        var before = _core.All.Count;
+
+        await EmitAsync("""{"event":"room.disconnected","client":"roomA","reason":"test"}""");
+        // A later call through the same engine: the event before it was handled.
+        Ok(await _engine.SetRepeatAsync(Zone, RepeatMode.All, Ct));
+
+        Assert.DoesNotContain(Sent(before), c => c.Command == "zone.pause");
+        Assert.Equal(QueueTransport.Playing, Queue().Transport);
+    }
 }

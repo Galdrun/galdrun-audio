@@ -11,7 +11,7 @@
   <Style Selector="vm|QueueRowView"><Setter Property="MinHeight" Value="64" /><Setter Property="Margin" Value="0,1" /></Style>
   <Style Selector="Border.queuerow"><Setter Property="Padding" Value="4,6" /><Setter Property="CornerRadius" Value="10" /><Setter Property="Background" Value="Transparent" /></Style>
   <Style Selector="vm|QueueRowView:pointerover Border.queuerow"><Setter Property="Background" Value="#1B2123" /></Style>
-  <Style Selector="vm|QueueRowView.selected Border.queuerow"><Setter Property="Background" Value="{DynamicResource SystemControlHighlightListAccentLowBrush}" /></Style>
+  <Style Selector="vm|QueueRowView.selected Border.queuerow"><Setter Property="Background" Value="#252D30" /></Style>
   <Style Selector="Border.queuerow.current"><Setter Property="Background" Value="#1F2A26" /></Style>
   <Style Selector="Border.current TextBlock.rowtitle"><Setter Property="Foreground" Value="#CBEC97" /></Style>
   <!-- The playing row's bars: 14 high and scaled from their bottom by the compositor (QueueRowView). -->

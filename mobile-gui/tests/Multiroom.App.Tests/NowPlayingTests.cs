@@ -453,4 +453,55 @@ public sealed class NowPlayingTests
         }
         finally { window.Close(); await model.DisconnectAsync(); if (File.Exists(path)) File.Delete(path); }
     }
+
+    [AvaloniaFact]
+    public void A_pending_transport_request_turns_every_transport_button_off_and_spins_on_its_own()
+    {
+        var pending = new TaskCompletionSource();
+        var vm = new PlaybackViewModel(_ => pending.Task);
+        vm.Apply(PlaybackTests.Snapshot());
+        var view = new TransportView { DataContext = vm };
+        var window = new Window { Width = 390, Height = 200, Content = view };
+        try
+        {
+            window.Show(); Dispatcher.UIThread.RunJobs();
+            var names = new[] { "ShuffleButton", "PreviousButton", "TogglePlaybackButton", "NextButton", "RepeatButton" };
+            Assert.All(names, name => Assert.True(view.FindControl<Button>(name)!.IsEffectivelyEnabled));
+            vm.TransportCommand.Execute("next"); Dispatcher.UIThread.RunJobs();
+            Assert.True(vm.IsTransportPending); Assert.True(vm.IsNextPending);
+            Assert.All(names, name => Assert.False(view.FindControl<Button>(name)!.IsEffectivelyEnabled));
+            pending.SetResult(); Dispatcher.UIThread.RunJobs();
+            Assert.False(vm.IsTransportPending);
+            Assert.All(names, name => Assert.True(view.FindControl<Button>(name)!.IsEffectivelyEnabled));
+            // Shuffle on shows only by its icon's colour: the toggle keeps its unchecked background.
+            var shuffle = view.FindControl<ToggleButton>("ShuffleButton")!;
+            var presenter = shuffle.GetVisualDescendants().OfType<Avalonia.Controls.Presenters.ContentPresenter>().First(p => p.Name == "PART_ContentPresenter");
+            var off = presenter.Background?.ToString();
+            shuffle.IsChecked = true; Dispatcher.UIThread.RunJobs();
+            Assert.Equal(off, presenter.Background?.ToString());
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task The_queue_header_switches_the_zones_autofill()
+    {
+        string? body = null;
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (request, ct) =>
+        {
+            Assert.Equal(("PATCH", "/api/v1/zones/living"), (request.Method.Method, request.RequestUri!.AbsolutePath));
+            body = await request.Content!.ReadAsStringAsync(ct);
+            return BrowserTests.Reply(new ZoneView("living", AutoFill: new AutoFillView(true)));
+        }));
+        var vm = new PlaybackViewModel(a => a(api, CancellationToken.None));
+        var snapshot = PlaybackTests.Snapshot();
+        vm.Apply(snapshot with { Zones = snapshot.Zones.Select(z => z with { AutoFill = new AutoFillView(false) }).ToArray() });
+        Assert.True(vm.CanAutoFill); Assert.False(vm.IsAutoFillOn); Assert.Equal("AutoFill is off", vm.AutoFillLabel);
+        await vm.ToggleAutoFillCommand.ExecuteAsync(null);
+        Assert.Equal("""{"autoFill":{"enabled":true}}""", body);
+        Assert.True(vm.IsAutoFillOn);
+        // A server without AutoFill shows no switch.
+        vm.Apply(snapshot);
+        Assert.False(vm.CanAutoFill);
+    }
 }

@@ -246,16 +246,23 @@ public sealed class ServersTests
 
     private static ShellViewModel Shell(string path,
         Func<TimeSpan, CancellationToken, IAsyncEnumerable<DiscoveredServer>> discovery,
-        Func<string, string?, MultiroomClient>? client = null) => new(discovery, path, client);
+        Func<string, string?, MultiroomClient>? client = null) => new(discovery, path, client)
+    {
+        // The search's times, shortened: Manual (and the first decision) after 150 ms, quick rounds.
+        SplashTime = TimeSpan.FromMilliseconds(150), SearchRound = TimeSpan.FromMilliseconds(50),
+        SearchRest = TimeSpan.FromMilliseconds(20), StoredRetry = TimeSpan.FromMilliseconds(300),
+    };
 
-    private static MultiroomClient ConnectedClient(string address, FixtureEventStream events, List<Uri> bases) =>
+    // events: the event stream's reply per request (by default the given stream).
+    private static MultiroomClient ConnectedClient(string address, FixtureEventStream events, List<Uri> bases,
+        Func<HttpResponseMessage>? eventsReply = null) =>
         new(address, handler: new FakeHttp((request, _) =>
         {
             var uri = request.RequestUri!;
             bases.Add(uri);
             return Task.FromResult(uri.AbsolutePath switch
             {
-                "/api/v1/events" => Events(events),
+                "/api/v1/events" => eventsReply?.Invoke() ?? Events(events),
                 "/api/v1/status" => FakeHttp.Json(Status),
                 "/api/v1/providers" => FakeHttp.Json("[]"),
                 "/api/v1/favorites" => FakeHttp.Json("[]"),
@@ -287,17 +294,63 @@ public sealed class ServersTests
         finally { await CleanupAsync(path); }
     }
 
-    [Fact]
-    public async Task Without_a_stored_server_startup_opens_the_picker()
+    [AvaloniaFact]
+    public async Task Without_servers_the_connecting_page_searches_on_and_offers_manual()
+    {
+        var path = SettingsPath();
+        var browses = 0;
+        var vm = Shell(path, (_, _) => { browses++; return Feed(); });
+        try
+        {
+            await vm.InitializeAsync();
+            Assert.True(vm.IsConnecting); Assert.False(vm.ShowManual);
+            await Until(() => vm.ShowManual);
+            var seen = browses;
+            await Until(() => browses > seen + 2);
+            Assert.True(vm.IsConnecting);
+            vm.OpenManualCommand.Execute(null);
+            Assert.Equal("Server", vm.SelectedPage); Assert.False(vm.IsConnecting); Assert.False(vm.ShowManual);
+            // Manual ends the search.
+            seen = browses; await Task.Delay(200, TestContext.Current.CancellationToken); Dispatcher.UIThread.RunJobs();
+            Assert.InRange(browses, seen, seen + 1);
+            // Back returns to the connecting page, and the search goes on.
+            vm.BackCommand.Execute(null);
+            Assert.True(vm.IsConnecting); Assert.NotEqual("Server", vm.SelectedPage);
+            seen = browses; await Until(() => browses > seen + 1);
+            await Until(() => vm.ShowManual);
+        }
+        finally { await vm.DisconnectAsync(); await CleanupAsync(path); }
+    }
+
+    [AvaloniaFact]
+    public async Task A_first_start_connects_the_only_server_found()
     {
         var path = SettingsPath();
         try
         {
-            var vm = Shell(path, (_, _) => Feed());
+            var server = Server();
+            var vm = Shell(path, (_, _) => Feed(server), (address, _) => ConnectedClient(address, new(), []));
             await vm.InitializeAsync();
-            Assert.Equal("Servers", vm.SelectedPage);
-            Assert.False(vm.Servers.IsScanning);
-            Assert.Contains("No servers", vm.Servers.ScanState);
+            await Until(() => vm.SelectedPage == "Home");
+            Assert.Equal("Home", vm.SelectedPage); Assert.False(vm.IsConnecting);
+            Assert.Equal(server.Instance, (await Preferences.LoadAsync(path, TestContext.Current.CancellationToken))!.ServerId);
+            await vm.DisconnectAsync();
+        }
+        finally { await CleanupAsync(path); }
+    }
+
+    [AvaloniaFact]
+    public async Task A_first_start_with_several_servers_opens_the_picker()
+    {
+        var path = SettingsPath();
+        try
+        {
+            var vm = Shell(path, (_, _) => Feed(Server(), Server("attic.local")));
+            await vm.InitializeAsync();
+            await Until(() => !vm.IsConnecting);
+            Assert.Equal("Servers", vm.SelectedPage); Assert.False(vm.Connected);
+            Assert.Equal(2, vm.Servers.Servers.Count); Assert.Equal("2 servers found.", vm.Servers.ScanState);
+            await vm.DisconnectAsync();
         }
         finally { await CleanupAsync(path); }
     }
@@ -309,14 +362,17 @@ public sealed class ServersTests
         try
         {
             var server = Server();
-            // The stored address is stale on purpose: the announcement wins.
+            // The stored address is stale on purpose: the announcement wins. Another server answering is ignored.
             await new Preferences("http://192.0.2.4:4725/api/v1/", null, server.Instance)
                 .SaveAsync(path, TestContext.Current.CancellationToken);
             var bases = new List<Uri>();
-            var vm = Shell(path, (_, _) => Feed(server), (address, _) => ConnectedClient(address, new(), bases));
+            var vm = Shell(path, (_, _) => Feed(Server("attic.local"), server), (address, _) => ConnectedClient(address, new(), bases));
+            var splash = false;
+            vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(vm.IsConnecting) && vm.IsConnecting) splash = true; };
             await vm.InitializeAsync();
-            Assert.True(vm.Connected);
+            await Until(() => vm.SelectedPage == "Home");
             Assert.Equal("Home", vm.SelectedPage);
+            Assert.True(splash); Assert.False(vm.IsConnecting);
             Assert.True(vm.Home.Favourites.IsEmpty);
             Assert.All(bases, uri => Assert.StartsWith("http://192.0.2.50:4725/api/v1/", uri.AbsoluteUri));
             var saved = await Preferences.LoadAsync(path, TestContext.Current.CancellationToken);
@@ -338,7 +394,8 @@ public sealed class ServersTests
             var bases = new List<Uri>();
             var vm = Shell(path, (_, _) => Feed(), (address, _) => ConnectedClient(address, new(), bases));
             await vm.InitializeAsync();
-            Assert.True(vm.Connected);
+            await Until(() => vm.SelectedPage == "Home");
+            Assert.False(vm.IsConnecting);
             Assert.All(bases, uri => Assert.StartsWith("http://192.0.2.4:4725/api/v1/", uri.AbsoluteUri));
             Assert.Equal(server.Instance, (await Preferences.LoadAsync(path, TestContext.Current.CancellationToken))!.ServerId);
             await vm.DisconnectAsync();
@@ -347,23 +404,125 @@ public sealed class ServersTests
     }
 
     [AvaloniaFact]
-    public async Task An_unreachable_stored_server_leaves_the_picker_with_an_error()
+    public async Task An_unreachable_stored_server_keeps_the_connecting_page_and_tries_again()
     {
         var path = SettingsPath();
         try
         {
             await new Preferences("http://192.0.2.4:4725/api/v1/", null, Server().Instance)
                 .SaveAsync(path, TestContext.Current.CancellationToken);
+            var tries = 0;
             var vm = Shell(path, (_, _) => Feed(), (_, _) => new MultiroomClient("http://unreachable", handler:
-                new FakeHttp((_, _) => Task.FromException<HttpResponseMessage>(new HttpRequestException("gone")))));
+                new FakeHttp((_, _) => { tries++; return Task.FromException<HttpResponseMessage>(new HttpRequestException("gone")); })));
             await vm.InitializeAsync();
-            Assert.False(vm.Connected);
-            Assert.Equal("Servers", vm.SelectedPage);
-            Assert.Equal("Server studio was not found.", vm.Servers.Warning);
-            Assert.NotEqual("", vm.Error);
+            await Until(() => tries >= 2);
+            Assert.False(vm.Connected); Assert.True(vm.IsConnecting); Assert.True(vm.ShowManual);
+            Assert.NotEqual("Home", vm.SelectedPage);
+            await vm.DisconnectAsync();
+            Assert.False(vm.IsConnecting);
+        }
+        finally { await CleanupAsync(path); }
+    }
+
+    [AvaloniaFact]
+    public async Task A_lost_connection_shows_the_connecting_page_until_it_is_back()
+    {
+        var path = SettingsPath();
+        try
+        {
+            var server = Server();
+            await new Preferences(server.BaseUri.AbsoluteUri, null, server.Instance).SaveAsync(path, TestContext.Current.CancellationToken);
+            var events = new FixtureEventStream();
+            var online = true; var scans = 0;
+            // Only the first browse finds the server: once it is down, it no longer answers.
+            var vm = Shell(path, (_, _) => scans++ == 0 ? Feed(server) : Feed(), (address, _) => ConnectedClient(address, events, [],
+                () => online ? Events(events) : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)));
+            await vm.InitializeAsync();
+            await Until(() => vm.SelectedPage == "Home");
+            vm.SelectedPage = "Queue";
+            online = false; events.Dispose();
+            await Until(() => vm.IsConnecting);
+            await Until(() => vm.ShowManual);
+            Assert.True(vm.IsConnecting); Assert.Equal("Queue", vm.SelectedPage);
+            events = new(); online = true;
+            await Until(() => !vm.IsConnecting, seconds: 5);
+            Assert.True(vm.Connected); Assert.False(vm.ShowManual); Assert.Equal("Queue", vm.SelectedPage);
             await vm.DisconnectAsync();
         }
         finally { await CleanupAsync(path); }
+    }
+
+    [Theory]
+    [InlineData("192.168.1.5", "http://192.168.1.5:4725/")]
+    [InlineData(" music.local ", "http://music.local:4725/")]
+    [InlineData("192.168.1.5:8080", "http://192.168.1.5:8080/")]
+    [InlineData("https://music.example/api/v1/", "https://music.example/api/v1/")]
+    public void A_manual_address_without_scheme_or_port_gets_the_usual_ones(string typed, string expected) =>
+        Assert.Equal(expected, ShellViewModel.ManualAddress(typed));
+
+    [AvaloniaFact]
+    public async Task Manual_connect_shows_the_connecting_page_names_the_server_and_opens_home()
+    {
+        var path = SettingsPath();
+        try
+        {
+            var vm = Shell(path, (_, _) => Feed(), (address, _) => ConnectedClient(address, new(), []));
+            await vm.InitializeAsync();
+            Assert.Equal("Searching for server…", vm.ConnectingText);
+            vm.OpenManualCommand.Execute(null);
+            vm.Address = "192.0.2.50";
+            var shown = new List<string>();
+            vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(vm.IsConnecting) && vm.IsConnecting) shown.Add(vm.ConnectingText); };
+            await vm.ConnectCommand.ExecuteAsync(null);
+            Assert.Equal(["Connecting to 192.0.2.50…"], shown);
+            Assert.Equal("Home", vm.SelectedPage); Assert.False(vm.IsConnecting);
+            Assert.Equal("http://192.0.2.50:4725/", vm.Address);
+            await vm.DisconnectAsync();
+        }
+        finally { await CleanupAsync(path); }
+    }
+
+    [AvaloniaFact]
+    public async Task A_manual_server_that_does_not_answer_fails_after_the_timeout_back_on_the_manual_page()
+    {
+        var path = SettingsPath();
+        try
+        {
+            var vm = Shell(path, (_, _) => Feed(), (address, _) => new MultiroomClient(address, handler: new FakeHttp(async (_, ct) =>
+            { await Task.Delay(Timeout.Infinite, ct); return new HttpResponseMessage(); })));
+            vm.ConnectTimeout = TimeSpan.FromMilliseconds(100);
+            await vm.InitializeAsync();
+            vm.OpenManualCommand.Execute(null);
+            vm.Address = "192.0.2.99";
+            await vm.ConnectCommand.ExecuteAsync(null);
+            Assert.False(vm.IsConnecting); Assert.Equal("Server", vm.SelectedPage);
+            Assert.Contains("too long", vm.Error);
+            await vm.DisconnectAsync();
+        }
+        finally { await CleanupAsync(path); }
+    }
+
+    [AvaloniaFact]
+    public async Task A_remembered_server_is_named_while_connecting()
+    {
+        var path = SettingsPath();
+        try
+        {
+            await new Preferences("http://192.0.2.4:4725/api/v1/", null, Server().Instance).SaveAsync(path, TestContext.Current.CancellationToken);
+            var vm = Shell(path, (_, _) => Feed());
+            vm.StoredRetry = TimeSpan.FromHours(1); vm.SplashTime = TimeSpan.FromHours(1);
+            await vm.InitializeAsync();
+            Assert.True(vm.IsConnecting); Assert.Equal("Connecting to studio…", vm.ConnectingText);
+            await vm.DisconnectAsync();
+        }
+        finally { await CleanupAsync(path); }
+    }
+
+    private static async Task Until(Func<bool> done, int seconds = 2)
+    {
+        var end = DateTime.UtcNow.AddSeconds(seconds);
+        while (!done() && DateTime.UtcNow < end) { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
+        Assert.True(done());
     }
 
     [AvaloniaTheory]
@@ -384,9 +543,12 @@ public sealed class ServersTests
             Assert.DoesNotContain(serverVisible, c => c == view.FindControl<Button>("HamburgerButton"));
             Assert.Contains(serverVisible.OfType<TextBlock>(), t => t.Text == "GALDRUN");
             Assert.Contains(serverVisible.OfType<TextBox>(), t => t.Name == "ServerAddress" || (t.Text ?? "") == model.Address);
-            var choose = view.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Choose server"));
-            Assert.Equal(model.NavigateCommand, choose.Command);
-            Assert.Equal("Servers", choose.CommandParameter);
+            // Its Back returns to where Manual was opened (the connecting page, or the server list).
+            Assert.Equal(model.BackCommand, view.FindControl<Button>("ManualBackButton")!.Command);
+            // On the plain page, no panel around it; Connect and Back are Galdrun buttons; no LAN hint.
+            Assert.DoesNotContain(serverVisible.OfType<Border>(), b => b.Classes.Contains("panel"));
+            Assert.All(new[] { "ManualConnectButton", "ManualBackButton" }, name => Assert.Contains("galdrun", view.FindControl<Button>(name)!.Classes));
+            Assert.DoesNotContain(serverVisible.OfType<TextBlock>(), t => t.Text?.Contains("LAN", StringComparison.Ordinal) == true);
             model.SelectedPage = "Servers"; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             var visible = view.GetVisualDescendants().OfType<Control>().Where(c => c.IsEffectivelyVisible).ToArray();
             // The top holds only the centered brand, no hamburger or icons, no Refresh.
@@ -399,6 +561,10 @@ public sealed class ServersTests
             // The not-found warning sits above the list, centered.
             var warning = Assert.Single(visible.OfType<TextBlock>(), t => t.Text == "Server studio was not found.");
             var list = Assert.Single(visible.OfType<ListBox>());
+            // Our style: rows without a panel, Galdrun buttons.
+            Assert.DoesNotContain(list.GetVisualDescendants().OfType<Border>(), b => b.Classes.Contains("panel"));
+            Assert.All(list.GetVisualDescendants().OfType<Button>(), b => Assert.Contains("galdrun", b.Classes));
+            Assert.All(new[] { "ScanButton", "ServersManualButton" }, name => Assert.Contains("galdrun", view.FindControl<Button>(name)!.Classes));
             Assert.True(warning.Bounds.Center.Y < list.Bounds.Top);
             // Each found server has its own Connect button carrying the server itself.
             var studio = model.Servers.Servers[0]; var attic = model.Servers.Servers[1];

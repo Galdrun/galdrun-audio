@@ -22,6 +22,7 @@ public sealed class SettingsTests
             var model = Shell(path);
             await model.InitializeAsync();
             Assert.True(model.ShowPerformance);
+            await model.DisconnectAsync(); // ends the search for a server
 
             model.ShowPerformance = false;
             // The save runs on its own.

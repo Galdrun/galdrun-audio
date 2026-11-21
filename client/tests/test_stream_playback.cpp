@@ -693,6 +693,35 @@ MULTIROOM_TEST(stream_playback_hardware_volume_leaves_the_samples_unscaled)
     CHECK_EQ(room.runtime.hardwareVolumeState.gain, 0.25);
 }
 
+MULTIROOM_TEST(stream_playback_hardware_volume_holds_the_samples_until_the_control_is_set)
+{
+    TestListener listener;
+    CHECK(listener.ready());
+    Room room;
+    room.offerHardwareVolume();
+    CHECK(room.open(listener));
+    uint64_t sequence = 0;
+    CHECK(sendRun(listener, sequence, kBaseNs, 1, 100));
+    CHECK(waitUntil([&] { return room.playback->stream().frames() >= 4800; }, 2000));
+
+    // The room's volume arrives before its start, and the control is only set
+    // by the next poll (a Connector 3 MCU booted at 100): nothing may be
+    // heard at the control's own level meanwhile.
+    std::string error;
+    CHECK(room.playback->volume(volumeRequest(0.25), error));
+    CHECK_EQ(room.stub->hardwareVolume.sets, 0);
+    room.play(1008); // the device runs on silence before a start, as it does
+    CHECK(room.start(kBaseNs)); // device frame 1488 plays kBaseNs
+    room.play(2016);
+    CHECK(room.silent(0, 2016));
+
+    room.playback->poll();
+    CHECK_EQ(room.stub->hardwareVolume.sets, 1);
+    CHECK_EQ(room.stub->hardwareVolume.gain, 0.25);
+    room.play(4016);
+    CHECK_EQ(room.output[4015], 2528u);
+}
+
 MULTIROOM_TEST(stream_playback_hardware_volume_burst_sets_the_control_once_to_the_newest)
 {
     TestListener listener;

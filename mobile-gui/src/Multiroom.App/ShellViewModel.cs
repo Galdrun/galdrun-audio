@@ -130,6 +130,99 @@ public partial class ShellViewModel : ObservableObject
     partial void OnPlayNowKeepsQueueChanged(bool value) { if (value != (_stored?.PlayNowKeepsQueue ?? false)) _ = SavePreferencesAsync(); }
     public bool ShowSideQueue => IsWide && !IsQueue;
     public bool HasError => Error.Length != 0;
+    // The connecting page: over everything while the app searches for its server, at a start and whenever the
+    // connection drops (SearchAsync). After SplashTime it offers Manual; the search goes on until a server is
+    // connected, the picker opens or Manual is chosen.
+    public TimeSpan SplashTime { get; set; } = TimeSpan.FromSeconds(4);
+    // One browse of the search, and the least time between two (a browse that fails at once must not spin).
+    public TimeSpan SearchRound { get; set; } = TimeSpan.FromSeconds(2);
+    public TimeSpan SearchRest { get; set; } = TimeSpan.FromSeconds(1);
+    // A remembered server that does not announce itself is tried at its last address this often.
+    public TimeSpan StoredRetry { get; set; } = TimeSpan.FromSeconds(10);
+    [ObservableProperty] private bool _isConnecting;
+    [ObservableProperty] private bool _showManual;
+    // What the connecting page says: the server it connects to, or that it searches for one.
+    [ObservableProperty] private string _connectingText = "Searching for server…";
+    // How long connecting may take before it fails (the HTTP client itself waits as long as the system lets it).
+    public TimeSpan ConnectTimeout { get; set; } = TimeSpan.FromSeconds(10);
+    private CancellationTokenSource? _search;
+    private IDisposable? _manualTimer;
+    // The page left for Manual while a lost connection was waited for; it opens again once the connection is back.
+    private string? _lostFrom;
+    // The search Manual interrupted, resumed when back leaves the Manual page.
+    private (string? ServerId, bool Startup) _searching;
+    private (string? ServerId, bool Startup)? _resumeSearch;
+    private void StopSearch()
+    {
+        _search?.Cancel(); _search = null;
+        _manualTimer?.Dispose(); _manualTimer = null;
+        IsConnecting = false; ShowManual = false;
+    }
+    [RelayCommand] private void OpenManual()
+    {
+        var from = _session is not null ? SelectedPage : null;
+        var resume = _search is not null ? _searching : ((string?, bool)?)null;
+        StopSearch();
+        SelectedPage = "Server"; _lostFrom = from; _resumeSearch = resume;
+    }
+
+    // Searches the network for Galdrun servers until the search ends (StopSearch), behind the connecting page.
+    // serverId: the server to find again (remembered, or the one whose connection dropped); it is connected as soon
+    // as it answers. At a start, a remembered server that never answers is also tried at its last address; with no
+    // server remembered, once SplashTime has passed one server that answered is connected and several open the
+    // picker. After a drop with no id (a manual address) nothing is browsed: the session reconnects by itself.
+    private async Task SearchAsync(string? serverId, bool startup)
+    {
+        _search?.Cancel(); _manualTimer?.Dispose();
+        var search = _search = new CancellationTokenSource();
+        _searching = (serverId, startup);
+        var ct = search.Token;
+        IsConnecting = true; ShowManual = false;
+        ConnectingText = serverId is not null ? $"Connecting to {DiscoveredServer.DisplayName(serverId)}…"
+            : startup ? "Searching for server…" : $"Connecting to {HostOf(_connectedAddress ?? Address)}…";
+        _manualTimer = DispatcherTimer.RunOnce(() => { if (_search == search) ShowManual = true; }, SplashTime);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        TimeSpan? triedStored = null;
+        var found = new List<DiscoveredServer>();
+        static bool Same(DiscoveredServer server, string id) => server.Instance.Equals(id, StringComparison.OrdinalIgnoreCase);
+        while (!ct.IsCancellationRequested)
+        {
+            var round = System.Diagnostics.Stopwatch.StartNew();
+            DiscoveredServer? match = null;
+            if (serverId is not null || startup)
+                try
+                {
+                    await foreach (var server in _discovery(SearchRound, ct))
+                    {
+                        if (serverId is not null) { if (Same(server, serverId)) { match = server; break; } continue; }
+                        found.RemoveAll(other => Same(other, server.Instance)); found.Add(server);
+                        if (clock.Elapsed >= SplashTime) break;
+                    }
+                }
+                catch (Exception e) when (e is OperationCanceledException or System.Net.Sockets.SocketException or ObjectDisposedException) { }
+            if (ct.IsCancellationRequested) return;
+            if (match is not null) await ConnectDiscoveredAsync(match);
+            else if (serverId is null && startup && found.Count > 0 && clock.Elapsed >= SplashTime)
+            {
+                if (found.Count > 1)
+                {
+                    StopSearch();
+                    Servers.Show(found);
+                    SelectedPage = "Servers";
+                    return;
+                }
+                await ConnectDiscoveredAsync(found[0]);
+                found.Clear();
+            }
+            else if (serverId is not null && startup && clock.Elapsed >= SplashTime
+                && (triedStored is not { } at || clock.Elapsed - at >= StoredRetry))
+            { triedStored = clock.Elapsed; await ConnectCoreAsync(serverId); }
+            if (_search != search) return; // connected, or the search was replaced
+            var rest = SearchRest - round.Elapsed;
+            if (rest > TimeSpan.Zero)
+                try { await Task.Delay(rest, ct); } catch (OperationCanceledException) { return; }
+        }
+    }
     public bool CanBrowseProvider => SelectedProvider is { State: ProviderState.Ready, Capabilities: { } caps } && caps.Contains("browse");
     public bool NoSources => Providers.Count == 0;
     // An error shows as a toast over the page for a few seconds; Error itself stays until the next request.
@@ -194,6 +287,7 @@ public partial class ShellViewModel : ObservableObject
     partial void OnSelectedPageChanged(string value)
     {
         if (value != "Browse") _beforeBrowse = null;
+        if (value != "Server") { _lostFrom = null; _resumeSearch = null; }
         IsMenuOpen = false;
         _page.Cancel(); _page.Dispose(); _page = new(); Browser.Cancel(); Browser.SetSearchVisible(IsSearch); Playback.CancelMarks();
         foreach (var property in new[] { nameof(Heading), nameof(IsHome), nameof(IsSettings), nameof(IsSources), nameof(IsQueue),
@@ -216,8 +310,17 @@ public partial class ShellViewModel : ObservableObject
     [RelayCommand] private void CloseVolume() => SelectedPage = _beforeVolume;
     // The system back (Android's, or a right click on the desktop) steps out of what is open, innermost first;
     // false leaves it to the system.
+    [RelayCommand] private void Back() => GoBack();
     public bool GoBack()
     {
+        // The Manual page opened from the connecting page goes back to it: the search goes on where it stopped.
+        if (IsSettings && _resumeSearch is { } resume)
+        {
+            var page = _lostFrom ?? "Servers";
+            SelectedPage = page;
+            _ = SearchAsync(resume.ServerId, resume.Startup);
+            return true;
+        }
         if (IsMenuOpen) { IsMenuOpen = false; return true; }
         if (Home.IsSheetOpen) { if (Home.IsActionsStep) Home.CloseSheet(); else Home.SheetBackCommand.Execute(null); return true; }
         if (IsVolume) { CloseVolume(); return true; }
@@ -234,8 +337,27 @@ public partial class ShellViewModel : ObservableObject
         if (page == "Home") Home.OpenShelf = shelf;
     }
 
+    // The Manual page's Connect: the address as typed (a bare host or IP is the server's HTTP address on its usual
+    // API port), connected behind the connecting page, which goes once it worked or failed.
     [RelayCommand]
-    private Task ConnectAsync() => ConnectCoreAsync(null);
+    private async Task ConnectAsync()
+    {
+        Address = ManualAddress(Address);
+        ConnectingText = $"Connecting to {HostOf(Address)}…"; ShowManual = false; IsConnecting = true;
+        try { await ConnectCoreAsync(null); }
+        finally { IsConnecting = false; }
+    }
+    public const int DefaultPort = 4725;
+    public static string ManualAddress(string text)
+    {
+        var address = text.Trim();
+        if (address.Length == 0 || address.Contains("://", StringComparison.Ordinal)
+            || !Uri.TryCreate("http://" + address, UriKind.Absolute, out var uri)) return address;
+        var builder = new UriBuilder(uri);
+        if (!System.Text.RegularExpressions.Regex.IsMatch(address, @"^(\[[^\]]*\]|[^/:]+):\d+")) builder.Port = DefaultPort;
+        return builder.Uri.AbsoluteUri;
+    }
+    private static string HostOf(string address) => Uri.TryCreate(address, UriKind.Absolute, out var uri) ? uri.Host : address;
 
     // A picked server is connected by its announced address and remembered by
     // its instance id; a manual address connects the way the Server page
@@ -262,13 +384,27 @@ public partial class ShellViewModel : ObservableObject
                 System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(serverId ?? client.BaseUri.Authority)))[..16]);
             Browser.Artwork = new ArtworkCache(client, artworkFolder); Playback.Artwork = Browser.Artwork;
             Connection = "Connecting…"; Connected = false;
-            var status = await client.StatusAsync(ct);
-            Providers = await client.ProvidersAsync(ct);
+            // A server that does not answer fails after ConnectTimeout, reported as too slow (RunAsync).
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(ConnectTimeout);
+            var status = await client.StatusAsync(timeout.Token);
+            Providers = await client.ProvidersAsync(timeout.Token);
             ct.ThrowIfCancellationRequested();
             Connection = status.Core.Connected ? "Connected" : "Server online · audio core offline"; Connected = true;
             _connectedAddress = client.BaseUri.AbsoluteUri;
             session.ConnectionChanged += online => Dispatch(session, () =>
-            { Connected = online; Connection = online ? "Connected" : "Reconnecting… · showing last state"; });
+            {
+                // The stream reports every failed retry; the search starts once, when the connection goes. The session
+                // keeps reconnecting meanwhile; the search finds the server again if it comes back at another address.
+                var lost = !online && Connected;
+                Connected = online; Connection = online ? "Connected" : "Reconnecting… · showing last state";
+                if (lost) _ = SearchAsync(_connectedServerId, startup: false);
+                else if (online)
+                {
+                    StopSearch();
+                    if (_lostFrom is { } page) { _lostFrom = null; SelectedPage = page; }
+                }
+            });
             session.RefreshFailed += message => Dispatch(session, () => Error = message);
             session.PlaybackChanged += state => Dispatch(session, () => { Playback.Apply(state); Rooms.Apply(state); });
             session.ProvidersChanged += providers => Dispatch(session, () => Providers = providers);
@@ -295,6 +431,7 @@ public partial class ShellViewModel : ObservableObject
             session.Start();
             await SavePreferencesAsync();
             SelectedPage = "Home";
+            StopSearch();
         });
     }
     private void Dispatch(ControllerSession session, Action action) => Dispatcher.UIThread.Post(() => { if (_session == session) action(); });
@@ -347,6 +484,7 @@ public partial class ShellViewModel : ObservableObject
         _page.Cancel(); _page.Dispose(); _page = new(); Browser.Cancel(); Browser.Artwork?.Dispose();
         var previous = _session; _session = null;
         if (previous is not null) await previous.DisposeAsync();
+        StopSearch(); _lostFrom = null;
         Connection = "Not connected"; Connected = false; Info = ""; _libraryChanges = null; _libraryUntilPass = null;
     }
     public async Task InitializeAsync()
@@ -368,26 +506,9 @@ public partial class ShellViewModel : ObservableObject
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException)
         { Error = "Saved preferences could not be read. Enter the server address to reconnect."; }
-        // A remembered server is connected by its id; a first start opens the picker.
-        if (preferences?.ServerId is { } id) { await ConnectStoredAsync(id); return; }
-        await Servers.ScanAsync();
-    }
-
-    // The stored id is resolved through the same mDNS browse the picker uses;
-    // when no announcement answers in time, the last address that worked is
-    // tried under the same id so a missing announcement neither blocks startup
-    // nor forgets the chosen server. The picker stays the first page and says
-    // which server did not answer.
-    private async Task ConnectStoredAsync(string serverId)
-    {
-        Connection = "Looking for your Galdrun server…";
-        if (await Servers.FindAsync(serverId, TimeSpan.FromSeconds(10)) is { } server)
-        {
-            await ConnectDiscoveredAsync(server);
-            return;
-        }
-        Servers.Warning = $"Server {DiscoveredServer.DisplayName(serverId)} was not found.";
-        await ConnectCoreAsync(serverId);
+        // A remembered server is found again by its id; a first start connects the one server found, or opens the
+        // picker for several. The search runs on by itself, behind the connecting page.
+        _ = SearchAsync(preferences?.ServerId, startup: true);
     }
     private async Task SavePreferencesAsync()
     {

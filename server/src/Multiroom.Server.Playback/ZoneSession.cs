@@ -298,6 +298,11 @@ internal sealed partial class ZoneSession(string zone, QueueEngine engine)
         return null;
     }
 
+    // Every room of the zone went to deep sleep while it played (QueueEngine.HandleAsync): it pauses, and the
+    // next play wakes them.
+    public Task<Failure<QueueError>?> AsleepAsync() =>
+        _transport is QueueTransport.Starting or QueueTransport.Playing ? PauseAsync() : Task.FromResult<Failure<QueueError>?>(null);
+
     // The zone's only room plays a phone over Bluetooth (active), or that
     // ended: a playing zone is paused for it and played on afterwards. Any
     // caller's play, pause or stop in between decides instead.

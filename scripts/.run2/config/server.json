@@ -1,0 +1,7 @@
+{
+  "dataDirectory": "../server",
+  "core": { "host": "127.0.0.1", "port": 4733, "discoveryPort": 4742 },
+  "media": { "port": 4734 },
+  "api": { "bind": "0.0.0.0", "port": 4735 },
+  "gui": { "port": 4730, "logs": [ { "name": "core", "path": "../core/core.log" } ] }
+}

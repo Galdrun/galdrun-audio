@@ -505,7 +505,7 @@ public sealed class ZoneBarTests
             Assert.True(list.TranslatePoint(new Point(), view)!.Value.Y < dial.TranslatePoint(new Point(), view)!.Value.Y);
             Assert.Equal("50%", view.FindControl<TextBlock>("ZoneVolumeText")!.Text);
             var center = dial.TranslatePoint(new Point(dial.Bounds.Width / 2, dial.Bounds.Height / 2), window)!.Value;
-            var span = Math.Max(240, dial.Bounds.Width);
+            var span = VolumeDial.SwipeSpan(dial.Bounds.Width);
             window.MouseDown(center, MouseButton.Left);
             window.MouseMove(center + new Point(0, -span / 10)); // up: louder
             Assert.Equal(60, vm.ZoneVolume);

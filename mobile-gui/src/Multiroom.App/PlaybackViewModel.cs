@@ -27,7 +27,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
     private readonly Dictionary<string, (DateTimeOffset End, long Sampled, int Seconds)> _sleepDeadlines = [];
     public string? PreferredZone { get; set; }
     public PlaybackViewModel(Func<Func<MultiroomClient, CancellationToken, Task>, Task> execute, TimeProvider? time = null)
-    { _execute = execute; _time = time ?? TimeProvider.System; _zoneVolumeSend = new(execute, () => { if (_zoneVolumeTarget == SelectedZone) Update(); }); }
+    { _execute = execute; _time = time ?? TimeProvider.System; _zoneVolumeSend = new(execute, () => { if (_zoneVolumeTarget == SelectedZone) Update(); }); WatchTransport(); }
     public ObservableCollection<QueueRow> Items { get; } = [];
     [ObservableProperty] private IReadOnlyList<string> _zones = [];
     [ObservableProperty] private string? _selectedZone;
@@ -71,6 +71,30 @@ public sealed partial class PlaybackViewModel : ObservableObject
     public string ZoneMuteLabel => ZoneMuted ? "Unmute zone" : "Mute zone";
     public bool CanSetZoneVolume => HasZone && ZoneSettings?.Volume is not null;
     public bool CanMuteZone => HasZone && ZoneSettings?.Muted is not null;
+    // The zone's AutoFill (the queue page's header switches it); absent when the server has none.
+    private AutoFillView? AutoFill => _snapshot.Zones.FirstOrDefault(z => z.Zone == SelectedZone)?.AutoFill;
+    public bool CanAutoFill => HasZone && AutoFill is not null;
+    public bool IsAutoFillOn => AutoFill?.Enabled == true;
+    // As the web interface: on but held back by repeat all or shuffle (read off the queue, which follows a toggle at
+    // once) or by a fill that found nothing.
+    public string AutoFillLabel =>
+        !IsAutoFillOn ? "AutoFill is off"
+        : AutoFill!.Filling ? "AutoFill is on, filling the queue"
+        : Queue?.Repeat == RepeatMode.All ? "AutoFill is on, paused while repeat all is on"
+        : Queue?.Shuffle == true ? "AutoFill is on, paused while shuffle is on"
+        : AutoFill.Waiting == "nothingAdded" ? "AutoFill is on, paused: the last fill found nothing to add"
+        : "AutoFill is on";
+    [RelayCommand] private Task ToggleAutoFillAsync()
+    {
+        var zone = SelectedZone; var on = IsAutoFillOn;
+        return _execute(async (api, ct) =>
+        {
+            if (zone is null) return;
+            var result = await api.SetAutoFillAsync(zone, !on, ct);
+            ct.ThrowIfCancellationRequested();
+            Apply(_snapshot with { Zones = _snapshot.Zones.Select(z => z.Zone == zone ? result : z).ToArray() });
+        });
+    }
     public ObservableCollection<RoomChoice> Membership { get; } = [];
     public string? CurrentArtwork => Current?.Item.ArtworkId;
     public bool CanSeekCurrent => IsSeekCandidate(Current);
@@ -185,6 +209,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
         OnPropertyChanged(nameof(CanSeekCurrent));
         foreach (var property in new[] { nameof(IsPlaying), nameof(PlayPauseLabel), nameof(ZoneName), nameof(ZonePosition), nameof(ZoneIndicators),
             nameof(ZoneMuted), nameof(ZoneMuteLabel), nameof(CanSetZoneVolume), nameof(CanMuteZone),
+            nameof(CanAutoFill), nameof(IsAutoFillOn), nameof(AutoFillLabel),
             nameof(TrackLengthSeconds), nameof(ProgressMaximum), nameof(CanScrub), nameof(HasPosition),
             nameof(PositionText), nameof(LengthText), nameof(QueuePosition), nameof(QueueCount), nameof(IsRepeatEnabled), nameof(IsRepeatOne) }) OnPropertyChanged(property);
         RefreshProgress();
@@ -419,6 +444,13 @@ public sealed partial class PlaybackViewModel : ObservableObject
         });
     }
 
+    // A transport request (play/pause, previous/next, repeat, shuffle) is under way: the transport buttons wait for it.
+    public bool IsTransportPending => PlayPauseCommand.IsRunning || TransportCommand.IsRunning || RepeatCommand.IsRunning || ShuffleCommand.IsRunning;
+    private void WatchTransport()
+    {
+        foreach (var command in new System.ComponentModel.INotifyPropertyChanged[] { PlayPauseCommand, TransportCommand, RepeatCommand, ShuffleCommand })
+            command.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(IAsyncRelayCommand.IsRunning)) OnPropertyChanged(nameof(IsTransportPending)); };
+    }
     // Previous and next share TransportCommand; this tells their spinners apart.
     [ObservableProperty, NotifyPropertyChangedFor(nameof(IsPreviousPending)), NotifyPropertyChangedFor(nameof(IsNextPending))] private string? _pendingTransport;
     public bool IsPreviousPending => PendingTransport == "previous";

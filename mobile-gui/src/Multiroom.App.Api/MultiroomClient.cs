@@ -140,6 +140,8 @@ public sealed partial class MultiroomClient : IDisposable
         SendAsync(HttpMethod.Delete, $"zones/{Escape(zone)}", null, ct);
     public Task<JsonElement?> SetRoomVolumeAsync(string client, double volume, CancellationToken ct) =>
         SendAsync(HttpMethod.Patch, $"rooms/{Escape(client)}", new { volume }, ct);
+    public Task<ZoneView> SetAutoFillAsync(string zone, bool enabled, CancellationToken ct) =>
+        SendTypedAsync<ZoneView>(HttpMethod.Patch, $"zones/{Escape(zone)}", new { autoFill = new { enabled } }, ct);
     public Task<ZoneView> SetZoneVolumeAsync(string zone, double? volume, bool? muted, CancellationToken ct) =>
         SendTypedAsync<ZoneView>(HttpMethod.Patch, $"zones/{Escape(zone)}", new { volume, muted }, ct);
     // Minutes from now (1 to 720); 0 switches it off.

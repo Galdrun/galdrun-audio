@@ -43,6 +43,13 @@ public partial class QueueView : UserControl
             MarkSelected(row);
         };
         QueueList.Tapped += RowTapped;
+        // A fling still gliding ends when the list jumps to the playing track. The gesture event only bubbles and
+        // the list's presenter scrolls on it first, so its next step is taken back here and the gesture ended.
+        // A new touch starts afresh.
+        QueueScroll.AddHandler(InputElement.ScrollGestureEvent, (_, e) =>
+        { if (_stopGlide is { } at) { e.ShouldEndScrollGesture = true; QueueScroll.Offset = at; } }, RoutingStrategies.Bubble, handledEventsToo: true);
+        QueueScroll.AddHandler(InputElement.ScrollGestureEndedEvent, (_, _) => _stopGlide = null, RoutingStrategies.Bubble, handledEventsToo: true);
+        QueueScroll.AddHandler(PointerPressedEvent, (_, _) => _stopGlide = null, RoutingStrategies.Tunnel, handledEventsToo: true);
         DetachedFromVisualTree += (_, _) => ResetDrag();
         AttachedToVisualTree += (_, _) => PrefetchArtwork();
         DataContextChanged += (_, _) =>
@@ -89,7 +96,9 @@ public partial class QueueView : UserControl
     private static bool OnDeleteButton(object? source) =>
         source is Visual visual && visual.GetSelfAndVisualAncestors().OfType<Button>().Any(button => button.Classes.Contains("rowdelete"));
 
-    // The playing row in the middle of the list, or as near as the list's ends allow.
+    // While a fling may still glide after ScrollToCurrent: the offset it set.
+    private Vector? _stopGlide;
+    // The playing row in the middle of the list, or as near as the list's ends allow; a fling's glide stops.
     public void ScrollToCurrent()
     {
         if (DataContext is not PlaybackViewModel model || model.Items.FirstOrDefault(r => r.IsCurrent) is not { } row) return;
@@ -99,6 +108,7 @@ public partial class QueueView : UserControl
         if (height <= 0) return;
         var top = Math.Max(0, index * height - (QueueScroll.Viewport.Height - height) / 2);
         QueueScroll.Offset = new Vector(QueueScroll.Offset.X, Math.Min(top, Math.Max(0, QueueScroll.Extent.Height - QueueScroll.Viewport.Height)));
+        _stopGlide = QueueScroll.Offset;
         QueueScroll.UpdateLayout();
     }
 

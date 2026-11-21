@@ -12,24 +12,28 @@ public partial class MainView : UserControl
     public void SlideInNowPlaying() => _nowPlaying.SlideIn();
 
     // Now Playing and Zone Setup rise from the bottom and slide back down when they close, however they are
-    // closed; a swipe down closes them. Now Playing rises only when opened from the zone bar (SlideInNowPlaying),
+    // closed; a swipe down closes them. The queue drops from the top instead and goes back up (no swipe: its
+    // list scrolls). Now Playing rises only when opened from the zone bar (SlideInNowPlaying),
     // Zone Setup always. Zone Setup covers Now Playing: opening it from there leaves Now Playing in place
     // beneath it until it has risen, and closing it back to Now Playing uncovers it.
-    private readonly SlidingPage _nowPlaying, _zoneSetup;
+    private readonly SlidingPage _nowPlaying, _zoneSetup, _queue;
     private sealed class SlidingPage
     {
         private static readonly TimeSpan Duration = TimeSpan.FromMilliseconds(260);
         private readonly MainView _view;
         private readonly Control _page;
         private readonly Func<bool> _isOpen;
+        private readonly bool _fromTop;
         private int _generation;
-        public SlidingPage(MainView view, Control page, Func<bool> isOpen)
+        public SlidingPage(MainView view, Control page, Func<bool> isOpen, bool fromTop = false)
         {
-            _view = view; _page = page; _isOpen = isOpen;
+            _view = view; _page = page; _isOpen = isOpen; _fromTop = fromTop;
             page.IsVisible = isOpen();
-            AttachSwipeDown();
+            if (!fromTop) AttachSwipeDown();
         }
-        public void SlideIn() => Slide(Math.Max(_view.Bounds.Height, 1), 0);
+        // Where it is while closed: below the view, or above it.
+        private double Away => (_fromTop ? -1 : 1) * Math.Max(_view.Bounds.Height, 1);
+        public void SlideIn() => Slide(Away, 0);
         // Its page was opened or left; covered: another page rises over it, so it stays until that has.
         public void Changed(bool covered = false)
         {
@@ -37,7 +41,7 @@ public partial class MainView : UserControl
             if (_isOpen()) { Unpin(); _page.IsVisible = true; _page.IsHitTestVisible = true; return; }
             if (!_page.IsVisible) return;
             _page.IsHitTestVisible = false;
-            if (!covered) Slide((_page.RenderTransform as Avalonia.Media.TranslateTransform)?.Y ?? 0, Math.Max(_view.Bounds.Height, 1));
+            if (!covered) Slide((_page.RenderTransform as Avalonia.Media.TranslateTransform)?.Y ?? 0, Away);
             // Covered, it keeps its height: the zone bar beneath changes with the page, and its content must not move.
             else { _page.Height = _page.Bounds.Height; _page.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top; }
             Avalonia.Threading.DispatcherTimer.RunOnce(() =>
@@ -97,6 +101,7 @@ public partial class MainView : UserControl
         DataContext = _model;
         _nowPlaying = new SlidingPage(this, NowPlayingPage, () => _model.IsNowPlaying);
         _zoneSetup = new SlidingPage(this, ZoneSetupPage, () => _model.IsZoneSetup);
+        _queue = new SlidingPage(this, QueueSheet, () => _model.IsQueue, fromTop: true);
         if (loadPreferences) AttachedToVisualTree += async (_, _) => await _model.InitializeAsync();
         SizeChanged += (_, _) =>
         {
@@ -115,9 +120,14 @@ public partial class MainView : UserControl
                 _zoneSetup.Changed();
                 if (_model.IsZoneSetup) _zoneSetup.SlideIn();
             }
-            // The queue opens on the playing track, once it is laid out.
-            if (e.PropertyName == nameof(ShellViewModel.IsQueue) && _model.IsQueue)
+            if (e.PropertyName == nameof(ShellViewModel.IsQueue))
+            {
+                _queue.Changed();
+                if (!_model.IsQueue) return;
+                _queue.SlideIn();
+                // The queue opens on the playing track, once it is laid out.
                 Avalonia.Threading.Dispatcher.UIThread.Post(QueuePage.ScrollToCurrent, Avalonia.Threading.DispatcherPriority.Loaded);
+            }
         };
         AttachedToVisualTree += (_, _) => { if (TopLevel.GetTopLevel(this) is { } top) top.BackRequested += SystemBack; };
         DetachedFromVisualTree += (_, _) => { if (TopLevel.GetTopLevel(this) is { } top) top.BackRequested -= SystemBack; };

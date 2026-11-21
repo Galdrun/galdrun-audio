@@ -320,7 +320,11 @@ amplitude made half the slider about -40 dB. Each MCU request is a UART round
 trip of up to 0.2 s, so an unscheduled room volume on a hardware control is set
 by the next `StreamPlayback::poll()` (`hardwareDue_`), not per SET_VOLUME: a
 dragged slider's burst sets it once, to the newest, instead of queueing
-seconds of writes. Clock trim is transient and belongs
+seconds of writes. Invariant: on the Hardware path the samples stay muted
+from device open until the room's first SET_VOLUME is on the control
+(`StreamPlayback::awaitsHardwareLevel`), because the MCU boots unmuted at 100
+and the deferred set would otherwise let the start play at that level; a start
+for a room the server never sent a volume releases the hold. Clock trim is transient and belongs
 to synchronization; soundbar DSP commands are not exposed. MCU volume/mute API
 readbacks passed, but their audible effect remains a pending hardware test,
 explicitly deferred by the user; both RCA channels playing are confirmed.

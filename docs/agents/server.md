@@ -102,7 +102,12 @@ its NIC not yet listening) misses it, so `QueueEngine.RetryWakes`
 (`Multiroom.Server.Playback/QueueEngine.Wake.cs`) sends `client.wake` again every
 5 s for 90 s after each accepted play, until every member is back or the zone
 no longer plays. It is tied to a play, never to state alone, so a room put to
-sleep while its zone plays on stays asleep.
+sleep while its zone plays on stays asleep. When that leaves no member awake
+(at least one in deep sleep, the rest asleep or gone) outside a play's retry
+window, `QueueEngine.HandleAsync` pauses the zone (`ZoneSession.AsleepAsync`):
+otherwise it played on unheard, every controller showed Pause, and the next
+tap paused instead of waking. A room that only drops off leaves its zone
+playing.
 
 `CoreLink` connects to the core's JSON-line API, subscribes, reads status and
 reconciles `DesiredState` against `CoreModel`. The core can restart without

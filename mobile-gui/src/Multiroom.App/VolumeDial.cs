@@ -30,6 +30,9 @@ public sealed class VolumeDial : RangeBase, ICustomHitTest
     // The whole square takes swipes, not only what is drawn.
     public bool HitTest(Point point) => new Rect(Bounds.Size).Contains(point);
     private double _fromValue;
+    // The swipe that spans the whole range: three of the dial's widths (at least 240 px), so a swipe across the
+    // dial changes the volume by a third, not all of it.
+    public static double SwipeSpan(double size) => 3 * Math.Max(240, size);
 
     static VolumeDial()
     {
@@ -111,8 +114,7 @@ public sealed class VolumeDial : RangeBase, ICustomHitTest
             e.Handled = true;
             return;
         }
-        // A swipe across the dial's width (at least 240 px) spans the whole range.
-        var span = Math.Max(240, Math.Min(Bounds.Width, Bounds.Height));
+        var span = SwipeSpan(Math.Min(Bounds.Width, Bounds.Height));
         SetValueRounded(_fromValue + ((at.X - from.X) - (at.Y - from.Y)) / span * (Maximum - Minimum));
         e.Handled = true;
     }

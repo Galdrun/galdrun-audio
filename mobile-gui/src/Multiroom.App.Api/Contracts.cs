@@ -72,10 +72,13 @@ public sealed record ZoneDesired(IReadOnlyList<string>? Clients = null, double? 
 // Zone is the id of every request; Name is what people call it (its rooms' names).
 public sealed record ZoneView(string Zone, ZoneDesired? Desired = null, JsonElement? Actual = null,
     QueueState? Queue = null, string? StreamTitle = null, Track? RadioTrack = null, string? Name = null,
-    SleepTimerView? SleepTimer = null)
+    SleepTimerView? SleepTimer = null, AutoFillView? AutoFill = null)
 {
     public string DisplayName => string.IsNullOrEmpty(Name) ? Zone : Name;
 }
+// A zone's AutoFill as far as the app shows it: on or off, a fill running, and why it waits (repeatAll, shuffle,
+// nothingAdded), if it does. Absent on a server without AutoFill.
+public sealed record AutoFillView(bool Enabled, bool Filling = false, string? Waiting = null);
 // A zone's sleep timer: off, or when it ends and the whole seconds left when the server answered.
 public sealed record SleepTimerView(bool Active, DateTimeOffset? EndsAt = null, int RemainingSeconds = 0);
 public sealed record RoomDesired(string? Zone = null, string? AudioControl = null,

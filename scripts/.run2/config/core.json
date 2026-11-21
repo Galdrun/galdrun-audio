@@ -1,0 +1,43 @@
+{
+  "coreId": "galdrun-core-chris-h1-f8101d21",
+  "logLevel": "WARN",
+  "logFile": "",
+  "logMaxBytes": 10485760,
+  "audio": {
+    "maxSampleRate": 192000,
+    "maxChannels": 2,
+    "packetDurationMs": 20,
+    "memoryLimitMb": 128,
+    "targetBufferMs": 1500,
+    "minimumStartBufferMs": 1000,
+    "clientReadyTimeoutMs": 5000,
+    "startDelayMs": 1000,
+    "pauseDelayMs": 100,
+    "seekFlushLeadMs": 100,
+    "seekFillLeadMs": 150,
+    "driftWindowMs": 20000,
+    "correctionLimitPpm": 100,
+    "convergenceLimitPpm": 500,
+    "resampler": "",
+    "audioControl": "auto",
+    "dither": "off"
+  },
+  "network": {
+    "controlPort": 4731,
+    "audioPort": 4732,
+    "maxConnections": 32,
+    "pingIntervalMs": 5000,
+    "silenceTimeoutMs": 20000,
+    "discoveryPort": 4741
+  },
+  "control": {
+    "bindAddress": "127.0.0.1",
+    "port": 4733
+  },
+  "media": {
+    "baseUrl": "http://127.0.0.1:4734/",
+    "stallTimeoutMs": 2000,
+    "retries": 3,
+    "token": ""
+  }
+}

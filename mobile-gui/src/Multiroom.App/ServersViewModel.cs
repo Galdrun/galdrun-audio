@@ -46,6 +46,17 @@ public sealed partial class ServersViewModel(
 
     public void Cancel() => _scan.Cancel();
 
+    // The servers the shell's search found, shown as a finished scan.
+    public void Show(IEnumerable<DiscoveredServer> servers)
+    {
+        _scan.Cancel();
+        Servers.Clear(); Warning = "";
+        foreach (var server in servers) Apply(server);
+        IsScanning = false;
+        ScanState = $"{Servers.Count} server{(Servers.Count == 1 ? "" : "s")} found.";
+        OnPropertyChanged(nameof(HasServers)); OnPropertyChanged(nameof(ShowEmpty));
+    }
+
     private async Task BrowseAsync(TimeSpan window, Func<DiscoveredServer, bool>? keepBrowsing = null)
     {
         _scan.Cancel(); _scan.Dispose(); _scan = new();

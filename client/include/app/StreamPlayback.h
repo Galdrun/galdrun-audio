@@ -197,6 +197,9 @@ private:
     bool hardwareAvailable() const;
     // Whether the path in force is played on that control.
     bool usesHardware() const;
+    // Whether the open control plays the room's gain but has not been given
+    // one yet: the samples are held silent until it has.
+    bool awaitsHardwareLevel() const;
     // What the render path multiplies by: the gain on Software, unity on
     // anything else.
     double softwareGain(double gain) const;

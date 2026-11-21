@@ -477,6 +477,14 @@ bool StreamPlayback::start(const matp::StartAt& request, uint64_t localStartNs,
     hasStartTimeline_ = true;
     startTimelineNs_ = request.timelineNs;
 
+    // A room the server has no level for is never sent one: it plays at the
+    // control's own level, as it did before the hold in updateVolumePath().
+    if (awaitsHardwareLevel())
+    {
+        MULTIROOM_INFO("start with no room volume: playing at the device's own level");
+        source_.setVolume(1.0, false);
+    }
+
     publishTimeline(false);
     MULTIROOM_INFO("playback armed: timeline %llu ns (stream frame %llu) at device frame %llu, "
              "%llu ms buffered",
@@ -743,8 +751,13 @@ void StreamPlayback::updateVolumePath(bool deviceOpened)
 
         hardwarePending_ = false;
         hardwareDue_ = false; // applied below
-        // Nothing but the path now in force scales the samples.
-        source_.setVolume(1.0, false);
+        // Nothing but the path now in force scales the samples. A device's
+        // control holds what its board left there (Connector 3's MCU boots
+        // at 100) until the room's level is written to it, so the samples
+        // stay silent until then: applyVolume() lets them through once the
+        // control took it, and a start that comes with no level at all
+        // (scheduleStart) plays as before.
+        source_.setVolume(1.0, awaitsHardwareLevel());
         if (volumeSet_)
             applyVolume(volumeGain_, volumeMuted_);
     }
@@ -769,6 +782,12 @@ bool StreamPlayback::hardwareAvailable() const
                                         ? runtime_.deviceCache->findById(runtime_.deviceId)
                                         : nullptr;
     return device != nullptr && device->hardwareVolume.available;
+}
+
+bool StreamPlayback::awaitsHardwareLevel() const
+{
+    return !volumeSet_ && hardwareVolume_ &&
+           volumePath_.effective == matp::VolumeControlMode::Hardware;
 }
 
 bool StreamPlayback::usesHardware() const

@@ -21,7 +21,9 @@ namespace Multiroom.Server.Web.Api;
 // (TTL 0) when it stops. Every answer carries the address of the interface
 // the question came in on, so a phone on the LAN is never handed a Hyper-V
 // switch's address. No probing and no known-answer suppression: the instance
-// name contains the host name, which the LAN already keeps unique.
+// name contains the host name, which the LAN already keeps unique, and the API
+// port when it is not the usual one, so several servers on one machine are
+// told apart (InstanceName).
 //
 // Nothing is announced while the API is bound to loopback (the default): an
 // app on another device could not reach it anyway.
@@ -62,10 +64,11 @@ public sealed partial class ServiceAnnouncer(ApiEndpoint api, ApiEndpointOptions
         }
 
         var machine = Dns.GetHostName().Split('.')[0];
+        var port = api.BaseUri?.Port ?? options.Port;
         var service = new Service(
-            Instance: $"{Branding.InstancePrefix}{Truncate(machine, 50)}.{ServiceType}",
+            Instance: InstanceName(machine, port),
             Host: $"{HostLabel(machine)}.local",
-            Port: api.BaseUri?.Port ?? options.Port,
+            Port: port,
             Txt: ["txtvers=1", $"version={Version}", "path=/api/v1/", $"auth={(options.Token is null ? "none" : "token")}"]);
 
         Socket socket;
@@ -430,6 +433,15 @@ public sealed partial class ServiceAnnouncer(ApiEndpoint api, ApiEndpointOptions
             .Trim('-');
         return label.Length == 0 ? Branding.Slug : Truncate(label, 63);
     }
+
+    // The usual API port (ApiOptions.DefaultPort): a server on it keeps the plain
+    // "Galdrun on <host>" it always had, so the id an app remembered still matches.
+    private const int UsualPort = 4725;
+
+    // "Galdrun on <host>", with " (<port>)" for a server on another port: two servers on
+    // one machine announce the same host, and the app tells servers apart by this name.
+    public static string InstanceName(string machine, int port) =>
+        $"{Branding.InstancePrefix}{Truncate(machine, 50)}{(port == UsualPort ? "" : $" ({port})")}.{ServiceType}";
 
     private static string Truncate(string text, int length) => text.Length <= length ? text : text[..length];
 

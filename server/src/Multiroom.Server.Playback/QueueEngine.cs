@@ -246,6 +246,19 @@ public sealed partial class QueueEngine : IQueueEngine, ICoreEventSubscriber
             return;
         }
 
+        // Every room of a playing zone went to deep sleep: nothing plays it, and nothing wakes it while it plays
+        // (only a play sends the magic packet). So it pauses: every controller shows Play, and the next play
+        // wakes the rooms. Not while a play's wake retries run (RetryWakes): a room still going to sleep then is
+        // woken again. A room that only dropped off, not asleep, leaves the zone playing as before.
+        var sleeper = coreEvent switch { RoomPowerState e => e.Client, RoomDisconnected e => e.Client, _ => null };
+        if (sleeper is not null && Link.Desired.ZoneOf(sleeper) is { } sleepZone &&
+            !_wakeRetries.ContainsKey(sleepZone) && AllAsleep(sleepZone) &&
+            _sessions.TryGetValue(sleepZone, out var sleeping))
+        {
+            await sleeping.RunAsync(sleeping.AsleepAsync, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         // The core's own events.lost is followed by a resync and its
         // CoreSynchronised, and until then the model is behind. Events CoreLink
         // dropped on the way to its handlers left the model right.
@@ -258,6 +271,16 @@ public sealed partial class QueueEngine : IQueueEngine, ICoreEventSubscriber
                     cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    // No room of the zone is awake, and at least one is in deep sleep (rather than only gone).
+    private bool AllAsleep(string zone)
+    {
+        var rooms = Link.Model.Current.Rooms;
+        var members = Link.Desired.MembersOf(zone);
+        static bool Asleep(CoreRoom? room) => room?.PowerState is "sleep" or "sleepButtonOnly";
+        return members.Any(c => Asleep(rooms.GetValueOrDefault(c))) &&
+               members.All(c => rooms.GetValueOrDefault(c) is not { Connected: true } room || Asleep(room));
     }
 
     private Task<Result<QueueState, QueueError>> Create(string zone,
