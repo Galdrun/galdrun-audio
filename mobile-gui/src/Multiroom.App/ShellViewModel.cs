@@ -36,6 +36,7 @@ public partial class ShellViewModel : ObservableObject
     [RelayCommand] private void ToggleMenu() => IsMenuOpen = !IsMenuOpen;
     public PlaybackViewModel Playback { get; }
     public BrowserViewModel Browser { get; }
+    public SearchViewModel Search { get; }
     public CollectionsViewModel Collections { get; }
     public RoomsViewModel Rooms { get; }
     public ServersViewModel Servers { get; }
@@ -48,6 +49,7 @@ public partial class ShellViewModel : ObservableObject
         _newClient = clientFactory ?? ((address, token) => new MultiroomClient(address, token));
         Playback = new(WriteAsync);
         Browser = new(ReadAsync, () => Playback.SelectedZone, Playback.ZoneNameOf);
+        Search = new(ReadAsync);
         Collections = new(WriteAsync, () => Playback.SelectedZone, Playback.ZoneNameOf);
         Rooms = new(WriteAsync);
         Servers = new(ConnectDiscoveredAsync, _discovery);
@@ -55,11 +57,17 @@ public partial class ShellViewModel : ObservableObject
         Home.KeepQueueOnPlayNow = Browser.KeepQueueOnPlayNow = Collections.KeepQueueOnPlayNow = () => PlayNowKeepsQueue;
         Home.QueueChanged += () => _session?.Refresh();
         Home.PlayedIn += zone => Playback.SelectedZone = zone;
-        Home.OpenRequested += (node, title) =>
+        void OpenInBrowse(NodeReference node, string title)
         {
             _beforeBrowse = SelectedPage; SelectedPage = "Browse";
             _ = Browser.OpenNodeAsync(node, title);
-        };
+        }
+        Home.OpenRequested += OpenInBrowse;
+        Search.OpenRequested += OpenInBrowse;
+        Search.SheetRequested += item => Home.OpenSheetCommand.Execute(item);
+        Search.SourceName = id => Providers.FirstOrDefault(p => p.Id == id)?.DisplayName is { Length: > 0 } name ? name
+            : id.Length > 0 ? char.ToUpperInvariant(id[0]) + id[1..] : id;
+        Search.RecentChanged += () => _ = SavePreferencesAsync();
         Collections.QueueChanged += () => _session?.Refresh();
         Collections.Warned += message => Error = message;
         Collections.RecommendationsRequested += () => SelectedPage = "Recommendations";
@@ -105,7 +113,7 @@ public partial class ShellViewModel : ObservableObject
     public bool IsZones => SelectedPage == "Zones";
     public bool IsNowPlaying => SelectedPage == "Now Playing";
     // An album page starts with its cover, the volume page with its rooms: no brand, connection, heading or refresh above it.
-    public bool ShowContentHeader => !IsHome && !IsNowPlaying && !IsVolume && !IsZoneSetup && !IsQueue && !(IsBrowser && !Browser.IsBrowsing);
+    public bool ShowContentHeader => !IsHome && !IsNowPlaying && !IsVolume && !IsZoneSetup && !IsQueue && !IsSearch && !(IsBrowser && !Browser.IsBrowsing);
     // Not on Now Playing: its transport buttons and the waking pill show what it waits for.
     public bool ShowTopProgress => IsBusy && _busyShown && !IsNowPlaying;
     public bool IsVolume => SelectedPage == "Volume";
@@ -116,7 +124,7 @@ public partial class ShellViewModel : ObservableObject
     // Zone Setup covers it (MainView), rather than hiding it, so Now Playing beneath keeps its place while Zone Setup rises.
     public bool ShowZoneBar => Playback.HasZone && !IsZones && !IsVolume && !IsSetup;
     public bool IsSearch => SelectedPage == "Search";
-    public bool IsBrowser => SelectedPage is "Browse" or "Search";
+    public bool IsBrowser => SelectedPage == "Browse";
     public bool IsCollections => SelectedPage is "Playlists" or "Favourites" or "Recommendations";
     public bool IsRooms => SelectedPage == "Rooms";
     public bool IsDiagnostics => SelectedPage == "Diagnostics";
@@ -274,7 +282,12 @@ public partial class ShellViewModel : ObservableObject
         else Show(value);
     }
     partial void OnSelectedProviderChanged(ProviderView? value) => OnPropertyChanged(nameof(CanBrowseProvider));
-    partial void OnProvidersChanged(IReadOnlyList<ProviderView> value) => OnPropertyChanged(nameof(NoSources));
+    partial void OnProvidersChanged(IReadOnlyList<ProviderView> value)
+    {
+        OnPropertyChanged(nameof(NoSources));
+        Search.Scopes = [SearchViewModel.AllSources, .. value.Where(p => p.Capabilities?.Contains("search") == true)
+            .Select(p => new SearchScope(p.Id, Search.SourceName(p.Id)))];
+    }
     partial void OnIsWideChanged(bool value) => OnPropertyChanged(nameof(ShowSideQueue));
     partial void OnSelectedPageChanging(string? oldValue, string newValue) { if (oldValue == "Home") _homeShelf = Home.OpenShelf; }
     partial void OnSelectedPageChanged(string? oldValue, string newValue)
@@ -289,7 +302,7 @@ public partial class ShellViewModel : ObservableObject
         if (value != "Browse") _beforeBrowse = null;
         if (value != "Server") { _lostFrom = null; _resumeSearch = null; }
         IsMenuOpen = false;
-        _page.Cancel(); _page.Dispose(); _page = new(); Browser.Cancel(); Browser.SetSearchVisible(IsSearch); Playback.CancelMarks();
+        _page.Cancel(); _page.Dispose(); _page = new(); Browser.Cancel(); Search.SetVisible(IsSearch); Playback.CancelMarks();
         foreach (var property in new[] { nameof(Heading), nameof(IsHome), nameof(IsSettings), nameof(IsSources), nameof(IsQueue),
             nameof(IsZones), nameof(IsBrowser), nameof(IsSearch), nameof(IsNowPlaying), nameof(ShowSideQueue),
             nameof(IsCollections), nameof(IsRooms), nameof(IsDiagnostics), nameof(IsAppSettings), nameof(IsVolume), nameof(IsZoneSetup), nameof(IsServers),
@@ -377,12 +390,12 @@ public partial class ShellViewModel : ObservableObject
             _connectedAddress = null;
             var previous = _session; _session = null;
             if (previous is not null) await previous.DisposeAsync();
-            Browser.Artwork?.Dispose(); Browser.Reset(); Playback.Apply(new([], [])); Collections.Reset(); Rooms.Reset(); Home.Reset();
+            Browser.Artwork?.Dispose(); Browser.Reset(); Search.Reset(); Playback.Apply(new([], [])); Collections.Reset(); Rooms.Reset(); Home.Reset();
             var session = new ControllerSession(client); _session = session;
             // Each server keeps its pictures in its own folder beside the preferences; ids are unique per server only.
             var artworkFolder = Path.Combine(Path.GetDirectoryName(_preferencesPath)!, "Artwork", Convert.ToHexStringLower(
                 System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(serverId ?? client.BaseUri.Authority)))[..16]);
-            Browser.Artwork = new ArtworkCache(client, artworkFolder); Playback.Artwork = Browser.Artwork;
+            Browser.Artwork = new ArtworkCache(client, artworkFolder); Playback.Artwork = Search.Artwork = Browser.Artwork;
             Connection = "Connecting…"; Connected = false;
             // A server that does not answer fails after ConnectTimeout, reported as too slow (RunAsync).
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -417,6 +430,7 @@ public partial class ShellViewModel : ObservableObject
                     Dispatch(session, () =>
                     {
                         if (IsBrowser && !Browser.IsLoading) _ = Browser.RefreshAsync();
+                        if (IsSearch && !Search.IsSearching) _ = Search.RefreshAsync();
                         if (IsNowPlaying) _ = RefreshCurrentMarksAsync();
                     });
                 else if (type is "like.changed" or "favorite.changed" or "proposals.changed" or "proposals.running")
@@ -446,6 +460,7 @@ public partial class ShellViewModel : ObservableObject
     {
         if (IsHome) return Home.RefreshAsync();
         if (IsBrowser) return Browser.RefreshAsync();
+        if (IsSearch) return Search.RefreshAsync();
         if (IsCollections) return Collections.RefreshAsync();
         if (IsRooms || IsDiagnostics) return Rooms.RefreshAsync(IsDiagnostics);
         return ReadAsync(async (api, ct) => { Providers = await api.ProvidersAsync(ct); _session?.Refresh(); });
@@ -481,7 +496,7 @@ public partial class ShellViewModel : ObservableObject
         _connectedAddress = null;
         Servers.Cancel();
         Playback.CancelMarks();
-        _page.Cancel(); _page.Dispose(); _page = new(); Browser.Cancel(); Browser.Artwork?.Dispose();
+        _page.Cancel(); _page.Dispose(); _page = new(); Browser.Cancel(); Search.Cancel(); Browser.Artwork?.Dispose();
         var previous = _session; _session = null;
         if (previous is not null) await previous.DisposeAsync();
         StopSearch(); _lostFrom = null;
@@ -502,6 +517,7 @@ public partial class ShellViewModel : ObservableObject
                 Playback.PreferredZone = preferences.ActiveZone;
                 ShowPerformance = preferences.ShowPerformance;
                 PlayNowKeepsQueue = preferences.PlayNowKeepsQueue;
+                if (preferences.RecentSearches is { } recent) Search.Recent = recent;
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException)
@@ -510,12 +526,14 @@ public partial class ShellViewModel : ObservableObject
         // picker for several. The search runs on by itself, behind the connecting page.
         _ = SearchAsync(preferences?.ServerId, startup: true);
     }
+    // None saved yet stays absent from the file.
+    private IReadOnlyDictionary<string, IReadOnlyList<string>>? RecentSearches => Search.Recent.Count == 0 ? null : Search.Recent;
     private async Task SavePreferencesAsync()
     {
         // Not connected, a setting changes alone: the server remembered stays.
         var settings = _connectedAddress is { } address
-            ? new Preferences(address, Playback.SelectedZone ?? Playback.PreferredZone, _connectedServerId, ShowPerformance, PlayNowKeepsQueue)
-            : (_stored ?? new Preferences(Address)) with { ShowPerformance = ShowPerformance, PlayNowKeepsQueue = PlayNowKeepsQueue };
+            ? new Preferences(address, Playback.SelectedZone ?? Playback.PreferredZone, _connectedServerId, ShowPerformance, PlayNowKeepsQueue, RecentSearches)
+            : (_stored ?? new Preferences(Address)) with { ShowPerformance = ShowPerformance, PlayNowKeepsQueue = PlayNowKeepsQueue, RecentSearches = RecentSearches };
         await _settings.WaitAsync();
         try { await settings.SaveAsync(_preferencesPath, CancellationToken.None); _stored = settings; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)

@@ -131,7 +131,7 @@ public sealed partial class LibraryCatalog(LibraryDatabase database, string prov
         int limit, CancellationToken cancellationToken)
     {
         var match = MatchExpression(text);
-        if (match is null || (kinds & (SearchKinds.Tracks | SearchKinds.Albums | SearchKinds.Artists)) == 0)
+        if (match is null || (kinds & (SearchKinds.Tracks | SearchKinds.Albums | SearchKinds.Artists | SearchKinds.Books)) == 0)
             return Task.FromResult<Result<CatalogItems, ProviderError>>(CatalogItems.Empty);
 
         return Read<CatalogItems>(connection => new CatalogItems(
@@ -141,11 +141,12 @@ public sealed partial class LibraryCatalog(LibraryDatabase database, string prov
                 WHERE track_search MATCH $match
                 ORDER BY
                 """ + Kept + " DESC, track_search.rank", offset, limit, ("$match", match), ("$provider", providerId)),
-            !kinds.HasFlag(SearchKinds.Albums) ? [] : [.. AlbumRows(connection, """
+            [.. !kinds.HasFlag(SearchKinds.Albums) ? Enumerable.Empty<Album>() : AlbumRows(connection, """
                 WHERE al.id IN (SELECT t.album_id FROM track_search JOIN track t ON t.id = track_search.rowid
                                 WHERE track_search MATCH $match)
                 """, ("$match", $"{{album artist}} : ({match})"))
-                .OrderBy(a => a.Title, BrowseIndex.Order).Skip(offset).Take(limit).Select(ToAlbum)],
+                .OrderBy(a => a.Title, BrowseIndex.Order).Skip(offset).Take(limit).Select(ToAlbum),
+                .. !kinds.HasFlag(SearchKinds.Books) ? Enumerable.Empty<Album>() : FoundBooks(connection, match, offset, limit)],
             !kinds.HasFlag(SearchKinds.Artists) ? [] : Rows(connection, """
                 SELECT ar.id, ar.name FROM artist ar
                 WHERE ar.id IN (SELECT t.artist_id FROM track_search JOIN track t ON t.id = track_search.rowid
@@ -742,6 +743,18 @@ public sealed partial class LibraryCatalog(LibraryDatabase database, string prov
                     discs.All(a => a.Album.DurationMs is not null) ? discs.Sum(a => a.Album.DurationMs) : null);
             })
             .OrderBy(b => b.Title, BrowseIndex.Order).ThenBy(b => b.Artist ?? "", BrowseIndex.Order).ThenBy(b => b.Id)];
+
+    // The books with an audiobook track matching on its album or artist, as albums whose id is the book's node.
+    private IEnumerable<Album> FoundBooks(SqliteConnection connection, string match, int offset, int limit)
+    {
+        var albums = Rows(connection, """
+            SELECT DISTINCT t.album_id FROM track_search JOIN track t ON t.id = track_search.rowid
+            WHERE track_search MATCH $match AND t.media_type = 'audiobook' AND t.album_id IS NOT NULL
+            """, r => r.GetInt64(0), ("$match", $"{{album artist}} : ({match})")).ToHashSet();
+        return albums.Count == 0 ? [] : Books(connection).Where(b => b.Albums.Any(albums.Contains)).Skip(offset).Take(limit)
+            .Select(b => new Album(providerId, BookPrefix + Invariant(b.Id), b.Title, b.Artist, b.Year,
+                new ArtworkRef(providerId, AlbumPrefix + Invariant(b.Albums[0]))));
+    }
 
     // An album's title without its disc suffix, and the disc it names.
     public static (string Title, int? Disc) BookTitle(string album)

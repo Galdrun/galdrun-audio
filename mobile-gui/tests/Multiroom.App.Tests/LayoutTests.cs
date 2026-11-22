@@ -187,12 +187,12 @@ public sealed class LayoutTests
             Assert.Equal(control.Bounds.Width, cover.Bounds.Width, 1); Assert.Equal(cover.Bounds.Width, cover.Bounds.Height, 1);
             Assert.Equal(default, control.FindControl<ArtworkView>("ArtistCover")!.CornerRadius);
             Assert.True(control.FindControl<Button>("ArtistPlay")!.IsEffectivelyVisible);
-            // The tracks (no node of their own here) come first, then the albums, each as a row.
+            // The albums, each as a row; the top tracks are left out.
             var shown = control.GetVisualDescendants().OfType<TextBlock>().Where(t => t.IsEffectivelyVisible && t.Classes.Contains("section")).Select(t => t.Text ?? "").ToArray();
-            Assert.Equal(["Top tracks", "Albums"], shown);
+            Assert.Equal(["Albums"], shown);
             var buttons = control.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible).ToArray();
-            Assert.Contains(buttons, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Days" && b.Command == browser.OpenRowCommand);
-            Assert.Contains(buttons, b => Avalonia.Automation.AutomationProperties.GetName(b) == "One" && b.Command == browser.PlayTrackCommand);
+            Assert.Contains(buttons, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Days" && b.Tag is MediaRow { Title: "Days" });
+            Assert.DoesNotContain(buttons, b => Avalonia.Automation.AutomationProperties.GetName(b) == "One");
         }
         finally { window.Close(); }
     }

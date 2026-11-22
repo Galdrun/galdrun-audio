@@ -119,18 +119,9 @@
    <Border Grid.Row="2" IsVisible="{Binding Home.OpenShelf.HasTabs, FallbackValue=False}" Background="#1B2123" Margin="0,-6,0,14">
     <ItemsControl x:Name="ShelfTabs" ItemsSource="{Binding Home.OpenShelf.Tabs, FallbackValue={x:Null}}">
      <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+     <!-- Button.tab: App.axaml. -->
      <ItemsControl.Styles>
-      <Style Selector="Button.tab"><Setter Property="Background" Value="Transparent" /><Setter Property="CornerRadius" Value="0" />
-       <Setter Property="Padding" Value="4,0" /><Setter Property="MinHeight" Value="44" /><Setter Property="HorizontalAlignment" Value="Stretch" />
-       <Setter Property="HorizontalContentAlignment" Value="Center" />
-       <Setter Property="BorderThickness" Value="1,0,0,0" /><Setter Property="BorderBrush" Value="#3A4446" /></Style>
       <Style Selector="ContentPresenter:nth-child(1) > Button.tab"><Setter Property="BorderThickness" Value="0" /></Style>
-      <Style Selector="Button.tab.selected"><Setter Property="Background" Value="#2C372F" /></Style>
-      <Style Selector="Button.tab:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.tab:pressed /template/ ContentPresenter#PART_ContentPresenter">
-       <Setter Property="Background" Value="{Binding $parent[Button].Background}" /><Setter Property="BorderBrush" Value="{Binding $parent[Button].BorderBrush}" /></Style>
-      <Style Selector="Button.tab:pressed"><Setter Property="RenderTransform" Value="{x:Null}" /></Style>
-      <Style Selector="Button.tab TextBlock"><Setter Property="Foreground" Value="#9BA6A3" /></Style>
-      <Style Selector="Button.tab.selected TextBlock"><Setter Property="Foreground" Value="#CBEC97" /></Style>
      </ItemsControl.Styles>
      <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:ShelfTab">
       <Button Classes="tab" Classes.selected="{Binding IsSelected}" ContextRequested="RequestTabActions" Command="{Binding $parent[vm:HomeView].((vm:ShellViewModel)DataContext).Home.OpenShelf.ShowKindCommand}"

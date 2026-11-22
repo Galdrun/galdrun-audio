@@ -37,6 +37,22 @@
         </Grid>
       </Button>
     </DataTemplate>
+    <!-- A node of a detail page or a section list: its picture, title and subtitle; a tap opens it, a long press
+         (or right-click) gives an album's or artist's play choices. -->
+    <DataTemplate x:Key="NodeRow" x:DataType="vm:MediaRow">
+      <Button Tag="{Binding}" Click="OpenRow" ContextRequested="RequestRowActions"
+              Background="Transparent" CornerRadius="8" Padding="8,8" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+              AutomationProperties.Name="{Binding Title}">
+        <Grid ColumnDefinitions="Auto,*">
+          <vm:ArtworkView Reference="{Binding Artwork}" Cache="{Binding Cache}" Width="48" Height="48" />
+          <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center" Margin="12,0,0,0">
+            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="12" TextTrimming="CharacterEllipsis"
+                       IsVisible="{Binding Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+        </Grid>
+      </Button>
+    </DataTemplate>
   </UserControl.Resources>
   <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto">
     <!-- Back is the system's: Android's back button, or a right click on the desktop (MainView). -->
@@ -73,7 +89,7 @@
       <StackPanel x:Name="AlbumContent" Classes="detail" Spacing="16">
         <Grid x:Name="AlbumHeader" Classes="cover">
           <Viewbox Stretch="Uniform">
-            <vm:ArtworkView x:Name="AlbumCover" Reference="{Binding Album.ArtworkId, FallbackValue={x:Null}}" Cache="{Binding Artwork}" Width="480" Height="480" CornerRadius="0" />
+            <vm:ArtworkView x:Name="AlbumCover" Reference="{Binding Album.ArtworkId, FallbackValue={x:Null}}" Cache="{Binding Artwork}" Width="480" Height="480" CornerRadius="0" PlainWhileLoading="True" />
           </Viewbox>
           <Border x:Name="AlbumActions" Classes="actions">
             <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -114,7 +130,7 @@
       <StackPanel Classes="detail" Spacing="16">
         <Grid x:Name="ArtistHeader" Classes="cover">
           <Viewbox Stretch="Uniform">
-            <vm:ArtworkView x:Name="ArtistCover" Reference="{Binding Header.Artwork, FallbackValue={x:Null}}" Cache="{Binding Artwork}" Width="480" Height="480" CornerRadius="0" />
+            <vm:ArtworkView x:Name="ArtistCover" Reference="{Binding Header.Artwork, FallbackValue={x:Null}}" Cache="{Binding Artwork}" Width="480" Height="480" CornerRadius="0" PlainWhileLoading="True" />
           </Viewbox>
           <Border Classes="actions">
             <Button x:Name="ArtistPlay" Classes="play" Command="{Binding PlayArtistCommand}" HorizontalAlignment="Center" AutomationProperties.Name="Play artist" ToolTip.Tip="Play">
@@ -127,26 +143,21 @@
           <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:DetailSection">
             <StackPanel Spacing="4" Margin="0,0,0,16">
               <TextBlock Text="{Binding Title}" Classes="section" IsVisible="{Binding HasTitle}" Margin="8,0,0,4" />
-              <ItemsControl ItemsSource="{Binding Rows}">
-                <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:MediaRow">
-                  <Button Command="{Binding $parent[vm:BrowserView].((vm:BrowserViewModel)DataContext).OpenRowCommand}" CommandParameter="{Binding}"
-                          Background="Transparent" CornerRadius="8" Padding="8,8" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                          AutomationProperties.Name="{Binding Title}">
-                    <Grid ColumnDefinitions="Auto,*">
-                      <vm:ArtworkView Reference="{Binding Artwork}" Cache="{Binding Cache}" Width="48" Height="48" />
-                      <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center" Margin="12,0,0,0">
-                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="12" TextTrimming="CharacterEllipsis"
-                                   IsVisible="{Binding Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                      </StackPanel>
-                    </Grid>
-                  </Button>
-                </DataTemplate></ItemsControl.ItemTemplate>
-              </ItemsControl>
+              <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource NodeRow}" />
               <ItemsControl ItemsSource="{Binding Tracks}" ItemTemplate="{StaticResource TrackRow}" />
             </StackPanel>
           </DataTemplate></ItemsControl.ItemTemplate>
         </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+    <!-- A section's whole list: its title, then rows as an artist page's; more load at the end. -->
+    <ScrollViewer x:Name="SectionPage" Grid.Row="3" IsVisible="{Binding IsSectionList}" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden">
+      <StackPanel Spacing="4" Margin="16,0,16,16">
+        <TextBlock x:Name="SectionTitle" Text="{Binding Title}" Classes="section" TextTrimming="CharacterEllipsis" Margin="8,0,0,0" />
+        <TextBlock Text="{Binding Summary}" Classes="muted" IsVisible="{Binding Summary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Margin="8,0,0,8" />
+        <ItemsControl ItemsSource="{Binding SectionList.Rows, FallbackValue={x:Null}}" ItemTemplate="{StaticResource NodeRow}" />
+        <ItemsControl ItemsSource="{Binding SectionList.Tracks, FallbackValue={x:Null}}" ItemTemplate="{StaticResource TrackRow}" />
+        <Button Classes="galdrun" Content="Load more" Command="{Binding MoreCommand}" IsVisible="{Binding HasMore}" HorizontalAlignment="Stretch" Margin="0,8,0,0" />
       </StackPanel>
     </ScrollViewer>
     <Grid Grid.Row="3" IsVisible="{Binding IsBrowsing}" Margin="16,0">
@@ -158,7 +169,7 @@
             <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:MediaRow">
               <Grid Margin="0,0,8,8">
                 <TextBlock Text="{Binding Title}" IsVisible="{Binding IsHeading}" Classes="section" Margin="4,20,0,8" />
-                <Button Tag="{Binding}" Click="SelectCard" IsVisible="{Binding IsContent}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="12" Background="#1B2123" AutomationProperties.Name="{Binding Title}">
+                <Button Tag="{Binding}" Click="SelectCard" ContextRequested="RequestRowActions" IsVisible="{Binding IsContent}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="12" Background="#1B2123" AutomationProperties.Name="{Binding Title}">
                   <Grid>
                     <StackPanel IsVisible="{Binding Grid}" Spacing="8">
                       <vm:ArtworkView Reference="{Binding Artwork}" Cache="{Binding Cache}" Width="136" Height="136" HorizontalAlignment="Center" />

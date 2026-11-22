@@ -122,6 +122,51 @@ public sealed class BrowserTests
     }
 
     [Fact]
+    public async Task A_complete_section_has_no_more_row_and_a_section_list_shows_as_rows_in_server_order()
+    {
+        var older = new BrowseNode("tidal", "album:1", "Older", Kind: BrowseKind.Album, Subtitle: "1990", Playable: true);
+        var newer = new BrowseNode("tidal", "album:2", "Newer", Kind: BrowseKind.Album, Subtitle: "2020", Playable: true);
+        var section = new BrowseNode("tidal", "artist:7/albums", "Albums", Kind: BrowseKind.Section);
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp((r, _) => Task.FromResult(Reply(
+            r.RequestUri!.Query.Contains("albums", StringComparison.Ordinal)
+                ? new BrowsePage([older, newer], Empty, Node: section, Total: 2)
+                : new BrowsePage([], Empty, Sections: [new BrowseSection("Albums", [older, newer], Empty, More: section, Total: 2)])))));
+        var vm = Browser(api); await vm.OpenProviderAsync(Provider("tidal"));
+        Assert.Equal(["Albums", "Older", "Newer"], vm.Items.Select(i => i.Title));
+
+        await vm.OpenNodeAsync(new NodeReference("tidal", "artist:7/albums"), "Albums");
+        Assert.True(vm.IsSectionList); Assert.False(vm.IsBrowsing); Assert.False(vm.ShowHeader);
+        Assert.Equal(["Older", "Newer"], vm.SectionList!.Rows.Select(r => r.Title));
+    }
+
+    [Fact]
+    public async Task Opening_a_row_or_going_back_shows_nothing_of_browse_until_the_page_has_loaded()
+    {
+        var artist = new BrowseNode("tidal", "artist:5", "Aurora", Kind: BrowseKind.Artist, Playable: true);
+        var album = new BrowseNode("tidal", "album:1", "Days", Kind: BrowseKind.Album, Playable: true);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var slow = false;
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp(async (r, _) =>
+        {
+            if (slow) await release.Task;
+            return Reply(r.RequestUri!.Query.Contains("album", StringComparison.Ordinal)
+                ? new BrowsePage([], Empty with { Tracks = [new("tidal", "track:1", "One")] }, Node: album)
+                : new BrowsePage([], Empty, Node: artist, Sections: [new("Albums", [album], Empty)]));
+        }));
+        var vm = Browser(api); await vm.OpenNodeAsync(new NodeReference("tidal", "artist:5"), "Aurora");
+        slow = true;
+        var opening = vm.OpenRowCommand.ExecuteAsync(vm.ArtistSections[0].Rows[0]);
+        Assert.False(vm.IsBrowsing);
+        release.SetResult(); await opening;
+        Assert.True(vm.IsAlbum); Assert.False(vm.IsBrowsing);
+        release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var back = vm.BackCommand.ExecuteAsync(null);
+        Assert.False(vm.IsBrowsing);
+        release.SetResult(); await back;
+        Assert.True(vm.IsArtist);
+    }
+
+    [Fact]
     public async Task Letter_jump_and_subsequent_page_use_server_offset_without_counting_header()
     {
         var calls = new List<string>();
@@ -157,16 +202,49 @@ public sealed class BrowserTests
     [Fact]
     public async Task Search_keeps_provider_identity_and_partial_failures()
     {
+        var requests = new List<string>();
         using var api = new MultiroomClient("http://fake", handler: new FakeHttp((r, _) =>
         {
-            Assert.Equal("/api/v1/search?q=Night&offset=0&limit=60", r.RequestUri!.PathAndQuery);
+            requests.Add(r.RequestUri!.PathAndQuery);
             return Task.FromResult(Reply(new SearchResult("Night", new CatalogItems(
                 [new("local", "track:1", "Night"), new("tidal", "track:1", "Night")], [], [], []),
                 [new("local", 1, 0, 0, 0), new("tidal", 1, 0, 0, 0)], [new("fourth", "timeout", "too slow")])));
         }));
-        var vm = Browser(api); vm.Query = "Night"; await vm.SearchCommand.ExecuteAsync(null);
-        Assert.Equal(2, vm.Items.Count(i => !i.IsHeading)); Assert.Equal("Tracks", vm.Items[0].Title);
-        Assert.Contains("fourth: timeout", vm.Notice); Assert.Contains("local: 1", vm.Summary);
+        var vm = new SearchViewModel(action => action(api, TestContext.Current.CancellationToken)) { Query = "Night" };
+        await vm.SearchCommand.ExecuteAsync(null);
+        Assert.Equal("/api/v1/search?q=Night&offset=0&limit=60&types=tracks&mediaType=music", requests[^1]);
+        Assert.Equal(["local", "tidal"], vm.Results.Select(r => ((Track)r.Item!.Media).ProviderId));
+        Assert.Contains("fourth: timeout", vm.Notice); Assert.Equal("2 results for “Night”", vm.Status);
+        Assert.Equal(["local", "tidal"], vm.Results.Select(r => r.Source));
+        // Opening a result keeps the search among the kind's recent ones, the newest first, once.
+        vm.OpenCommand.Execute(vm.Results[0]); vm.OpenCommand.Execute(vm.Results[1]);
+        Assert.Equal(["Night"], vm.RecentOfKind);
+        // The "…" kinds search their own types, at once for the query already typed.
+        vm.ChooseKindCommand.Execute(SearchViewModel.Radio); await Task.Yield();
+        Assert.True(vm.IsMore); Assert.Equal("Radio", vm.MoreLabel);
+        Assert.Equal("/api/v1/search?q=Night&offset=0&limit=60&types=stations", requests[^1]);
+        // One source searched alone.
+        vm.ChooseScopeCommand.Execute(new SearchScope("tidal", "Tidal")); await Task.Yield();
+        Assert.True(vm.IsOneSource);
+        Assert.Equal("/api/v1/search?q=Night&offset=0&limit=60&types=stations&providers=tidal", requests[^1]);
+    }
+
+    [Fact]
+    public async Task Audiobook_search_lists_whole_books_that_open_as_their_node()
+    {
+        using var api = new MultiroomClient("http://fake", handler: new FakeHttp((r, _) =>
+        {
+            Assert.Equal("/api/v1/search?q=long&offset=0&limit=60&types=books", r.RequestUri!.PathAndQuery);
+            return Task.FromResult(Reply(new SearchResult("long", new CatalogItems([], [new("local", "book:4", "Long Book", "Narrator")], [], []),
+                [new("local", 0, 1, 0, 0)], [])));
+        }));
+        var vm = new SearchViewModel(action => action(api, TestContext.Current.CancellationToken)) { Query = "long", Kind = SearchViewModel.Audiobooks };
+        await vm.SearchCommand.ExecuteAsync(null);
+        var book = Assert.Single(vm.Results);
+        Assert.Equal(("Book", "local"), (book.Item!.Kind, book.Source));
+        NodeReference? opened = null; vm.OpenRequested += (node, _) => opened = node;
+        vm.OpenCommand.Execute(book);
+        Assert.Equal(new NodeReference("local", "book:4"), opened);
     }
 
     [Fact]
@@ -215,7 +293,7 @@ public sealed class BrowserTests
     }
 
     [Fact]
-    public async Task An_artist_page_lists_its_tracks_as_one_row_then_albums_newest_first_singles_and_similar_artists()
+    public async Task An_artist_page_lists_albums_newest_first_singles_and_similar_artists_without_its_top_tracks()
     {
         var artist = new BrowseNode("tidal", "artist:5", "Aurora", "artist:5", BrowseKind.Artist, Playable: true);
         Track[] top = [new("tidal", "track:1", "One", "Aurora") { ArtworkId = "album:9" }, new("tidal", "track:2", "Two", "Aurora")];
@@ -237,23 +315,20 @@ public sealed class BrowserTests
         await vm.OpenNodeAsync(new NodeReference("tidal", "artist:5"), "Aurora");
 
         Assert.True(vm.IsArtist); Assert.True(vm.IsDetail); Assert.False(vm.IsAlbum); Assert.False(vm.IsBrowsing); Assert.False(vm.ShowOptions);
-        Assert.Equal(["", "Albums", "Singles & EPs", "Similar artists"], vm.ArtistSections.Select(s => s.Title));
-        // The top tracks: one row opening them all, with their first titles and the first one's picture.
-        var tracks = Assert.Single(vm.ArtistSections[0].Rows);
-        Assert.Equal(("Top tracks", "One, Two", "album:9"), (tracks.Title, tracks.Subtitle, tracks.Artwork)); Assert.Empty(vm.ArtistSections[0].Tracks);
+        Assert.Equal(["Albums", "Singles & EPs", "Similar artists"], vm.ArtistSections.Select(s => s.Title));
+        Assert.DoesNotContain(vm.ArtistSections.SelectMany(s => s.Rows), r => r.Title == "Top tracks");
         // Albums newest first, then their "More"; the artist's own name is left out of each line.
-        Assert.Equal(["Nights", "Mid", "Days", "More Albums"], vm.ArtistSections[1].Rows.Select(r => r.Title));
-        Assert.Equal("2019 · 10 tracks", vm.ArtistSections[1].Rows[0].Subtitle);
-        Assert.Equal("Other", Assert.Single(vm.ArtistSections[3].Rows).Title);
+        Assert.Equal(["Nights", "Mid", "Days", "More Albums"], vm.ArtistSections[0].Rows.Select(r => r.Title));
+        Assert.Equal("2019 · 10 tracks", vm.ArtistSections[0].Rows[0].Subtitle);
+        Assert.Equal("Other", Assert.Single(vm.ArtistSections[2].Rows).Title);
 
         vm.PlayArtistCommand.Execute(null);
         Assert.Equal(("Artist", new NodeReference("tidal", "artist:5")), (sheet!.Kind, sheet.Items.Node));
         // A row opens at a tap; back returns to the artist.
-        await vm.OpenRowCommand.ExecuteAsync(tracks);
-        Assert.Contains("node=artist%3A5%2Ftoptracks", opened[^1]); Assert.True(vm.CanBack);
+        await vm.OpenRowCommand.ExecuteAsync(vm.ArtistSections[0].Rows[0]);
+        Assert.Contains("node=album%3A2", opened[^1]); Assert.True(vm.CanBack);
         await vm.BackCommand.ExecuteAsync(null);
-        await vm.OpenRowCommand.ExecuteAsync(vm.ArtistSections[1].Rows[0]);
-        Assert.Contains("node=album%3A2", opened[^1]);
+        Assert.True(vm.IsArtist);
     }
 
     [Fact]

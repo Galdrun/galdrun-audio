@@ -52,14 +52,18 @@ public sealed partial class ApiEndpoint
     // is slow, disabled or failing is named in Failures.
     private async Task<IResult> SearchAllAsync(HttpContext context)
     {
-        var query = SearchQuery(context.Request, "mediaType");
+        var query = SearchQuery(context.Request, "mediaType", "providers");
         if (!query.IsSuccess)
             return Error(query.Failure);
         var (text, kinds, offset, limit) = query.Value;
         var type = MediaTypeQuery(context.Request);
         if (!type.IsSuccess)
             return Error(type.Failure);
-        var found = await search.SearchAsync(text, kinds, offset, limit, context.RequestAborted).ConfigureAwait(false);
+        // providers: a comma-separated list of provider ids to ask; every one when absent.
+        var asked = context.Request.Query["providers"].ToString() is { Length: > 0 } ids
+            ? ids.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            : null;
+        var found = await search.SearchAsync(text, kinds, offset, limit, asked, context.RequestAborted).ConfigureAwait(false);
         return Json(type.Value is { } only ? UnifiedSearch.OfType(found, only) : found);
     }
 
@@ -82,9 +86,9 @@ public sealed partial class ApiEndpoint
     }
 
     private static Result<(string Text, SearchKinds Kinds, int Offset, int Limit), ApiRequestError> SearchQuery(
-        HttpRequest request, string? also = null)
+        HttpRequest request, params string[] also)
     {
-        if (UnknownQuery(request, also is null ? ["q", "types", "offset", "limit"] : ["q", "types", "offset", "limit", also])
+        if (UnknownQuery(request, ["q", "types", "offset", "limit", .. also])
             is { } unknown)
         {
             return unknown;
@@ -100,7 +104,7 @@ public sealed partial class ApiEndpoint
     }
 
     // types: a comma-separated list of tracks, albums, artists, playlists,
-    // stations or all, in any case (Tidal's ARTISTS,ALBUMS too); all when absent.
+    // stations, books or all, in any case (Tidal's ARTISTS,ALBUMS too); all when absent.
     private static Result<SearchKinds, ApiRequestError> KindsQuery(HttpRequest request)
     {
         var text = request.Query["types"].ToString();

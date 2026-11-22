@@ -15,11 +15,8 @@ public sealed partial class BrowserViewModel : ObservableObject
     private string? _node;
     private int _offset;
     private string? _letter;
-    private bool _search;
     private CancellationTokenSource? _request;
     private int _columns = 3;
-    private bool _searchVisible;
-    private CancellationTokenSource? _debounce;
     public event Action? QueueChanged;
     public event Action<string, MediaRow>? CollectionRequested;
     // The play choices (the shell's item sheet) for the album or one of its tracks.
@@ -38,7 +35,6 @@ public sealed partial class BrowserViewModel : ObservableObject
     public ObservableCollection<MediaBand> Bands { get; } = [];
     [ObservableProperty] private MediaRow? _selectedItem;
     [ObservableProperty] private string _title = "Your music";
-    [ObservableProperty] private string _query = "";
     [ObservableProperty] private string _filter = "";
     [ObservableProperty] private string? _sort;
     [ObservableProperty] private IReadOnlyList<string> _sorts = [];
@@ -56,8 +52,17 @@ public sealed partial class BrowserViewModel : ObservableObject
     [ObservableProperty] private bool _isCompact;
     [ObservableProperty] private bool _optionsExpanded = true;
     public bool HasHeader => Header is not null;
-    public bool ShowHeader => HasHeader && !IsCompact && !IsDetail;
-    public bool ShowCompactHeader => HasHeader && IsCompact && !IsDetail;
+    public bool ShowHeader => HasHeader && !IsCompact && !IsDetail && !IsSectionList;
+    public bool ShowCompactHeader => HasHeader && IsCompact && !IsDetail && !IsSectionList;
+    // A section's whole list ("More albums" of an artist, a Tidal collection's albums): its title, then its rows as
+    // an artist page's (picture, title, subtitle; tracks as an album's), in the server's order.
+    [ObservableProperty] private DetailSection? _sectionList;
+    public bool IsSectionList => SectionList is not null;
+    partial void OnSectionListChanged(DetailSection? value)
+    {
+        foreach (var name in new[] { nameof(IsSectionList), nameof(IsBrowsing), nameof(ShowHeader), nameof(ShowCompactHeader) })
+            OnPropertyChanged(name);
+    }
 
     // An album's page: its cover, its marks and play choices, then its tracks.
     [ObservableProperty, NotifyPropertyChangedFor(nameof(CanMarkAlbum), nameof(AlbumLiked), nameof(AlbumFavorite))]
@@ -80,7 +85,7 @@ public sealed partial class BrowserViewModel : ObservableObject
     // otherwise first show a list page's title, and the shell its header (ShellViewModel.ShowContentHeader).
     [ObservableProperty] private bool _isOpening;
     partial void OnIsOpeningChanged(bool value) => OnPropertyChanged(nameof(IsBrowsing));
-    public bool IsBrowsing => !IsDetail && !IsOpening;
+    public bool IsBrowsing => !IsDetail && !IsOpening && !IsSectionList;
     public int Columns => _columns;
     public string AlbumSummary
     {
@@ -131,19 +136,6 @@ public sealed partial class BrowserViewModel : ObservableObject
     partial void OnLettersChanged(IReadOnlyList<BrowseLetter> value) { OnPropertyChanged(nameof(HasLetters)); OnPropertyChanged(nameof(HasOptions)); OnPropertyChanged(nameof(ShowOptions)); }
     partial void OnFilterableChanged(bool value) { OnPropertyChanged(nameof(HasOptions)); OnPropertyChanged(nameof(ShowOptions)); }
     partial void OnNoticeChanged(string value) { OnPropertyChanged(nameof(HasNotice)); OnPropertyChanged(nameof(HasSelectionOrNotice)); }
-    partial void OnQueryChanged(string value)
-    {
-        if (!_searchVisible) return;
-        _debounce?.Cancel(); _debounce?.Dispose(); _debounce = new();
-        CancelRequest();
-        _ = DebouncedSearchAsync(_debounce.Token);
-    }
-    private async Task DebouncedSearchAsync(CancellationToken ct)
-    {
-        try { await Task.Delay(350, ct); await SearchAsync(); }
-        catch (OperationCanceledException) { }
-    }
-    public void SetSearchVisible(bool visible) { _searchVisible = visible; if (!visible) _debounce?.Cancel(); }
     public void SetWidth(double width)
     {
         IsCompact = width < 550;
@@ -166,18 +158,18 @@ public sealed partial class BrowserViewModel : ObservableObject
     public Task OpenProviderAsync(ProviderView provider)
     {
         _history.Clear(); _provider = provider.Id; _node = null; Title = provider.DisplayName ?? provider.Id;
-        _search = false; ResetOptions(); UpdateBreadcrumb(); ClearPage();
+        ResetOptions(); UpdateBreadcrumb(); ClearPage();
         return LoadAsync(false);
     }
     // Opens a node from elsewhere (Home) as a fresh page, without history.
     public Task OpenNodeAsync(NodeReference node, string title)
     {
         _history.Clear(); _provider = node.Provider; _node = node.Id; Title = title;
-        _search = false; ResetOptions(); UpdateBreadcrumb(); ClearPage(); IsOpening = true;
+        ResetOptions(); UpdateBreadcrumb(); ClearPage(); IsOpening = true;
         return LoadAsync(false);
     }
     private void CancelRequest() => _request?.Cancel();
-    public void Cancel() { CancelRequest(); _debounce?.Cancel(); IsLoading = false; IsOpening = false; }
+    public void Cancel() { CancelRequest(); IsLoading = false; IsOpening = false; }
     public void Reset()
     {
         Cancel(); _provider = null; _node = null; _history.Clear(); _offset = 0; ClearPage();
@@ -186,7 +178,7 @@ public sealed partial class BrowserViewModel : ObservableObject
     // Another page opens empty, never showing the last one (an album, say) while it loads; a refresh keeps it.
     private void ClearPage()
     {
-        Items.Clear(); Bands.Clear(); Header = null; SelectedItem = null; HasMore = false; AlbumTracks = []; ArtistSections = []; AlbumMarks = null;
+        Items.Clear(); Bands.Clear(); Header = null; SelectedItem = null; HasMore = false; AlbumTracks = []; ArtistSections = []; SectionList = null; AlbumMarks = null;
         Summary = ""; OnPropertyChanged(nameof(IsEmpty)); OnPropertyChanged(nameof(ShowEmpty));
     }
     private void UpdateBreadcrumb()
@@ -202,18 +194,14 @@ public sealed partial class BrowserViewModel : ObservableObject
     private Task Open(BrowseNode node)
     {
         _history.Push((_provider ?? node.ProviderId, _node, Title));
-        _provider = node.ProviderId; _node = node.NodeId; Title = node.Title; _search = false; ResetOptions();
-        UpdateBreadcrumb(); ClearPage(); return LoadAsync(false);
+        _provider = node.ProviderId; _node = node.NodeId; Title = node.Title; ResetOptions();
+        // Nothing of Browse shows until the page has loaded (IsOpening), as for a node opened from Home.
+        UpdateBreadcrumb(); ClearPage(); IsOpening = true; return LoadAsync(false);
     }
     [RelayCommand] private Task BackAsync()
     {
         if (!_history.TryPop(out var page)) return Task.CompletedTask;
-        (_provider, _node, Title) = page; _search = false; ResetOptions(); UpdateBreadcrumb(); ClearPage(); return LoadAsync(false);
-    }
-    [RelayCommand] private Task SearchAsync()
-    {
-        _debounce?.Cancel(); _history.Clear(); _search = true; _offset = 0; Title = "Search results"; UpdateBreadcrumb(); ClearPage();
-        return LoadAsync(false);
+        (_provider, _node, Title) = page; ResetOptions(); UpdateBreadcrumb(); ClearPage(); IsOpening = true; return LoadAsync(false);
     }
     [RelayCommand] private Task ApplyAsync() { _offset = 0; _letter = SelectedLetter?.Letter; return LoadAsync(false); }
     [RelayCommand] private Task MoreAsync() => HasMore && !IsLoading ? LoadAsync(true) : Task.CompletedTask;
@@ -230,18 +218,6 @@ public sealed partial class BrowserViewModel : ObservableObject
             try
             {
             IReadOnlyList<MediaRow> rows;
-            if (_search)
-            {
-                if (string.IsNullOrWhiteSpace(Query)) { Items.Clear(); Bands.Clear(); Header = null; HasMore = false; Summary = ""; Notice = "Enter an artist, album, track or station."; OnPropertyChanged(nameof(IsEmpty)); OnPropertyChanged(nameof(ShowEmpty)); return; }
-                var result = await api.SearchAsync(Query, append ? _offset : 0, ct);
-                ct.ThrowIfCancellationRequested();
-                rows = MediaRow.FromSearch(result.Items);
-                Summary = string.Join(" · ", result.Sources.Select(s => $"{s.Provider}: {s.Tracks + s.Albums + s.Artists + s.Stations + s.Playlists}"));
-                Notice = string.Join("\n", result.Failures.Select(f => $"{f.Provider}: {f.Error}"));
-                HasMore = result.Sources.Any(s => new[] { s.Tracks, s.Albums, s.Artists, s.Stations, s.Playlists }.Max() >= 60);
-                _offset += 60; IsGrid = false; Sorts = []; Letters = []; Filterable = false; Header = null;
-            }
-            else
             {
                 if (_provider is null) return;
                 var page = await api.BrowseAsync(_provider, _node, append ? _offset : 0, Sort, Filter, append ? null : _letter, ct);
@@ -252,7 +228,9 @@ public sealed partial class BrowserViewModel : ObservableObject
                 {
                     list.Add(new MediaRow(section.Title, section.Total is { } n ? $"{n} items" : "", IsHeading: true));
                     list.AddRange(section.Nodes.Select(n => MediaRow.From(n) with { Grid = section.Layout == BrowseLayout.Grid })); list.AddRange(MediaRow.From(section.Items));
-                    if (section.More is { } more) list.Add(MediaRow.From(more) with { Title = $"More {section.Title}" });
+                    // "More ..." only when the section shows part of its list.
+                    if (section.More is { } more && (section.Total is not { } all || all > section.Nodes.Count + section.Items.Tracks.Count))
+                        list.Add(MediaRow.From(more) with { Title = $"More {section.Title}" });
                 }
                 rows = list;
                 Sorts = page.Sorts ?? []; Sort = page.Sort; Letters = page.Letters ?? []; Filterable = page.Filterable;
@@ -272,7 +250,8 @@ public sealed partial class BrowserViewModel : ObservableObject
             var tracks = Items.Select(r => r.Track).OfType<Track>().ToArray();
             AlbumTracks = Header?.Node?.Kind == BrowseKind.Album && Items.Count > 0 && tracks.Length == Items.Count
                 ? Items.Select((row, i) => new AlbumTrack(i + 1, row, tracks)).ToArray() : [];
-            ArtistSections = !_search && Header?.Node is { Kind: BrowseKind.Artist } artist ? DetailSection.Of(Items, artist.Title) : [];
+            ArtistSections = Header?.Node is { Kind: BrowseKind.Artist } artist ? DetailSection.Of(Items, artist.Title) : [];
+            SectionList = Header?.Node?.Kind == BrowseKind.Section && Items.Count > 0 ? DetailSection.List(Items) : null;
             AlbumMarks = null;
             if (AlbumRef is { } mark)
             {
@@ -317,6 +296,24 @@ public sealed partial class BrowserViewModel : ObservableObject
         if (Header?.Node is { Kind: BrowseKind.Artist } node && HomeItem.Of(new Artist(node.ProviderId, node.NodeId, node.Title) { ArtworkId = node.ArtworkId }) is { } item)
             SheetRequested?.Invoke(item);
     }
+    // A long press on a row: an album's, artist's or book's play choices (a track's or station's too); false for
+    // anything else, which has none.
+    public bool RequestActions(MediaRow row)
+    {
+        var item = row.Node switch
+        {
+            { Kind: BrowseKind.Album } n when n.NodeId.StartsWith("book:", StringComparison.Ordinal) =>
+                HomeItem.Of(new Audiobook($"{n.ProviderId}:{n.NodeId}", n.Title, ArtistOf(n.Subtitle)) { ArtworkId = n.ArtworkId }),
+            { Kind: BrowseKind.Album } n => HomeItem.Of(new Album(n.ProviderId, n.NodeId, n.Title, ArtistOf(n.Subtitle)) { ArtworkId = n.ArtworkId }),
+            { Kind: BrowseKind.Artist } n => HomeItem.Of(new Artist(n.ProviderId, n.NodeId, n.Title) { ArtworkId = n.ArtworkId }),
+            null when row.Track is { } t => HomeItem.Of(t),
+            null when row.Station is { } s => HomeItem.Of(s),
+            _ => null,
+        };
+        if (item is null) return false;
+        SheetRequested?.Invoke(item);
+        return true;
+    }
     [RelayCommand] private void PlayTrack(AlbumTrack? track) { if (track?.Row.Track is { } t) SheetRequested?.Invoke(HomeItem.InList(t, track.List)); }
 
     [RelayCommand] private Task QueueAsync(string placement) => _execute(async (api, ct) =>
@@ -346,22 +343,6 @@ public sealed record MediaRow(string Title, string Subtitle, BrowseNode? Node = 
     public bool IsContent => !IsHeading;
     public string? Artwork => Node?.ArtworkId ?? Track?.ArtworkId ?? Station?.ArtworkId;
     public bool Playable => Track is not null || Station is not null || Node?.Playable == true;
-    public static IReadOnlyList<MediaRow> FromSearch(CatalogItems items)
-    {
-        var result = new List<MediaRow>();
-        void Add(string title, CatalogItems category)
-        {
-            var rows = From(category);
-            if (rows.Count == 0) return;
-            result.Add(new MediaRow(title, "", IsHeading: true)); result.AddRange(rows);
-        }
-        Add("Tracks", new(items.Tracks, [], [], []));
-        Add("Albums", new([], items.Albums, [], []));
-        Add("Artists", new([], [], items.Artists, []));
-        Add("Stations", new([], [], [], items.Stations));
-        Add("Playlists", new([], [], [], [], items.Playlists));
-        return result;
-    }
     public static MediaRow From(BrowseNode n) => new(n.Title, string.Join(" · ", new[] { n.ProviderId, n.Subtitle, n.Unplayable }.Where(s => !string.IsNullOrEmpty(s))), Node: n);
     public static IReadOnlyList<MediaRow> From(CatalogItems items) => [
         ..items.Tracks.Select(t => new MediaRow(t.Title, $"{t.Artist} · {t.ProviderId}", Track: t)),
@@ -390,7 +371,8 @@ public sealed record DetailSection(string Title, IReadOnlyList<MediaRow> Rows, I
 {
     public bool HasTitle => Title.Length > 0;
 
-    // The page's rows, split at their headings: the tracks first, then the sections with albums, then the rest.
+    // The page's rows, split at their headings: the sections with albums first, then the rest. The artist's tracks
+    // (Tidal's top tracks, the library's tracks) are left out, unless the artist has nothing else.
     public static IReadOnlyList<DetailSection> Of(IEnumerable<MediaRow> rows, string artist)
     {
         var parts = new List<(string Title, List<MediaRow> Rows)>();
@@ -399,10 +381,21 @@ public sealed record DetailSection(string Title, IReadOnlyList<MediaRow> Rows, I
             if (row.IsHeading) parts.Add((row.Title, []));
             else { if (parts.Count == 0) parts.Add(("", [])); parts[^1].Rows.Add(row); }
         }
-        var sections = parts.Where(p => p.Rows.Count > 0).Select(p => Section(p.Title, p.Rows, artist)).ToArray();
+        static bool OfTracks((string Title, List<MediaRow> Rows) part) => part.Rows.Any(r => r.Track is not null);
+        var shown = parts.Where(p => p.Rows.Count > 0).ToList();
+        if (shown.Any(p => !OfTracks(p))) shown.RemoveAll(OfTracks);
+        var sections = shown.Select(p => Section(p.Title, p.Rows, artist)).ToArray();
         static int Rank(DetailSection s) => s.Tracks.Count > 0 || s.Rows.Any(r => r.Node?.Kind == BrowseKind.Section && !s.HasTitle) ? 0
             : s.Rows.Any(r => r.Node?.Kind == BrowseKind.Album) ? 1 : 2;
         return [.. sections.OrderBy(Rank)];
+    }
+
+    // A section's whole list as one section: its nodes and its tracks, as they came.
+    public static DetailSection List(IEnumerable<MediaRow> rows)
+    {
+        var tracks = rows.Select(r => r.Track).OfType<Track>().ToArray();
+        return new("", [.. rows.Where(r => r.Node is not null)],
+            [.. rows.Where(r => r.Track is not null).Select((row, i) => new AlbumTrack(i + 1, row, tracks))]);
     }
 
     private static DetailSection Section(string title, List<MediaRow> rows, string artist)
@@ -411,7 +404,7 @@ public sealed record DetailSection(string Title, IReadOnlyList<MediaRow> Rows, I
         if (tracks.Length > 0)
         {
             // The section's own node ("More Top tracks") opens all of them: one row in their place.
-            if (rows.FirstOrDefault(r => r.Node is not null) is { } all)
+            if ((rows.FirstOrDefault(r => r.Node?.Kind == BrowseKind.Section) ?? rows.FirstOrDefault(r => r.Node is not null)) is { } all)
                 return new("", [all with { Title = title, Node = all.Node! with { ArtworkId = all.Node.ArtworkId ?? tracks[0].ArtworkId },
                     Subtitle = string.Join(", ", tracks.Take(3).Select(t => t.Title)) + (tracks.Length > 3 ? ", …" : "") }], []);
             return new(title, [], [.. rows.Where(r => r.Track is not null).Select((row, i) => new AlbumTrack(i + 1, row, tracks))]);

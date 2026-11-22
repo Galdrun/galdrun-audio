@@ -27,6 +27,19 @@
     <Style Selector="Button.galdrun:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="#1B2123" /><Setter Property="Foreground" Value="#5A6462" />
     </Style>
+    <!-- A row of tabs (Home's "See all" kinds, Search's kinds), as the server GUI's: flat, equal tabs in a
+         UniformGrid on #1B2123, divided by vertical lines (the first one sets BorderThickness 0); the picked one
+         has its own background. No hover or press change. -->
+    <Style Selector="Button.tab"><Setter Property="Background" Value="Transparent" /><Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Padding" Value="4,0" /><Setter Property="MinHeight" Value="44" /><Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="BorderThickness" Value="1,0,0,0" /><Setter Property="BorderBrush" Value="#3A4446" /></Style>
+    <Style Selector="Button.tab.selected"><Setter Property="Background" Value="#2C372F" /></Style>
+    <Style Selector="Button.tab:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.tab:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{Binding $parent[Button].Background}" /><Setter Property="BorderBrush" Value="{Binding $parent[Button].BorderBrush}" /></Style>
+    <Style Selector="Button.tab:pressed"><Setter Property="RenderTransform" Value="{x:Null}" /></Style>
+    <Style Selector="Button.tab TextBlock"><Setter Property="Foreground" Value="#9BA6A3" /></Style>
+    <Style Selector="Button.tab.selected TextBlock"><Setter Property="Foreground" Value="#CBEC97" /></Style>
     <Style Selector="Border.panel"><Setter Property="Background" Value="#1B2123" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Padding" Value="20" /></Style>
     <!-- A spinning ring laid over a round button while its request is pending. -->
     <Style Selector="Arc.busy">

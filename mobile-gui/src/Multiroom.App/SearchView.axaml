@@ -1,0 +1,120 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Multiroom.App" x:Class="Multiroom.App.SearchView" x:DataType="vm:SearchViewModel">
+ <UserControl.Resources>
+  <!-- A result as an artist page's row: its picture, title and subtitle. A tap opens an album, artist or playlist
+       in Browse and gives a track or station's play choices; a long press or right-click gives the play choices. -->
+  <DataTemplate x:Key="ResultRow" x:DataType="vm:SearchRow">
+   <Button Tag="{Binding}" Click="OpenRow" ContextRequested="RequestActions" Background="Transparent" CornerRadius="0" Padding="16,8"
+    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" AutomationProperties.Name="{Binding Title}">
+    <Grid ColumnDefinitions="Auto,*,Auto">
+     <vm:ArtworkView Reference="{Binding Artwork}" Cache="{Binding Cache}" Width="48" Height="48" />
+     <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center" Margin="12,0,0,0">
+      <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+      <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="12" TextTrimming="CharacterEllipsis" IsVisible="{Binding HasSubtitle}" />
+     </StackPanel>
+     <!-- Where it comes from (Local, Tidal, Radio, ...). -->
+     <Border Grid.Column="2" Classes="source" IsVisible="{Binding HasSource}"><TextBlock Text="{Binding Source}" /></Border>
+    </Grid>
+   </Button>
+  </DataTemplate>
+ </UserControl.Resources>
+ <UserControl.Styles>
+  <Style Selector="Button.tab TextBlock"><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="FontSize" Value="13" /></Style>
+  <Style Selector="Border.source">
+   <Setter Property="Background" Value="#2C372F" /><Setter Property="CornerRadius" Value="4" /><Setter Property="Padding" Value="6,2" />
+   <Setter Property="Margin" Value="12,0,0,0" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.source TextBlock"><Setter Property="FontSize" Value="11" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="#CBEC97" /></Style>
+  <!-- The box runs edge to edge under the tabs: square, its text centred in its height. -->
+  <Style Selector="TextBox#SearchBox">
+   <Setter Property="CornerRadius" Value="0" /><Setter Property="Height" Value="52" /><Setter Property="Padding" Value="10,0" />
+   <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.recent"><Setter Property="Background" Value="Transparent" /><Setter Property="CornerRadius" Value="0" />
+   <Setter Property="Padding" Value="16,0" /><Setter Property="MinHeight" Value="48" /><Setter Property="Focusable" Value="False" />
+   <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Left" /></Style>
+  <Style Selector="Button.clear"><Setter Property="Background" Value="Transparent" /><Setter Property="Padding" Value="0" />
+   <Setter Property="Width" Value="40" /><Setter Property="MinHeight" Value="40" /><Setter Property="Height" Value="40" />
+   <Setter Property="HorizontalContentAlignment" Value="Center" /></Style>
+ </UserControl.Styles>
+ <Grid RowDefinitions="Auto,Auto,Auto,*">
+  <!-- What to search: Tracks, Artists, Albums, and "…" for the rest (its label becomes the kind picked there);
+       on the left, where to search (all sources or one), marked while one is picked. -->
+  <Border x:Name="SearchTabs" Background="#1B2123">
+   <Grid ColumnDefinitions="56,*">
+    <!-- Shows the picked source's icon (SearchScope.Icon). -->
+    <Button x:Name="SourceTab" Classes="tab" Classes.selected="{Binding IsOneSource}" Padding="0" BorderThickness="0" Click="ChooseSource"
+     AutomationProperties.Name="{Binding Scope.Label, StringFormat='Source to search: {0}'}" ToolTip.Tip="{Binding Scope.Label}">
+     <Path Data="{Binding Scope.IconGeometry}" Fill="{Binding Scope.IconFill}" Stroke="#EEF1ED" StrokeThickness="{Binding Scope.IconStroke}" StrokeJoin="Round" StrokeLineCap="Round"
+      Width="24" Height="24" />
+    </Button>
+   <UniformGrid Grid.Column="1" Rows="1">
+    <Button x:Name="TracksTab" Classes="tab" Classes.selected="{Binding IsTracks}"
+     Command="{Binding ChooseKindCommand}" CommandParameter="{x:Static vm:SearchViewModel.Tracks}" AutomationProperties.Name="Search tracks">
+     <TextBlock Text="Tracks" />
+    </Button>
+    <Button x:Name="ArtistsTab" Classes="tab" Classes.selected="{Binding IsArtists}"
+     Command="{Binding ChooseKindCommand}" CommandParameter="{x:Static vm:SearchViewModel.Artists}" AutomationProperties.Name="Search artists">
+     <TextBlock Text="Artists" />
+    </Button>
+    <Button x:Name="AlbumsTab" Classes="tab" Classes.selected="{Binding IsAlbums}"
+     Command="{Binding ChooseKindCommand}" CommandParameter="{x:Static vm:SearchViewModel.Albums}" AutomationProperties.Name="Search albums">
+     <TextBlock Text="Albums" />
+    </Button>
+    <Button x:Name="MoreTab" Classes="tab" Classes.selected="{Binding IsMore}" AutomationProperties.Name="More kinds to search">
+     <TextBlock Text="{Binding MoreLabel}" TextTrimming="CharacterEllipsis" />
+     <Button.Flyout>
+      <MenuFlyout Placement="BottomEdgeAlignedRight">
+       <MenuItem Header="Radio" Command="{Binding ChooseKindCommand}" CommandParameter="{x:Static vm:SearchViewModel.Radio}" />
+       <MenuItem Header="Audiobooks" Command="{Binding ChooseKindCommand}" CommandParameter="{x:Static vm:SearchViewModel.Audiobooks}" />
+       <MenuItem Header="Playlists" Command="{Binding ChooseKindCommand}" CommandParameter="{x:Static vm:SearchViewModel.Playlists}" />
+      </MenuFlyout>
+     </Button.Flyout>
+    </Button>
+   </UniformGrid>
+   </Grid>
+  </Border>
+  <!-- The query, searched as it is typed; a ring turns in it while the search runs, else it can be cleared. -->
+  <TextBox x:Name="SearchBox" Grid.Row="1" Text="{Binding Query}" PlaceholderText="{Binding Kind.Placeholder}" AutomationProperties.Name="Search">
+   <TextBox.KeyBindings><KeyBinding Gesture="Enter" Command="{Binding SubmitCommand}" /></TextBox.KeyBindings>
+   <TextBox.InnerLeftContent>
+    <Path Data="M 10.5,3 A 7.5,7.5 0 1 1 10.5,18 A 7.5,7.5 0 1 1 10.5,3 M 16,16 L 21,21" Stroke="#9BA6A3" StrokeThickness="1.8" StrokeLineCap="Round"
+     Width="24" Height="24" Margin="10,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" />
+   </TextBox.InnerLeftContent>
+   <TextBox.InnerRightContent>
+    <Grid Width="40" VerticalAlignment="Center">
+     <Arc x:Name="SearchBusy" Classes="busy" Width="20" Height="20" StrokeThickness="2.5" IsVisible="{Binding IsSearching}" />
+     <Button x:Name="ClearSearch" Classes="clear" Command="{Binding ClearCommand}" IsVisible="{Binding ShowClear}" AutomationProperties.Name="Clear search">
+      <Path Data="M 6,6 L 18,18 M 18,6 L 6,18" Stroke="#9BA6A3" StrokeThickness="1.8" StrokeLineCap="Round" Width="24" Height="24" />
+     </Button>
+    </Grid>
+   </TextBox.InnerRightContent>
+  </TextBox>
+  <StackPanel Grid.Row="2" Spacing="4" Margin="16,12,16,6">
+   <TextBlock x:Name="SearchStatus" Text="{Binding Status}" IsVisible="{Binding HasStatus}" Classes="muted" TextTrimming="CharacterEllipsis" />
+   <TextBlock Text="{Binding Notice}" IsVisible="{Binding HasNotice}" Classes="muted" FontSize="12" TextWrapping="Wrap" MaxHeight="48" />
+  </StackPanel>
+  <!-- Rows of one height, made once and given result after result while scrolling (RecyclingRowPanel); near the end
+       the next page loads. -->
+  <ScrollViewer x:Name="ResultScroll" Grid.Row="3" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden">
+   <vm:RecyclingRowPanel x:Name="ResultList" ItemsSource="{Binding Results}" VerticalAlignment="Top" />
+  </ScrollViewer>
+  <TextBlock Grid.Row="3" Text="Find music, radio and books in all your sources." IsVisible="{Binding !HasQuery}" Classes="muted"
+   TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16" />
+  <!-- The kind's recent searches, under the box while it is tapped into; a pick searches it again. The rows take no
+       focus, so a tap on one keeps the box focused (the box closes them when it loses focus). -->
+  <Border x:Name="RecentSearches" Grid.Row="2" Grid.RowSpan="2" IsVisible="{Binding IsRecentOpen}" Background="#101315" VerticalAlignment="Top">
+   <ItemsControl ItemsSource="{Binding RecentOfKind}">
+    <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
+     <Button Classes="recent" Command="{Binding $parent[vm:SearchView].((vm:SearchViewModel)DataContext).PickRecentCommand}" CommandParameter="{Binding}"
+      AutomationProperties.Name="{Binding StringFormat='Search again for {0}'}">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+       <Path Data="M 12,3 A 9,9 0 1 1 3,12 M 12,7 L 12,12 L 15.5,14" Stroke="#9BA6A3" StrokeThickness="1.7" StrokeLineCap="Round" Width="24" Height="24" VerticalAlignment="Center" />
+       <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+      </StackPanel>
+     </Button>
+    </DataTemplate></ItemsControl.ItemTemplate>
+   </ItemsControl>
+  </Border>
+ </Grid>
+</UserControl>

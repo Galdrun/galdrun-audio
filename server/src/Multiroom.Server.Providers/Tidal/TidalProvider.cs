@@ -43,7 +43,9 @@ public sealed partial class TidalProvider : IProvider, ISearchProvider, IBrowseP
     public const string PlaylistPrefix = "playlist:";
 
     // Cover art is asked for at this size; Tidal serves square JPEGs.
-    private const string ArtworkSize = "640x640";
+    // Tidal makes its album covers at 640x640 and its artist pictures at 750x750 (neither in the other's size: 403);
+    // an image id does not say which it is, so the cover size is asked first.
+    private static readonly string[] ArtworkSizes = ["640x640", "750x750"];
 
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
 
@@ -154,8 +156,18 @@ public sealed partial class TidalProvider : IProvider, ISearchProvider, IBrowseP
         var id = reference.Reference;
         if (reference.ProviderId != ProviderId || !IsUuid(id))
             return Task.FromResult<Result<Artwork, ProviderError>>(Result.Fail(ProviderError.NotFound, $"no artwork {id}"));
-        var url = new Uri(_endpoints.Images, $"{id.Replace('-', '/')}/{ArtworkSize}.jpg");
-        return _artwork.GetAsync(id, url, id, cancellationToken);
+        return _artwork.GetAsync(id, async ct =>
+        {
+            Result<Artwork, ProviderError> fetched = default;
+            foreach (var size in ArtworkSizes)
+            {
+                fetched = await _artwork.FetchAsync(new Uri(_endpoints.Images, $"{id.Replace('-', '/')}/{size}.jpg"), id, ct)
+                    .ConfigureAwait(false);
+                if (fetched.IsSuccess)
+                    break;
+            }
+            return fetched;
+        }, cancellationToken);
     }
 
     public void Dispose()
@@ -295,7 +307,9 @@ public sealed partial class TidalProvider : IProvider, ISearchProvider, IBrowseP
 
     private static Artist? ToArtist(JsonElement json) =>
         json.Number("id") is { } id && json.Text("name") is { } name
-            ? new Artist(ProviderId, ArtistPrefix + Invariant(id), name, ArtworkOf(json.Text("picture")))
+            // An artist without its own picture has Tidal's chosen album cover instead (an audio play's series).
+            ? new Artist(ProviderId, ArtistPrefix + Invariant(id), name,
+                ArtworkOf(json.Text("picture")) ?? ArtworkOf(json.Text("selectedAlbumCoverFallback")))
             : null;
 
     private static ArtworkRef? ArtworkOf(string? imageId) =>

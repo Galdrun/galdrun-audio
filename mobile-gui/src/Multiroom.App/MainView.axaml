@@ -114,15 +114,10 @@
      <Grid x:Name="QueueHost" Margin="0" ClipToBounds="True" ZIndex="1">
       <Border x:Name="QueueSheet" Background="#101315" Padding="16,16,0,12"><vm:QueueView x:Name="QueuePage" DataContext="{Binding Playback}" /></Border>
      </Grid>
-     <Grid IsVisible="{Binding IsBrowser}" RowDefinitions="Auto,*" Margin="0,0,0,12">
-      <Grid IsVisible="{Binding IsSearch}" ColumnDefinitions="*,Auto" Margin="16,0,16,12">
-       <TextBox Text="{Binding Browser.Query}" PlaceholderText="Artists, albums, tracks, stations" AutomationProperties.Name="Search all sources">
-        <TextBox.KeyBindings><KeyBinding Gesture="Enter" Command="{Binding Browser.SearchCommand}" /></TextBox.KeyBindings>
-       </TextBox>
-       <Button Grid.Column="1" Content="Search" Command="{Binding Browser.SearchCommand}" Margin="8,0,0,0" />
-      </Grid>
-      <vm:BrowserView Grid.Row="1" DataContext="{Binding Browser}" />
+     <Grid IsVisible="{Binding IsBrowser}" Margin="0,0,0,12">
+      <vm:BrowserView DataContext="{Binding Browser}" />
      </Grid>
+     <Grid IsVisible="{Binding IsSearch}" Margin="0,0,0,12"><vm:SearchView DataContext="{Binding Search}" /></Grid>
      <ScrollViewer IsVisible="{Binding IsZones}">
       <StackPanel Spacing="12">
        <TextBlock Text="Each zone has its own queue." Classes="muted" />

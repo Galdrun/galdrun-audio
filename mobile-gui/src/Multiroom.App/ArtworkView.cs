@@ -17,6 +17,10 @@ public sealed class ArtworkView : Border
     // otherwise the placeholder shows while it loads.
     public static readonly StyledProperty<bool> CrossfadeProperty = AvaloniaProperty.Register<ArtworkView, bool>(nameof(Crossfade));
     public bool Crossfade { get => GetValue(CrossfadeProperty); set => SetValue(CrossfadeProperty, value); }
+    // Nothing but its background while the picture loads; the placeholder only when there is none (a page's large
+    // cover: the record's green centre, drawn that large, flashed like a big play button before the cover came).
+    public static readonly StyledProperty<bool> PlainWhileLoadingProperty = AvaloniaProperty.Register<ArtworkView, bool>(nameof(PlainWhileLoading));
+    public bool PlainWhileLoading { get => GetValue(PlainWhileLoadingProperty); set => SetValue(PlainWhileLoadingProperty, value); }
     private static readonly TimeSpan FadeTime = TimeSpan.FromMilliseconds(400);
     private static readonly IBrush Empty = Brush.Parse("#303C36");
     private CancellationTokenSource? _load;
@@ -96,7 +100,7 @@ public sealed class ArtworkView : Border
     private async void Load()
     {
         Cancel();
-        if (!Crossfade) Show(Placeholder());
+        if (!Crossfade) Show(PlainWhileLoading && _attached && Reference is not null && Cache is not null ? new Panel() : Placeholder());
         if (!_attached || Reference is not { } reference || Cache is not { } cache) { if (Crossfade) Show(Placeholder()); return; }
         _load = new(); var token = _load.Token;
         try

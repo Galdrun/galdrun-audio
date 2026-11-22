@@ -259,10 +259,16 @@ public sealed class TidalTests : IAsyncDisposable
         Assert.Equal(["Top tracks", "Albums", "Singles & EPs", "Similar artists"], artist.Sections!.Select(s => s.Title));
         Assert.Equal(["So What", "Freddie Freeloader (Remastered)"], artist.Sections![0].Items.Tracks.Select(t => t.Title));
         Assert.Equal(["album:1000"], artist.Sections[1].Nodes.Select(n => n.NodeId));
+        // An album is a node only, not a track too (an app folded such a section into its first album).
+        Assert.Empty(artist.Sections[1].Items.Tracks);
         Assert.Equal(["album:1100"], artist.Sections[2].Nodes.Select(n => n.NodeId));
         Assert.Equal(["artist:1566"], artist.Sections[3].Nodes.Select(n => n.NodeId));
         Assert.Equal(["artist:3346/toptracks", "artist:3346/albums", "artist:3346/singles", "artist:3346/similar"],
             artist.Sections.Select(s => s.More!.NodeId));
+        // An artist Tidal has no similar artists for still opens, without that section, and shows its album cover.
+        var series = (await provider.BrowseAsync(new("artist:14433", 0, 5), Ct)).Value;
+        Assert.Equal(["Top tracks", "Albums", "Singles & EPs"], series.Sections!.Select(s => s.Title));
+        Assert.Equal(new ArtworkRef("tidal", "0a1b2c3d-7777-2222-3333-444455556666"), series.Node!.Artwork);
         var singles = (await provider.BrowseAsync(new("artist:3346/singles", 0, 10), Ct)).Value;
         Assert.Equal(["Milestones EP"], singles.Nodes.Select(n => n.Title));
         Assert.Equal(1, singles.Total);
@@ -524,6 +530,10 @@ public sealed class TidalTests : IAsyncDisposable
         Assert.Equal(expected, first.Bytes.ToArray());
         Assert.Equal(expected, second.Bytes.ToArray());
         Assert.Equal(1, tidal.ImageFetches);
+
+        // An artist picture is not made at the cover size: its own size is asked next.
+        Assert.Equal(FakeTidal.Image("/images/a7a7a7a7/0000/0000/0000/000000000000/750x750.jpg"),
+            (await provider.GetArtworkAsync(new ArtworkRef("tidal", FakeTidal.ArtistPicture), Ct)).Value.Bytes.ToArray());
 
         foreach (var id in new[] { "11111111-0000-0000-0000-000000000000", "22222222-0000-0000-0000-000000000000" })
             Assert.True((await provider.GetArtworkAsync(new ArtworkRef("tidal", id), Ct)).IsSuccess);

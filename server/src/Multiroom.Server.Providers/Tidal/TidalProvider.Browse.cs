@@ -282,13 +282,18 @@ public sealed partial class TidalProvider
         var parts = ArtistParts.Select(p => _session.GetAsync($"artists/{artist}/{p.Path}", [.. p.Query, .. Page(0, request.Limit)],
             $"{nodeId} {p.Title}", cancellationToken)).ToList();
         var answers = await Task.WhenAll([header, .. parts]).ConfigureAwait(false);
-        // Not FirstOrDefault: a default Result reads as a failure.
-        if (Array.FindIndex(answers, a => !a.IsSuccess) is var failed and >= 0)
+        // A part Tidal does not have (404: no similar artists for an audio play) is left out; any other failure,
+        // or the artist's own, fails the page. Not FirstOrDefault: a default Result reads as a failure.
+        if (!answers[0].IsSuccess)
+            return answers[0].Failure;
+        if (Array.FindIndex(answers, a => !a.IsSuccess && a.Failure.Code != ProviderError.NotFound) is var failed and >= 0)
             return answers[failed].Failure;
 
         var sections = new List<BrowseSection>();
         for (var i = 0; i < ArtistParts.Length; i++)
         {
+            if (!answers[i + 1].IsSuccess)
+                continue;
             var part = ArtistParts[i];
             sections.Add(Section(part.Title, answers[i + 1].Value, Node($"{nodeId}/{part.Part}", part.Title,
                 BrowseKind.Section, playable: part.Part == "toptracks")));
@@ -330,7 +335,8 @@ public sealed partial class TidalProvider
         var layout = nodes.Count > 0 && nodes.All(n => n.Kind is BrowseKind.Album or BrowseKind.Playlist)
             ? BrowseLayout.Grid
             : BrowseLayout.List;
-        return new BrowseSection(title, nodes, CatalogItems.Empty with { Tracks = [.. items.Select(ToTrack).OfType<Track>()] },
+        // Only what is no container is a track: an album has an id and a title too.
+        return new BrowseSection(title, nodes, CatalogItems.Empty with { Tracks = [.. items.Where(i => ContainerOf(i) is null).Select(ToTrack).OfType<Track>()] },
             more, Total(list), layout);
     }
 

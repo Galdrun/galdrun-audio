@@ -117,8 +117,13 @@ public sealed partial class MultiroomClient : IDisposable
         string? letter, CancellationToken ct) => GetAsync<BrowsePage>($"providers/{Escape(provider)}/browse?limit=60&offset={offset}" +
             (node is null ? "" : $"&node={Escape(node)}") + (sort is null ? "" : $"&sort={Escape(sort)}") +
             (string.IsNullOrEmpty(filter) ? "" : $"&filter={Escape(filter)}") + (letter is null ? "" : $"&letter={Escape(letter)}"), ct);
-    public Task<SearchResult> SearchAsync(string query, int offset, CancellationToken ct) =>
-        GetAsync<SearchResult>($"search?q={Escape(query)}&offset={offset}&limit=60", ct);
+    // types: tracks, albums, artists, playlists, stations or books (comma-separated; all but books when null);
+    // mediaType: music, audiobook or radio, which the server filters the tracks by; provider: the one source
+    // to ask (every one when null).
+    public Task<SearchResult> SearchAsync(string query, int offset, string? types, string? mediaType, string? provider, CancellationToken ct) =>
+        GetAsync<SearchResult>($"search?q={Escape(query)}&offset={offset}&limit=60" +
+            (types is null ? "" : $"&types={Escape(types)}") + (mediaType is null ? "" : $"&mediaType={Escape(mediaType)}") +
+            (provider is null ? "" : $"&providers={Escape(provider)}"), ct);
     public Task<JsonElement?> TransportAsync(string zone, string action, long? item, CancellationToken ct)
     {
         if (action is not ("play" or "pause" or "stop" or "previous" or "next")) throw new ArgumentException("Unknown transport action.");

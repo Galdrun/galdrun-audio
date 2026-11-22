@@ -179,7 +179,9 @@ internal sealed class FakeTidal : IAsyncDisposable
             await ApiAsync(context, path["/api/".Length..]);
         else if (path.StartsWith("/cdn/", StringComparison.Ordinal))
             await CdnAsync(context, path["/cdn/".Length..]);
-        else if (path.StartsWith("/images/", StringComparison.Ordinal) && path.EndsWith("/640x640.jpg", StringComparison.Ordinal))
+        // Covers come at 640x640, artist pictures (ArtistPicture) only at 750x750, as Tidal's.
+        else if (path.StartsWith("/images/", StringComparison.Ordinal) && path.EndsWith(
+            path.Contains("/" + ArtistPicture[..8] + "/", StringComparison.Ordinal) ? "/750x750.jpg" : "/640x640.jpg", StringComparison.Ordinal))
             await ImageAsync(context);
         else
             context.Response.StatusCode = 404;
@@ -331,6 +333,13 @@ internal sealed class FakeTidal : IAsyncDisposable
             case ["artists", "3346", "similar"]:
                 await Json(context, 200, """{"items":[{"id":1566,"name":"John Coltrane","picture":"0a1b2c3d-9999-2222-3333-444455556666"}],"totalNumberOfItems":1}""");
                 return;
+            // An audio play's series: no picture of its own but an album cover, and no similar artists (404 below).
+            case ["artists", "14433"]:
+                await Json(context, 200, """{"id":14433,"name":"Asterix","picture":null,"selectedAlbumCoverFallback":"0a1b2c3d-7777-2222-3333-444455556666"}""");
+                return;
+            case ["artists", "14433", "albums" or "toptracks"]:
+                await Json(context, 200, $$"""{"items":[{{KindOfBlue}}],"totalNumberOfItems":1}""");
+                return;
             case ["pages", "for_you"] when query["deviceType"] == "BROWSER":
                 await Json(context, 200, ForYouJson);
                 return;
@@ -414,6 +423,7 @@ internal sealed class FakeTidal : IAsyncDisposable
 
     private const string MilesDavis = """{"id":3346,"name":"Miles Davis","type":"MAIN"}""";
 
+    public const string ArtistPicture = "a7a7a7a7-0000-0000-0000-000000000000";
     private const string MilesDavisWithPicture = """{"id":3346,"name":"Miles Davis","picture":"0a1b2c3d-1111-2222-3333-444455556666"}""";
 
     private const string Milestones = """

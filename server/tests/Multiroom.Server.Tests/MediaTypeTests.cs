@@ -161,6 +161,14 @@ public sealed class MediaTypeTests : IAsyncDisposable
         Assert.Equal(["Long Book CD 1", "Long Book CD 2", "Record", "Short Book"], albums.Nodes.Select(n => n.Title));
         Assert.Equal(ProviderError.InvalidArgument, (await Catalog.ExpandAsync("audiobooks", 10, Ct)).Failure.Code);
         Assert.Equal(ProviderError.NotFound, (await Catalog.ExpandAsync("book:999", 10, Ct)).Failure.Code);
+
+        // A search for books finds whole books, by title or author, as albums with the book's node; never music.
+        var found = (await Catalog.SearchAsync("long", SearchKinds.Books, 0, 10, Ct)).Value;
+        Assert.Equal([(book.NodeId, "Long Book", "Narrator")], found.Albums.Select(a => (a.ProviderItemId, a.Title, a.Artist)));
+        Assert.Empty(found.Tracks);
+        Assert.Equal(["Long Book", "Short Book"], (await Catalog.SearchAsync("narrator", SearchKinds.Books, 0, 10, Ct)).Value.Albums.Select(a => a.Title));
+        Assert.Empty((await Catalog.SearchAsync("record", SearchKinds.Books, 0, 10, Ct)).Value.Albums);
+        Assert.DoesNotContain((await Catalog.SearchAsync("long", SearchKinds.All, 0, 10, Ct)).Value.Albums, a => a.ProviderItemId.StartsWith("book:", StringComparison.Ordinal));
     }
 
     [Theory]

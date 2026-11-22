@@ -116,6 +116,9 @@ public enum SearchKinds
     Playlists = 8,
     Stations = 16,
     All = Tracks | Albums | Artists | Playlists | Stations,
+    // Whole audiobooks, answered as albums (the library's `book:` nodes); asked
+    // for alone, never part of All, so a search for albums is not doubled.
+    Books = 32,
 }
 
 // What a browse node is (phase 14). The server says what a node is; the UI

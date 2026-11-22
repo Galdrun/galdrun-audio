@@ -11,6 +11,12 @@ like any client ([server.md](server.md)).
   pages (shown by `IsVisible`, never removed) and navigation.
 - `src/Multiroom.App/QueueView.axaml.cs`: the queue (drag, swipe, tap) on
   `RecyclingRowPanel.cs`, one `QueueRowView` per visible row.
+- `src/Multiroom.App/SearchView.axaml` and `SearchViewModel.cs`: the Search
+  page. It searches one kind at a time (`types`/`mediaType` of `/api/v1/search`)
+  as you type, in all sources or one (`providers=`). Audiobooks use `types=books`:
+  the library answers whole books as albums with their `book:` node id. A tap
+  opens albums, artists, books and playlists in Browse, and tracks and stations
+  in Home's sheet. Its results stay when you come back from Browse.
 - `src/Multiroom.App/ArtworkView.cs` and `src/Multiroom.App.Api/ArtworkCache.cs`:
   pictures, fetched at the size they are drawn (`?size=`), kept in memory and
   on disk.
