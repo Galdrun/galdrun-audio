@@ -29,8 +29,9 @@ public:
     // this format and forgets a request made before the device was open.
     void prepare(const AudioFormat& format);
 
-    // Render thread: adds a pending or still sounding click to `frames` frames.
-    void mix(void* buffer, uint32_t frames);
+    // Render thread: adds a pending or still sounding click to `frames` frames,
+    // scaled by `gain` (the room's software volume, 0 when muted).
+    void mix(void* buffer, uint32_t frames, double gain = 1.0);
 
 private:
     AudioFormat format_;

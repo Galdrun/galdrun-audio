@@ -416,12 +416,8 @@ bool AudioStream::accept(const AudioPacket& packet)
         }
     }
 
-    if (startsRun)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        streamStartTimelineNs_ = packet.header.timelineStartNs;
-        hasStreamStart_ = true;
-    }
+    // The run this packet starts was published by the filterDiscarded() call
+    // that let it through, under the same lock as that decision.
 
     if (!hasTimelineAnchor_)
     {
@@ -654,7 +650,16 @@ AudioStream::DiscardVerdict AudioStream::filterDiscarded(const AudioPacket& pack
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!discarding_)
+        {
+            // Published with the decision: a DISCARD_STREAM handled after
+            // this naming the run this packet starts has to find it kept.
+            if (startsRun)
+            {
+                streamStartTimelineNs_ = packet.header.timelineStartNs;
+                hasStreamStart_ = true;
+            }
             return DiscardVerdict::None;
+        }
 
         if (packet.header.timelineStartNs == discardTimelineNs_ || afterFlush ||
             discardEndsAtNext_)
@@ -852,6 +857,12 @@ bool AudioStream::timelineToStream(uint64_t timelineNs, uint64_t& streamFrame) c
 {
     std::lock_guard<std::mutex> lock(mutex_);
     return map_.timelineToStream(timelineNs, streamFrame);
+}
+
+bool AudioStream::hasTimeline() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return !map_.empty();
 }
 
 bool AudioStream::streamToTimeline(uint64_t streamFrame, uint64_t& timelineNs) const

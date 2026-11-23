@@ -24,6 +24,10 @@ const uint32_t kRingMs = 500;
 const uint64_t kTakeOverNs = 300000000ULL;
 // ...and is let go after this long without audio (a pause, or a disconnect).
 const uint64_t kReleaseNs = 3000000000ULL;
+// A break this long starts the run over: a takeover counts only audio that
+// keeps coming (BlueALSA delivers every 20 ms, the loop polls within 200 ms),
+// not short sounds such as notifications some seconds apart.
+const uint64_t kGapNs = 1000000000ULL;
 // A device control that refused the room's volume is tried again this often.
 const uint64_t kVolumeRetryNs = 1000000000ULL;
 
@@ -68,11 +72,19 @@ void convert(const int16_t* in, uint32_t samples, AudioFormat::SampleType type, 
     }
 }
 
+bool usableOutput(const ClientRuntime& runtime)
+{
+    return runtime.deviceSelected && runtime.formatSelected;
+}
+
 // The selected device's format at the phone's rate, 16-bit if it has one.
+// Nothing when device selection found no format for the configured access
+// mode: exclusive-only then means no playback, not the shared mixer.
 bool deviceFormat(const ClientRuntime& runtime, uint32_t sampleRate, AudioFormat& out)
 {
-    const AudioDeviceInfo* device =
-        runtime.deviceSelected ? runtime.deviceCache->findById(runtime.deviceId) : nullptr;
+    const AudioDeviceInfo* device = usableOutput(runtime)
+                                        ? runtime.deviceCache->findById(runtime.deviceId)
+                                        : nullptr;
     if (device == nullptr)
         return false;
     bool found = false;
@@ -119,7 +131,7 @@ BluetoothPlayback::BluetoothPlayback(ClientRuntime& runtime, std::unique_ptr<IAu
       source_(ringSource_, volume_),
       engine_(std::move(backend)),
       supervisor_(engine_, [this](AudioEngine::Settings& settings, std::string& error) {
-          if (!runtime_.deviceSelected)
+          if (!usableOutput(runtime_))
           {
               error = "no usable audio playback device";
               return false;
@@ -207,11 +219,15 @@ void BluetoothPlayback::poll(uint64_t nowNs)
     }
 
     const uint32_t frames = receiver_->receivedFrames();
-    if (frames != lastFrames_)
+    const bool arrived = frames != lastFrames_;
+    if (arrived)
     {
-        lastFrames_ = frames;
-        if (!streaming_)
+        if (!streaming_ || nowNs - lastAudioNs_ >= kGapNs)
+        {
             streamingSinceNs_ = nowNs;
+            runStartFrames_ = lastFrames_;
+        }
+        lastFrames_ = frames;
         streaming_ = true;
         lastAudioNs_ = nowNs;
     }
@@ -219,27 +235,31 @@ void BluetoothPlayback::poll(uint64_t nowNs)
     {
         streaming_ = false;
         suppressed_ = false;
+        refused_ = false;
     }
 
     if (playing_)
     {
         matp::Session* session = runtime_.session;
-        if (!streaming_)
+        // Before the phone's silence: a room switched on in the same poll has
+        // already left Bluetooth, so release(true) would not resume it.
+        if (session != nullptr && *session->localSource() == '\0')
+        {
+            // Switched on by the user or the server while the phone plays.
+            MULTIROOM_INFO("bluetooth: room switched on; phone audio stopped");
+            // A phone that has stopped has no stream left to hold back.
+            suppressed_ = streaming_;
+            release(false);
+            session->resumeStream();
+        }
+        else if (!streaming_)
         {
             MULTIROOM_INFO("bluetooth: the phone stopped; returning the room");
             release(true);
         }
-        else if (session != nullptr && *session->localSource() == '\0')
-        {
-            // Switched on by the user or the server while the phone plays.
-            MULTIROOM_INFO("bluetooth: room switched on; phone audio stopped");
-            suppressed_ = true;
-            release(false);
-            session->resumeStream();
-        }
         else if ((receiver_->format().isValid() &&
                   receiver_->format().sampleRate != format_.sampleRate) ||
-                 !runtime_.deviceSelected || runtime_.deviceId != deviceId_ ||
+                 !usableOutput(runtime_) || runtime_.deviceId != deviceId_ ||
                  runtime_.accessMode != accessMode_)
         {
             // The phone renegotiated (another codec or rate), or another output
@@ -267,7 +287,18 @@ void BluetoothPlayback::poll(uint64_t nowNs)
         return;
     }
 
-    if (streaming_ && !suppressed_ && nowNs - streamingSinceNs_ >= kTakeOverNs)
+    if (refused_ && (usableOutput(runtime_) != refusedDeviceSelected_ ||
+                     runtime_.deviceId != refusedDeviceId_ ||
+                     runtime_.accessMode != refusedAccessMode_ ||
+                     receiver_->format().sampleRate != refusedRate_))
+        refused_ = false;
+    // Audio still arriving, and enough of it in this run to be playback: a
+    // burst that ended before a sink was attached has nothing to play.
+    const uint64_t takeOverFrames =
+        static_cast<uint64_t>(receiver_->format().sampleRate) * kTakeOverNs / 1000000000ULL;
+    if (arrived && streaming_ && !suppressed_ && !refused_ &&
+        nowNs - streamingSinceNs_ >= kTakeOverNs &&
+        static_cast<uint32_t>(frames - runStartFrames_) >= takeOverFrames)
         takeOver(nowNs);
 }
 
@@ -278,7 +309,11 @@ void BluetoothPlayback::takeOver(uint64_t nowNs)
     {
         MULTIROOM_WARN("bluetooth: %s cannot be played on the selected device",
                        describeFormat(received).c_str());
-        suppressed_ = true;
+        refused_ = true;
+        refusedDeviceSelected_ = usableOutput(runtime_);
+        refusedDeviceId_ = runtime_.deviceId;
+        refusedAccessMode_ = runtime_.accessMode;
+        refusedRate_ = received.sampleRate;
         return;
     }
     deviceId_ = runtime_.deviceId;

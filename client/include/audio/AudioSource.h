@@ -30,6 +30,11 @@ public:
     // produced. A short return is an underrun: the backend silences the rest
     // and counts it.
     virtual uint32_t render(void* buffer, uint32_t frameCount) = 0;
+
+    // Audio thread, after render(): the room's volume and mute as rendered on
+    // the samples, which a button click mixed over them follows. 1.0 for a
+    // source that plays no room volume.
+    virtual double feedbackGain() const { return 1.0; }
 };
 
 } // namespace multiroom

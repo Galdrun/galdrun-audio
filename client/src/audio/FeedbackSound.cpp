@@ -75,7 +75,7 @@ void FeedbackSound::prepare(const AudioFormat& format)
     seen_ = g_request.load(std::memory_order_acquire);
 }
 
-void FeedbackSound::mix(void* buffer, uint32_t frames)
+void FeedbackSound::mix(void* buffer, uint32_t frames, double gain)
 {
     const uint32_t request = g_request.load(std::memory_order_acquire);
     if (request != seen_)
@@ -87,10 +87,13 @@ void FeedbackSound::mix(void* buffer, uint32_t frames)
     if (current_ == nullptr)
         return;
 
+    // A muted room still lets the click run its course, silently: it is not
+    // held back to sound later.
+    const float level = static_cast<float>(gain);
     const uint16_t channels = format_.channels;
     for (uint32_t frame = 0; frame < frames && position_ < current_->size(); ++frame, ++position_)
     {
-        const float click = (*current_)[position_];
+        const float click = (*current_)[position_] * level;
         for (uint16_t channel = 0; channel < channels; ++channel)
         {
             const size_t index = static_cast<size_t>(frame) * channels + channel;

@@ -8,6 +8,8 @@
 #include "app/BluetoothPlayback.h"
 #include "app/StreamPlayback.h"
 #include "config/ClientConfig.h"
+#include "matp/Session.h"
+#include "net/ServerConnection.h"
 
 #include <cstring>
 #include <memory>
@@ -62,6 +64,7 @@ public:
         runtime.config = &config;
         runtime.deviceCache = &cache;
         runtime.deviceSelected = true;
+        runtime.formatSelected = true;
         runtime.deviceId = "a";
         runtime.accessMode = AudioAccessMode::Shared;
         addDevice("a");
@@ -83,15 +86,22 @@ public:
         cache.devices.push_back(device);
     }
 
-    // The phone streams long enough to take the room.
+    // The phone streams long enough to take the room: 400 ms of audio.
     bool takeOver()
     {
         receiver->deliver(0, 48);
         playback->poll(nowNs_);
         nowNs_ += 400 * kMsNs;
-        receiver->deliver(0, 48);
+        receiver->deliver(0, 19200);
         playback->poll(nowNs_);
         return playback->active();
+    }
+
+    // Time passes and nothing arrives from the phone.
+    void idle(uint64_t ms)
+    {
+        nowNs_ += ms * kMsNs;
+        playback->poll(nowNs_);
     }
 
     // Feeds `value` and plays it: the last sample the device was handed.
@@ -330,5 +340,84 @@ MULTIROOM_TEST(bluetooth_playback_gives_the_room_back_for_an_output_without_the_
     phone.runtime.deviceId = "b";
     phone.poll();
     CHECK(!phone.playback->active());
+    CHECK_EQ(phone.stub->openCalls, 1);
+}
+
+MULTIROOM_TEST(bluetooth_playback_takes_the_room_again_when_a_playable_output_returns)
+{
+    Phone phone;
+    CHECK(phone.takeOver());
+    phone.cache.devices[1].sharedFormats[0].sampleRate = 44100;
+    phone.runtime.deviceId = "b";
+    phone.poll();
+    CHECK(!phone.playback->active());
+
+    // The phone never pauses: the output it can play on is selected again.
+    for (int i = 0; i < 10; ++i)
+        phone.poll();
+    CHECK(!phone.playback->active());
+    phone.runtime.deviceId = "a";
+    phone.poll();
+    CHECK(phone.playback->active());
+    CHECK_EQ(phone.stub->openCalls, 2);
+    CHECK_EQ(phone.stub->lastConfig.deviceId, std::string("a"));
+    CHECK_EQ(phone.play(1000), 1000);
+}
+
+MULTIROOM_TEST(bluetooth_playback_leaves_the_room_alone_for_a_short_phone_sound)
+{
+    Phone phone;
+    // A 10 ms notification, then nothing: it is over before any sink.
+    phone.receiver->deliver(0, 480);
+    phone.idle(0);
+    for (int i = 0; i < 20; ++i)
+    {
+        phone.idle(100);
+        CHECK(!phone.playback->active());
+    }
+
+    // Short sounds more than a second apart do not add up to playback.
+    for (int i = 0; i < 5; ++i)
+    {
+        phone.receiver->deliver(0, 4800);
+        phone.idle(1100);
+        CHECK(!phone.playback->active());
+    }
+
+    // Music that keeps coming still takes it.
+    CHECK(phone.takeOver());
+}
+
+MULTIROOM_TEST(bluetooth_playback_switched_on_as_the_phone_stops_leaves_the_next_stream_free)
+{
+    ServerConnection connection;
+    matp::Session session(connection, matp::Identity{}, {});
+    Phone phone;
+    phone.runtime.session = &session;
+    CHECK(phone.takeOver());
+    CHECK_EQ(std::string(session.localSource()), std::string("bluetooth"));
+
+    // The room is switched on in the poll that also sees the phone's silence.
+    std::string error;
+    CHECK(session.setPower(true, error));
+    phone.idle(3000);
+    CHECK(!phone.playback->active());
+    CHECK_EQ(std::string(session.localSource()), std::string());
+
+    // That phone stream is over: the next one is not held back.
+    CHECK(phone.takeOver());
+}
+
+MULTIROOM_TEST(bluetooth_playback_needs_a_selected_format_and_takes_the_room_once_there_is_one)
+{
+    Phone phone;
+    // Device selection found no format for audioAccessMode exclusive-only.
+    phone.runtime.formatSelected = false;
+    CHECK(!phone.takeOver());
+    CHECK_EQ(phone.stub->openCalls, 0);
+
+    phone.runtime.formatSelected = true;
+    phone.poll();
+    CHECK(phone.playback->active());
     CHECK_EQ(phone.stub->openCalls, 1);
 }

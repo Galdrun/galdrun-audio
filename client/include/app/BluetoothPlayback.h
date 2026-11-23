@@ -51,6 +51,7 @@ private:
         VolumeSource(RingBufferSource& ring, VolumeControl& volume) : ring_(ring), volume_(volume) {}
         void prepare(const AudioFormat& format) override;
         uint32_t render(void* buffer, uint32_t frameCount) override;
+        double feedbackGain() const override { return volume_.appliedGain(); }
 
     private:
         RingBufferSource& ring_;
@@ -99,6 +100,7 @@ private:
     matp::AudioControl appliedAudioControl_ = matp::AudioControl::BitPerfect;
 
     uint32_t lastFrames_ = 0;
+    uint32_t runStartFrames_ = 0; // receivedFrames() before the current run
     uint64_t lastAudioNs_ = 0;
     uint64_t streamingSinceNs_ = 0;
     bool streaming_ = false;
@@ -106,6 +108,13 @@ private:
     // The user switched the room on during a phone stream: leave that stream
     // alone until it pauses.
     bool suppressed_ = false;
+    // The phone's format could not be played on this output: tried again when
+    // the output, its access mode or the phone's rate changes.
+    bool refused_ = false;
+    bool refusedDeviceSelected_ = false;
+    std::string refusedDeviceId_;
+    AudioAccessMode refusedAccessMode_ = AudioAccessMode::Shared;
+    uint32_t refusedRate_ = 0;
 };
 
 } // namespace multiroom

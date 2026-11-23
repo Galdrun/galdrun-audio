@@ -32,6 +32,7 @@ struct StubHardwareVolume
     bool offered = false; // openHardwareVolume() opens one
     bool failSet = false;
     int failNext = 0; // this many more writes refuse, then they work again
+    bool failRead = false;
     int opens = 0;
     int sets = 0;
     int mutes = 0; // setMute() alone, level untouched
@@ -69,8 +70,13 @@ public:
         return true;
     }
 
-    bool read(multiroom::HardwareVolumeState& out, std::string&) override
+    bool read(multiroom::HardwareVolumeState& out, std::string& error) override
     {
+        if (state_.failRead)
+        {
+            error = "stub control does not answer";
+            return false;
+        }
         out = multiroom::HardwareVolumeState();
         out.gain = state_.gain;
         out.muted = state_.muted;

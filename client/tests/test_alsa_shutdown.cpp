@@ -11,6 +11,7 @@
 namespace {
 std::atomic<unsigned> writes{0};
 std::atomic<bool> lost{false};
+std::atomic<int> underrunWrites{0}; // writes still to fail with -EPIPE; -1 for all
 bool stallDrain = false;
 bool partialWrites = false;
 unsigned writeAttempts = 0;
@@ -79,6 +80,39 @@ bool run(bool stalled, bool fail, bool partial = false)
     // Stop's drain leaves SETUP; the backend must prepare before a restart.
     return backend.state() == multiroom::BackendState::Open && backend.start();
 }
+// Underruns that ALSA recovers from are not progress: a device that underruns
+// on every write must still fail at the stall deadline (2 s for this buffer),
+// while an isolated one leaves it running.
+bool underruns(bool continuous)
+{
+    writes = 0;
+    lost = false;
+    stallDrain = false;
+    partialWrites = false;
+    samples.clear();
+    multiroom::AlsaBackend backend;
+    multiroom::AudioBackendConfig config;
+    config.deviceId = "null";
+    config.format = {48000, 2, multiroom::AudioFormat::SampleType::Int16};
+    config.requestedBufferFrames = 480;
+    config.renderCallback = render;
+    if (!backend.open(config) || !backend.start())
+        return false;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (writes == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    if (writes == 0)
+        return false;
+    underrunWrites = continuous ? -1 : 1;
+    deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(3500);
+    while (backend.state() == multiroom::BackendState::Running &&
+           std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    const bool failed = backend.state() == multiroom::BackendState::Failed;
+    underrunWrites = 0;
+    backend.stop();
+    return continuous == failed;
+}
 } // namespace
 
 extern "C" int __wrap_snd_pcm_wait(snd_pcm_t*, int)
@@ -89,6 +123,13 @@ extern "C" int __wrap_snd_pcm_wait(snd_pcm_t*, int)
 extern "C" snd_pcm_sframes_t __wrap_snd_pcm_writei(snd_pcm_t*, const void* data,
                                                   snd_pcm_uframes_t frames)
 {
+    const int failing = underrunWrites.load();
+    if (failing != 0)
+    {
+        if (failing > 0)
+            underrunWrites = failing - 1;
+        return -EPIPE;
+    }
     if (partialWrites)
     {
         ++writeAttempts;
@@ -124,7 +165,11 @@ int main()
     const bool partial = run(false, false, true);
     const bool timeout = run(true, false);
     const bool failure = run(false, true);
+    const bool isolated = underruns(false);
+    const bool continuous = underruns(true);
     std::printf("ALSA fade/silence/drain/restart: %d; partial writes: %d; "
-                "bounded drain: %d; failed-device stop: %d\n", tail, partial, timeout, failure);
-    return tail && partial && timeout && failure ? 0 : 1;
+                "bounded drain: %d; failed-device stop: %d; isolated underrun: %d; "
+                "continuous underruns: %d\n",
+                tail, partial, timeout, failure, isolated, continuous);
+    return tail && partial && timeout && failure && isolated && continuous ? 0 : 1;
 }

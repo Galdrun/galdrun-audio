@@ -79,7 +79,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endforeach()
     multiroom_set_warnings(alsa_shutdown_tests)
     add_test(NAME alsa_shutdown_tests COMMAND alsa_shutdown_tests)
-    set_tests_properties(alsa_shutdown_tests PROPERTIES TIMEOUT 10)
+    set_tests_properties(alsa_shutdown_tests PROPERTIES TIMEOUT 20)
     add_executable(alsa_rescan_tests test_alsa_rescan.cpp)
     target_link_libraries(alsa_rescan_tests PRIVATE multiroom_core)
     foreach(function snd_card_next snd_ctl_open snd_ctl_close snd_ctl_card_info

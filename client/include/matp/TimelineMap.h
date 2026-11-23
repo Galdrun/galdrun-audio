@@ -57,7 +57,8 @@ namespace matp {
 
 // How many packets of history the mapping keeps. 2048 of them is 20 s at
 // section 15's 10 ms floor. A stream that sends smaller packets is paced by
-// this instead of the ring buffer (AudioStream::awaitTimelineRoom).
+// this instead of the ring buffer (AudioStream::awaitTimelineRoom). The core's
+// config check (ServerConfig.cpp) assumes this value for its start minimum.
 const size_t kTimelineSegments = 2048;
 
 // One packet's contribution: the same span of audio measured on both axes.

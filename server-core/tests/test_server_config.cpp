@@ -472,6 +472,13 @@ MULTIROOM_TEST(server_config_carries_section_twenty_s_start_timings)
     CHECK_ERR(server_config::deserialize(
                   R"({"audio":{"packetDurationMs":20,"minimumStartBufferMs":19}})"),
               ConfigError::OutOfRange);
+    // More packets than a client's timeline map holds before anything plays.
+    CHECK_ERR(server_config::deserialize(
+                  R"({"audio":{"packetDurationMs":1,"targetBufferMs":2250,"minimumStartBufferMs":2200}})"),
+              ConfigError::OutOfRange);
+    CHECK(server_config::deserialize(
+              R"({"audio":{"packetDurationMs":1,"targetBufferMs":2250,"minimumStartBufferMs":2048}})")
+              .has_value());
 
     // A first start that waits for nobody, and one whose instant has passed by
     // the time the message arrives.

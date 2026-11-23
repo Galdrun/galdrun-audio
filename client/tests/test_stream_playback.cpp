@@ -362,6 +362,49 @@ MULTIROOM_TEST(stream_playback_flush_after_its_packet_keeps_the_line)
     seek(false);
 }
 
+// A pause right after a seek, placed past the cut: the cut still happens, the
+// audio after it is accepted, and the pause lands where the server put it.
+MULTIROOM_TEST(stream_playback_pause_during_a_flush_keeps_the_cut)
+{
+    TestListener listener;
+    CHECK(listener.ready());
+    Room room;
+    uint64_t sequence = 0;
+    CHECK(playing(room, listener, sequence));
+
+    matp::TransportAt flush;
+    flush.timelineNs = kBaseNs + 20 * kMsNs; // device frame 1440
+    matp::TransportAt pause;
+    pause.timelineNs = kBaseNs + 50 * kMsNs; // device frame 2880 on the kept line
+    std::string error;
+    CHECK(room.playback->flush(flush, error));
+    CHECK(room.playback->pause(pause, error));
+    CHECK(sendRun(listener, sequence, kBaseNs + 40 * kMsNs, 50001, 20,
+                  matp::kAudioFlagAfterFlush));
+    CHECK(waitUntil([&] { return room.playback->stream().resyncAfterFlush(); }, 2000));
+
+    room.play(1488);
+    CHECK_EQ(room.output[1439], 960u);
+    CHECK(room.silent(1440, 1488));
+    room.playback->poll();
+    room.play(1536);
+    room.playback->poll();
+    CHECK(!room.playback->stream().resyncPending());
+    CHECK(waitUntil([&] { return room.playback->stream().frames() >= 4800 + 960; }, 2000));
+    room.playback->poll(); // the line maps the audio after the cut: the pause is placed
+    CHECK(room.runtime.endScheduled);
+
+    room.play(2976);
+    CHECK(room.silent(1440, 2400));
+    CHECK_EQ(room.output[2400], 50001u);
+    CHECK_EQ(room.output[2879], 50480u);
+    CHECK(room.silent(2880, 2976));
+    room.playback->poll();
+    CHECK(room.runtime.timelineState == TimelineState::Paused);
+    CHECK_EQ(room.playback->stream().rejoins(), 0u);
+    CHECK_EQ(room.playback->stream().flushes(), 1u);
+}
+
 // The boundaries announced for the audio a FLUSH cuts go with it; the server
 // announces the replacement's own after the FLUSH.
 MULTIROOM_TEST(stream_playback_flush_drops_the_track_boundaries_after_its_cut)
@@ -927,6 +970,53 @@ MULTIROOM_TEST(stream_playback_refused_unmute_keeps_the_hardware_control)
     room.stub->hardwareVolume.failSet = false;
     CHECK(setVolume(room, unmute, error));
     CHECK(!room.stub->hardwareVolume.muted);
+}
+
+// Connector 3's MCU can stop answering while its PCM plays on: a mute it
+// could neither take nor report is played on the samples, and tried again.
+MULTIROOM_TEST(stream_playback_refused_mute_without_readback_silences_the_samples_and_retries)
+{
+    TestListener listener;
+    CHECK(listener.ready());
+    Room room;
+    room.runtime.audioControl = matp::AudioControl::Auto;
+    room.offerHardwareVolume();
+    uint64_t sequence = 0;
+    CHECK(playing(room, listener, sequence));
+    CHECK(room.runtime.hardwareVolumeActive);
+
+    room.stub->hardwareVolume.failSet = true;
+    room.stub->hardwareVolume.failRead = true;
+    matp::SetVolume mute;
+    mute.hasMuted = true;
+    mute.muted = true;
+    std::string error;
+    CHECK(setVolume(room, mute, error));
+    CHECK(room.runtime.hardwareVolumeActive);
+    CHECK(!room.stub->hardwareVolume.muted);
+    room.play(2400);
+    CHECK_EQ(room.output[2399], 0u);
+
+    // Answering again, the control is given the mute by the poll alone.
+    room.stub->hardwareVolume.failSet = false;
+    room.stub->hardwareVolume.failRead = false;
+    CHECK(waitUntil(
+        [&] {
+            room.playback->poll();
+            return room.stub->hardwareVolume.muted;
+        },
+        3000));
+    room.play(3408);
+    CHECK_EQ(room.output[3407], 0u);
+
+    // And unmuted, the samples play untouched again.
+    matp::SetVolume unmute;
+    unmute.hasMuted = true;
+    unmute.muted = false;
+    CHECK(setVolume(room, unmute, error));
+    CHECK(!room.stub->hardwareVolume.muted);
+    room.play(4416);
+    CHECK(room.output[4415] != 0u);
 }
 
 // Disabled is Disabled with or without the control, so giving the switch up is

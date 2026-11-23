@@ -624,3 +624,50 @@ MULTIROOM_TEST(engine_mixes_a_button_click_over_the_source)
     const double playPause = peak(480);
     CHECK(playPause > 0.9 && playPause <= 1.0);
 }
+
+namespace {
+
+// Silence, at a room volume the source reports for the click to follow.
+class QuietSource final : public IAudioSource
+{
+public:
+    void prepare(const AudioFormat&) override {}
+    uint32_t render(void* buffer, uint32_t frameCount) override
+    {
+        std::memset(buffer, 0, static_cast<size_t>(frameCount) * 4);
+        return frameCount;
+    }
+    double feedbackGain() const override { return gain; }
+    double gain = 1.0;
+};
+
+} // namespace
+
+MULTIROOM_TEST(engine_button_click_follows_the_room_software_volume_and_mute)
+{
+    std::unique_ptr<StubBackend> owned(new StubBackend());
+    StubBackend* stub = owned.get();
+    AudioEngine engine(std::move(owned));
+    QuietSource source;
+    engine.setSource(&source);
+    std::string error;
+    CHECK(engine.open(defaultSettings(), error));
+    const auto peak = [stub]() {
+        std::vector<int16_t> buffer(480 * 2);
+        CHECK_EQ(stub->render(buffer.data(), 480), 480u);
+        int peakValue = 0;
+        for (int16_t sample : buffer)
+            peakValue = std::max(peakValue, std::abs(static_cast<int>(sample)));
+        return peakValue / 32768.0;
+    };
+
+    source.gain = 0.1;
+    FeedbackSound::play(FeedbackSound::Sound::PlayPause);
+    const double quiet = peak();
+    CHECK(quiet > 0.09 && quiet <= 0.1);
+    peak(); // the rest of the click
+
+    source.gain = 0.0; // muted
+    FeedbackSound::play(FeedbackSound::Sound::PlayPause);
+    CHECK(peak() == 0.0);
+}

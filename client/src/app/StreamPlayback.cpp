@@ -384,6 +384,7 @@ void StreamPlayback::onDeviceClosed()
     hasFlush_ = false;
     flushResumeArmed_ = false;
     flushWaiting_ = false;
+    hasDeferredEnd_ = false;
 
     // A hardware change still waiting for its frame is not lost: volumeGain_
     // already holds it, and the next device opened is set to that.
@@ -417,6 +418,7 @@ void StreamPlayback::release()
     hasFlush_ = false;
     flushResumeArmed_ = false;
     flushWaiting_ = false;
+    hasDeferredEnd_ = false;
     hasStartTimeline_ = false;
     startTimelineNs_ = 0;
     endTimelineNs_ = 0;
@@ -476,6 +478,7 @@ bool StreamPlayback::start(const matp::StartAt& request, uint64_t localStartNs,
 
     hasStartTimeline_ = true;
     startTimelineNs_ = request.timelineNs;
+    hasDeferredEnd_ = false; // a held pause or stop came before this start
 
     // A room the server has no level for is never sent one: it plays at the
     // control's own level, as it did before the hold in updateVolumePath().
@@ -514,18 +517,7 @@ bool StreamPlayback::pause(const matp::TransportAt& request, std::string& error)
         return false;
     }
 
-    // A timeline position this room can no longer place is one it has already
-    // played past, so nothing of that timeline is left to cut: dropping the
-    // schedule is what section 37 wants, and it is what schedulePause does
-    // with a frame that precedes the start.
-    uint64_t streamFrame = 0;
-    if (!timelineToStream(request.timelineNs, streamFrame))
-        streamFrame = 0;
-
-    source_.schedulePause(streamFrame);
-    endTimelineNs_ = request.timelineNs;
-    publishTimeline(false);
-    logTransport("pause", request.timelineNs);
+    scheduleEnd(request.timelineNs, false);
     return true;
 }
 
@@ -537,15 +529,53 @@ bool StreamPlayback::stop(const matp::TransportAt& request, std::string& error)
         return false;
     }
 
+    scheduleEnd(request.timelineNs, true);
+    return true;
+}
+
+void StreamPlayback::placeDeferredEnd()
+{
+    // The resume clears the stream's mapping, and the audio after the cut
+    // fills it again: placed before that, the end would count as passed.
+    if (!hasDeferredEnd_ || hasFlush_ || !stream_.hasTimeline())
+        return;
+    hasDeferredEnd_ = false;
+    scheduleEnd(deferredEndTimelineNs_, deferredEndIsStop_);
+}
+
+void StreamPlayback::scheduleEnd(uint64_t timelineNs, bool stop)
+{
+    // A flush in progress owns the schedule's one end until its resume is
+    // taken: a pause placed now would replace the cut, and the replacement
+    // audio would never be accepted. The end is placed by placeDeferredEnd()
+    // once the flush is done, on the line it kept; a newer end replaces it,
+    // and a newer START_AT or a rejoin drops it.
+    if (hasFlush_ || hasDeferredEnd_)
+    {
+        hasDeferredEnd_ = true;
+        deferredEndIsStop_ = stop;
+        deferredEndTimelineNs_ = timelineNs;
+        MULTIROOM_INFO("%s at timeline %llu ns: held until the flush at %llu ns is done",
+                 stop ? "stop" : "pause", static_cast<unsigned long long>(timelineNs),
+                 static_cast<unsigned long long>(flushTimelineNs_));
+        return;
+    }
+
+    // A timeline position this room can no longer place is one it has already
+    // played past, so nothing of that timeline is left to cut: dropping the
+    // schedule is what section 37 wants, and it is what schedulePause does
+    // with a frame that precedes the start.
     uint64_t streamFrame = 0;
-    if (!timelineToStream(request.timelineNs, streamFrame))
+    if (!timelineToStream(timelineNs, streamFrame))
         streamFrame = 0;
 
-    source_.scheduleStop(streamFrame);
-    endTimelineNs_ = request.timelineNs;
+    if (stop)
+        source_.scheduleStop(streamFrame);
+    else
+        source_.schedulePause(streamFrame);
+    endTimelineNs_ = timelineNs;
     publishTimeline(false);
-    logTransport("stop", request.timelineNs);
-    return true;
+    logTransport(stop ? "stop" : "pause", timelineNs);
 }
 
 bool StreamPlayback::flush(const matp::TransportAt& request, std::string& error)
@@ -751,6 +781,7 @@ void StreamPlayback::updateVolumePath(bool deviceOpened)
 
         hardwarePending_ = false;
         hardwareDue_ = false; // applied below
+        hardwareRetry_ = false;
         // Nothing but the path now in force scales the samples. A device's
         // control holds what its board left there (Connector 3's MCU boots
         // at 100) until the room's level is written to it, so the samples
@@ -830,6 +861,9 @@ bool StreamPlayback::resetHardwareVolume(std::string& error)
 void StreamPlayback::applyVolume(double gain, bool muted)
 {
     appliedMuted_ = muted;
+    // This change replaces one the control refused earlier.
+    const bool retrying = hardwareRetry_;
+    hardwareRetry_ = false;
     std::string error;
     if (!resetHardwareVolume(error))
         MULTIROOM_DEBUG("volume: %s; the reset is still owed", error.c_str());
@@ -884,11 +918,23 @@ void StreamPlayback::applyVolume(double gain, bool muted)
         {
             // Muted, or not known not to be: no other path can make it heard,
             // and giving the control up would report a room that plays. Kept,
-            // so its state is what the status shows and the next change tries
-            // it again.
-            MULTIROOM_WARN("volume: %s; the hardware control is kept, as the device may "
-                     "still be muted",
-                     error.c_str());
+            // so its state is what the status shows, and tried again by the
+            // hardware poll until it takes the change or a newer one comes.
+            // A silence it refused is made on the samples meanwhile. They are
+            // never let through here: the device may be at any level.
+            if (muted ||
+                (volumePath_.effective == matp::VolumeControlMode::Hardware && gain <= 0.0))
+                source_.setVolume(1.0, true);
+            if (retrying)
+                MULTIROOM_DEBUG("volume: %s; tried again", error.c_str());
+            else
+                MULTIROOM_WARN("volume: %s; the hardware control is kept, as the device may "
+                         "still be muted",
+                         error.c_str());
+            hardwareRetry_ = true;
+            hardwareRetryNs_ = monotonicNowNs() + kHardwareVolumeReadNs;
+            hardwareRetryGain_ = gain;
+            hardwareRetryMuted_ = muted;
             hardwareReadNs_ = 0;
             return;
         }
@@ -920,7 +966,7 @@ uint32_t StreamPlayback::waitMs(uint32_t maxMs) const
     const uint32_t kHardwarePendingWaitMs = 5;
     const bool pending = usesHardware() && hardwarePending_ &&
                          !source_.waitsForResume(hardwarePendingStreamFrame_);
-    return pending ? std::min(maxMs, kHardwarePendingWaitMs) : maxMs;
+    return (pending || hasFlush_) ? std::min(maxMs, kHardwarePendingWaitMs) : maxMs;
 }
 
 void StreamPlayback::pollHardwareVolume(uint64_t nowNs)
@@ -954,6 +1000,11 @@ void StreamPlayback::pollHardwareVolume(uint64_t nowNs)
                      matp::volumeControlModeName(volumePath_.effective));
         }
     }
+
+    // At the read's pace, not every pass: a refusal can take a slow control
+    // several timeouts. It may give the control up.
+    if (hardwareRetry_ && hardwareVolume_ && nowNs >= hardwareRetryNs_)
+        applyVolume(hardwareRetryGain_, hardwareRetryMuted_);
 
     if (hardwareVolume_ && nowNs >= hardwareReadNs_)
     {
@@ -1251,6 +1302,7 @@ void StreamPlayback::poll()
 
     stream_.poll();
     pollRejoin();
+    placeDeferredEnd();
     publishTimeline(true);
     pollHardwareVolume(nowNs);
     updateTrackGain(nowNs);
@@ -1357,6 +1409,7 @@ void StreamPlayback::pollRejoin()
         rejoinDrops_ = source_.bufferDrops();
         source_.discardTimeline();
         rejoinArmed_ = true;
+        hasDeferredEnd_ = false; // the server starts the rejoined room anew
 
         MULTIROOM_INFO("rejoining at timeline %llu ns: the timeline that was playing and the "
                  "%lu frame(s) buffered for it were dropped",

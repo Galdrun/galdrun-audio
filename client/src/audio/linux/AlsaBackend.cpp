@@ -830,7 +830,10 @@ void AlsaBackend::renderLoop()
                 state_.store(static_cast<int>(BackendState::Failed), std::memory_order_release);
                 return;
             }
-            lastProgress = std::chrono::steady_clock::now(); // a fresh start
+            // Not progress: a device that fails again after every recovery
+            // accepts nothing, and has to reach the stall deadline too.
+            if (stalled())
+                return;
             continue;
         }
 
@@ -885,7 +888,6 @@ void AlsaBackend::renderLoop()
                 state_.store(static_cast<int>(BackendState::Failed), std::memory_order_release);
                 return;
             }
-            lastProgress = std::chrono::steady_clock::now();
             // Recovered: the remainder of this period is dropped on purpose
             // rather than written late into a freshly prepared stream. It is
             // still counted: the render callback has handed it out, and the
@@ -897,6 +899,8 @@ void AlsaBackend::renderLoop()
             runStartFrames_.store(framesWritten_.load(std::memory_order_relaxed),
                                   std::memory_order_release);
             clockSequence_.fetch_add(1, std::memory_order_release);
+            if (stalled())
+                return;
             break;
         }
         if (shutdown_.finished())

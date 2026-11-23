@@ -115,6 +115,7 @@ public:
     }
 
     uint32_t render(void* buffer, uint32_t frameCount) override;
+    double feedbackGain() const override { return volume_.appliedGain(); }
 
     // Control thread. Works out where the scheduled instant falls on the
     // device's own frame axis and arms the start. `localStartNs` is the

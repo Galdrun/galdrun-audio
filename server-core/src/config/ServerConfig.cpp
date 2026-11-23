@@ -592,6 +592,17 @@ Status<ConfigError> validate(const ServerConfig& config)
                         std::to_string(config.audio.targetBufferMs) +
                         " (one packet to the prebuffer target)");
     }
+    // A client maps at most 2048 packets of timeline (client TimelineMap.h,
+    // kTimelineSegments). Before a start nothing is played to free one, so a
+    // minimum needing more packets than that is a barrier that never opens.
+    if (config.audio.minimumStartBufferMs > 2048ULL * config.audio.packetDurationMs)
+    {
+        return fail(ConfigError::OutOfRange,
+                    "audio.minimumStartBufferMs is " +
+                        std::to_string(config.audio.minimumStartBufferMs) +
+                        ", more than a client holds in 2048 packets of " +
+                        std::to_string(config.audio.packetDurationMs) + " ms");
+    }
 
     // A zero timeout is a first start that waits for nobody, and a zero delay
     // is an instant that has passed by the time the message arrives. Both are

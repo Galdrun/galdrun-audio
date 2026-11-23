@@ -214,6 +214,10 @@ private:
     // One line for a pause or a stop, which says something different when the
     // position could not be placed and the schedule was dropped instead.
     void logTransport(const char* what, uint64_t timelineNs);
+    // PAUSE_AT (stop false) or STOP_AT, held while a flush is in progress.
+    void scheduleEnd(uint64_t timelineNs, bool stop);
+    // The held end, once the flush is done and its line maps again.
+    void placeDeferredEnd();
     bool hardwareClockActive() const;
     void openHardwareClock(const AudioDeviceInfo* device);
     void closeHardwareClock();
@@ -338,6 +342,10 @@ private:
     uint64_t flushResumeStreamFrame_ = 0;
     bool flushWaiting_ = false;
     uint64_t flushWaitSinceNs_ = 0;
+    // A PAUSE_AT or STOP_AT that came during the flush, placed once it is done.
+    bool hasDeferredEnd_ = false;
+    bool deferredEndIsStop_ = false;
+    uint64_t deferredEndTimelineNs_ = 0;
 
     // The room's volume as SET_VOLUME last left it, clamped, whichever path
     // plays it; `volumeSet_` stays false until the first one, so that a
@@ -367,6 +375,12 @@ private:
     // device frame. What a late level reset keeps on Disabled's switch.
     bool appliedMuted_ = false;
     uint64_t hardwareReadNs_ = 0;
+    // A change the control refused while it may still be muted: tried again
+    // at the hardware read's pace until it succeeds or a newer one replaces it.
+    bool hardwareRetry_ = false;
+    uint64_t hardwareRetryNs_ = 0;
+    double hardwareRetryGain_ = 1.0;
+    bool hardwareRetryMuted_ = false;
     // A reset of the control that a path change owes it and that has not yet
     // succeeded: its level to the ceiling and its mute off, or the mute alone.
     enum class HardwareReset { None, Level, Mute };

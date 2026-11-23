@@ -76,6 +76,11 @@ come from root `shared/matp/include/`, not a second client definition.
   axis for another or compare frame positions from different rooms.
 - Starts, pauses and volume changes are scheduled on device frames. Underrun
   silence advances device time, so stale audio must be discarded afterward.
+- `TimelineSource` has one end slot. Invariant: a PAUSE_AT/STOP_AT that arrives
+  while a FLUSH is open (`StreamPlayback::hasFlush_`) is held and placed by
+  `placeDeferredEnd()` once the resume is taken and the stream maps the audio
+  after the cut; placed earlier it would replace the cut and stall the flush
+  handshake until the audio connection times out.
 - Loudness normalization (`ClientConfig::normalization`, off by default, MATP
   section 59) is a second `VolumeControl` in `TimelineSource` (`trackGain_`),
   driven by `StreamPlayback::updateTrackGain()` from each boundary's `gainDb`.
@@ -123,7 +128,9 @@ and dispatched successfully (not the raw touch: a double click clicks once, a
 long press at 2 s, a press that makes no gesture never) calls
 `FeedbackSound::play` (`src/audio/FeedbackSound.cpp`), and every open
 `AudioEngine` mixes the click over its source in the render callback, at the
-device rate; `KEY_PLAYPAUSE` gets the play/pause click. The clicks are
+device rate, scaled by the source's `feedbackGain()` (the room's applied
+software volume, 0 when muted; 1.0 on the hardware path, where the control
+attenuates it like the music); `KEY_PLAYPAUSE` gets the play/pause click. The clicks are
 synthesized from levels/pitch measured on the stock `touch.flac` and
 `touch-play-pause.flac`, because Teufel's files are not redistributed. Level
 matches stock (`libraumfelddsp.so`, `hardwared` chain `input -> system-sounds
@@ -156,7 +163,10 @@ helper runs share `bluetoothProcess`, one at a time.
 
 Bluetooth (board flag `bluetooth`): the platform receiver only delivers the
 phone's 16-bit PCM on its own thread. `BluetoothPlayback` (owner loop) takes the
-room after 0.3 s of audio: `Session::setBluetooth(true)` releases the server's
+room after 0.3 s of received audio in one run (a gap of 1 s starts the run over,
+so a notification sound does not take it), and only when device selection
+found a format (`formatSelected`; `exclusive-only` without one plays nothing):
+`Session::setBluetooth(true)` releases the server's
 stream and card synchronously and reports `localSource: "bluetooth"` (power
 stays `on`; it is not a power state); its own engine then plays
 at the phone's rate in the selected device's format, so MCU rate and hardware
@@ -166,8 +176,9 @@ that engine at once, on the device's control or its own `VolumeControl`, and a
 changed device/access mode reopens it (or returns the room when the phone's
 rate does not fit); otherwise a muted room plays the phone and the reported
 output is not the one playing. 3 s without audio restores the earlier power state. Switching the
-room on during it only clears the state; `BluetoothPlayback` closes its card
-first and then calls `Session::resumeStream()`, because both cannot hold the
+room on during it only clears the state; `BluetoothPlayback` checks that before
+the 3 s silence, closes its card first and then calls
+`Session::resumeStream()`, because both cannot hold the
 exclusive device. Phone and card clocks are not locked: the 500 ms ring drops or
 underruns rarely. BlueZ, pairing and bluez-alsa are image services
 (Connector 3: `hardware/buildroot/board/connector3/ram/galdrun-bluetooth`).

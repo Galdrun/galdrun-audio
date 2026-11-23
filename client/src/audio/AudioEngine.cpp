@@ -25,7 +25,7 @@ uint32_t AudioEngine::renderCallback(void* userData, void* buffer, uint32_t fram
     if (engine == nullptr || engine->source_ == nullptr)
         return 0;
     const uint32_t filled = engine->source_->render(buffer, frameCount);
-    engine->feedback_.mix(buffer, filled);
+    engine->feedback_.mix(buffer, filled, engine->source_->feedbackGain());
     return filled;
 }
 

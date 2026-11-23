@@ -133,6 +133,9 @@ public:
     // running, and counting silence, long before the first packet arrived --
     // and TimelineSource is what ties the two together at the start.
     bool timelineToStream(uint64_t timelineNs, uint64_t& streamFrame) const;
+    // Whether any packet maps the timeline: false from a flush's resume until
+    // the audio after the cut has been recorded.
+    bool hasTimeline() const;
     bool streamToTimeline(uint64_t streamFrame, uint64_t& timelineNs) const;
 
     // Owner thread. Where the oldest frame the ring buffer still holds sits on
